@@ -29,3 +29,5 @@ All notable changes to Verdict will be documented in this file.
 - Add a provider-agnostic deterministic security-evaluation foundation with labeled trusted and
   untrusted inputs, structured observations, redacted results, explicit harness errors, and
   separate security-containment and legitimate-utility scoring.
+- Add a versioned redacted JSON evaluation report and render the actual storefront attack and
+  utility suite as an independent workbench lab.

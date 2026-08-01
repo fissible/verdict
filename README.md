@@ -638,12 +638,18 @@ Case results retain trusted-setup and untrusted-input fingerprints, assertion ou
 observation summary, and application-supplied reproduction components. They do not retain raw case
 inputs or raw outputs. Runner or assertion exceptions are reported as harness errors using the
 exception class only; they are not counted as behavioral failures or passes. A score's pass rate
-uses completed cases, while its error count remains separate.
+uses completed cases, while its error count remains separate. Reproduction component values and
+custom assertion names or failure messages are included verbatim, so applications must not put
+secrets or raw adversarial content in those strings.
+
+`$result->report()` exports that data as an array or JSON using the versioned
+`verdict.evaluation-report.v1` schema. The report is an in-memory representation; Verdict does not
+yet persist, compare, sign, or upload evaluation reports.
 
 The package does not yet provide attack packs, live-provider runners, repeated trials, baseline
-storage, regression comparison, report exporters, or automatic sandboxing. Application runners
-must use synthetic data and reversible or isolated executors. Live evaluations must eventually be
-explicitly invoked outside the ordinary deterministic test command.
+storage, regression comparison, additional report exporters, or automatic sandboxing. Application
+runners must use synthetic data and reversible or isolated executors. Live evaluations must
+eventually be explicitly invoked outside the ordinary deterministic test command.
 
 The longer-term evaluation design retains these requirements:
 
@@ -710,12 +716,15 @@ untrusted input | model proposal | policy decision | observed side effect
 ```
 
 It lives entirely in the package workbench and does not add routes, views, or frontend assets to
-the distributed package. It also contains two independent labs:
+the distributed package. It also contains three independent labs:
 
 - Argument-bound cancellation approval: changed arguments fail, the exact approved action
   executes once, and replay fails.
 - Destination-bound context release: an allowlisted customer projection is authorized and prepared
   for a local Ollama connection while the same provider name in a remote trust zone is denied.
+- Deterministic security evaluation: the cross-customer attack and owned-order utility paths run
+  through the actual Verdict capability, then render separate scores and a redacted versioned
+  report.
 
 The primary path intentionally uses a captured proposal rather than a live provider. Holding the
 proposal constant makes the authorization comparison reproducible and requires no credentials.
@@ -934,8 +943,8 @@ This roadmap is directional and may change as the integration is prototyped.
 | Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Confirmation receipt slice implemented; broader identity and idempotency planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection and exact destination-route slice implemented; transforms and detectors planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders implemented; levels, events, and audit command planned |
-| Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, observations, assertions, redacted results, and separate security/utility scoring implemented; live runners, baselines, and reports planned |
-| Demo | Sandboxed eCommerce assistant and security trace | First deterministic workbench slice implemented; live-model path planned |
+| Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, observations, assertions, redacted JSON reports, and separate security/utility scoring implemented; live runners and baselines planned |
+| Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
 | Optional UI | Development viewer or framework-specific adapter | Exploratory |
 

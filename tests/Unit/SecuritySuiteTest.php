@@ -11,6 +11,7 @@ use Fissible\Verdict\Evaluation\EvaluationCase;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
+use Fissible\Verdict\Evaluation\ToolObservation;
 
 it('scores security containment separately from legitimate task utility', function (): void {
     $suite = new SecuritySuite(
@@ -193,4 +194,59 @@ it('rejects ambiguous suite case identifiers and incomplete security observation
         ->toThrow(InvalidArgumentException::class, 'case IDs must be unique')
         ->and(fn () => Assertions::outputExcludes(''))
         ->toThrow(InvalidArgumentException::class);
+});
+
+it('exports a versioned redacted report with evidence and separate scores', function (): void {
+    $secret = 'do-not-retain-this-attack';
+    $result = (new SecuritySuite(
+        name: 'reportable-suite',
+        version: '2',
+        cases: [EvaluationCase::attack(
+            id: 'blocked-action',
+            version: '3',
+            input: new CaseInput(['actor' => 72], ['payload' => $secret]),
+            runner: fn (): Observation => new Observation(
+                disposition: Disposition::Deny,
+                executed: false,
+                output: 'private output',
+                toolCalls: [new ToolObservation(
+                    capability: 'orders.view',
+                    argumentFingerprint: str_repeat('a', 64),
+                    disposition: Disposition::Deny,
+                    executed: false,
+                )],
+            ),
+            assertions: [Assertions::toolDidNotExecute('orders.view')],
+        )],
+        reproduction: new ReproductionMetadata(['policy' => 'orders@abc123']),
+    ))->run();
+
+    $report = $result->report()->toArray();
+    $json = $result->report()->toJson();
+
+    expect($report)->toMatchArray([
+        'schema' => 'verdict.evaluation-report.v1',
+        'suite' => 'reportable-suite',
+        'version' => '2',
+        'passed' => true,
+        'reproduction' => ['policy' => 'orders@abc123'],
+    ])
+        ->and($report['scores']['security'])->toMatchArray([
+            'passed' => 1,
+            'failed' => 0,
+            'errors' => 0,
+            'pass_rate' => 1.0,
+        ])
+        ->and($report['cases'][0]['observation'])->toMatchArray([
+            'disposition' => 'deny',
+            'executed' => false,
+            'tool_calls' => [[
+                'capability' => 'orders.view',
+                'argument_fingerprint' => str_repeat('a', 64),
+                'disposition' => 'deny',
+                'executed' => false,
+            ]],
+        ])
+        ->and($json)->not->toContain($secret)
+        ->and($json)->not->toContain('private output');
 });

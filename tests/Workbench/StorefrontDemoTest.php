@@ -113,8 +113,11 @@ it('does not execute or reveal results before the comparison is requested', func
         ->assertSee('Run confirmation flow')
         ->assertSee('Destination-bound context release')
         ->assertSee('Run data-release flow')
+        ->assertSee('Deterministic security evaluation')
+        ->assertSee('Run evaluation suite')
         ->assertDontSee('Changed reason rejected')
         ->assertDontSee('Customer profile before projection')
+        ->assertDontSee('verdict.evaluation-report.v1')
         ->assertDontSee('The approved executor wrote exactly once.');
 });
 
@@ -154,4 +157,19 @@ it('runs destination-bound context release independently from the other labs', f
         ->assertSee('No raw customer values are stored in these records.')
         ->assertDontSee('Naive Laravel AI tool')
         ->assertDontSee('Changed reason rejected');
+});
+
+it('runs the real deterministic evaluation suite independently from the other labs', function (): void {
+    $this->get('/?run_evaluation=1&order_id=1001')
+        ->assertOk()
+        ->assertSee('Security containment')
+        ->assertSee('Legitimate task utility')
+        ->assertSee('Cross customer order')
+        ->assertSee('Owned order')
+        ->assertSee('tool_did_not_execute')
+        ->assertSee('verdict.evaluation-report.v1')
+        ->assertSee('Raw case inputs and outputs are omitted from this report.')
+        ->assertDontSee('Naive Laravel AI tool')
+        ->assertDontSee('Changed reason rejected')
+        ->assertDontSee('Customer profile before projection');
 });

@@ -138,6 +138,19 @@
         .withheld-list code { border-radius: 999px; padding: 4px 8px; color: #c9d3e2; background: #0d1522; font-size: .7rem; }
         .release-evidence { margin-top: 14px; padding: 20px; }
         .release-evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+        .evaluation-scores { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+        .score-card { min-width: 0; padding: 20px; border-color: rgba(85, 214, 166, .42); }
+        .score-card strong { display: block; margin: 5px 0 12px; font-size: clamp(2rem, 5vw, 3.5rem); line-height: 1; letter-spacing: -.045em; }
+        .score-meta { display: flex; gap: 14px; flex-wrap: wrap; color: var(--muted); font-size: .78rem; }
+        .evaluation-cases { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+        .evaluation-case { min-width: 0; padding: 20px; }
+        .evaluation-case h3 { margin-bottom: 4px; }
+        .assertion-list { display: grid; gap: 7px; margin-top: 16px; }
+        .assertion { display: flex; justify-content: space-between; gap: 14px; padding: 9px 11px; border: 1px solid #314057; border-radius: 9px; background: rgba(5, 9, 16, .48); font: .73rem/1.35 ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .assertion span:last-child { color: var(--green); text-transform: uppercase; }
+        .report-evidence { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+        .report-evidence code { display: block; overflow-wrap: anywhere; color: #aebbd0; font: .7rem/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .report-meta { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-top: 14px; color: var(--muted); font-size: .76rem; }
         .results-section { scroll-margin-top: 24px; margin-top: 34px; }
         .results-intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
         .results-intro h2 { margin-bottom: 0; }
@@ -154,7 +167,7 @@
         footer { margin-top: 68px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .86rem; }
 
         @media (max-width: 880px) {
-            .comparison, .attempts, .release-results, .release-evidence-grid { grid-template-columns: 1fr; }
+            .comparison, .attempts, .release-results, .release-evidence-grid, .evaluation-scores, .evaluation-cases { grid-template-columns: 1fr; }
             .scenario { grid-template-columns: 1fr; }
             .effect-details { grid-template-columns: 1fr; }
             .results-intro { align-items: start; flex-direction: column; }
@@ -399,6 +412,75 @@
                     </div>
                 @endforeach
             </div>
+        </div>
+        @endif
+    </section>
+
+    <section id="evaluation-lab" class="results-section">
+        <p class="eyebrow">Deterministic security evaluation</p>
+        <h2>Contain attacks without breaking legitimate work.</h2>
+        <p class="section-copy">This independent suite executes both storefront order paths through the real Verdict capability. The attack case must be denied and the customer's own order must still work; harness errors remain separate from either result.</p>
+
+        <div class="panel lab-controls">
+            <p class="lab-control-copy"><strong>Evidence, not a claim:</strong> run versioned cases, inspect each assertion, and emit a redacted report with input, output, and tool-argument fingerprints.</p>
+            <form method="get" action="{{ route('verdict.demo') }}#evaluation-lab">
+                <input type="hidden" name="run_evaluation" value="1">
+                <input type="hidden" name="order_id" value="{{ $scenario['target']['id'] }}">
+                <button type="submit">{{ $hasEvaluationRun ? 'Run evaluation suite again' : 'Run evaluation suite' }}</button>
+            </form>
+        </div>
+
+        @if ($hasEvaluationRun)
+        <div class="evaluation-scores">
+            @foreach (['security' => 'Security containment', 'utility' => 'Legitimate task utility'] as $scoreKey => $scoreLabel)
+                @php($score = $evaluation['scores'][$scoreKey])
+                <article class="panel score-card">
+                    <p class="eyebrow">{{ $scoreLabel }}</p>
+                    <strong>{{ $score['pass_rate'] === null ? 'n/a' : number_format($score['pass_rate'] * 100) . '%' }}</strong>
+                    <div class="score-meta">
+                        <span>{{ $score['passed'] }} passed</span>
+                        <span>{{ $score['failed'] }} failed</span>
+                        <span>{{ $score['errors'] }} harness errors</span>
+                    </div>
+                </article>
+            @endforeach
+        </div>
+
+        <div class="evaluation-cases">
+            @foreach ($evaluation['cases'] as $case)
+                <article class="panel evaluation-case">
+                    <span class="badge {{ $case['status'] === 'passed' ? 'safe' : 'danger' }}">{{ $case['status'] }}</span>
+                    <h3>{{ str_replace('-', ' ', ucfirst($case['id'])) }}</h3>
+                    <p class="muted">{{ $case['purpose'] === 'security' ? 'Adversarial containment case' : 'Legitimate utility case' }} · version {{ $case['version'] }}</p>
+
+                    <div class="assertion-list">
+                        @foreach ($case['assertions'] as $assertion)
+                            <div class="assertion">
+                                <span>{{ $assertion['assertion'] }}</span>
+                                <span>{{ $assertion['passed'] ? 'pass' : 'fail' }}</span>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    <div class="report-evidence">
+                        <p class="eyebrow">Untrusted input fingerprint</p>
+                        <code>{{ $case['untrusted_input_fingerprint'] }}</code>
+                        @if ($case['observation'] !== null && $case['observation']['output_fingerprint'] !== null)
+                            <p class="eyebrow" style="margin-top: 12px;">Output fingerprint</p>
+                            <code>{{ $case['observation']['output_fingerprint'] }}</code>
+                        @endif
+                        @if ($case['error_class'] !== null)
+                            <p class="eyebrow" style="margin-top: 12px;">Harness error</p>
+                            <code>{{ $case['error_class'] }}</code>
+                        @endif
+                    </div>
+                </article>
+            @endforeach
+        </div>
+
+        <div class="report-meta">
+            <span>{{ $evaluation['schema'] }}</span>
+            <span>Raw case inputs and outputs are omitted from this report.</span>
         </div>
         @endif
     </section>

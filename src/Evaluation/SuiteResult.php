@@ -51,4 +51,9 @@ final readonly class SuiteResult
 
         return true;
     }
+
+    public function report(): EvaluationReport
+    {
+        return new EvaluationReport($this);
+    }
 }
