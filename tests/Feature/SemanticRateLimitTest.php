@@ -59,7 +59,7 @@ function semanticRateLimitCapability(int &$executions, int $limit = 2): Capabili
             'actor_id' => $envelope->context->actor,
         ],
         reason: 'Order lookup limit exceeded.',
-    ))->executeUsing(function (AuthorizedAction $action) use (&$executions): string {
+    ))->executionTarget(acceptTestSnapshot('semantic-limit-target-snapshot'))->executeUsing(function (AuthorizedAction $action) use (&$executions): string {
         $executions++;
 
         return 'executed';

@@ -30,8 +30,9 @@ it('shows that ordinary secure Laravel and Verdict both permit an owned order', 
         ->and($implementations['verdict']['status'])->toBe('returned')
         ->and($implementations['verdict']['disclosure']['customer_id'])->toBe(72)
         ->and($implementations['verdict']['definition_handler_invocations'])->toBe(0)
-        ->and($implementations['verdict']['evidence'])->toHaveCount(2)
-        ->and($implementations['verdict']['evidence'][1]['stage'])->toBe('execution');
+        ->and($implementations['verdict']['evidence'])->toHaveCount(3)
+        ->and($implementations['verdict']['evidence'][1]['stage'])->toBe('target_refresh')
+        ->and($implementations['verdict']['evidence'][2]['stage'])->toBe('execution');
 });
 
 it('demonstrates argument-bound approval and single-use execution', function (): void {
@@ -74,7 +75,9 @@ it('demonstrates argument-bound approval and single-use execution', function ():
                 'result' => 'cancelled',
             ],
         ])
-        ->and(collect($scenario['evidence'])->where('stage', 'approval'))->toHaveCount(1);
+        ->and(collect($scenario['evidence'])
+            ->where('stage', 'approval')
+            ->where('approval_phase', 'consumption'))->toHaveCount(1);
 });
 
 it('throttles aggregate carrier refreshes that Laravel individually permits', function (): void {

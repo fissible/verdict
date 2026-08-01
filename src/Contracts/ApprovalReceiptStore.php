@@ -28,6 +28,12 @@ interface ApprovalReceiptStore
         DateTimeImmutable $at,
     ): ApprovalTransition;
 
+    public function validate(
+        string $toolCallId,
+        string $bindingFingerprint,
+        DateTimeImmutable $at,
+    ): ApprovalTransition;
+
     public function consume(
         string $toolCallId,
         string $bindingFingerprint,

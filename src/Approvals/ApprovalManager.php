@@ -95,6 +95,42 @@ final readonly class ApprovalManager
 
     public function consume(Evaluation $evaluation): ApprovalTransition
     {
+        $stateFailure = $this->executionStateFailure($evaluation);
+
+        if ($stateFailure !== null) {
+            return $stateFailure;
+        }
+
+        /** @var string $toolCallId */
+        $toolCallId = $evaluation->envelope->proposal->idempotencyKey;
+
+        return $this->receipts->consume(
+            toolCallId: $toolCallId,
+            bindingFingerprint: $this->fingerprint($evaluation),
+            at: $this->clock->now(),
+        );
+    }
+
+    public function validate(Evaluation $evaluation): ApprovalTransition
+    {
+        $stateFailure = $this->executionStateFailure($evaluation);
+
+        if ($stateFailure !== null) {
+            return $stateFailure;
+        }
+
+        /** @var string $toolCallId */
+        $toolCallId = $evaluation->envelope->proposal->idempotencyKey;
+
+        return $this->receipts->validate(
+            toolCallId: $toolCallId,
+            bindingFingerprint: $this->fingerprint($evaluation),
+            at: $this->clock->now(),
+        );
+    }
+
+    private function executionStateFailure(Evaluation $evaluation): ?ApprovalTransition
+    {
         $toolCallId = $evaluation->envelope->proposal->idempotencyKey;
         $capability = $evaluation->capability;
 
@@ -105,11 +141,7 @@ final readonly class ApprovalManager
             return ApprovalTransition::to(ApprovalOutcome::InvalidState);
         }
 
-        return $this->receipts->consume(
-            toolCallId: $toolCallId,
-            bindingFingerprint: $this->fingerprint($evaluation),
-            at: $this->clock->now(),
-        );
+        return null;
     }
 
     private function fingerprint(Evaluation $evaluation): string
@@ -122,6 +154,7 @@ final readonly class ApprovalManager
 
         return ArgumentFingerprint::make([
             'capability' => $capability->name,
+            'execution_target_policy' => $capability->executionTargetPolicy()?->name,
             'arguments' => $evaluation->envelope->proposal->arguments,
             'binding' => $capability->approvalBinding($evaluation->envelope, $evaluation->target),
         ]);

@@ -124,23 +124,13 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
     ): ApprovalTransition {
         return $this->connection->transaction(function () use ($toolCallId, $bindingFingerprint, $at): ApprovalTransition {
             $receipt = $this->lockedReceiptForBindingFingerprint($toolCallId, $bindingFingerprint);
+            $validation = $this->validateReceipt($receipt, $bindingFingerprint, $at);
 
-            if ($receipt === null) {
-                return ApprovalTransition::to(ApprovalOutcome::NotFound);
+            if (! $validation->succeeded()) {
+                return $validation;
             }
 
-            if (! hash_equals($receipt->bindingFingerprint, $bindingFingerprint)) {
-                return ApprovalTransition::to(ApprovalOutcome::Mismatch, $receipt);
-            }
-
-            if ($receipt->isExpiredAt($at)) {
-                return ApprovalTransition::to(ApprovalOutcome::Expired, $receipt);
-            }
-
-            if ($receipt->status !== ApprovalReceiptStatus::Approved) {
-                return ApprovalTransition::to(ApprovalOutcome::InvalidState, $receipt);
-            }
-
+            /** @var ApprovalReceipt $receipt */
             $this->connection->table($this->table)
                 ->where('id', $receipt->id)
                 ->update([
@@ -151,6 +141,42 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
 
             return ApprovalTransition::to(ApprovalOutcome::Consumed, $this->findLocked($receipt->id));
         });
+    }
+
+    public function validate(
+        string $toolCallId,
+        string $bindingFingerprint,
+        DateTimeImmutable $at,
+    ): ApprovalTransition {
+        return $this->validateReceipt(
+            $this->receiptForBindingFingerprint($toolCallId, $bindingFingerprint),
+            $bindingFingerprint,
+            $at,
+        );
+    }
+
+    private function validateReceipt(
+        ?ApprovalReceipt $receipt,
+        string $bindingFingerprint,
+        DateTimeImmutable $at,
+    ): ApprovalTransition {
+        if ($receipt === null) {
+            return ApprovalTransition::to(ApprovalOutcome::NotFound);
+        }
+
+        if (! hash_equals($receipt->bindingFingerprint, $bindingFingerprint)) {
+            return ApprovalTransition::to(ApprovalOutcome::Mismatch, $receipt);
+        }
+
+        if ($receipt->isExpiredAt($at)) {
+            return ApprovalTransition::to(ApprovalOutcome::Expired, $receipt);
+        }
+
+        if ($receipt->status !== ApprovalReceiptStatus::Approved) {
+            return ApprovalTransition::to(ApprovalOutcome::InvalidState, $receipt);
+        }
+
+        return ApprovalTransition::to(ApprovalOutcome::Approved, $receipt);
     }
 
     private function existingIssue(ApprovalReceipt $existing, ApprovalReceipt $proposed): ApprovalTransition
@@ -218,6 +244,18 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             ->where('tool_call_id', $toolCallId)
             ->where('binding_fingerprint', $bindingFingerprint)
             ->lockForUpdate()
+            ->first();
+
+        return $row instanceof stdClass ? $this->receiptFromRow($row) : null;
+    }
+
+    private function receiptForBindingFingerprint(
+        string $toolCallId,
+        string $bindingFingerprint,
+    ): ?ApprovalReceipt {
+        $row = $this->connection->table($this->table)
+            ->where('tool_call_id', $toolCallId)
+            ->where('binding_fingerprint', $bindingFingerprint)
             ->first();
 
         return $row instanceof stdClass ? $this->receiptFromRow($row) : null;

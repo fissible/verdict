@@ -57,7 +57,7 @@ function executionClaimCapability(callable $executor): Capability
             'order_id' => $target->id,
             'order_version' => $target->version,
         ],
-    ))->executeUsing($executor);
+    ))->executionTarget(acceptTestSnapshot('execution-claim-target-snapshot'))->executeUsing($executor);
 }
 
 beforeEach(function (): void {

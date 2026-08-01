@@ -31,6 +31,13 @@ beforeEach(function (): void {
         $table->char('argument_fingerprint', 64)->nullable();
         $table->char('idempotency_key_fingerprint', 64)->nullable();
         $table->char('approval_receipt_fingerprint', 64)->nullable();
+        $table->string('approval_phase', 32)->nullable();
+        $table->string('approval_outcome', 32)->nullable();
+        $table->string('target_policy')->nullable();
+        $table->string('target_strategy', 32)->nullable();
+        $table->char('proposal_target_identity_fingerprint', 64)->nullable();
+        $table->char('execution_target_identity_fingerprint', 64)->nullable();
+        $table->boolean('target_identity_matched')->nullable();
         $table->char('rate_limit_key_fingerprint', 64)->nullable();
         $table->string('rate_limit_policy')->nullable();
         $table->unsignedInteger('rate_limit_limit')->nullable();
@@ -71,6 +78,13 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         argumentFingerprint: str_repeat('a', 64),
         idempotencyKey: 'provider-tool-call-secret',
         approvalReceiptFingerprint: null,
+        approvalPhase: 'execution_validation',
+        approvalOutcome: 'approved',
+        targetPolicy: 'order-primary-key',
+        targetStrategy: 'refresh',
+        proposalTargetIdentityFingerprint: str_repeat('e', 64),
+        executionTargetIdentityFingerprint: str_repeat('e', 64),
+        targetIdentityMatched: true,
         rateLimitKeyFingerprint: str_repeat('b', 64),
         rateLimitPolicy: 'per-customer',
         rateLimitLimit: 5,
@@ -100,6 +114,10 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         ->and((string) $row->disposition)->toBe('deny')
         ->and((string) $row->argument_fingerprint)->toBe(str_repeat('a', 64))
         ->and((string) $row->rate_limit_key_fingerprint)->toBe(str_repeat('b', 64))
+        ->and((string) $row->approval_phase)->toBe('execution_validation')
+        ->and((string) $row->approval_outcome)->toBe('approved')
+        ->and((string) $row->target_policy)->toBe('order-primary-key')
+        ->and((int) $row->target_identity_matched)->toBe(1)
         ->and((string) $row->rate_limit_policy)->toBe('per-customer')
         ->and((int) $row->rate_limit_remaining)->toBe(4)
         ->and((string) $row->execution_claim_fingerprint)->toBe(str_repeat('c', 64))

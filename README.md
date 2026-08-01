@@ -122,7 +122,21 @@ use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\Facades\Verdict;
+use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Laravel\Ai\Tools\Request;
+
+$orderTargetPolicy = ExecutionTargetPolicy::refresh(
+    name: 'order-primary-key',
+    identityUsing: fn (ActionEnvelope $envelope, Order $order): array => [
+        'tenant_id' => $order->tenant_id,
+        'resource_type' => 'order',
+        'resource_id' => $order->getKey(),
+    ],
+    refreshUsing: fn (ActionEnvelope $envelope, Order $proposalTarget): Order => Order::query()
+        ->where('tenant_id', $proposalTarget->tenant_id)
+        ->find($proposalTarget->getKey())
+        ?? throw TargetNotResolvable::make(),
+);
 
 Verdict::capability(Capability::usingPolicy(
     name: 'orders.view',
@@ -130,7 +144,7 @@ Verdict::capability(Capability::usingPolicy(
     resolveTarget: fn (ActionEnvelope $envelope): Order => Order::find(
         $envelope->proposal->arguments['order_id'],
     ) ?? throw TargetNotResolvable::make(),
-)->executeUsing(function (AuthorizedAction $action): string {
+)->executionTarget($orderTargetPolicy)->executeUsing(function (AuthorizedAction $action): string {
     if (! $action->target instanceof Order) {
         throw new LogicException('Expected a bound order.');
     }
@@ -157,10 +171,11 @@ final class StorefrontAgent implements HasTools
 requirement, but never calls that tool's `handle()` method. At invocation time it:
 
 1. Binds the server-provided actor and untrusted proposal into an envelope.
-2. Resolves one canonical target.
-3. Asks Laravel's Gate to inspect the target at the proposal stage.
-4. Re-inspects the same in-memory target immediately before execution.
-5. Passes an `AuthorizedAction` containing that target to the capability's deterministic executor.
+2. Resolves a proposal-stage target and asks Laravel's Gate to inspect it.
+3. Requires the capability to select an explicit execution-target policy.
+4. Fingerprints stable resource identity before refreshing or explicitly accepting the snapshot.
+5. Denies resource substitution and re-inspects the execution target with Laravel's Gate.
+6. Uses that same execution target for approval, rate, claim, and deterministic executor bindings.
 
 Missing capabilities, expected target-resolution failures, missing executors, and either denied
 authorization produce a recorded denial. Capability resolvers signal an expected missing or stale
@@ -176,13 +191,17 @@ handler is not an execution fallback.
 > an independent handler, so Verdict cannot establish that the handler acts on the same target.
 > Use `BoundTool` for new capabilities.
 
-The execution-stage check currently reuses the proposal-stage target object. It can observe
-in-process changes to that object, but it does not reload external state and does not narrow a
-database time-of-check/time-of-use race. [ADR 0003](docs/adr/0003-execution-target-freshness.md)
-defines an explicit target-at-execution policy, canonical target identity, refreshed approval
-binding, and fail-closed snapshot acknowledgement. It deliberately leaves transactions and locking
-for a separate design. Until that decision is implemented, mutating executors remain responsible
-for ordinary Laravel freshness, transaction, locking, and idempotency practices.
+`ExecutionTargetPolicy::refresh(...)` derives the second read from trusted context and the resolved
+proposal target, not by reparsing model-controlled identifiers. Stable identity must match before
+execution authorization. Immutable or request-local targets may instead select the deliberately
+cautionary `acceptStaleSnapshot(...)`; silent snapshot reuse fails closed. Target-refresh evidence
+stores opaque identity fingerprints rather than raw identifiers.
+
+Fresh resolution narrows but does not eliminate the time-of-check/time-of-use window between the
+second read, authorization, and execution. [ADR 0003](docs/adr/0003-execution-target-freshness.md)
+defines this boundary and deliberately leaves transactions and locking for a separate design.
+Mutating executors remain responsible for appropriate transaction, locking, outbox, and downstream
+idempotency practices.
 
 The model-provided tool-call ID is captured as transport metadata in evidence, not trusted as the
 identity of a logical operation. The confirmation slice described below enforces expiring,
@@ -203,7 +222,7 @@ Verdict::capability(
         resolveTarget: fn (ActionEnvelope $envelope) => Order::find(
             $envelope->proposal->arguments['order_id'],
         ) ?? throw TargetNotResolvable::make(),
-    )->requiresConfirmation(
+    )->executionTarget($orderTargetPolicy)->requiresConfirmation(
         bindUsing: fn (ActionEnvelope $envelope, Order $order): array => [
             'actor_id' => $envelope->context->actor->getAuthIdentifier(),
             'tenant_id' => $order->tenant_id,
@@ -216,10 +235,11 @@ Verdict::capability(
 );
 ```
 
-Verdict always includes the capability name and complete proposed arguments in the receipt
-fingerprint. The binding adds identity and canonical resource state that Verdict cannot infer for
-an arbitrary target. Include the principal, tenant, resource identity, and any state change that
-must invalidate approval. Raw binding values are hashed rather than stored in the receipt.
+Verdict always includes the capability name, execution-target policy name, and complete proposed
+arguments in the receipt fingerprint. The binding adds identity and canonical resource state that
+Verdict cannot infer for an arbitrary target. Include the principal, tenant, resource identity, and
+any state change that must invalidate approval. Raw binding values are hashed rather than stored in
+the receipt.
 
 Add `VerdictApprovalMiddleware` to an agent that resumes protected approvals:
 
@@ -494,7 +514,8 @@ the same logical operation.
 
 ## Strict at-most-once executor admission
 
-A mutating capability may opt into durable duplicate admission prevention:
+A mutating capability may opt into durable duplicate admission prevention. This and the rate-limit
+example below reuse the application-defined `$orderTargetPolicy` from the capability example:
 
 ```php
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
@@ -505,7 +526,7 @@ $capability = Capability::usingPolicy(
     resolveTarget: fn (ActionEnvelope $envelope): Order => Order::find(
         $envelope->proposal->arguments['order_id'],
     ) ?? throw TargetNotResolvable::make(),
-)->atMostOnce(ExecutionClaimPolicy::named(
+)->executionTarget($orderTargetPolicy)->atMostOnce(ExecutionClaimPolicy::named(
     name: 'cancel-order-version',
     keyUsing: fn (ActionEnvelope $envelope, Order $order): array => [
         'tenant_id' => $order->tenant_id,
@@ -522,10 +543,11 @@ Do not use the provider tool-call ID as that identity: transports may redeliver 
 ID, and the same ID may be reused incorrectly. Verdict hashes the capability, policy name, and
 canonical binding before storage; raw binding values are not retained.
 
-The claim is the final gate immediately before the executor. Authorization and confirmation run
-first, then a configured semantic rate limit consumes an authorized-attempt unit, then the claim is
-atomically admitted. One caller enters the executor. Later or concurrent duplicates are denied
-while the claim is active, completed, or indeterminate.
+The claim is the final gate immediately before the executor. Authorization and non-mutating approval
+validation run first, a configured semantic rate limit consumes an authorized-attempt unit, an
+applicable approval receipt is atomically consumed, and then the claim is atomically admitted. One
+caller enters the executor. Later or concurrent duplicates are denied while the claim is active,
+completed, or indeterminate.
 
 If the executor throws after admission, Verdict marks the outcome indeterminate and rethrows the
 original exception. It does not guess whether an external side effect occurred, silently retry, or
@@ -575,7 +597,7 @@ $capability = Capability::usingPolicy(
     resolveTarget: fn (ActionEnvelope $envelope): Order => Order::find(
         $envelope->proposal->arguments['order_id'],
     ) ?? throw TargetNotResolvable::make(),
-)->rateLimit(RateLimitPolicy::fixedWindow(
+)->executionTarget($orderTargetPolicy)->rateLimit(RateLimitPolicy::fixedWindow(
     name: 'per-customer',
     limit: 10,
     windowSeconds: 60,
@@ -589,9 +611,11 @@ $capability = Capability::usingPolicy(
 
 The application defines the bucket from trusted context and the server-resolved target. Verdict
 hashes that binding together with the capability, policy, and window before it reaches storage.
-The unit is consumed after authorization and confirmation, immediately before execution. Policy
-denials and unsuccessful approval checks do not consume it. Database failures stop execution and
-remain visible as application faults rather than being mislabeled as throttles.
+The unit is consumed after authorization and successful non-mutating approval validation, but before
+atomic approval-receipt consumption. Policy denials, pending confirmations, and ordinary
+unsuccessful approval checks do not consume it. A validation/consumption race can waste a
+time-recoverable unit, but cannot execute without winning receipt consumption. Database failures
+stop execution and remain visible as application faults rather than being mislabeled as throttles.
 
 A consumed unit means an authorized execution **attempt**, not a guaranteed successful external
 side effect. A duplicate can therefore consume a unit before an execution claim blocks it; this is
@@ -639,8 +663,10 @@ encryption. A hash of predictable personal information is not anonymization.
 
 The implementation records action decisions and context-release decisions through an
 `EvidenceRecorder` contract. Action records include stage, envelope ID, capability, detailed
-internal reason, timestamp, and a deterministic SHA-256 fingerprint of normalized arguments. A
-confirmed bound execution also records an approval-stage permit with a hashed receipt reference.
+internal reason, timestamp, and a deterministic SHA-256 fingerprint of normalized arguments.
+Target-refresh records contain policy, strategy, proposal/execution identity fingerprints, and the
+match result. Confirmed bound executions distinguish proposal validation, execution validation, and
+atomic consumption while retaining only a hashed receipt reference.
 Context-release records contain the labeled route, classification, disposition, field-path and
 transform fingerprints, transformation count, and released-payload fingerprint. Neither record
 type includes raw arguments or released payload values.
@@ -1113,10 +1139,10 @@ This roadmap is directional and may change as the integration is prototyped.
 |---|---|---|
 | Design | Threat model, vocabulary, package boundary, demo design | Documented; ongoing |
 | Runtime foundation | Capability registry, bound and guarded tools, staged decisions, Laravel Policy integration | First slice implemented |
-| Identity and execution | Principal/tenant binding, confirmation state, expiry, duplicate admission, idempotency | Confirmation receipts and opt-in strict at-most-once executor admission implemented; broader identity and exactly-once effect design remains application-specific |
+| Identity and execution | Principal/tenant binding, target freshness, confirmation state, expiry, duplicate admission, idempotency | Explicit execution-target refresh/snapshot policies, confirmation receipts, and opt-in strict at-most-once executor admission implemented; transactional execution and exactly-once effects remain application-specific |
 | Semantic limits | Per-capability execution attempts, trusted bucket bindings, durable counters, throttle evidence | Fixed-window execution-limit slice implemented; proposal, conversation, cost, and cumulative-risk budgets planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection, structured redaction, transform non-expansion, and exact destination routes implemented; detectors and validators planned |
-| Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders implemented; levels, events, and audit command planned |
+| Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders include target-refresh and phased approval evidence; levels, retention tooling, events, and audit command planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, and repo-native baseline comparison implemented; live runners, baseline tooling, and statistical thresholds planned |
 | Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, semantic-limit, at-most-once admission, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |

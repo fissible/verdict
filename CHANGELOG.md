@@ -43,3 +43,7 @@ All notable changes to Verdict will be documented in this file.
   bindings, durable atomic claim state, redacted evidence, and explicit operator reconciliation.
 - Add an independent storefront lab demonstrating that changed provider call IDs and non-material
   prose cannot bypass a canonical operation claim.
+- Add mandatory execution-target policies for `BoundTool`, including trusted refresh, canonical
+  identity comparison, explicit stale-snapshot acknowledgement, and redacted freshness evidence.
+- Validate approval receipts without mutation before rate limiting, then consume approval atomically
+  before final execution-claim admission, with distinct evidence phases for each approval check.

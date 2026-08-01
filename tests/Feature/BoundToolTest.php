@@ -107,7 +107,7 @@ function boundOrderCapability(array $orders, callable $executor, ?int &$resoluti
 
             return $orders[$envelope->proposal->arguments['order_id']];
         },
-    )->executeUsing($executor);
+    )->executionTarget(acceptTestSnapshot('bound-order-snapshot'))->executeUsing($executor);
 }
 
 it('executes with the exact canonical target and never calls the definition handler', function (): void {
@@ -149,8 +149,8 @@ it('executes with the exact canonical target and never calls the definition hand
         throw new LogicException('Expected the in-memory evidence recorder.');
     }
 
-    expect(array_column($recorder->all(), 'stage'))->toBe(['proposal', 'execution'])
-        ->and(array_column($recorder->all(), 'disposition'))->toBe(['permit', 'permit']);
+    expect(array_column($recorder->all(), 'stage'))->toBe(['proposal', 'target_refresh', 'execution'])
+        ->and(array_column($recorder->all(), 'disposition'))->toBe(['permit', 'permit', 'permit']);
 });
 
 it('re-authorizes the same target and stops execution when authority changes', function (): void {
@@ -190,8 +190,8 @@ it('re-authorizes the same target and stops execution when authority changes', f
         throw new LogicException('Expected the in-memory evidence recorder.');
     }
 
-    expect(array_column($recorder->all(), 'stage'))->toBe(['proposal', 'execution'])
-        ->and(array_column($recorder->all(), 'disposition'))->toBe(['permit', 'deny']);
+    expect(array_column($recorder->all(), 'stage'))->toBe(['proposal', 'target_refresh', 'execution'])
+        ->and(array_column($recorder->all(), 'disposition'))->toBe(['permit', 'permit', 'deny']);
 });
 
 it('fails closed when a bound capability has no executor', function (): void {

@@ -18,6 +18,13 @@ final readonly class DecisionEvidence
         public string $argumentFingerprint,
         public ?string $idempotencyKey,
         public ?string $approvalReceiptFingerprint,
+        public ?string $approvalPhase,
+        public ?string $approvalOutcome,
+        public ?string $targetPolicy,
+        public ?string $targetStrategy,
+        public ?string $proposalTargetIdentityFingerprint,
+        public ?string $executionTargetIdentityFingerprint,
+        public ?bool $targetIdentityMatched,
         public ?string $rateLimitKeyFingerprint,
         public ?string $rateLimitPolicy,
         public ?int $rateLimitLimit,
@@ -43,6 +50,27 @@ final readonly class DecisionEvidence
             idempotencyKey: $evaluation->envelope->proposal->idempotencyKey,
             approvalReceiptFingerprint: is_string($evaluation->decision->metadata['approval_receipt_fingerprint'] ?? null)
                 ? $evaluation->decision->metadata['approval_receipt_fingerprint']
+                : null,
+            approvalPhase: is_string($evaluation->decision->metadata['approval_phase'] ?? null)
+                ? $evaluation->decision->metadata['approval_phase']
+                : null,
+            approvalOutcome: is_string($evaluation->decision->metadata['approval_outcome'] ?? null)
+                ? $evaluation->decision->metadata['approval_outcome']
+                : null,
+            targetPolicy: is_string($evaluation->decision->metadata['target_policy'] ?? null)
+                ? $evaluation->decision->metadata['target_policy']
+                : null,
+            targetStrategy: is_string($evaluation->decision->metadata['target_strategy'] ?? null)
+                ? $evaluation->decision->metadata['target_strategy']
+                : null,
+            proposalTargetIdentityFingerprint: is_string($evaluation->decision->metadata['proposal_target_identity_fingerprint'] ?? null)
+                ? $evaluation->decision->metadata['proposal_target_identity_fingerprint']
+                : null,
+            executionTargetIdentityFingerprint: is_string($evaluation->decision->metadata['execution_target_identity_fingerprint'] ?? null)
+                ? $evaluation->decision->metadata['execution_target_identity_fingerprint']
+                : null,
+            targetIdentityMatched: is_bool($evaluation->decision->metadata['target_identity_matched'] ?? null)
+                ? $evaluation->decision->metadata['target_identity_matched']
                 : null,
             rateLimitKeyFingerprint: is_string($evaluation->decision->metadata['rate_limit_key_fingerprint'] ?? null)
                 ? $evaluation->decision->metadata['rate_limit_key_fingerprint']

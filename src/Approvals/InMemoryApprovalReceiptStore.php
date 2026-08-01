@@ -107,6 +107,41 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
     ): ApprovalTransition {
         $receipt = $this->findForBindingFingerprint($toolCallId, $bindingFingerprint);
 
+        $validation = $this->validateReceipt($receipt, $bindingFingerprint, $at);
+
+        if (! $validation->succeeded()) {
+            return $validation;
+        }
+
+        /** @var ApprovalReceipt $receipt */
+        $updated = $this->replace(
+            $receipt,
+            status: ApprovalReceiptStatus::Consumed,
+            consumedAt: $at,
+            updatedAt: $at,
+        );
+
+        return ApprovalTransition::to(ApprovalOutcome::Consumed, $updated);
+    }
+
+    public function validate(
+        string $toolCallId,
+        string $bindingFingerprint,
+        DateTimeImmutable $at,
+    ): ApprovalTransition {
+        return $this->validateReceipt(
+            $this->findForBindingFingerprint($toolCallId, $bindingFingerprint),
+            $bindingFingerprint,
+            $at,
+        );
+    }
+
+    private function validateReceipt(
+        ?ApprovalReceipt $receipt,
+        string $bindingFingerprint,
+        DateTimeImmutable $at,
+    ): ApprovalTransition {
+
         if ($receipt === null) {
             return ApprovalTransition::to(ApprovalOutcome::NotFound);
         }
@@ -123,14 +158,7 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
             return ApprovalTransition::to(ApprovalOutcome::InvalidState, $receipt);
         }
 
-        $updated = $this->replace(
-            $receipt,
-            status: ApprovalReceiptStatus::Consumed,
-            consumedAt: $at,
-            updatedAt: $at,
-        );
-
-        return ApprovalTransition::to(ApprovalOutcome::Consumed, $updated);
+        return ApprovalTransition::to(ApprovalOutcome::Approved, $receipt);
     }
 
     /** @return array<string, ApprovalReceipt> */

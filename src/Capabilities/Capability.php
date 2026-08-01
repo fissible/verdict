@@ -10,6 +10,7 @@ use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
+use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use InvalidArgumentException;
 use LogicException;
 
@@ -43,6 +44,7 @@ final readonly class Capability
         private ?int $confirmationTtlSeconds = null,
         private ?RateLimitPolicy $rateLimitPolicy = null,
         private ?ExecutionClaimPolicy $executionClaimPolicy = null,
+        private ?ExecutionTargetPolicy $executionTargetPolicy = null,
     ) {
         if (trim($this->name) === '') {
             throw new InvalidArgumentException('A capability must have a name.');
@@ -87,6 +89,7 @@ final readonly class Capability
             confirmationTtlSeconds: $this->confirmationTtlSeconds,
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
+            executionTargetPolicy: $this->executionTargetPolicy,
         );
     }
 
@@ -114,6 +117,7 @@ final readonly class Capability
             confirmationTtlSeconds: $ttlSeconds,
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
+            executionTargetPolicy: $this->executionTargetPolicy,
         );
     }
 
@@ -129,6 +133,7 @@ final readonly class Capability
             confirmationTtlSeconds: $this->confirmationTtlSeconds,
             rateLimitPolicy: $policy,
             executionClaimPolicy: $this->executionClaimPolicy,
+            executionTargetPolicy: $this->executionTargetPolicy,
         );
     }
 
@@ -149,12 +154,34 @@ final readonly class Capability
             confirmationTtlSeconds: $this->confirmationTtlSeconds,
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $policy,
+            executionTargetPolicy: $this->executionTargetPolicy,
         );
     }
 
     public function executionClaimPolicy(): ?ExecutionClaimPolicy
     {
         return $this->executionClaimPolicy;
+    }
+
+    public function executionTarget(ExecutionTargetPolicy $policy): self
+    {
+        return new self(
+            name: $this->name,
+            ability: $this->ability,
+            resolveTarget: $this->targetResolver,
+            executor: $this->executor,
+            approvalBindingResolver: $this->approvalBindingResolver,
+            confirmationReason: $this->confirmationReason,
+            confirmationTtlSeconds: $this->confirmationTtlSeconds,
+            rateLimitPolicy: $this->rateLimitPolicy,
+            executionClaimPolicy: $this->executionClaimPolicy,
+            executionTargetPolicy: $policy,
+        );
+    }
+
+    public function executionTargetPolicy(): ?ExecutionTargetPolicy
+    {
+        return $this->executionTargetPolicy;
     }
 
     public function confirmationRequired(): bool

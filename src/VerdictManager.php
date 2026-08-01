@@ -7,7 +7,10 @@ namespace Fissible\Verdict;
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
+use Fissible\Verdict\Approvals\ApprovalEvidencePhase;
 use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ApprovalOutcome;
+use Fissible\Verdict\Approvals\ApprovalTransition;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Context\ContextReleaseManager;
@@ -20,6 +23,7 @@ use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Decisions\ExecutionResult;
+use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Exceptions\ExecutionClaimFinalizationFailed;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
@@ -28,6 +32,7 @@ use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
 use Fissible\Verdict\RateLimits\RateLimitManager;
+use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Illuminate\Contracts\Support\Arrayable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -127,30 +132,10 @@ final readonly class VerdictManager
     {
         $proposalEvaluation = $this->evaluate($envelope);
 
-        if ($proposalEvaluation->decision->disposition === Disposition::RequireConfirmation) {
-            $receipt = $this->approvals->consume($proposalEvaluation);
-
-            if (! $receipt->succeeded()) {
-                return ExecutionResult::denied($proposalEvaluation);
-            }
-
-            $proposalEvaluation = $this->record(new Evaluation(
-                envelope: $envelope,
-                capability: $proposalEvaluation->capability,
-                target: $proposalEvaluation->target,
-                decision: Decision::permit(
-                    reason: 'An approved action receipt was consumed.',
-                    metadata: [
-                        'approval_receipt_fingerprint' => $receipt->receipt === null
-                            ? null
-                            : hash('sha256', $receipt->receipt->id),
-                    ],
-                ),
-                stage: EvaluationStage::Approval,
-            ));
-        }
-
-        if (! $proposalEvaluation->decision->permitsExecution()) {
+        if (! in_array($proposalEvaluation->decision->disposition, [
+            Disposition::Permit,
+            Disposition::RequireConfirmation,
+        ], true)) {
             return ExecutionResult::denied($proposalEvaluation);
         }
 
@@ -166,11 +151,43 @@ final readonly class VerdictManager
             )));
         }
 
+        $targetPolicy = $capability->executionTargetPolicy();
+
+        if ($targetPolicy === null) {
+            return ExecutionResult::denied($this->record(new Evaluation(
+                envelope: $envelope,
+                capability: $capability,
+                target: $proposalEvaluation->target,
+                decision: Decision::deny('Capability does not define an execution-target policy.'),
+                stage: EvaluationStage::Execution,
+            )));
+        }
+
+        $confirmationRequired = $proposalEvaluation->decision->disposition === Disposition::RequireConfirmation;
+
+        if ($confirmationRequired) {
+            $approvalEvaluation = $this->approvalEvaluation(
+                $proposalEvaluation,
+                $this->approvals->validate($proposalEvaluation),
+                ApprovalEvidencePhase::ProposalValidation,
+            );
+
+            if (! $approvalEvaluation->decision->permitsExecution()) {
+                return ExecutionResult::denied($approvalEvaluation);
+            }
+        }
+
+        $refreshEvaluation = $this->refreshTarget($proposalEvaluation, $targetPolicy);
+
+        if (! $refreshEvaluation->decision->permitsExecution()) {
+            return ExecutionResult::denied($refreshEvaluation);
+        }
+
         $executionEvaluation = $this->record(new Evaluation(
             envelope: $envelope,
             capability: $capability,
-            target: $proposalEvaluation->target,
-            decision: $this->authorizer->decide($capability, $envelope, $proposalEvaluation->target),
+            target: $refreshEvaluation->target,
+            decision: $this->authorizer->decide($capability, $envelope, $refreshEvaluation->target),
             stage: EvaluationStage::Execution,
         ));
 
@@ -178,7 +195,37 @@ final readonly class VerdictManager
             return ExecutionResult::denied($executionEvaluation);
         }
 
-        return $this->execute(
+        if ($confirmationRequired) {
+            $approvalEvaluation = $this->approvalEvaluation(
+                $executionEvaluation,
+                $this->approvals->validate($executionEvaluation),
+                ApprovalEvidencePhase::ExecutionValidation,
+            );
+
+            if (! $approvalEvaluation->decision->permitsExecution()) {
+                return ExecutionResult::denied($approvalEvaluation);
+            }
+        }
+
+        $rateLimitEvaluation = $this->rateLimit($executionEvaluation);
+
+        if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
+            return ExecutionResult::denied($rateLimitEvaluation);
+        }
+
+        if ($confirmationRequired) {
+            $approvalEvaluation = $this->approvalEvaluation(
+                $executionEvaluation,
+                $this->approvals->consume($executionEvaluation),
+                ApprovalEvidencePhase::Consumption,
+            );
+
+            if (! $approvalEvaluation->decision->permitsExecution()) {
+                return ExecutionResult::denied($approvalEvaluation);
+            }
+        }
+
+        return $this->executeAfterRateLimit(
             $executionEvaluation,
             fn (): mixed => $capability->execute(AuthorizedAction::fromExecutionEvaluation($executionEvaluation)),
         );
@@ -208,7 +255,9 @@ final readonly class VerdictManager
 
         $capability = $this->capabilities->get($envelope->proposal->capability);
 
-        if (! $capability->confirmationRequired()) {
+        if (! $capability->confirmationRequired()
+            || ! $capability->isExecutable()
+            || $capability->executionTargetPolicy() === null) {
             return null;
         }
 
@@ -266,6 +315,12 @@ final readonly class VerdictManager
             return ExecutionResult::denied($rateLimitEvaluation);
         }
 
+        return $this->executeAfterRateLimit($evaluation, $executor);
+    }
+
+    /** @param callable(): mixed $executor */
+    private function executeAfterRateLimit(Evaluation $evaluation, callable $executor): ExecutionResult
+    {
         $admission = $this->claimExecution($evaluation);
 
         if ($admission !== null && ! $admission->admitted()) {
@@ -303,6 +358,124 @@ final readonly class VerdictManager
         }
 
         return ExecutionResult::executed($evaluation, $output);
+    }
+
+    private function approvalEvaluation(
+        Evaluation $evaluation,
+        ApprovalTransition $transition,
+        ApprovalEvidencePhase $phase,
+    ): Evaluation {
+        $succeeded = match ($phase) {
+            ApprovalEvidencePhase::ProposalValidation,
+            ApprovalEvidencePhase::ExecutionValidation => $transition->outcome === ApprovalOutcome::Approved,
+            ApprovalEvidencePhase::Consumption => $transition->outcome === ApprovalOutcome::Consumed,
+        };
+        $metadata = [
+            'approval_phase' => $phase->value,
+            'approval_outcome' => $transition->outcome->value,
+            'approval_receipt_fingerprint' => $transition->receipt === null
+                ? null
+                : hash('sha256', $transition->receipt->id),
+        ];
+
+        return $this->record(new Evaluation(
+            envelope: $evaluation->envelope,
+            capability: $evaluation->capability,
+            target: $evaluation->target,
+            decision: $succeeded
+                ? Decision::permit(
+                    $phase === ApprovalEvidencePhase::Consumption
+                        ? 'An approved action receipt was consumed.'
+                        : 'An approved action receipt was validated.',
+                    $metadata,
+                )
+                : Decision::requireConfirmation(
+                    "Approval receipt {$phase->value} failed with outcome {$transition->outcome->value}.",
+                    $metadata,
+                ),
+            stage: EvaluationStage::Approval,
+        ));
+    }
+
+    private function refreshTarget(
+        Evaluation $proposalEvaluation,
+        ExecutionTargetPolicy $policy,
+    ): Evaluation {
+        $capability = $proposalEvaluation->capability;
+
+        if ($capability === null) {
+            throw new \LogicException('Target refresh requires a resolved capability.');
+        }
+
+        $proposalFingerprint = $this->targetIdentityFingerprint(
+            $capability,
+            $policy,
+            $proposalEvaluation,
+            $proposalEvaluation->target,
+        );
+        $baseMetadata = [
+            'target_policy' => $policy->name,
+            'target_strategy' => $policy->strategy->value,
+            'proposal_target_identity_fingerprint' => $proposalFingerprint,
+        ];
+
+        try {
+            $executionTarget = $policy->targetForExecution(
+                $proposalEvaluation->envelope,
+                $proposalEvaluation->target,
+            );
+        } catch (TargetNotResolvable) {
+            return $this->record(new Evaluation(
+                envelope: $proposalEvaluation->envelope,
+                capability: $capability,
+                target: null,
+                decision: Decision::deny(TargetNotResolvable::DECISION_REASON, [
+                    ...$baseMetadata,
+                    'execution_target_identity_fingerprint' => null,
+                    'target_identity_matched' => null,
+                ]),
+                stage: EvaluationStage::TargetRefresh,
+            ));
+        }
+
+        $executionFingerprint = $this->targetIdentityFingerprint(
+            $capability,
+            $policy,
+            $proposalEvaluation,
+            $executionTarget,
+        );
+        $matches = hash_equals($proposalFingerprint, $executionFingerprint);
+
+        return $this->record(new Evaluation(
+            envelope: $proposalEvaluation->envelope,
+            capability: $capability,
+            target: $executionTarget,
+            decision: $matches
+                ? Decision::permit('Execution target identity matched the proposal target.', [
+                    ...$baseMetadata,
+                    'execution_target_identity_fingerprint' => $executionFingerprint,
+                    'target_identity_matched' => true,
+                ])
+                : Decision::deny('Execution target identity did not match the proposal target.', [
+                    ...$baseMetadata,
+                    'execution_target_identity_fingerprint' => $executionFingerprint,
+                    'target_identity_matched' => false,
+                ]),
+            stage: EvaluationStage::TargetRefresh,
+        ));
+    }
+
+    private function targetIdentityFingerprint(
+        Capability $capability,
+        ExecutionTargetPolicy $policy,
+        Evaluation $evaluation,
+        mixed $target,
+    ): string {
+        return ArgumentFingerprint::make([
+            'capability' => $capability->name,
+            'target_policy' => $policy->name,
+            'identity' => $policy->identity($evaluation->envelope, $target),
+        ]);
     }
 
     private function claimExecution(Evaluation $evaluation): ?ExecutionClaimAdmission

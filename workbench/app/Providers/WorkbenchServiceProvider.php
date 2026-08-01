@@ -22,6 +22,7 @@ use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
+use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
@@ -85,7 +86,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
                 resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
                     (int) $envelope->proposal->arguments['order_id'],
                 ),
-            )->executeUsing(function (AuthorizedAction $action): string {
+            )->executionTarget($this->orderTargetPolicy($catalog))->executeUsing(function (AuthorizedAction $action): string {
                 if (! $action->target instanceof Order) {
                     throw new LogicException('The storefront view capability expected an order.');
                 }
@@ -101,7 +102,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
                 resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
                     (int) $envelope->proposal->arguments['order_id'],
                 ),
-            )->rateLimit(RateLimitPolicy::fixedWindow(
+            )->executionTarget($this->orderTargetPolicy($catalog))->rateLimit(RateLimitPolicy::fixedWindow(
                 name: 'per-customer-order',
                 limit: 2,
                 windowSeconds: 60,
@@ -143,7 +144,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
                 resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
                     (int) $envelope->proposal->arguments['order_id'],
                 ),
-            )->requiresConfirmation(
+            )->executionTarget($this->orderTargetPolicy($catalog))->requiresConfirmation(
                 bindUsing: function (ActionEnvelope $envelope, Order $order): array {
                     $actorId = $envelope->context->actor instanceof Authenticatable
                         ? $envelope->context->actor->getAuthIdentifier()
@@ -179,7 +180,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
                 resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
                     (int) $envelope->proposal->arguments['order_id'],
                 ),
-            )->atMostOnce(ExecutionClaimPolicy::named(
+            )->executionTarget($this->orderTargetPolicy($catalog))->atMostOnce(ExecutionClaimPolicy::named(
                 name: 'customer-order-version',
                 keyUsing: function (ActionEnvelope $envelope, Order $order): array {
                     $actorId = $envelope->context->actor instanceof Authenticatable
@@ -212,5 +213,20 @@ final class WorkbenchServiceProvider extends ServiceProvider
         );
 
         $this->loadViewsFrom(__DIR__.'/../../resources/views', 'verdict-workbench');
+    }
+
+    private function orderTargetPolicy(Catalog $catalog): ExecutionTargetPolicy
+    {
+        return ExecutionTargetPolicy::refresh(
+            name: 'storefront-order-primary-key',
+            identityUsing: fn (ActionEnvelope $envelope, Order $order): array => [
+                'tenant_id' => $envelope->context->metadata['tenant_id'] ?? null,
+                'resource_type' => 'order',
+                'resource_id' => $order->id,
+            ],
+            refreshUsing: fn (ActionEnvelope $envelope, Order $proposalTarget): Order => $catalog->order(
+                $proposalTarget->id,
+            ),
+        );
     }
 }
