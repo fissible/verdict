@@ -15,7 +15,10 @@ use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
+use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Support\Facades\Gate;
@@ -34,6 +37,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
         $this->app->scoped(ActionLog::class);
         $this->app->scoped(InMemoryEvidenceRecorder::class);
         $this->app->scoped(InMemoryApprovalReceiptStore::class);
+        $this->app->scoped(InMemoryRateLimitStore::class);
         $this->app->scoped(
             EvidenceRecorder::class,
             fn () => $this->app->make(InMemoryEvidenceRecorder::class),
@@ -42,9 +46,14 @@ final class WorkbenchServiceProvider extends ServiceProvider
             ApprovalReceiptStore::class,
             fn () => $this->app->make(InMemoryApprovalReceiptStore::class),
         );
+        $this->app->scoped(
+            RateLimitStore::class,
+            fn () => $this->app->make(InMemoryRateLimitStore::class),
+        );
 
         config()->set('verdict.evidence.recorder', InMemoryEvidenceRecorder::class);
         config()->set('verdict.approvals.store', InMemoryApprovalReceiptStore::class);
+        config()->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
     }
 
     public function boot(VerdictManager $verdict, Catalog $catalog): void
@@ -73,6 +82,48 @@ final class WorkbenchServiceProvider extends ServiceProvider
                 }
 
                 return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
+            }),
+        );
+
+        $verdict->capability(
+            Capability::usingPolicy(
+                name: 'orders.refresh-shipment',
+                ability: 'view',
+                resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
+                    (int) $envelope->proposal->arguments['order_id'],
+                ),
+            )->rateLimit(RateLimitPolicy::fixedWindow(
+                name: 'per-customer-order',
+                limit: 2,
+                windowSeconds: 60,
+                keyUsing: function (ActionEnvelope $envelope, Order $order): array {
+                    $actorId = $envelope->context->actor instanceof Authenticatable
+                        ? $envelope->context->actor->getAuthIdentifier()
+                        : null;
+
+                    return [
+                        'actor_id' => $actorId,
+                        'tenant_id' => $envelope->context->metadata['tenant_id'] ?? null,
+                        'order_id' => $order->id,
+                    ];
+                },
+                reason: 'Carrier status refresh limit exceeded.',
+            ))->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof Order) {
+                    throw new LogicException('The shipment refresh capability expected an order.');
+                }
+
+                app(ActionLog::class)->record(
+                    'orders.refresh-shipment',
+                    $action->target->id,
+                    'carrier_status_refreshed',
+                );
+
+                return json_encode([
+                    'status' => 'refreshed',
+                    'order_id' => $action->target->id,
+                    'shipment_status' => $action->target->status,
+                ], JSON_THROW_ON_ERROR);
             }),
         );
 

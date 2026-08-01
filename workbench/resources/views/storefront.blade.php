@@ -126,7 +126,7 @@
         .confirmation-controls .flow { margin: 0; }
         .lab-controls form { flex: none; }
         .lab-controls button { min-width: 230px; }
-        .confirmation-controls + .attempts { margin-top: 14px; }
+        .lab-controls + .attempts { margin-top: 14px; }
         .lab-control-copy { margin: 0; color: #b7c2d2; font-size: .86rem; }
         .release-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
         .release-card { min-width: 0; padding: 18px; }
@@ -349,6 +349,71 @@
                     <p class="eyebrow">Receipt fingerprint</p>
                     <div class="receipt">{{ $approval['receipt']['fingerprint'] }}</div>
                     <p class="fine-print">Raw receipt IDs and arguments are not stored in decision evidence.</p>
+                </div>
+            </div>
+        </div>
+        @endif
+    </section>
+
+    <section id="rate-limit-lab" class="results-section">
+        <p class="eyebrow">Semantic execution limit</p>
+        <h2>Permission is not a budget.</h2>
+        <p class="section-copy">This independent scenario simulates an agent loop that refreshes the same customer's shipment three times. Laravel's Policy permits every request because the customer owns the order. Verdict permits two carrier calls, then throttles the aggregate attempt before the executor can run.</p>
+
+        <div class="panel lab-controls">
+            <p class="lab-control-copy"><strong>Stateful enforcement:</strong> the bucket is bound to the authenticated customer, tenant, capability, and server-resolved order—not a model-supplied identity.</p>
+            <form method="get" action="{{ route('verdict.demo') }}#rate-limit-lab">
+                <input type="hidden" name="run_rate_limit" value="1">
+                <input type="hidden" name="order_id" value="{{ $scenario['target']['id'] }}">
+                <button type="submit">{{ $hasRateLimitRun ? 'Run semantic limit again' : 'Run semantic limit' }}</button>
+            </form>
+        </div>
+
+        @if ($hasRateLimitRun)
+        <div class="attempts">
+            @foreach ($rateLimit['attempts'] as $attempt)
+                <article class="panel attempt {{ $attempt['status'] }}">
+                    <span class="badge {{ $attempt['status'] === 'blocked' ? 'safe' : '' }}">{{ $attempt['status'] }}</span>
+                    <strong>{{ $attempt['label'] }}</strong>
+                    <p class="attempt-summary">Policy: permit · Rate limit: {{ $attempt['rate_limit']['disposition'] }} · Remaining: {{ $attempt['rate_limit']['rate_limit_remaining'] }}</p>
+                    <pre class="fine-print">{{ json_encode($attempt['result'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                    <details>
+                        <summary>What happened?</summary>
+                        <p class="attempt-explanation">{{ $attempt['status'] === 'blocked'
+                            ? 'Laravel still authorized the owned order, but the fixed-window bucket was exhausted. Verdict recorded a throttle and never entered the executor.'
+                            : 'Laravel authorized the owned order and the fixed-window bucket had capacity. Verdict consumed one authorized execution attempt before entering the executor.' }}</p>
+                        <dl class="attempt-meta">
+                            <dt>Policy</dt><dd><code>{{ $attempt['rate_limit']['rate_limit_policy'] }}</code></dd>
+                            <dt>Limit</dt><dd><code>{{ $attempt['rate_limit']['rate_limit_limit'] }} / 60 seconds</code></dd>
+                            <dt>Reset</dt><dd><code>{{ $attempt['rate_limit']['rate_limit_reset_at'] }}</code></dd>
+                        </dl>
+                        <div class="argument-box">
+                            <span>Opaque bucket fingerprint</span>
+                            <pre>{{ $attempt['rate_limit']['rate_limit_key_fingerprint'] }}</pre>
+                        </div>
+                    </details>
+                </article>
+            @endforeach
+        </div>
+
+        <div class="panel effects">
+            <p class="eyebrow">Observed execution</p>
+            <h3>Three authorized proposals produced only two carrier calls.</h3>
+            <p class="effects-copy">The executor writes to the workbench's scoped action log in place of a real carrier API. The third attempt has Policy evidence but no execution side effect.</p>
+            <div class="effect-metrics">
+                <div class="metric"><span>Configured limit</span><strong>{{ $rateLimit['limit'] }}</strong></div>
+                <div class="metric"><span>Executors entered</span><strong>{{ $rateLimit['execution_summary']['executed'] }}</strong></div>
+                <div class="metric"><span>Attempts throttled</span><strong>{{ $rateLimit['execution_summary']['blocked'] }}</strong></div>
+            </div>
+            <div class="effect-details">
+                <div>
+                    <p class="eyebrow">Execution sink contents</p>
+                    <pre>{{ json_encode($rateLimit['observed_actions'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                </div>
+                <div>
+                    <p class="eyebrow">Trusted bucket binding</p>
+                    <p class="fine-print">{{ $rateLimit['binding'] }}</p>
+                    <p class="fine-print">Raw principal, tenant, and resource identifiers are not persisted in the bucket key or decision evidence.</p>
                 </div>
             </div>
         </div>

@@ -32,6 +32,7 @@ use Laravel\Ai\Tools\Request;
 use LogicException;
 use Workbench\App\Storefront\Tools\CancelOrder;
 use Workbench\App\Storefront\Tools\LookupOrder;
+use Workbench\App\Storefront\Tools\RefreshShipment;
 
 final readonly class StorefrontScenarioRunner
 {
@@ -291,6 +292,61 @@ final readonly class StorefrontScenarioRunner
     }
 
     /** @return array<string, mixed> */
+    public function semanticRateLimit(): array
+    {
+        $customer = new Customer(72, 'Avery Customer');
+        $tool = $this->verdict->bound(
+            definition: new RefreshShipment,
+            capability: 'orders.refresh-shipment',
+            context: new ActionContext($customer, ['tenant_id' => 'storefront-demo']),
+        );
+        $attempts = [];
+        $writesBefore = count($this->actions->all());
+
+        foreach (range(1, 3) as $sequence) {
+            $evidenceOffset = count($this->evidence->all());
+            $result = $this->decode($tool->handle(new Request(
+                ['order_id' => 1002],
+                "demo-shipment-refresh-{$sequence}",
+            )));
+            $records = array_map(
+                $this->evidenceArray(...),
+                array_slice($this->evidence->all(), $evidenceOffset),
+            );
+            $rateRecord = collect($records)->firstWhere('stage', 'rate_limit');
+            $executed = ($result['status'] ?? null) !== 'not_executed';
+
+            if (! is_array($rateRecord)) {
+                throw new LogicException('The semantic-limit demo expected rate-limit evidence.');
+            }
+
+            $attempts[] = [
+                'sequence' => $sequence,
+                'status' => $executed ? 'executed' : 'blocked',
+                'label' => $executed ? "Carrier refresh {$sequence} executed" : "Carrier refresh {$sequence} throttled",
+                'result' => $result,
+                'rate_limit' => $rateRecord,
+            ];
+        }
+
+        return [
+            'capability' => 'orders.refresh-shipment',
+            'policy' => 'per-customer-order',
+            'limit' => 2,
+            'window_seconds' => 60,
+            'binding' => 'authenticated customer + tenant + server-resolved order',
+            'attempts' => $attempts,
+            'execution_summary' => [
+                'writes_before' => $writesBefore,
+                'writes_after' => count($this->actions->all()),
+                'executed' => count(array_filter($attempts, fn (array $attempt): bool => $attempt['status'] === 'executed')),
+                'blocked' => count(array_filter($attempts, fn (array $attempt): bool => $attempt['status'] === 'blocked')),
+            ],
+            'observed_actions' => array_slice($this->actions->all(), $writesBefore),
+        ];
+    }
+
+    /** @return array<string, mixed> */
     public function securityEvaluation(): array
     {
         $case = function (int $orderId, CasePurpose $purpose): EvaluationCase {
@@ -373,6 +429,11 @@ final readonly class StorefrontScenarioRunner
             'reason' => $evidence->reason,
             'argument_fingerprint' => $evidence->argumentFingerprint,
             'approval_receipt_fingerprint' => $evidence->approvalReceiptFingerprint,
+            'rate_limit_key_fingerprint' => $evidence->rateLimitKeyFingerprint,
+            'rate_limit_policy' => $evidence->rateLimitPolicy,
+            'rate_limit_limit' => $evidence->rateLimitLimit,
+            'rate_limit_remaining' => $evidence->rateLimitRemaining,
+            'rate_limit_reset_at' => $evidence->rateLimitResetAt?->format(DATE_ATOM),
         ];
     }
 

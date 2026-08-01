@@ -37,3 +37,5 @@ All notable changes to Verdict will be documented in this file.
   new-failure, improvement, recovery, added-coverage, and removed-coverage findings.
 - Add opt-in semantic execution rate limits with trusted application-defined bucket bindings,
   atomic fixed-window database counters, throttle evidence, and expired-bucket pruning.
+- Add a deterministic storefront agent-loop lab showing three individually authorized shipment
+  refresh proposals producing two executions and one semantic throttle.

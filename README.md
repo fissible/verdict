@@ -746,8 +746,8 @@ content.
 ## Storefront security lab
 
 The workbench contains the first deterministic slice of a customer-facing eCommerce security lab.
-It currently covers order lookup and cancellation; product search, cart operations, and returns
-remain planned.
+It currently covers order lookup, shipment refresh limits, and cancellation; product search, cart
+operations, and returns remain planned.
 
 The most reproducible demonstration does not depend on successfully jailbreaking a model twice.
 It captures one model proposal and passes the same proposal through protected and unprotected
@@ -781,10 +781,13 @@ untrusted input | model proposal | policy decision | observed side effect
 ```
 
 It lives entirely in the package workbench and does not add routes, views, or frontend assets to
-the distributed package. It also contains three independent labs:
+the distributed package. It also contains four independent labs:
 
 - Argument-bound cancellation approval: changed arguments fail, the exact approved action
   executes once, and replay fails.
+- Semantic shipment-refresh limit: Laravel permits three owned-order requests individually while
+  Verdict enters the carrier executor only twice and records the third aggregate attempt as a
+  throttle.
 - Destination-bound context release: an allowlisted customer projection is authorized and prepared
   for a local Ollama connection, its explicitly allowed email is redacted, and the same provider
   name in a remote trust zone is denied.
@@ -798,7 +801,7 @@ An optional live-model path remains planned; it should feed its proposal into th
 comparison rather than treating successful exploitation as deterministic.
 
 Additional demo cases may include indirect injection in a product document, refund abuse,
-free-text PII detection, and multi-turn rate limits.
+free-text PII detection, and cross-session risk budgets.
 
 ## Relationship to Laravel AI
 
@@ -1026,7 +1029,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection, structured redaction, transform non-expansion, and exact destination routes implemented; detectors and validators planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders implemented; levels, events, and audit command planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, and repo-native baseline comparison implemented; live runners, baseline tooling, and statistical thresholds planned |
-| Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, context-release, and evaluation labs implemented; live-model path planned |
+| Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, semantic-limit, confirmation, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
 | Optional UI | Development viewer or framework-specific adapter | Exploratory |
 
