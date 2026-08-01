@@ -1013,19 +1013,7 @@ after a real boundary and consumer appear.
 
 ## Installation
 
-Verdict is not yet published to Packagist. While the repository is private, authorized
-collaborators can install the tagged developer preview as a Composer VCS repository:
-
-```json
-{
-    "repositories": [
-        {
-            "type": "vcs",
-            "url": "git@github.com:fissible/verdict.git"
-        }
-    ]
-}
-```
+Verdict is available on [Packagist](https://packagist.org/packages/fissible/verdict):
 
 ```bash
 composer require fissible/verdict:^0.1

@@ -59,7 +59,8 @@ The release commit is tagged only after these checks pass. `VERSION`, `release.s
 `.cliff.toml`, and the tag-triggered GitHub release workflow follow the Fissible organization
 release convention. Run `bash release.sh patch`, `minor`, or `major` from a clean `main` branch for
 subsequent releases. Publication to Packagist and changing repository visibility are explicit
-maintainer actions, not automated side effects of a merge.
+maintainer actions, not automated side effects of a merge. Verdict is currently public and
+registered on Packagist.
 
 ## Security releases
 

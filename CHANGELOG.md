@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Replace the private VCS installation instructions with the published Packagist command.
+
 ## [0.1.0] - 2026-08-01
 
 - Scaffold the Laravel package for PHP 8.3 and Laravel 12/13.
