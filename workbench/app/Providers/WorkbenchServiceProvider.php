@@ -15,8 +15,11 @@ use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
+use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\VerdictManager;
@@ -38,6 +41,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
         $this->app->scoped(InMemoryEvidenceRecorder::class);
         $this->app->scoped(InMemoryApprovalReceiptStore::class);
         $this->app->scoped(InMemoryRateLimitStore::class);
+        $this->app->scoped(InMemoryExecutionClaimStore::class);
         $this->app->scoped(
             EvidenceRecorder::class,
             fn () => $this->app->make(InMemoryEvidenceRecorder::class),
@@ -50,10 +54,15 @@ final class WorkbenchServiceProvider extends ServiceProvider
             RateLimitStore::class,
             fn () => $this->app->make(InMemoryRateLimitStore::class),
         );
+        $this->app->scoped(
+            ExecutionClaimStore::class,
+            fn () => $this->app->make(InMemoryExecutionClaimStore::class),
+        );
 
         config()->set('verdict.evidence.recorder', InMemoryEvidenceRecorder::class);
         config()->set('verdict.approvals.store', InMemoryApprovalReceiptStore::class);
         config()->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
+        config()->set('verdict.execution_claims.store', InMemoryExecutionClaimStore::class);
     }
 
     public function boot(VerdictManager $verdict, Catalog $catalog): void
@@ -158,6 +167,45 @@ final class WorkbenchServiceProvider extends ServiceProvider
 
                 return json_encode([
                     'status' => 'cancelled',
+                    'order_id' => $action->target->id,
+                ], JSON_THROW_ON_ERROR);
+            }),
+        );
+
+        $verdict->capability(
+            Capability::usingPolicy(
+                name: 'orders.request-cancellation',
+                ability: 'cancel',
+                resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
+                    (int) $envelope->proposal->arguments['order_id'],
+                ),
+            )->atMostOnce(ExecutionClaimPolicy::named(
+                name: 'customer-order-version',
+                keyUsing: function (ActionEnvelope $envelope, Order $order): array {
+                    $actorId = $envelope->context->actor instanceof Authenticatable
+                        ? $envelope->context->actor->getAuthIdentifier()
+                        : null;
+
+                    return [
+                        'actor_id' => $actorId,
+                        'tenant_id' => $envelope->context->metadata['tenant_id'] ?? null,
+                        'order_id' => $order->id,
+                        'order_version' => $order->version,
+                    ];
+                },
+            ))->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof Order) {
+                    throw new LogicException('The storefront cancellation-request capability expected an order.');
+                }
+
+                app(ActionLog::class)->record(
+                    'orders.request-cancellation',
+                    $action->target->id,
+                    'cancellation_requested',
+                );
+
+                return json_encode([
+                    'status' => 'cancellation_requested',
                     'order_id' => $action->target->id,
                 ], JSON_THROW_ON_ERROR);
             }),

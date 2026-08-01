@@ -1012,7 +1012,10 @@ php vendor/bin/testbench serve
 
 Open the displayed local URL. The default cross-customer scenario compares a naive Laravel AI
 tool, an explicitly secured Laravel implementation, and Verdict's `BoundTool` using the same
-Policy. A selector also runs the legitimate owned-order path.
+Policy. Independent labs exercise argument-bound confirmation, semantic rate limits, strict
+at-most-once executor admission across changed provider call IDs, destination-bound context
+release, and deterministic security evaluation. A selector also runs the legitimate owned-order
+path.
 
 The workbench configures process-local evidence and approval stores so the lab needs no production
 infrastructure. Those adapters are intentionally unsuitable for production, Octane, or queues.
@@ -1104,7 +1107,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection, structured redaction, transform non-expansion, and exact destination routes implemented; detectors and validators planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders implemented; levels, events, and audit command planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, and repo-native baseline comparison implemented; live runners, baseline tooling, and statistical thresholds planned |
-| Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, semantic-limit, confirmation, context-release, and evaluation labs implemented; live-model path planned |
+| Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, semantic-limit, at-most-once admission, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
 | Optional UI | Development viewer or framework-specific adapter | Exploratory |
 

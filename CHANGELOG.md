@@ -41,3 +41,5 @@ All notable changes to Verdict will be documented in this file.
   refresh proposals producing two executions and one semantic throttle.
 - Add opt-in strict at-most-once executor admission with application-defined canonical operation
   bindings, durable atomic claim state, redacted evidence, and explicit operator reconciliation.
+- Add an independent storefront lab demonstrating that changed provider call IDs and non-material
+  prose cannot bypass a canonical operation claim.

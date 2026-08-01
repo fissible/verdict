@@ -101,6 +101,42 @@ it('throttles aggregate carrier refreshes that Laravel individually permits', fu
         ->and($scenario['observed_actions'][0]['result'])->toBe('carrier_status_refreshed');
 });
 
+it('admits one canonical cancellation operation across changed transport metadata', function (): void {
+    $scenario = app(StorefrontScenarioRunner::class)->atMostOnceAdmission();
+
+    expect($scenario['capability'])->toBe('orders.request-cancellation')
+        ->and($scenario['attempts'])->toHaveCount(2)
+        ->and(array_column($scenario['attempts'], 'status'))->toBe(['executed', 'blocked'])
+        ->and($scenario['attempts'][0]['transport_id'])->toBe('provider-call-original')
+        ->and($scenario['attempts'][1]['transport_id'])->toBe('provider-call-redelivery')
+        ->and($scenario['attempts'][0]['arguments']['reason'])
+        ->not->toBe($scenario['attempts'][1]['arguments']['reason'])
+        ->and($scenario['attempts'][0]['claim'])->toMatchArray([
+            'stage' => 'execution_claim',
+            'disposition' => 'permit',
+            'execution_claim_policy' => 'customer-order-version',
+            'execution_claim_status' => 'completed',
+            'execution_claim_attempt' => 1,
+        ])
+        ->and($scenario['attempts'][1]['claim'])->toMatchArray([
+            'stage' => 'execution_claim',
+            'disposition' => 'deny',
+            'reason' => 'Logical operation was already completed.',
+            'execution_claim_status' => 'completed',
+            'execution_claim_attempt' => 1,
+        ])
+        ->and($scenario['attempts'][0]['claim']['execution_claim_binding_fingerprint'])
+        ->toBe($scenario['attempts'][1]['claim']['execution_claim_binding_fingerprint'])
+        ->and($scenario['execution_summary'])->toMatchArray([
+            'writes_before' => 0,
+            'writes_after' => 1,
+            'executed' => 1,
+            'blocked' => 1,
+        ])
+        ->and($scenario['observed_actions'])->toHaveCount(1)
+        ->and($scenario['observed_actions'][0]['result'])->toBe('cancellation_requested');
+});
+
 it('projects PII to an exact destination and denies the same provider in another trust zone', function (): void {
     $scenario = app(StorefrontScenarioRunner::class)->contextRelease();
 
@@ -139,6 +175,8 @@ it('does not execute or reveal results before the comparison is requested', func
         ->assertSee('Run confirmation flow')
         ->assertSee('Semantic execution limit')
         ->assertSee('Run semantic limit')
+        ->assertSee('Strict at-most-once admission')
+        ->assertSee('Run admission flow')
         ->assertSee('Destination-bound context release')
         ->assertSee('Run data-release flow')
         ->assertSee('Deterministic security evaluation')
@@ -146,8 +184,25 @@ it('does not execute or reveal results before the comparison is requested', func
         ->assertDontSee('Changed reason rejected')
         ->assertDontSee('Customer profile before projection')
         ->assertDontSee('Three authorized proposals produced only two carrier calls.')
+        ->assertDontSee('Two authorized proposals entered the cancellation executor once.')
         ->assertDontSee('verdict.evaluation-report.v1')
         ->assertDontSee('The approved executor wrote exactly once.');
+});
+
+it('runs strict at-most-once admission independently from the other labs', function (): void {
+    $this->get('/?run_execution_claim=1&order_id=1001')
+        ->assertOk()
+        ->assertSee('A new tool-call ID is not a new operation.')
+        ->assertSee('Original operation admitted')
+        ->assertSee('Duplicate operation blocked')
+        ->assertSee('provider-call-original')
+        ->assertSee('provider-call-redelivery')
+        ->assertSee('Logical operation was already completed.')
+        ->assertSee('Two authorized proposals entered the cancellation executor once.')
+        ->assertSee('cancellation_requested')
+        ->assertDontSee('Naive Laravel AI tool')
+        ->assertDontSee('Carrier refresh 1 executed')
+        ->assertDontSee('Customer profile before projection');
 });
 
 it('runs the semantic execution limit independently from the other labs', function (): void {

@@ -102,6 +102,7 @@
         section { margin-top: 64px; }
         .section-copy { max-width: 760px; margin-bottom: 24px; color: #b4c0d1; }
         .attempts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+        .attempts.two-up { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .attempt { display: flex; min-width: 0; flex-direction: column; padding: 18px; }
         .attempt strong { display: block; margin-bottom: 8px; }
         .attempt-summary { min-height: 3em; margin-bottom: 14px; color: #aeb9ca; font-size: .82rem; }
@@ -168,6 +169,7 @@
 
         @media (max-width: 880px) {
             .comparison, .attempts, .release-results, .release-evidence-grid, .evaluation-scores, .evaluation-cases { grid-template-columns: 1fr; }
+            .attempts.two-up { grid-template-columns: 1fr; }
             .scenario { grid-template-columns: 1fr; }
             .effect-details { grid-template-columns: 1fr; }
             .results-intro { align-items: start; flex-direction: column; }
@@ -414,6 +416,76 @@
                     <p class="eyebrow">Trusted bucket binding</p>
                     <p class="fine-print">{{ $rateLimit['binding'] }}</p>
                     <p class="fine-print">Raw principal, tenant, and resource identifiers are not persisted in the bucket key or decision evidence.</p>
+                </div>
+            </div>
+        </div>
+        @endif
+    </section>
+
+    <section id="execution-claim-lab" class="results-section">
+        <p class="eyebrow">Strict at-most-once admission</p>
+        <h2>A new tool-call ID is not a new operation.</h2>
+        <p class="section-copy">This independent scenario sends two authorized cancellation requests for the same customer, tenant, order, and order version. The provider call ID and prose change, but the canonical operation does not. Verdict admits the executor once.</p>
+
+        <div class="panel lab-controls">
+            <p class="lab-control-copy"><strong>Atomic final gate:</strong> Laravel authorizes both proposals. Verdict derives operation identity from trusted context and the resolved order—not from transport metadata.</p>
+            <form method="get" action="{{ route('verdict.demo') }}#execution-claim-lab">
+                <input type="hidden" name="run_execution_claim" value="1">
+                <input type="hidden" name="order_id" value="{{ $scenario['target']['id'] }}">
+                <button type="submit">{{ $hasExecutionClaimRun ? 'Run admission flow again' : 'Run admission flow' }}</button>
+            </form>
+        </div>
+
+        @if ($hasExecutionClaimRun)
+        <div class="attempts two-up">
+            @foreach ($executionClaim['attempts'] as $attempt)
+                <article class="panel attempt {{ $attempt['status'] }}">
+                    <span class="badge {{ $attempt['status'] === 'blocked' ? 'safe' : '' }}">{{ $attempt['status'] }}</span>
+                    <strong>{{ $attempt['label'] }}</strong>
+                    <p class="attempt-summary">Policy: permit · Claim: {{ $attempt['claim']['disposition'] }} · Stored state: {{ $attempt['claim']['execution_claim_status'] }}</p>
+                    <pre class="fine-print">{{ json_encode($attempt['result'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                    <details>
+                        <summary>What happened?</summary>
+                        <p class="attempt-explanation">{{ $attempt['status'] === 'blocked'
+                            ? 'The provider supplied a different call ID and rephrased the reason, but Verdict derived the same logical-operation fingerprint. The completed claim denied admission before the executor.'
+                            : 'Laravel authorized the owned processing order. Verdict atomically created the logical-operation claim, entered the executor, and marked the claim completed.' }}</p>
+                        <dl class="attempt-meta">
+                            <dt>Transport ID</dt><dd><code>{{ $attempt['transport_id'] }}</code></dd>
+                            <dt>Internal decision</dt><dd><code>{{ $attempt['claim']['reason'] }}</code></dd>
+                            <dt>Claim policy</dt><dd><code>{{ $attempt['claim']['execution_claim_policy'] }}</code></dd>
+                            <dt>Claim attempt</dt><dd><code>{{ $attempt['claim']['execution_claim_attempt'] }}</code></dd>
+                        </dl>
+                        <div class="argument-box">
+                            <span>Untrusted proposal arguments</span>
+                            <pre>{{ json_encode($attempt['arguments'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                        </div>
+                        <div class="argument-box">
+                            <span>Opaque logical-operation fingerprint</span>
+                            <pre>{{ $attempt['claim']['execution_claim_binding_fingerprint'] }}</pre>
+                        </div>
+                    </details>
+                </article>
+            @endforeach
+        </div>
+
+        <div class="panel effects">
+            <p class="eyebrow">Observed execution</p>
+            <h3>Two authorized proposals entered the cancellation executor once.</h3>
+            <p class="effects-copy">The workbench uses a scoped action log instead of an external fulfillment API. The second result shown to the model is generic; the internal evidence retains the duplicate-admission reason and opaque claim fingerprints.</p>
+            <div class="effect-metrics">
+                <div class="metric"><span>Authorized proposals</span><strong>2</strong></div>
+                <div class="metric"><span>Executors entered</span><strong>{{ $executionClaim['execution_summary']['executed'] }}</strong></div>
+                <div class="metric"><span>Duplicates blocked</span><strong>{{ $executionClaim['execution_summary']['blocked'] }}</strong></div>
+            </div>
+            <div class="effect-details">
+                <div>
+                    <p class="eyebrow">Execution sink contents</p>
+                    <pre>{{ json_encode($executionClaim['observed_actions'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                </div>
+                <div>
+                    <p class="eyebrow">Canonical operation binding</p>
+                    <p class="fine-print">{{ $executionClaim['binding'] }}</p>
+                    <p class="fine-print">The changed reason is treated as non-material wording for this operation. Applications must include every argument that should create a distinct operation.</p>
                 </div>
             </div>
         </div>

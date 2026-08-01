@@ -24,6 +24,7 @@ final readonly class StorefrontDemoController
         $hasReleaseRun = $request->boolean('run_release');
         $hasEvaluationRun = $request->boolean('run_evaluation');
         $hasRateLimitRun = $request->boolean('run_rate_limit');
+        $hasExecutionClaimRun = $request->boolean('run_execution_claim');
 
         return view('verdict-workbench::storefront', [
             'scenario' => $this->runner->preview($orderId),
@@ -32,11 +33,13 @@ final readonly class StorefrontDemoController
             'release' => $hasReleaseRun ? $this->runner->contextRelease() : null,
             'evaluation' => $hasEvaluationRun ? $this->runner->securityEvaluation() : null,
             'rateLimit' => $hasRateLimitRun ? $this->runner->semanticRateLimit() : null,
+            'executionClaim' => $hasExecutionClaimRun ? $this->runner->atMostOnceAdmission() : null,
             'hasComparisonRun' => $hasComparisonRun,
             'hasApprovalRun' => $hasApprovalRun,
             'hasReleaseRun' => $hasReleaseRun,
             'hasEvaluationRun' => $hasEvaluationRun,
             'hasRateLimitRun' => $hasRateLimitRun,
+            'hasExecutionClaimRun' => $hasExecutionClaimRun,
         ]);
     }
 }

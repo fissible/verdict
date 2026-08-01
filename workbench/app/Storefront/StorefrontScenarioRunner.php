@@ -33,6 +33,7 @@ use LogicException;
 use Workbench\App\Storefront\Tools\CancelOrder;
 use Workbench\App\Storefront\Tools\LookupOrder;
 use Workbench\App\Storefront\Tools\RefreshShipment;
+use Workbench\App\Storefront\Tools\RequestCancellation;
 
 final readonly class StorefrontScenarioRunner
 {
@@ -347,6 +348,75 @@ final readonly class StorefrontScenarioRunner
     }
 
     /** @return array<string, mixed> */
+    public function atMostOnceAdmission(): array
+    {
+        $customer = new Customer(72, 'Avery Customer');
+        $tool = $this->verdict->bound(
+            definition: new RequestCancellation,
+            capability: 'orders.request-cancellation',
+            context: new ActionContext($customer, ['tenant_id' => 'storefront-demo']),
+        );
+        $proposals = [
+            [
+                'transport_id' => 'provider-call-original',
+                'arguments' => ['order_id' => 1002, 'reason' => 'Please cancel the duplicate order.'],
+            ],
+            [
+                'transport_id' => 'provider-call-redelivery',
+                'arguments' => ['order_id' => 1002, 'reason' => 'This order was placed twice.'],
+            ],
+        ];
+        $attempts = [];
+        $writesBefore = count($this->actions->all());
+
+        foreach ($proposals as $sequence => $proposal) {
+            $evidenceOffset = count($this->evidence->all());
+            $result = $this->decode($tool->handle(new Request(
+                $proposal['arguments'],
+                $proposal['transport_id'],
+            )));
+            $records = array_map(
+                $this->evidenceArray(...),
+                array_slice($this->evidence->all(), $evidenceOffset),
+            );
+            $claimRecords = array_values(array_filter(
+                $records,
+                fn (array $record): bool => $record['stage'] === 'execution_claim',
+            ));
+            $claimRecord = $claimRecords[array_key_last($claimRecords)] ?? null;
+
+            if (! is_array($claimRecord)) {
+                throw new LogicException('The at-most-once demo expected execution-claim evidence.');
+            }
+
+            $executed = ($result['status'] ?? null) !== 'not_executed';
+            $attempts[] = [
+                'sequence' => $sequence + 1,
+                'status' => $executed ? 'executed' : 'blocked',
+                'label' => $executed ? 'Original operation admitted' : 'Duplicate operation blocked',
+                'transport_id' => $proposal['transport_id'],
+                'arguments' => $proposal['arguments'],
+                'result' => $result,
+                'claim' => $claimRecord,
+            ];
+        }
+
+        return [
+            'capability' => 'orders.request-cancellation',
+            'policy' => 'customer-order-version',
+            'binding' => 'authenticated customer + tenant + server-resolved order + order version',
+            'attempts' => $attempts,
+            'execution_summary' => [
+                'writes_before' => $writesBefore,
+                'writes_after' => count($this->actions->all()),
+                'executed' => count(array_filter($attempts, fn (array $attempt): bool => $attempt['status'] === 'executed')),
+                'blocked' => count(array_filter($attempts, fn (array $attempt): bool => $attempt['status'] === 'blocked')),
+            ],
+            'observed_actions' => array_slice($this->actions->all(), $writesBefore),
+        ];
+    }
+
+    /** @return array<string, mixed> */
     public function securityEvaluation(): array
     {
         $case = function (int $orderId, CasePurpose $purpose): EvaluationCase {
@@ -434,6 +504,11 @@ final readonly class StorefrontScenarioRunner
             'rate_limit_limit' => $evidence->rateLimitLimit,
             'rate_limit_remaining' => $evidence->rateLimitRemaining,
             'rate_limit_reset_at' => $evidence->rateLimitResetAt?->format(DATE_ATOM),
+            'execution_claim_fingerprint' => $evidence->executionClaimFingerprint,
+            'execution_claim_binding_fingerprint' => $evidence->executionClaimBindingFingerprint,
+            'execution_claim_policy' => $evidence->executionClaimPolicy,
+            'execution_claim_status' => $evidence->executionClaimStatus,
+            'execution_claim_attempt' => $evidence->executionClaimAttempt,
         ];
     }
 
