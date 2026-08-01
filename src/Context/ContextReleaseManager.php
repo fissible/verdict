@@ -1,0 +1,86 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Fissible\Verdict\Context;
+
+use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Evidence\ContextReleaseEvidence;
+use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Support\Arr;
+
+final readonly class ContextReleaseManager
+{
+    public function __construct(
+        private ReleasePolicyRegistry $policies,
+        private FieldProjector $projector,
+        private EvidenceRecorder $evidence,
+        private Clock $clock,
+    ) {}
+
+    public function policy(ReleasePolicy $policy): self
+    {
+        $this->policies->register($policy);
+
+        return $this;
+    }
+
+    /**
+     * @param  array<string, mixed>|Arrayable<string, mixed>  $payload
+     */
+    public function prepare(array|Arrayable $payload): PendingContextRelease
+    {
+        return new PendingContextRelease($this, $payload instanceof Arrayable ? $payload->toArray() : $payload);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  list<string>  $paths
+     */
+    public function release(
+        array $payload,
+        Source $source,
+        Trust $trust,
+        DataClass $dataClass,
+        array $paths,
+        Destination $destination,
+    ): ContextReleaseResult {
+        if (! $this->policies->permits($source, $destination, $dataClass, $trust)) {
+            $evidence = ContextReleaseEvidence::make(
+                source: $source,
+                destination: $destination,
+                trust: $trust,
+                dataClass: $dataClass,
+                permitted: false,
+                reason: 'No registered context release policy permits this route.',
+                requestedPaths: $paths,
+                releasedPaths: [],
+                payloadFingerprint: null,
+                recordedAt: $this->clock->now(),
+            );
+            $this->evidence->recordRelease($evidence);
+
+            return ContextReleaseResult::denied($evidence);
+        }
+
+        $released = $this->projector->project($payload, $paths);
+        $releasedPaths = array_keys(Arr::dot($released));
+        $evidence = ContextReleaseEvidence::make(
+            source: $source,
+            destination: $destination,
+            trust: $trust,
+            dataClass: $dataClass,
+            permitted: true,
+            reason: 'A registered context release policy permitted the projected fields.',
+            requestedPaths: $paths,
+            releasedPaths: $releasedPaths,
+            payloadFingerprint: ArgumentFingerprint::make($released),
+            recordedAt: $this->clock->now(),
+        );
+        $this->evidence->recordRelease($evidence);
+
+        return ContextReleaseResult::permitted($released, $evidence);
+    }
+}

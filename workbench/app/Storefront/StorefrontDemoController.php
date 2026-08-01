@@ -21,13 +21,16 @@ final readonly class StorefrontDemoController
 
         $hasComparisonRun = $request->boolean('run_comparison') || $request->boolean('run');
         $hasApprovalRun = $request->boolean('run_approval');
+        $hasReleaseRun = $request->boolean('run_release');
 
         return view('verdict-workbench::storefront', [
             'scenario' => $this->runner->preview($orderId),
             'comparison' => $hasComparisonRun ? $this->runner->comparison($orderId) : null,
             'approval' => $hasApprovalRun ? $this->runner->approvalReplay() : null,
+            'release' => $hasReleaseRun ? $this->runner->contextRelease() : null,
             'hasComparisonRun' => $hasComparisonRun,
             'hasApprovalRun' => $hasApprovalRun,
+            'hasReleaseRun' => $hasReleaseRun,
         ]);
     }
 }

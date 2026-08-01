@@ -122,11 +122,22 @@
         .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 18px 0 22px; color: #b9c4d4; font: .78rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
         .flow span { border: 1px solid #34445f; border-radius: 999px; padding: 7px 10px; background: #101827; }
         .flow b { color: #65748c; }
-        .confirmation-controls { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 18px; padding: 18px 20px; }
+        .lab-controls { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 18px; padding: 18px 20px; }
         .confirmation-controls .flow { margin: 0; }
-        .confirmation-controls form { flex: none; }
-        .confirmation-controls button { min-width: 230px; }
+        .lab-controls form { flex: none; }
+        .lab-controls button { min-width: 230px; }
         .confirmation-controls + .attempts { margin-top: 14px; }
+        .lab-control-copy { margin: 0; color: #b7c2d2; font-size: .86rem; }
+        .release-results { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+        .release-card { min-width: 0; padding: 18px; }
+        .release-card h3 { margin-bottom: 6px; }
+        .release-card pre { max-width: 100%; margin: 14px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #cbd6e7; font: .76rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+        .release-card.permitted { border-color: rgba(85, 214, 166, .45); }
+        .release-card.denied { border-color: rgba(255, 107, 122, .5); }
+        .withheld-list { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
+        .withheld-list code { border-radius: 999px; padding: 4px 8px; color: #c9d3e2; background: #0d1522; font-size: .7rem; }
+        .release-evidence { margin-top: 14px; padding: 20px; }
+        .release-evidence-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
         .results-section { scroll-margin-top: 24px; margin-top: 34px; }
         .results-intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
         .results-intro h2 { margin-bottom: 0; }
@@ -143,12 +154,12 @@
         footer { margin-top: 68px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .86rem; }
 
         @media (max-width: 880px) {
-            .comparison, .attempts { grid-template-columns: 1fr; }
+            .comparison, .attempts, .release-results, .release-evidence-grid { grid-template-columns: 1fr; }
             .scenario { grid-template-columns: 1fr; }
             .effect-details { grid-template-columns: 1fr; }
             .results-intro { align-items: start; flex-direction: column; }
-            .confirmation-controls { align-items: stretch; flex-direction: column; }
-            .confirmation-controls button { width: 100%; }
+            .lab-controls { align-items: stretch; flex-direction: column; }
+            .lab-controls button { width: 100%; }
         }
 
         @media (max-width: 560px) {
@@ -257,7 +268,7 @@
         <h2>Approval is permission for one exact action.</h2>
         <p class="section-copy">This independent scenario issues approval for cancellation of order #1002 with one stated reason. Verdict then tests changed arguments, the exact approved action, and replay.</p>
 
-        <div class="panel confirmation-controls">
+        <div class="panel lab-controls confirmation-controls">
             <div class="flow">
                 <span>pending</span><b>→</b><span>approved</span><b>→</b><span>consumed</span>
             </div>
@@ -326,6 +337,67 @@
                     <div class="receipt">{{ $approval['receipt']['fingerprint'] }}</div>
                     <p class="fine-print">Raw receipt IDs and arguments are not stored in decision evidence.</p>
                 </div>
+            </div>
+        </div>
+        @endif
+    </section>
+
+    <section id="context-release-lab" class="results-section">
+        <p class="eyebrow">Destination-bound context release</p>
+        <h2>Send only the fields the model is allowed to see.</h2>
+        <p class="section-copy">This independent scenario starts with a synthetic customer profile containing PII and newly added sensitive fields. An explicit allowlist may travel to one resolved local connection; using the same provider name in a remote trust zone is not automatically trusted.</p>
+
+        <div class="panel lab-controls">
+            <p class="lab-control-copy"><strong>Deterministic first:</strong> project structured fields, authorize the exact destination route, then record evidence without raw values.</p>
+            <form method="get" action="{{ route('verdict.demo') }}#context-release-lab">
+                <input type="hidden" name="run_release" value="1">
+                <input type="hidden" name="order_id" value="{{ $scenario['target']['id'] }}">
+                <button type="submit">{{ $hasReleaseRun ? 'Run data-release flow again' : 'Run data-release flow' }}</button>
+            </form>
+        </div>
+
+        @if ($hasReleaseRun)
+        <div class="release-results">
+            <article class="panel release-card">
+                <span class="badge">Structured input</span>
+                <h3>Customer profile before projection</h3>
+                <p class="muted">Synthetic input includes fields that must never reach either destination.</p>
+                <pre>{{ json_encode($release['input'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+            </article>
+
+            <article class="panel release-card permitted">
+                <span class="badge safe">Permitted</span>
+                <h3>{{ $release['local']['destination'] }}</h3>
+                <p class="muted">Only explicitly allowed fields were authorized and prepared for this local connection.</p>
+                <pre>{{ json_encode($release['local']['payload'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                <div class="withheld-list">
+                    @foreach ($release['withheld'] as $field)
+                        <code>{{ $field }}</code>
+                    @endforeach
+                </div>
+            </article>
+
+            <article class="panel release-card denied">
+                <span class="badge danger">Denied</span>
+                <h3>{{ $release['remote']['destination'] }}</h3>
+                <p class="muted">{{ $release['remote']['reason'] }}</p>
+                <pre>{{ json_encode($release['remote']['payload'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+            </article>
+        </div>
+
+        <div class="panel release-evidence">
+            <p class="eyebrow">Redacted release evidence</p>
+            <h3>No raw customer values are stored in these records.</h3>
+            <div class="release-evidence-grid">
+                @foreach ($release['evidence'] as $record)
+                    <div class="trace">
+                        <div class="trace-head"><span>{{ $record['destination'] }}</span><span>{{ $record['disposition'] }}</span></div>
+                        <div class="fine-print">{{ $record['reason'] }}</div>
+                        @if ($record['payload_fingerprint'] !== null)
+                            <code>{{ $record['payload_fingerprint'] }}</code>
+                        @endif
+                    </div>
+                @endforeach
             </div>
         </div>
         @endif

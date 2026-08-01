@@ -2,10 +2,10 @@
 
 **Policy-bound actions, security evidence, and adversarial evaluation for Laravel AI agents.**
 
-> **Project status: early implementation.** The runtime authorization and verified-confirmation
-> slices exist on `main`, together with a deterministic storefront workbench. Verdict has no
-> tagged release and no stable public API. Sections labeled planned, proposed, or illustrative
-> describe direction rather than shipped behavior.
+> **Project status: early implementation.** Runtime authorization, verified confirmation, and
+> deterministic context-release slices exist on `main`, together with a storefront security
+> workbench. Verdict has no tagged release and no stable public API. Sections labeled planned,
+> proposed, or illustrative describe direction rather than shipped behavior.
 
 Verdict is an early Laravel package for applications that allow AI agents to read sensitive
 context, call tools, or change application state. Its central rule is simple:
@@ -350,44 +350,76 @@ PHP code.
 
 ## Data release and PII scrubbing
 
-Sensitive data may leave the application before any tool is called. Verdict therefore intends to
-treat model context release as a policy decision.
+Sensitive data may leave the application before any tool is called. Verdict's first context-release
+slice treats structured model context as an explicit, fail-closed policy decision.
 
 Origin, trust, and sensitivity are separate properties. A customer record can be trusted
 application data and still contain PII that should not be sent to a provider.
 
-An illustrative release policy might look like this:
+Register an exact route from a labeled source to a resolved connection and trust zone:
 
 ```php
-Verdict::release(CustomerContext::from($customer))
+Verdict::releasePolicy(
+    ReleasePolicy::between(
+        Source::application('customer-profile'),
+        Destination::connection('ollama-local', 'local-machine'),
+    )
+        ->allow(DataClass::PII)
+        ->whenTrustIs(Trust::Trusted),
+);
+```
+
+Then release only explicitly projected fields:
+
+```php
+$result = Verdict::release(CustomerContext::from($customer))
     ->source(Source::application('customer-profile'))
-    ->trust(Trust::trusted())
+    ->trust(Trust::Trusted)
     ->classify(DataClass::PII)
     ->only([
         'first_name',
         'locale',
-        'email',
-        'dob',
         'orders.*.number',
         'orders.*.status',
     ])
-    ->transform('dob', ToAgeBand::class)
-    ->tokenize(['email'])
-    ->to(Destination::connection('ollama-local'));
+    ->to(Destination::connection('ollama-local', 'local-machine'));
+
+if (! $result->permitted) {
+    // Nothing was released.
+}
+
+$providerContext = $result->payload;
 ```
+
+This slice prepares an authorized payload; it does not yet intercept Laravel AI prompts or send
+data to a provider. The application must pass only `$result->payload` into the selected agent or
+provider. An adapter that mediates Laravel AI context automatically remains planned.
+
+`DataClass::PII` is an application-supplied classification, not a detection result. Verdict does
+not inspect the payload and infer that classification in this slice.
 
 Field allowlists should be preferred over exclusions such as
 `except: ['ssn', 'dob']`. An exclusion can begin leaking a newly added `tax_id` or
 `medical_notes` field without any policy change.
 
-The proposed release pipeline is:
+The implemented slice:
+
+- Requires source, trust, classification, destination connection, and destination trust zone.
+- Denies routes that have not been registered exactly.
+- Projects nested arrays using explicit paths such as `orders.*.status`.
+- Returns an empty payload on a policy denial.
+- Records disposition, route, classification, path fingerprints, and a released-payload
+  fingerprint without recording raw values.
+
+Transforms, tokenization, pluggable PII detectors, free-text scanning, and post-scrub validators
+remain planned. The intended broader pipeline is:
 
 ```text
-structured field projection
+exact destination-route policy
+    -> structured field projection
     -> derived values and tokenization
     -> pluggable scanning of unstructured text
     -> final post-scrub validation
-    -> destination policy
     -> redacted evidence
 ```
 
@@ -396,8 +428,8 @@ detectors, report what was removed or transformed, and never claim that arbitrar
 been proven free of personal information.
 
 A provider name alone is not a sufficient trust boundary. `Ollama` may refer to a local process
-or a remotely configured endpoint. Release policy should ultimately apply to a resolved
-connection or trust zone, not just a model-provider enum.
+or a remotely configured endpoint. The implemented route policy therefore applies to the resolved
+connection and trust zone, not a model-provider enum.
 
 ## Provenance
 
@@ -616,8 +648,12 @@ untrusted input | model proposal | policy decision | observed side effect
 ```
 
 It lives entirely in the package workbench and does not add routes, views, or frontend assets to
-the distributed package. It also demonstrates an argument-bound cancellation approval: changed
-arguments fail, the exact approved action executes once, and replay fails.
+the distributed package. It also contains two independent labs:
+
+- Argument-bound cancellation approval: changed arguments fail, the exact approved action
+  executes once, and replay fails.
+- Destination-bound context release: an allowlisted customer projection is authorized and prepared
+  for a local Ollama connection while the same provider name in a remote trust zone is denied.
 
 The primary path intentionally uses a captured proposal rather than a live provider. Holding the
 proposal constant makes the authorization comparison reproducible and requires no credentials.
@@ -625,7 +661,7 @@ An optional live-model path remains planned; it should feed its proposal into th
 comparison rather than treating successful exploitation as deterministic.
 
 Additional demo cases may include indirect injection in a product document, refund abuse,
-argument changes after confirmation, approval replay, PII release, and multi-turn rate limits.
+free-text PII detection, and multi-turn rate limits.
 
 ## Relationship to Laravel AI
 
@@ -823,7 +859,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Design | Threat model, vocabulary, package boundary, demo design | Documented; ongoing |
 | Runtime foundation | Capability registry, bound and guarded tools, staged decisions, Laravel Policy integration | First slice implemented |
 | Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Confirmation receipt slice implemented; broader identity and idempotency planned |
-| Context release | Source labels, field projection, PII scrubber contracts, destination policy | Planned |
+| Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection and exact destination-route slice implemented; transforms and detectors planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Planned |
 | Demo | Sandboxed eCommerce assistant and security trace | First deterministic workbench slice implemented; live-model path planned |

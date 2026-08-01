@@ -12,4 +12,9 @@ final class NullEvidenceRecorder implements EvidenceRecorder
     {
         // Applications opt in to an evidence destination explicitly.
     }
+
+    public function recordRelease(ContextReleaseEvidence $evidence): void
+    {
+        // Applications opt in to an evidence destination explicitly.
+    }
 }

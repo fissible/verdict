@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Facade;
 
 /**
  * @method static \Fissible\Verdict\VerdictManager capability(\Fissible\Verdict\Capabilities\Capability $capability)
+ * @method static \Fissible\Verdict\VerdictManager releasePolicy(\Fissible\Verdict\Context\ReleasePolicy $policy)
+ * @method static \Fissible\Verdict\Context\PendingContextRelease release(array<string, mixed>|\Illuminate\Contracts\Support\Arrayable<string, mixed> $payload)
  * @method static \Fissible\Verdict\Decisions\Evaluation evaluate(\Fissible\Verdict\Actions\ActionEnvelope $envelope)
  * @method static \Fissible\Verdict\Decisions\ExecutionResult run(\Fissible\Verdict\Actions\ActionEnvelope $envelope, callable $executor)
  * @method static \Fissible\Verdict\Decisions\ExecutionResult runBound(\Fissible\Verdict\Actions\ActionEnvelope $envelope)

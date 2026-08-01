@@ -8,6 +8,9 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Context\ContextReleaseManager;
+use Fissible\Verdict\Context\FieldProjector;
+use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\Clock;
@@ -27,6 +30,8 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->mergeConfigFrom(__DIR__.'/../config/verdict.php', 'verdict');
 
         $this->app->singleton(CapabilityRegistry::class);
+        $this->app->singleton(ReleasePolicyRegistry::class);
+        $this->app->singleton(FieldProjector::class);
         $this->app->singleton(CapabilityAuthorizer::class, LaravelPolicyAuthorizer::class);
         $this->app->singleton(Clock::class, SystemClock::class);
         $this->app->scoped(ApprovalExecutionContext::class);
@@ -84,6 +89,13 @@ final class VerdictServiceProvider extends ServiceProvider
             return $instance;
         });
 
+        $this->app->scoped(ContextReleaseManager::class, fn (Container $app): ContextReleaseManager => new ContextReleaseManager(
+            policies: $app->make(ReleasePolicyRegistry::class),
+            projector: $app->make(FieldProjector::class),
+            evidence: $app->make(EvidenceRecorder::class),
+            clock: $app->make(Clock::class),
+        ));
+
         $this->app->scoped(VerdictManager::class, function (Container $app): VerdictManager {
             $message = config('verdict.ai.denied_message', 'This action was not authorized.');
 
@@ -92,6 +104,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 authorizer: $app->make(CapabilityAuthorizer::class),
                 evidence: $app->make(EvidenceRecorder::class),
                 approvals: $app->make(ApprovalManager::class),
+                contextReleases: $app->make(ContextReleaseManager::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
             );
         });

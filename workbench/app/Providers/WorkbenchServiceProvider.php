@@ -8,6 +8,11 @@ use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Destination;
+use Fissible\Verdict\Context\ReleasePolicy;
+use Fissible\Verdict\Context\Source;
+use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
@@ -45,6 +50,15 @@ final class WorkbenchServiceProvider extends ServiceProvider
     public function boot(VerdictManager $verdict, Catalog $catalog): void
     {
         Gate::policy(Order::class, OrderPolicy::class);
+
+        $verdict->releasePolicy(
+            ReleasePolicy::between(
+                Source::application('customer-profile'),
+                Destination::connection('ollama-local', 'local-machine'),
+            )
+                ->allow(DataClass::PII)
+                ->whenTrustIs(Trust::Trusted),
+        );
 
         $verdict->capability(
             Capability::usingPolicy(

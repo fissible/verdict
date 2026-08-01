@@ -77,6 +77,32 @@ it('demonstrates argument-bound approval and single-use execution', function ():
         ->and(collect($scenario['evidence'])->where('stage', 'approval'))->toHaveCount(1);
 });
 
+it('projects PII to an exact destination and denies the same provider in another trust zone', function (): void {
+    $scenario = app(StorefrontScenarioRunner::class)->contextRelease();
+
+    expect($scenario['local'])->toMatchArray([
+        'destination' => 'local-machine:ollama-local',
+        'permitted' => true,
+        'payload' => [
+            'first_name' => 'Avery',
+            'locale' => 'en-US',
+            'orders' => [
+                ['number' => 1002, 'status' => 'processing'],
+            ],
+        ],
+    ])
+        ->and($scenario['local']['payload'])->not->toHaveKey('email')
+        ->and($scenario['local']['payload'])->not->toHaveKey('ssn')
+        ->and($scenario['remote'])->toMatchArray([
+            'destination' => 'remote-network:ollama-local',
+            'permitted' => false,
+            'payload' => [],
+        ])
+        ->and($scenario['evidence'])->toHaveCount(2)
+        ->and($scenario['evidence'][0]['disposition'])->toBe('permit')
+        ->and($scenario['evidence'][1]['disposition'])->toBe('deny');
+});
+
 it('does not execute or reveal results before the comparison is requested', function (): void {
     $this->get('/')
         ->assertOk()
@@ -85,7 +111,10 @@ it('does not execute or reveal results before the comparison is requested', func
         ->assertDontSee('Naive Laravel AI tool')
         ->assertSee('Argument-bound confirmation')
         ->assertSee('Run confirmation flow')
+        ->assertSee('Destination-bound context release')
+        ->assertSee('Run data-release flow')
         ->assertDontSee('Changed reason rejected')
+        ->assertDontSee('Customer profile before projection')
         ->assertDontSee('The approved executor wrote exactly once.');
 });
 
@@ -114,4 +143,15 @@ it('runs argument-bound confirmation independently from the order comparison', f
         ->assertSee('The approved executor wrote exactly once.')
         ->assertSee('scoped in-memory execution sink')
         ->assertDontSee('Naive Laravel AI tool');
+});
+
+it('runs destination-bound context release independently from the other labs', function (): void {
+    $this->get('/?run_release=1&order_id=1001')
+        ->assertOk()
+        ->assertSee('Customer profile before projection')
+        ->assertSee('local-machine:ollama-local')
+        ->assertSee('remote-network:ollama-local')
+        ->assertSee('No raw customer values are stored in these records.')
+        ->assertDontSee('Naive Laravel AI tool')
+        ->assertDontSee('Changed reason rejected');
 });

@@ -7,6 +7,11 @@ namespace Workbench\App\Storefront;
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Destination;
+use Fissible\Verdict\Context\Source;
+use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\VerdictManager;
@@ -216,6 +221,65 @@ final readonly class StorefrontScenarioRunner
     }
 
     /** @return array<string, mixed> */
+    public function contextRelease(): array
+    {
+        $payload = [
+            'first_name' => 'Avery',
+            'locale' => 'en-US',
+            'email' => 'avery@example.com',
+            'dob' => '1989-04-12',
+            'ssn' => '111-22-3333',
+            'medical_notes' => 'Synthetic sensitive field',
+            'orders' => [
+                [
+                    'number' => 1002,
+                    'status' => 'processing',
+                    'payment_token' => 'tok_demo_secret',
+                ],
+            ],
+        ];
+        $paths = ['first_name', 'locale', 'orders.*.number', 'orders.*.status'];
+        $source = Source::application('customer-profile');
+        $local = Destination::connection('ollama-local', 'local-machine');
+        $remote = Destination::connection('ollama-local', 'remote-network');
+        $evidenceOffset = count($this->evidence->releases());
+
+        $release = fn (Destination $destination) => $this->verdict->release($payload)
+            ->source($source)
+            ->trust(Trust::Trusted)
+            ->classify(DataClass::PII)
+            ->only($paths)
+            ->to($destination);
+
+        $localResult = $release($local);
+        $remoteResult = $release($remote);
+
+        return [
+            'source' => $source->identity(),
+            'classification' => DataClass::PII->value,
+            'trust' => Trust::Trusted->value,
+            'input' => $payload,
+            'allowlist' => $paths,
+            'withheld' => ['email', 'dob', 'ssn', 'medical_notes', 'orders.*.payment_token'],
+            'local' => [
+                'destination' => $local->identity(),
+                'permitted' => $localResult->permitted,
+                'payload' => $localResult->payload,
+            ],
+            'remote' => [
+                'destination' => $remote->identity(),
+                'permitted' => $remoteResult->permitted,
+                'payload' => $remoteResult->payload,
+                'reason' => $remoteResult->evidence->reason,
+            ],
+            'evidence' => array_map(
+                $this->releaseEvidenceArray(...),
+                array_slice($this->evidence->releases(), $evidenceOffset),
+            ),
+        ];
+    }
+
+    /** @return array<string, mixed> */
     private function decode(mixed $json): array
     {
         if (! is_string($json) && ! $json instanceof \Stringable) {
@@ -240,6 +304,22 @@ final readonly class StorefrontScenarioRunner
             'reason' => $evidence->reason,
             'argument_fingerprint' => $evidence->argumentFingerprint,
             'approval_receipt_fingerprint' => $evidence->approvalReceiptFingerprint,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function releaseEvidenceArray(ContextReleaseEvidence $evidence): array
+    {
+        return [
+            'source' => $evidence->source,
+            'destination' => $evidence->destination,
+            'trust_zone' => $evidence->trustZone,
+            'classification' => $evidence->dataClass->value,
+            'disposition' => $evidence->disposition,
+            'reason' => $evidence->reason,
+            'requested_path_fingerprints' => $evidence->requestedPathFingerprints,
+            'released_path_fingerprints' => $evidence->releasedPathFingerprints,
+            'payload_fingerprint' => $evidence->payloadFingerprint,
         ];
     }
 }

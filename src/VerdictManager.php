@@ -10,6 +10,9 @@ use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Context\ContextReleaseManager;
+use Fissible\Verdict\Context\PendingContextRelease;
+use Fissible\Verdict\Context\ReleasePolicy;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Decisions\Decision;
@@ -21,6 +24,7 @@ use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
+use Illuminate\Contracts\Support\Arrayable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
 
@@ -31,6 +35,7 @@ final readonly class VerdictManager
         private CapabilityAuthorizer $authorizer,
         private EvidenceRecorder $evidence,
         private ApprovalManager $approvals,
+        private ContextReleaseManager $contextReleases,
         private string $deniedMessage,
     ) {}
 
@@ -39,6 +44,21 @@ final readonly class VerdictManager
         $this->capabilities->register($capability);
 
         return $this;
+    }
+
+    public function releasePolicy(ReleasePolicy $policy): self
+    {
+        $this->contextReleases->policy($policy);
+
+        return $this;
+    }
+
+    /**
+     * @param  array<string, mixed>|Arrayable<string, mixed>  $payload
+     */
+    public function release(array|Arrayable $payload): PendingContextRelease
+    {
+        return $this->contextReleases->prepare($payload);
     }
 
     public function evaluate(ActionEnvelope $envelope): Evaluation

@@ -19,9 +19,17 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
      */
     private array $records = [];
 
+    /** @var list<ContextReleaseEvidence> */
+    private array $releaseRecords = [];
+
     public function record(DecisionEvidence $evidence): void
     {
         $this->records[] = $evidence;
+    }
+
+    public function recordRelease(ContextReleaseEvidence $evidence): void
+    {
+        $this->releaseRecords[] = $evidence;
     }
 
     /**
@@ -39,5 +47,11 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
         }
 
         return $this->records[array_key_last($this->records)];
+    }
+
+    /** @return list<ContextReleaseEvidence> */
+    public function releases(): array
+    {
+        return $this->releaseRecords;
     }
 }
