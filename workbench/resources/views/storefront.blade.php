@@ -102,11 +102,11 @@
         section { margin-top: 64px; }
         .section-copy { max-width: 760px; margin-bottom: 24px; color: #b4c0d1; }
         .attempts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-        .attempt { min-width: 0; padding: 18px; }
+        .attempt { display: flex; min-width: 0; flex-direction: column; padding: 18px; }
         .attempt strong { display: block; margin-bottom: 8px; }
         .attempt-summary { min-height: 3em; margin-bottom: 14px; color: #aeb9ca; font-size: .82rem; }
         .attempt pre { max-width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
-        .attempt details { margin-top: 16px; padding-top: 13px; border-top: 1px solid #2f3d54; }
+        .attempt details { margin-top: auto; padding-top: 13px; border-top: 1px solid #2f3d54; }
         .attempt summary { cursor: pointer; color: #c8c0ff; font-size: .82rem; font-weight: 700; }
         .attempt summary:hover { color: #ded9ff; }
         .attempt summary:focus-visible { outline: 3px solid rgba(169, 156, 255, .3); outline-offset: 3px; }
