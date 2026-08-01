@@ -7,6 +7,7 @@ namespace Fissible\Verdict\ExecutionClaims;
 use DateTimeImmutable;
 use DateTimeZone;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
+use Fissible\Verdict\Support\IndependentTransactionGuard;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
 use stdClass;
@@ -20,6 +21,8 @@ final readonly class DatabaseExecutionClaimStore implements ExecutionClaimStore
 
     public function claim(ExecutionClaim $claim): ExecutionClaimTransition
     {
+        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'claim an execution');
+
         try {
             return $this->connection->transaction(function () use ($claim): ExecutionClaimTransition {
                 $existing = $this->findLockedByBinding($claim->bindingFingerprint);
@@ -60,6 +63,8 @@ final readonly class DatabaseExecutionClaimStore implements ExecutionClaimStore
         string $reason,
         DateTimeImmutable $at,
     ): ExecutionClaimTransition {
+        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'resolve an execution claim');
+
         return $this->connection->transaction(function () use ($claimId, $resolution, $resolvedBy, $reason, $at): ExecutionClaimTransition {
             $claim = $this->findLocked($claimId);
 
@@ -145,6 +150,8 @@ final readonly class DatabaseExecutionClaimStore implements ExecutionClaimStore
         ExecutionClaimStatus $status,
         DateTimeImmutable $at,
     ): ExecutionClaimTransition {
+        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'transition an execution claim');
+
         return $this->connection->transaction(function () use ($claimId, $status, $at): ExecutionClaimTransition {
             $claim = $this->findLocked($claimId);
 

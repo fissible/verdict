@@ -383,7 +383,9 @@ final readonly class StorefrontScenarioRunner
                 $records,
                 fn (array $record): bool => $record['stage'] === 'execution_claim',
             ));
-            $claimRecord = $claimRecords[array_key_last($claimRecords)] ?? null;
+            $claimRecord = $claimRecords === []
+                ? null
+                : $claimRecords[count($claimRecords) - 1];
 
             if (! is_array($claimRecord)) {
                 throw new LogicException('The at-most-once demo expected execution-claim evidence.');

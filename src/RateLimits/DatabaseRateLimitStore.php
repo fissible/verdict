@@ -6,6 +6,7 @@ namespace Fissible\Verdict\RateLimits;
 
 use DateTimeImmutable;
 use Fissible\Verdict\Contracts\PrunableRateLimitStore;
+use Fissible\Verdict\Support\IndependentTransactionGuard;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
 use LogicException;
@@ -20,6 +21,8 @@ final readonly class DatabaseRateLimitStore implements PrunableRateLimitStore
 
     public function consume(RateLimitConsumption $consumption): RateLimitOutcome
     {
+        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'consume a semantic rate-limit unit');
+
         [$windowStartsAt, $resetAt] = $this->window($consumption);
 
         try {

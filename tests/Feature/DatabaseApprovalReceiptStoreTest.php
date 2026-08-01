@@ -6,6 +6,7 @@ use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Exceptions\UnsafeOuterTransaction;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
 
@@ -138,4 +139,21 @@ it('hydrates receipt timestamps as UTC regardless of the application timezone', 
     } finally {
         date_default_timezone_set($previousTimezone);
     }
+});
+
+it('rejects receipt mutations inside an outer transaction on the store connection', function (): void {
+    $connection = app(DatabaseManager::class)->connection();
+    $store = new DatabaseApprovalReceiptStore($connection);
+
+    $connection->beginTransaction();
+
+    try {
+        expect(fn () => $store->issue(databaseReceipt()))
+            ->toThrow(UnsafeOuterTransaction::class, 'issue an approval receipt');
+    } finally {
+        $connection->rollBack();
+    }
+
+    expect($connection->transactionLevel())->toBe(0)
+        ->and($connection->table('verdict_approval_receipts')->count())->toBe(0);
 });

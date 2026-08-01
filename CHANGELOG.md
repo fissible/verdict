@@ -47,3 +47,9 @@ All notable changes to Verdict will be documented in this file.
   identity comparison, explicit stale-snapshot acknowledgement, and redacted freshness evidence.
 - Validate approval receipts without mutation before rate limiting, then consume approval atomically
   before final execution-claim admission, with distinct evidence phases for each approval check.
+- Fail closed when database-backed approval, semantic-limit, or execution-claim state would be
+  mutated inside an already-active transaction on the same connection.
+- Fix the storefront claim demonstration for PHPStan's PHP 8.5 analysis.
+- Document the pre-1.0 public surface, support matrix, contribution workflow, and release policy.
+- Verify package discovery, configuration/migration publication, migration execution, and Artisan
+  command registration in a clean Laravel consumer CI job.

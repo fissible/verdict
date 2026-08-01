@@ -8,5 +8,5 @@ Report vulnerabilities privately through GitHub's security advisory feature for 
 
 <https://github.com/fissible/verdict/security/advisories/new>
 
-Verdict is pre-release software. Until a release policy is published, security fixes are made
-against the latest version on the `main` branch.
+Verdict is pre-1.0 software. Supported versions and release handling are described in
+[RELEASES.md](../RELEASES.md).

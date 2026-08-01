@@ -2,12 +2,12 @@
 
 **Policy-bound actions, security evidence, and adversarial evaluation for Laravel AI agents.**
 
-> **Project status: early implementation.** Runtime authorization, verified confirmation,
+> **Project status: pre-release developer preview.** Runtime authorization, verified confirmation,
 > semantic execution limits, strict at-most-once executor admission, and deterministic
 > context-release slices exist on `main`, together with an opt-in database evidence recorder, a
-> deterministic security-evaluation foundation, and a storefront security workbench. Verdict has
-> no tagged release and no stable public API. Sections labeled planned, proposed, or illustrative
-> describe direction rather than shipped behavior.
+> deterministic security-evaluation foundation, and a storefront security workbench. The `v0.1.0`
+> scope is implemented, but Verdict has no tagged release or stable public API yet. Sections labeled
+> planned, proposed, or illustrative describe direction rather than shipped behavior.
 
 Verdict is an early Laravel package for applications that allow AI agents to read sensitive
 context, call tools, or change application state. Its central rule is simple:
@@ -572,12 +572,14 @@ See [ADR 0002](docs/adr/0002-strict-at-most-once-admission.md) for the precise b
 
 > [!WARNING]
 > Do not wrap the entire Verdict invocation in a database transaction on the durable Verdict
-> stores' connections. Laravel will nest their transactions, so an outer rollback can erase a claim,
-> restore a consumed approval, or refund a rate-limit unit after execution. An executor that opens
-> and commits its own transaction inside `executeUsing` after admission does not have this problem.
-> Configure `approvals.connection`, `rate_limits.connection`, and
+> stores' connections. Database-backed security-state stores detect an existing transaction and
+> throw `UnsafeOuterTransaction` before mutation rather than allowing an outer rollback to erase a
+> claim, restore a consumed approval, or refund a rate-limit unit after execution. An executor that
+> opens and commits its own transaction inside `executeUsing` after admission does not have this
+> problem. Configure `approvals.connection`, `rate_limits.connection`, and
 > `execution_claims.connection` to use a separately committed security-state connection when an
-> outer transaction cannot be avoided; runtime transaction-level guards are planned.
+> outer transaction cannot be avoided. See
+> [ADR 0004](docs/adr/0004-independent-security-state-transactions.md).
 
 ## Rate limits and risk budgets
 
@@ -1033,6 +1035,10 @@ The current constraints are PHP 8.3+, Laravel 12 or 13, and `laravel/ai` 0.10.2 
 0.10 line. Laravel AI is pre-1.0, so Verdict verifies its adapter against released public contracts
 and should expect compatibility work as that SDK changes.
 
+The supported developer-preview surface and release checklist are documented in
+[`RELEASES.md`](RELEASES.md). Do not infer support for a new Laravel AI minor from Composer being
+able to resolve it; each minor compatibility band requires an explicit Verdict review and release.
+
 Live evaluations will require developers to supply their own provider credentials and accept the
 associated provider costs and data-processing terms. Deterministic package tests should not
 require provider credentials.
@@ -1147,6 +1153,21 @@ This roadmap is directional and may change as the integration is prototyped.
 | Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, semantic-limit, at-most-once admission, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
 | Optional UI | Development viewer or framework-specific adapter | Exploratory |
+
+### Release milestones
+
+- **`v0.1.0` — runtime developer preview:** implemented on `main`; release follows a green
+  compatibility matrix and explicit maintainer publication.
+- **[`v0.2.0` — provenance and live evaluation](https://github.com/fissible/verdict/milestone/1):**
+  implementation-ready issues cover the redacted provenance ledger, Laravel AI provenance hooks,
+  the first deterministic attack pack, baseline/CI commands, and an opt-in repeated-trial live
+  runner.
+- **Later `0.x` releases:** operational events, distributed containment, evidence lifecycle,
+  additional budgets, and optional detector adapters remain directional until separately scoped.
+
+Every issue in the `v0.2.0` milestone labeled `scope: ready` has selected design constraints and
+acceptance criteria suitable for an outside contribution. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+before starting a pull request.
 
 ## Frequently asked questions
 

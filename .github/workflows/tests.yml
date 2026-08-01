@@ -14,6 +14,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  consumer-install:
+    runs-on: ubuntu-latest
+    name: Clean Laravel consumer
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo, sqlite, pdo_sqlite, bcmath, intl
+          tools: composer:v2
+          coverage: none
+
+      - name: Create clean Laravel application
+        run: composer create-project laravel/laravel:^12.0 consumer --no-interaction --prefer-dist
+
+      - name: Install Verdict through a Composer path repository
+        working-directory: consumer
+        run: |
+          composer config repositories.verdict path ..
+          composer require fissible/verdict:@dev --no-interaction --with-all-dependencies
+
+      - name: Publish and migrate Verdict resources
+        working-directory: consumer
+        run: |
+          php artisan vendor:publish --tag=verdict-config --force
+          php artisan vendor:publish --tag=verdict-migrations --force
+          php artisan migrate --force
+          php artisan help verdict:prune-rate-limits
+          php artisan help verdict:execution-claims
+          php artisan help verdict:resolve-execution-claim
+
   tests:
     runs-on: ${{ matrix.os }}
 

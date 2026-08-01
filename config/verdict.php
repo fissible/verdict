@@ -9,6 +9,8 @@ use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 
 return [
     'approvals' => [
+        // Database security-state mutations fail if this connection is already inside an outer
+        // transaction. Use a separately committed connection when wrapping Verdict itself.
         'store' => DatabaseApprovalReceiptStore::class,
         'connection' => null,
         'table' => 'verdict_approval_receipts',
@@ -26,6 +28,7 @@ return [
     'rate_limits' => [
         // InMemoryRateLimitStore is only for tests and local development. Its process-local
         // counters do not coordinate across requests, workers, or application nodes.
+        // Database consumption also requires an independently committed connection.
         'store' => DatabaseRateLimitStore::class,
         'connection' => null,
         'table' => 'verdict_rate_limit_buckets',
@@ -34,6 +37,7 @@ return [
     'execution_claims' => [
         // InMemoryExecutionClaimStore is only for tests and local development. Its process-local
         // state cannot prevent duplicate execution across workers or application nodes.
+        // Database claim transitions also require an independently committed connection.
         'store' => DatabaseExecutionClaimStore::class,
         'connection' => null,
         'table' => 'verdict_execution_claims',

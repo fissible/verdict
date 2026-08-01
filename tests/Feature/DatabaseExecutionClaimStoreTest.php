@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Exceptions\UnsafeOuterTransaction;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaim;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimOutcome;
@@ -118,4 +119,21 @@ it('can reconcile an ambiguous claim as completed without permitting retry', fun
         ->and($store->claim(databaseExecutionClaim('claim-2'))->outcome)
         ->toBe(ExecutionClaimOutcome::DuplicateCompleted)
         ->and($store->unresolved())->toBe([]);
+});
+
+it('rejects claim mutations inside an outer transaction on the store connection', function (): void {
+    $connection = app(DatabaseManager::class)->connection();
+    $store = new DatabaseExecutionClaimStore($connection);
+
+    $connection->beginTransaction();
+
+    try {
+        expect(fn () => $store->claim(databaseExecutionClaim()))
+            ->toThrow(UnsafeOuterTransaction::class, 'claim an execution');
+    } finally {
+        $connection->rollBack();
+    }
+
+    expect($connection->transactionLevel())->toBe(0)
+        ->and($connection->table('verdict_execution_claims')->count())->toBe(0);
 });

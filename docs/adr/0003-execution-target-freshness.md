@@ -314,15 +314,15 @@ using the execution-claim store's connection.
 
 This is a current ADR 0002 constraint, not merely a Slice 2 concern. Documentation should recommend
 a distinct `execution_claims.connection` whenever an application may wrap the whole Verdict
-invocation in a transaction. A separate hardening slice should also fail closed when
-`DatabaseExecutionClaimStore::claim()` detects a pre-existing transaction on its connection, unless
-and until Verdict supports an explicitly coordinated transaction strategy.
+invocation in a transaction. [ADR 0004](0004-independent-security-state-transactions.md) implements
+the hardening boundary: mutating durable security-state stores fail closed when their connection is
+already inside an outer transaction.
 
 The same outer-transaction caveat applies to rate-limit and approval state: rollback can erase a
 consumed limit unit or restore a consumed approval receipt. Applications that wrap the whole
 Verdict invocation should place all durable Verdict stores on a separately committed security-state
-connection, not only execution claims. The hardening slice should evaluate transaction-level guards
-for every mutating database store operation. Any transactional-execution design must define
+connection, not only execution claims. The ADR 0004 guard applies to every mutating database
+security-state store operation. Any transactional-execution design must define
 connection boundaries and failure semantics explicitly. It may require a separately committed
 security-state connection, a staged intent protocol, or a different orchestration model. Nested
 transactions or savepoints must not be assumed to provide independent durability.

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Exceptions\UnsafeOuterTransaction;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitConsumption;
 use Illuminate\Database\DatabaseManager;
@@ -70,4 +71,21 @@ it('starts a fresh bucket at the exact window boundary and prunes expired bucket
         ->and(app(DatabaseManager::class)->connection()->table('verdict_rate_limit_buckets')->count())->toBe(2)
         ->and($store->pruneExpired(new DateTimeImmutable('2026-08-01 12:01:00', new DateTimeZone('UTC'))))->toBe(1)
         ->and(app(DatabaseManager::class)->connection()->table('verdict_rate_limit_buckets')->count())->toBe(1);
+});
+
+it('rejects rate-limit consumption inside an outer transaction on the store connection', function (): void {
+    $connection = app(DatabaseManager::class)->connection();
+    $store = new DatabaseRateLimitStore($connection);
+
+    $connection->beginTransaction();
+
+    try {
+        expect(fn () => $store->consume(databaseRateLimitConsumption('customer-72', '2026-08-01 12:00:15')))
+            ->toThrow(UnsafeOuterTransaction::class, 'consume a semantic rate-limit unit');
+    } finally {
+        $connection->rollBack();
+    }
+
+    expect($connection->transactionLevel())->toBe(0)
+        ->and($connection->table('verdict_rate_limit_buckets')->count())->toBe(0);
 });
