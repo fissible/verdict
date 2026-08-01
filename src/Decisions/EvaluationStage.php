@@ -10,4 +10,5 @@ enum EvaluationStage: string
     case Approval = 'approval';
     case Execution = 'execution';
     case RateLimit = 'rate_limit';
+    case ExecutionClaim = 'execution_claim';
 }

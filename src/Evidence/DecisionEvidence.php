@@ -23,6 +23,11 @@ final readonly class DecisionEvidence
         public ?int $rateLimitLimit,
         public ?int $rateLimitRemaining,
         public ?DateTimeImmutable $rateLimitResetAt,
+        public ?string $executionClaimFingerprint,
+        public ?string $executionClaimBindingFingerprint,
+        public ?string $executionClaimPolicy,
+        public ?string $executionClaimStatus,
+        public ?int $executionClaimAttempt,
         public DateTimeImmutable $recordedAt,
     ) {}
 
@@ -53,6 +58,21 @@ final readonly class DecisionEvidence
                 : null,
             rateLimitResetAt: is_string($evaluation->decision->metadata['rate_limit_reset_at'] ?? null)
                 ? new DateTimeImmutable($evaluation->decision->metadata['rate_limit_reset_at'])
+                : null,
+            executionClaimFingerprint: is_string($evaluation->decision->metadata['execution_claim_fingerprint'] ?? null)
+                ? $evaluation->decision->metadata['execution_claim_fingerprint']
+                : null,
+            executionClaimBindingFingerprint: is_string($evaluation->decision->metadata['execution_claim_binding_fingerprint'] ?? null)
+                ? $evaluation->decision->metadata['execution_claim_binding_fingerprint']
+                : null,
+            executionClaimPolicy: is_string($evaluation->decision->metadata['execution_claim_policy'] ?? null)
+                ? $evaluation->decision->metadata['execution_claim_policy']
+                : null,
+            executionClaimStatus: is_string($evaluation->decision->metadata['execution_claim_status'] ?? null)
+                ? $evaluation->decision->metadata['execution_claim_status']
+                : null,
+            executionClaimAttempt: is_int($evaluation->decision->metadata['execution_claim_attempt'] ?? null)
+                ? $evaluation->decision->metadata['execution_claim_attempt']
                 : null,
             recordedAt: new DateTimeImmutable,
         );

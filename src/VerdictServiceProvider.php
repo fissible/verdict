@@ -8,7 +8,9 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Console\Commands\ListExecutionClaimsCommand;
 use Fissible\Verdict\Console\Commands\PruneRateLimitBucketsCommand;
+use Fissible\Verdict\Console\Commands\ResolveExecutionClaimCommand;
 use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
@@ -16,9 +18,12 @@ use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
+use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitManager;
@@ -135,6 +140,37 @@ final class VerdictServiceProvider extends ServiceProvider
             clock: $app->make(Clock::class),
         ));
 
+        $this->app->singleton(ExecutionClaimStore::class, function (Container $app): ExecutionClaimStore {
+            $store = config('verdict.execution_claims.store', DatabaseExecutionClaimStore::class);
+
+            if (! is_string($store)) {
+                throw new LogicException('The Verdict execution-claim store configuration must contain a class name.');
+            }
+
+            if ($store === DatabaseExecutionClaimStore::class) {
+                $connection = config('verdict.execution_claims.connection');
+                $table = config('verdict.execution_claims.table', 'verdict_execution_claims');
+
+                return new DatabaseExecutionClaimStore(
+                    connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                    table: is_string($table) ? $table : 'verdict_execution_claims',
+                );
+            }
+
+            $instance = $app->make($store);
+
+            if (! $instance instanceof ExecutionClaimStore) {
+                throw new LogicException("The [{$store}] execution-claim store must implement ".ExecutionClaimStore::class.'.');
+            }
+
+            return $instance;
+        });
+
+        $this->app->scoped(ExecutionClaimManager::class, fn (Container $app): ExecutionClaimManager => new ExecutionClaimManager(
+            store: $app->make(ExecutionClaimStore::class),
+            clock: $app->make(Clock::class),
+        ));
+
         $this->app->scoped(ContextReleaseManager::class, fn (Container $app): ContextReleaseManager => new ContextReleaseManager(
             policies: $app->make(ReleasePolicyRegistry::class),
             projector: $app->make(FieldProjector::class),
@@ -152,6 +188,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 approvals: $app->make(ApprovalManager::class),
                 contextReleases: $app->make(ContextReleaseManager::class),
                 rateLimits: $app->make(RateLimitManager::class),
+                executionClaims: $app->make(ExecutionClaimManager::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
             );
         });
@@ -163,7 +200,11 @@ final class VerdictServiceProvider extends ServiceProvider
             return;
         }
 
-        $this->commands([PruneRateLimitBucketsCommand::class]);
+        $this->commands([
+            ListExecutionClaimsCommand::class,
+            PruneRateLimitBucketsCommand::class,
+            ResolveExecutionClaimCommand::class,
+        ]);
 
         $this->publishes([
             __DIR__.'/../config/verdict.php' => config_path('verdict.php'),
@@ -178,13 +219,17 @@ final class VerdictServiceProvider extends ServiceProvider
         $rateLimitMigration = [
             __DIR__.'/../database/migrations/create_verdict_rate_limit_buckets_table.php.stub' => database_path('migrations/2026_08_01_000002_create_verdict_rate_limit_buckets_table.php'),
         ];
+        $executionClaimMigration = [
+            __DIR__.'/../database/migrations/create_verdict_execution_claims_table.php.stub' => database_path('migrations/2026_08_01_000003_create_verdict_execution_claims_table.php'),
+        ];
 
         $this->publishesMigrations(
-            [...$approvalMigration, ...$evidenceMigration, ...$rateLimitMigration],
+            [...$approvalMigration, ...$evidenceMigration, ...$rateLimitMigration, ...$executionClaimMigration],
             ['verdict', 'verdict-migrations'],
         );
         $this->publishesMigrations($approvalMigration, 'verdict-approval-migrations');
         $this->publishesMigrations($evidenceMigration, 'verdict-evidence-migrations');
         $this->publishesMigrations($rateLimitMigration, 'verdict-rate-limit-migrations');
+        $this->publishesMigrations($executionClaimMigration, 'verdict-execution-claim-migrations');
     }
 }

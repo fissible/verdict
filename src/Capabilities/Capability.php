@@ -8,6 +8,7 @@ use Closure;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
+use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use InvalidArgumentException;
 use LogicException;
@@ -41,6 +42,7 @@ final readonly class Capability
         private ?string $confirmationReason = null,
         private ?int $confirmationTtlSeconds = null,
         private ?RateLimitPolicy $rateLimitPolicy = null,
+        private ?ExecutionClaimPolicy $executionClaimPolicy = null,
     ) {
         if (trim($this->name) === '') {
             throw new InvalidArgumentException('A capability must have a name.');
@@ -84,6 +86,7 @@ final readonly class Capability
             confirmationReason: $this->confirmationReason,
             confirmationTtlSeconds: $this->confirmationTtlSeconds,
             rateLimitPolicy: $this->rateLimitPolicy,
+            executionClaimPolicy: $this->executionClaimPolicy,
         );
     }
 
@@ -110,6 +113,7 @@ final readonly class Capability
             confirmationReason: $reason,
             confirmationTtlSeconds: $ttlSeconds,
             rateLimitPolicy: $this->rateLimitPolicy,
+            executionClaimPolicy: $this->executionClaimPolicy,
         );
     }
 
@@ -124,12 +128,33 @@ final readonly class Capability
             confirmationReason: $this->confirmationReason,
             confirmationTtlSeconds: $this->confirmationTtlSeconds,
             rateLimitPolicy: $policy,
+            executionClaimPolicy: $this->executionClaimPolicy,
         );
     }
 
     public function rateLimitPolicy(): ?RateLimitPolicy
     {
         return $this->rateLimitPolicy;
+    }
+
+    public function atMostOnce(ExecutionClaimPolicy $policy): self
+    {
+        return new self(
+            name: $this->name,
+            ability: $this->ability,
+            resolveTarget: $this->targetResolver,
+            executor: $this->executor,
+            approvalBindingResolver: $this->approvalBindingResolver,
+            confirmationReason: $this->confirmationReason,
+            confirmationTtlSeconds: $this->confirmationTtlSeconds,
+            rateLimitPolicy: $this->rateLimitPolicy,
+            executionClaimPolicy: $policy,
+        );
+    }
+
+    public function executionClaimPolicy(): ?ExecutionClaimPolicy
+    {
+        return $this->executionClaimPolicy;
     }
 
     public function confirmationRequired(): bool

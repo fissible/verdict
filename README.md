@@ -2,11 +2,12 @@
 
 **Policy-bound actions, security evidence, and adversarial evaluation for Laravel AI agents.**
 
-> **Project status: early implementation.** Runtime authorization, verified confirmation, and
-> deterministic context-release slices exist on `main`, together with an opt-in database
-> evidence recorder, a deterministic security-evaluation foundation, and a storefront security
-> workbench. Verdict has no tagged release and no stable public API. Sections labeled planned,
-> proposed, or illustrative describe direction rather than shipped behavior.
+> **Project status: early implementation.** Runtime authorization, verified confirmation,
+> semantic execution limits, strict at-most-once executor admission, and deterministic
+> context-release slices exist on `main`, together with an opt-in database evidence recorder, a
+> deterministic security-evaluation foundation, and a storefront security workbench. Verdict has
+> no tagged release and no stable public API. Sections labeled planned, proposed, or illustrative
+> describe direction rather than shipped behavior.
 
 Verdict is an early Laravel package for applications that allow AI agents to read sensitive
 context, call tools, or change application state. Its central rule is simple:
@@ -32,7 +33,7 @@ For any agent run:
 5. Did a model, prompt, tool, policy, or document change reduce security?
 6. What evidence supports the result?
 7. What data left the application, and to which destination?
-8. Did the authorized operation execute exactly once as approved?
+8. Was a duplicate logical operation prevented from entering the executor?
 
 Verdict aims to be holistic at this boundary. It is not intended to be a complete AI security,
 privacy, identity, compliance, or observability platform.
@@ -72,7 +73,8 @@ Application context
     -> Laravel Policy and other deterministic rules decide
     -> permit, deny, throttle, request confirmation, or request review
     -> re-authorize immediately before execution
-    -> execute an idempotent application command
+    -> atomically claim the logical operation when configured
+    -> execute deterministic application code
     -> record redacted evidence and emit security signals
 ```
 
@@ -180,10 +182,11 @@ database time-of-check/time-of-use race. Verdict does not yet define target iden
 resolution, database transactions, or locking for arbitrary target types. Mutating executors remain
 responsible for ordinary Laravel transaction, locking, and idempotency practices.
 
-The model-provided tool-call ID is captured as an idempotency key in evidence. The confirmation
-slice described below enforces expiring, single-use approval receipts for `BoundTool`. Verdict does
-**not** yet enforce execution idempotency or review. It does enforce the opt-in semantic execution
-limits described below.
+The model-provided tool-call ID is captured as transport metadata in evidence, not trusted as the
+identity of a logical operation. The confirmation slice described below enforces expiring,
+single-use approval receipts for `BoundTool`. Capabilities may also opt into strict at-most-once
+executor admission and semantic execution limits as described below. Verdict does not yet enforce
+review or exactly-once external side effects.
 
 ### Verified confirmations
 
@@ -481,10 +484,67 @@ An approval nonce and an execution idempotency key have different jobs:
 - An **idempotency key** is intentionally reused for retries of the same logical operation. It
   prevents a timeout or queue retry from performing the side effect twice.
 
-The current `BoundTool` slice implements these as an internal receipt state machine. The Laravel AI
-tool-call ID identifies the pending call, while Verdict creates a separate unpredictable receipt ID
-for the approval decision. The model generates neither the receipt ID nor the decision-maker
-identity. Execution idempotency remains separate and unimplemented.
+The current `BoundTool` slice implements approval as an internal receipt state machine. The Laravel
+AI tool-call ID identifies the pending call, while Verdict creates a separate unpredictable receipt
+ID for the approval decision. The model generates neither the receipt ID nor the decision-maker
+identity. Approval receipts authorize one exact proposal; they do not identify repeated versions of
+the same logical operation.
+
+## Strict at-most-once executor admission
+
+A mutating capability may opt into durable duplicate admission prevention:
+
+```php
+use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
+
+$capability = Capability::usingPolicy(
+    name: 'orders.cancel',
+    ability: 'cancel',
+    resolveTarget: fn (ActionEnvelope $envelope): Order => Order::find(
+        $envelope->proposal->arguments['order_id'],
+    ) ?? throw TargetNotResolvable::make(),
+)->atMostOnce(ExecutionClaimPolicy::named(
+    name: 'cancel-order-version',
+    keyUsing: fn (ActionEnvelope $envelope, Order $order): array => [
+        'tenant_id' => $order->tenant_id,
+        'actor_id' => $envelope->context->actor->getAuthIdentifier(),
+        'order_id' => $order->getKey(),
+        'order_version' => $order->updated_at?->getTimestamp(),
+    ],
+))->executeUsing(fn (AuthorizedAction $action) => CancelOrder::run($action->target));
+```
+
+The application-defined binding is the identity of the logical operation. Include every material
+semantic input and trusted resource version that should distinguish one operation from another.
+Do not use the provider tool-call ID as that identity: transports may redeliver a call under a new
+ID, and the same ID may be reused incorrectly. Verdict hashes the capability, policy name, and
+canonical binding before storage; raw binding values are not retained.
+
+The claim is the final gate immediately before the executor. Authorization and confirmation run
+first, then a configured semantic rate limit consumes an authorized-attempt unit, then the claim is
+atomically admitted. One caller enters the executor. Later or concurrent duplicates are denied
+while the claim is active, completed, or indeterminate.
+
+If the executor throws after admission, Verdict marks the outcome indeterminate and rethrows the
+original exception. It does not guess whether an external side effect occurred, silently retry, or
+cache a potentially sensitive result. An operator must investigate and reconcile the claim:
+
+```bash
+php artisan verdict:execution-claims
+php artisan verdict:resolve-execution-claim CLAIM_ID completed \
+    --by=operator:7 --reason="Carrier confirmed cancellation succeeded"
+php artisan verdict:resolve-execution-claim CLAIM_ID retryable \
+    --by=operator:7 --reason="Carrier confirmed no request was accepted"
+```
+
+Resolving a claim as `retryable` releases it for one explicit retry. A claim still marked active
+requires `--force`; that option should be used only after application-specific investigation.
+Claim rows are part of the guarantee horizon, so Verdict provides no automatic pruning command.
+
+This is strict at-most-once **admission to the configured executor**, not exactly-once effects. A
+process can fail after an external service accepts a request but before Verdict records completion.
+Executors and downstream APIs still need appropriate transaction, outbox, and idempotency designs.
+See [ADR 0002](docs/adr/0002-strict-at-most-once-admission.md) for the precise boundary.
 
 ## Rate limits and risk budgets
 
@@ -523,7 +583,8 @@ denials and unsuccessful approval checks do not consume it. Database failures st
 remain visible as application faults rather than being mislabeled as throttles.
 
 A consumed unit means an authorized execution **attempt**, not a guaranteed successful external
-side effect. Transport redelivery and executor idempotency remain separate application concerns.
+side effect. A duplicate can therefore consume a unit before an execution claim blocks it; this is
+intentional and also bounds repeated pressure on an unresolved claim.
 See [ADR 0001](docs/adr/0001-semantic-execution-rate-limits.md) for the precise boundary.
 
 Later semantic limits may include:
@@ -881,7 +942,8 @@ The implementation will need to account for ordinary Laravel runtime behavior:
 - Live-model evaluations must not run as part of an ordinary deterministic test command.
 
 The confirmation receipt slice implements lifecycle-scoped approval context and database-backed,
-single-use receipts. The remaining items are design requirements, not implemented guarantees.
+single-use receipts. The execution-claim slice prevents duplicate admission only on configured
+paths through Verdict. The remaining items are design requirements, not implemented guarantees.
 
 ## Package shape
 
@@ -992,6 +1054,14 @@ php artisan migrate
 php artisan verdict:prune-rate-limits
 ```
 
+At-most-once executor admission also uses an atomic database store by default. Publish and run its
+migration before attaching an `ExecutionClaimPolicy` to a capability:
+
+```bash
+php artisan vendor:publish --tag=verdict-execution-claim-migrations
+php artisan migrate
+```
+
 - `approvals.store` — the `ApprovalReceiptStore` implementation. The default database store uses
   atomic row-locked transitions. The in-memory implementation is only for deterministic tests.
 - `approvals.connection` and `approvals.table` — the database location for receipt state.
@@ -1008,13 +1078,18 @@ php artisan verdict:prune-rate-limits
   local development.
 - `rate_limits.connection` and `rate_limits.table` — the database location for fixed-window bucket
   counters.
+- `execution_claims.store` — the `ExecutionClaimStore` implementation. The database default
+  coordinates atomic admission across requests, workers, and nodes. The in-memory implementation
+  is only for deterministic tests and local development.
+- `execution_claims.connection` and `execution_claims.table` — the database location for durable
+  execution-claim state.
 - `ai.denied_message` — the message returned to the model when a proposal is not executed. Internal
   denial reasons are recorded in evidence but are never included in this message.
 
 The receipt table intentionally retains terminal rows so an old tool-call cannot silently become a
-new approval after deletion. A bounded pruning or tombstone policy has not been implemented yet;
-do not delete terminal receipts while the corresponding Laravel AI conversation can still be
-resumed or replayed.
+new approval after deletion. Execution claims likewise retain completed rows because deleting one
+re-enables admission for that logical operation. A bounded tombstone or retention policy has not
+been implemented; do not delete either kind of record while its replay guarantee is required.
 
 ## Roadmap
 
@@ -1024,7 +1099,7 @@ This roadmap is directional and may change as the integration is prototyped.
 |---|---|---|
 | Design | Threat model, vocabulary, package boundary, demo design | Documented; ongoing |
 | Runtime foundation | Capability registry, bound and guarded tools, staged decisions, Laravel Policy integration | First slice implemented |
-| Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Confirmation receipt slice implemented; broader identity and idempotency planned |
+| Identity and execution | Principal/tenant binding, confirmation state, expiry, duplicate admission, idempotency | Confirmation receipts and opt-in strict at-most-once executor admission implemented; broader identity and exactly-once effect design remains application-specific |
 | Semantic limits | Per-capability execution attempts, trusted bucket bindings, durable counters, throttle evidence | Fixed-window execution-limit slice implemented; proposal, conversation, cost, and cumulative-risk budgets planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection, structured redaction, transform non-expansion, and exact destination routes implemented; detectors and validators planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders implemented; levels, events, and audit command planned |

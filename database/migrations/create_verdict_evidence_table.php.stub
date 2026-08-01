@@ -31,6 +31,11 @@ return new class extends Migration
             $table->unsignedBigInteger('rate_limit_limit')->nullable();
             $table->unsignedBigInteger('rate_limit_remaining')->nullable();
             $table->timestamp('rate_limit_reset_at')->nullable();
+            $table->char('execution_claim_fingerprint', 64)->nullable();
+            $table->char('execution_claim_binding_fingerprint', 64)->nullable();
+            $table->string('execution_claim_policy')->nullable();
+            $table->string('execution_claim_status', 24)->nullable();
+            $table->unsignedInteger('execution_claim_attempt')->nullable();
             $table->json('requested_path_fingerprints')->nullable();
             $table->json('released_path_fingerprints')->nullable();
             $table->json('transform_fingerprints')->nullable();

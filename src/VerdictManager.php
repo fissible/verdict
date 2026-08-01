@@ -21,13 +21,17 @@ use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Exceptions\ExecutionClaimFinalizationFailed;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
+use Fissible\Verdict\ExecutionClaims\ExecutionClaimAdmission;
+use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
 use Fissible\Verdict\RateLimits\RateLimitManager;
 use Illuminate\Contracts\Support\Arrayable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
+use Throwable;
 
 final readonly class VerdictManager
 {
@@ -38,6 +42,7 @@ final readonly class VerdictManager
         private ApprovalManager $approvals,
         private ContextReleaseManager $contextReleases,
         private RateLimitManager $rateLimits,
+        private ExecutionClaimManager $executionClaims,
         private string $deniedMessage,
     ) {}
 
@@ -115,13 +120,7 @@ final readonly class VerdictManager
             return ExecutionResult::denied($evaluation);
         }
 
-        $rateLimitEvaluation = $this->rateLimit($evaluation);
-
-        if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
-            return ExecutionResult::denied($rateLimitEvaluation);
-        }
-
-        return ExecutionResult::executed($evaluation, $executor($evaluation));
+        return $this->execute($evaluation, fn (): mixed => $executor($evaluation));
     }
 
     public function runBound(ActionEnvelope $envelope): ExecutionResult
@@ -179,15 +178,9 @@ final readonly class VerdictManager
             return ExecutionResult::denied($executionEvaluation);
         }
 
-        $rateLimitEvaluation = $this->rateLimit($executionEvaluation);
-
-        if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
-            return ExecutionResult::denied($rateLimitEvaluation);
-        }
-
-        return ExecutionResult::executed(
+        return $this->execute(
             $executionEvaluation,
-            $capability->execute(AuthorizedAction::fromExecutionEvaluation($executionEvaluation)),
+            fn (): mixed => $capability->execute(AuthorizedAction::fromExecutionEvaluation($executionEvaluation)),
         );
     }
 
@@ -235,6 +228,11 @@ final readonly class VerdictManager
         return $this->approvals;
     }
 
+    public function executionClaims(): ExecutionClaimManager
+    {
+        return $this->executionClaims;
+    }
+
     private function record(Evaluation $evaluation): Evaluation
     {
         $this->evidence->record(DecisionEvidence::fromEvaluation($evaluation));
@@ -256,6 +254,83 @@ final readonly class VerdictManager
             target: $evaluation->target,
             decision: $this->rateLimits->consume($capability, $evaluation->envelope, $evaluation->target),
             stage: EvaluationStage::RateLimit,
+        ));
+    }
+
+    /** @param callable(): mixed $executor */
+    private function execute(Evaluation $evaluation, callable $executor): ExecutionResult
+    {
+        $rateLimitEvaluation = $this->rateLimit($evaluation);
+
+        if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
+            return ExecutionResult::denied($rateLimitEvaluation);
+        }
+
+        $admission = $this->claimExecution($evaluation);
+
+        if ($admission !== null && ! $admission->admitted()) {
+            return ExecutionResult::denied(new Evaluation(
+                envelope: $evaluation->envelope,
+                capability: $evaluation->capability,
+                target: $evaluation->target,
+                decision: $admission->decision,
+                stage: EvaluationStage::ExecutionClaim,
+            ));
+        }
+
+        try {
+            $output = $executor();
+        } catch (Throwable $executionFailure) {
+            if ($admission !== null) {
+                try {
+                    $this->recordClaimDecision(
+                        $evaluation,
+                        $this->executionClaims->markIndeterminate($admission),
+                    );
+                } catch (Throwable $finalizationFailure) {
+                    throw ExecutionClaimFinalizationFailed::fromFailures(
+                        $executionFailure,
+                        $finalizationFailure,
+                    );
+                }
+            }
+
+            throw $executionFailure;
+        }
+
+        if ($admission !== null) {
+            $this->recordClaimDecision($evaluation, $this->executionClaims->complete($admission));
+        }
+
+        return ExecutionResult::executed($evaluation, $output);
+    }
+
+    private function claimExecution(Evaluation $evaluation): ?ExecutionClaimAdmission
+    {
+        $capability = $evaluation->capability;
+
+        if ($capability === null || $capability->executionClaimPolicy() === null) {
+            return null;
+        }
+
+        $admission = $this->executionClaims->claim(
+            $capability,
+            $evaluation->envelope,
+            $evaluation->target,
+        );
+        $this->recordClaimDecision($evaluation, $admission->decision);
+
+        return $admission;
+    }
+
+    private function recordClaimDecision(Evaluation $evaluation, Decision $decision): Evaluation
+    {
+        return $this->record(new Evaluation(
+            envelope: $evaluation->envelope,
+            capability: $evaluation->capability,
+            target: $evaluation->target,
+            decision: $decision,
+            stage: EvaluationStage::ExecutionClaim,
         ));
     }
 }

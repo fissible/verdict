@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 
 return [
@@ -28,6 +29,14 @@ return [
         'store' => DatabaseRateLimitStore::class,
         'connection' => null,
         'table' => 'verdict_rate_limit_buckets',
+    ],
+
+    'execution_claims' => [
+        // InMemoryExecutionClaimStore is only for tests and local development. Its process-local
+        // state cannot prevent duplicate execution across workers or application nodes.
+        'store' => DatabaseExecutionClaimStore::class,
+        'connection' => null,
+        'table' => 'verdict_execution_claims',
     ],
 
     'ai' => [

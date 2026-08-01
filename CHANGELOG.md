@@ -39,3 +39,5 @@ All notable changes to Verdict will be documented in this file.
   atomic fixed-window database counters, throttle evidence, and expired-bucket pruning.
 - Add a deterministic storefront agent-loop lab showing three individually authorized shipment
   refresh proposals producing two executions and one semantic throttle.
+- Add opt-in strict at-most-once executor admission with application-defined canonical operation
+  bindings, durable atomic claim state, redacted evidence, and explicit operator reconciliation.

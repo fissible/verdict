@@ -36,6 +36,11 @@ beforeEach(function (): void {
         $table->unsignedInteger('rate_limit_limit')->nullable();
         $table->unsignedInteger('rate_limit_remaining')->nullable();
         $table->timestamp('rate_limit_reset_at')->nullable();
+        $table->char('execution_claim_fingerprint', 64)->nullable();
+        $table->char('execution_claim_binding_fingerprint', 64)->nullable();
+        $table->string('execution_claim_policy')->nullable();
+        $table->string('execution_claim_status', 24)->nullable();
+        $table->unsignedInteger('execution_claim_attempt')->nullable();
         $table->json('requested_path_fingerprints')->nullable();
         $table->json('released_path_fingerprints')->nullable();
         $table->json('transform_fingerprints')->nullable();
@@ -71,6 +76,11 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         rateLimitLimit: 5,
         rateLimitRemaining: 4,
         rateLimitResetAt: new DateTimeImmutable('2026-08-01 12:01:00', new DateTimeZone('UTC')),
+        executionClaimFingerprint: str_repeat('c', 64),
+        executionClaimBindingFingerprint: str_repeat('d', 64),
+        executionClaimPolicy: 'cancel-order',
+        executionClaimStatus: 'completed',
+        executionClaimAttempt: 1,
         recordedAt: $recordedAt,
     );
 
@@ -92,6 +102,8 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         ->and((string) $row->rate_limit_key_fingerprint)->toBe(str_repeat('b', 64))
         ->and((string) $row->rate_limit_policy)->toBe('per-customer')
         ->and((int) $row->rate_limit_remaining)->toBe(4)
+        ->and((string) $row->execution_claim_fingerprint)->toBe(str_repeat('c', 64))
+        ->and((string) $row->execution_claim_status)->toBe('completed')
         ->and((string) $row->idempotency_key_fingerprint)
         ->toBe(hash('sha256', 'provider-tool-call-secret'))
         ->not->toBe('provider-tool-call-secret');
