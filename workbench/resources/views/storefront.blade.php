@@ -110,6 +110,10 @@
         .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 18px 0 22px; color: #b9c4d4; font: .78rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
         .flow span { border: 1px solid #34445f; border-radius: 999px; padding: 7px 10px; background: #101827; }
         .flow b { color: #65748c; }
+        .confirmation-controls { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-top: 18px; padding: 18px 20px; }
+        .confirmation-controls .flow { margin: 0; }
+        .confirmation-controls form { flex: none; }
+        .confirmation-controls button { min-width: 230px; }
         .results-section { scroll-margin-top: 24px; margin-top: 34px; }
         .results-intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
         .results-intro h2 { margin-bottom: 0; }
@@ -130,6 +134,8 @@
             .scenario { grid-template-columns: 1fr; }
             .effect-details { grid-template-columns: 1fr; }
             .results-intro { align-items: start; flex-direction: column; }
+            .confirmation-controls { align-items: stretch; flex-direction: column; }
+            .confirmation-controls button { width: 100%; }
         }
 
         @media (max-width: 560px) {
@@ -157,7 +163,7 @@
             </dl>
         </div>
         <form class="scenario-controls" method="get" action="{{ route('verdict.demo') }}#comparison-results">
-            <input type="hidden" name="run" value="1">
+            <input type="hidden" name="run_comparison" value="1">
             <div>
                 <p class="eyebrow">Run the lab</p>
                 <p class="control-copy">Choose a target, then execute the same proposal through all three security boundaries.</p>
@@ -170,11 +176,11 @@
                 </select>
             </label>
             <button type="submit">Run security comparison</button>
-            <span class="fine-print">Nothing below executes until you run the comparison.</span>
+            <span class="fine-print">Runs only this order-lookup comparison. Confirmation is a separate lab below.</span>
         </form>
     </div>
 
-    @if ($hasRun)
+    @if ($hasComparisonRun)
     <section id="comparison-results" class="results-section">
         <div class="results-intro">
             <div>
@@ -231,16 +237,25 @@
         </article>
     </div>
     </section>
+    @endif
 
-    <section>
+    <section id="confirmation-lab" class="results-section">
         <p class="eyebrow">Argument-bound confirmation</p>
         <h2>Approval is permission for one exact action.</h2>
-        <p class="section-copy">The customer approves cancellation of order #1002 for one stated reason. Verdict rejects changed arguments, executes the exact approved action once, and rejects replay.</p>
+        <p class="section-copy">This independent scenario issues approval for cancellation of order #1002 with one stated reason. Verdict then tests changed arguments, the exact approved action, and replay.</p>
 
-        <div class="flow">
-            <span>pending</span><b>→</b><span>approved</span><b>→</b><span>consumed</span>
+        <div class="panel confirmation-controls">
+            <div class="flow">
+                <span>pending</span><b>→</b><span>approved</span><b>→</b><span>consumed</span>
+            </div>
+            <form method="get" action="{{ route('verdict.demo') }}#confirmation-lab">
+                <input type="hidden" name="run_approval" value="1">
+                <input type="hidden" name="order_id" value="{{ $scenario['target']['id'] }}">
+                <button type="submit">{{ $hasApprovalRun ? 'Run confirmation flow again' : 'Run confirmation flow' }}</button>
+            </form>
         </div>
 
+        @if ($hasApprovalRun)
         <div class="attempts">
             @foreach ($approval['attempts'] as $attempt)
                 <article class="panel attempt {{ $attempt['status'] }}">
@@ -283,8 +298,8 @@
                 </div>
             </div>
         </div>
+        @endif
     </section>
-    @endif
 
     <footer>
         This UI exists only in Verdict's Testbench workbench. The distributed Laravel package remains headless. The manual implementation is intentionally shown as secure: Verdict's value is consistent mediation, bound execution, evidence, and regression testing—not replacing Laravel Policies.

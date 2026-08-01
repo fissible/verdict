@@ -69,18 +69,31 @@ it('does not execute or reveal results before the comparison is requested', func
         ->assertSee('The model proposes. Laravel decides.')
         ->assertSee('Run security comparison')
         ->assertDontSee('Naive Laravel AI tool')
-        ->assertDontSee('Argument-bound confirmation')
+        ->assertSee('Argument-bound confirmation')
+        ->assertSee('Run confirmation flow')
+        ->assertDontSee('Arguments changed after approval')
         ->assertDontSee('The approved executor wrote exactly once.');
 });
 
 it('renders the executed workbench-only storefront security lab', function (): void {
-    $this->get('/?run=1&order_id=1001')
+    $this->get('/?run_comparison=1&order_id=1001')
         ->assertOk()
         ->assertSee('Naive Laravel AI tool')
         ->assertSee('Manually secured Laravel tool')
         ->assertSee('Verdict BoundTool')
         ->assertSee('Argument-bound confirmation')
+        ->assertSee('Run confirmation flow')
+        ->assertDontSee('Arguments changed after approval')
+        ->assertDontSee('The approved executor wrote exactly once.')
+        ->assertSee('Order belongs to customer 91.');
+});
+
+it('runs argument-bound confirmation independently from the order comparison', function (): void {
+    $this->get('/?run_approval=1&order_id=1001')
+        ->assertOk()
+        ->assertSee('Argument-bound confirmation')
+        ->assertSee('Arguments changed after approval')
         ->assertSee('The approved executor wrote exactly once.')
         ->assertSee('scoped in-memory execution sink')
-        ->assertSee('Order belongs to customer 91.');
+        ->assertDontSee('Naive Laravel AI tool');
 });
