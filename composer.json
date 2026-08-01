@@ -65,6 +65,9 @@
     "analyse": [
       "vendor/bin/phpstan analyse --memory-limit=1G"
     ],
+    "analyse:serial": [
+      "vendor/bin/phpstan analyse --memory-limit=1G --debug"
+    ],
     "test:types": [
       "vendor/bin/pest --type-coverage --min=100"
     ],

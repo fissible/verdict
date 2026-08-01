@@ -52,7 +52,14 @@ jobs:
           composer run prepare
 
       - name: PHPStan
+        if: runner.os != 'Windows'
         run: composer analyse
+
+      - name: PHPStan
+        if: runner.os == 'Windows'
+        # Larastan boots Testbench in each worker. Parallel workers can race while replacing
+        # bootstrap/cache/services.php on Windows, where an open file cannot be renamed.
+        run: composer analyse:serial
 
       - name: Linter
         run: composer lint:check
