@@ -26,3 +26,6 @@ All notable changes to Verdict will be documented in this file.
   a denied remote trust zone using the same provider name.
 - Add an opt-in database evidence recorder and publishable migration for action decisions and
   context releases, hashing tool-call keys and retaining no raw arguments or released payloads.
+- Add a provider-agnostic deterministic security-evaluation foundation with labeled trusted and
+  untrusted inputs, structured observations, redacted results, explicit harness errors, and
+  separate security-containment and legitimate-utility scoring.
