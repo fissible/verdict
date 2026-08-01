@@ -1,0 +1,99 @@
+{
+  "$schema": "https://getcomposer.org/schema.json",
+  "name": "fissible/verdict",
+  "description": "Policy-bound actions and security evidence for Laravel AI agents.",
+  "keywords": [
+    "ai",
+    "authorization",
+    "laravel",
+    "security"
+  ],
+  "homepage": "https://github.com/fissible/verdict",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Allen McCabe",
+      "email": "allenmccabe@gmail.com",
+      "role": "Developer"
+    }
+  ],
+  "require": {
+    "php": "^8.3",
+    "illuminate/contracts": "^12.0||^13.0",
+    "illuminate/support": "^12.0||^13.0",
+    "laravel/ai": "^0.10.2"
+  },
+  "require-dev": {
+    "larastan/larastan": "^3.9",
+    "laravel/pint": "^1.29",
+    "orchestra/testbench": "^10.0||^11.0",
+    "pestphp/pest": "^4.6",
+    "pestphp/pest-plugin-laravel": "^4.1",
+    "pestphp/pest-plugin-type-coverage": "^4.0",
+    "phpstan/extension-installer": "^1.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "Fissible\\Verdict\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Fissible\\Verdict\\Tests\\": "tests/",
+      "Workbench\\App\\": "workbench/app/",
+      "Workbench\\Database\\Factories\\": "workbench/database/factories/",
+      "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
+    }
+  },
+  "scripts": {
+    "post-autoload-dump": [
+      "@prepare"
+    ],
+    "prepare": [
+      "@php vendor/bin/testbench package:discover --ansi"
+    ],
+    "build": [
+      "@php vendor/bin/testbench workbench:build --ansi"
+    ],
+    "lint": [
+      "vendor/bin/pint"
+    ],
+    "lint:check": [
+      "vendor/bin/pint --test"
+    ],
+    "analyse": [
+      "vendor/bin/phpstan analyse --memory-limit=1G"
+    ],
+    "test:types": [
+      "vendor/bin/pest --type-coverage --min=100"
+    ],
+    "test:unit": [
+      "vendor/bin/pest"
+    ],
+    "test": [
+      "@analyse",
+      "@lint:check",
+      "@test:types",
+      "@test:unit"
+    ]
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Fissible\\Verdict\\VerdictServiceProvider"
+      ],
+      "aliases": {
+        "Verdict": "Fissible\\Verdict\\Facades\\Verdict"
+      }
+    }
+  },
+  "config": {
+    "sort-packages": true,
+    "allow-plugins": {
+      "pestphp/pest-plugin": true,
+      "phpstan/extension-installer": true
+    }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
+}

@@ -1,0 +1,48 @@
+name: Bug report
+description: Report behavior that is not working as expected.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Verdict. Do not include secrets, customer data, prompts, or unredacted evidence in a public issue.
+
+  - type: input
+    id: package-version
+    attributes:
+      label: Verdict version
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: laravel-version
+    attributes:
+      label: Laravel version
+      placeholder: 13.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: laravel-ai-version
+    attributes:
+      label: Laravel AI version
+      placeholder: 0.10.2
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: Use synthetic data and redact all sensitive values.
+    validations:
+      required: true

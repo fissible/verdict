@@ -1,0 +1,135 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Fissible\Verdict\LaravelAi;
+
+use Closure;
+use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\ActionProposal;
+use Fissible\Verdict\VerdictManager;
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\JsonSchema\Types\Type;
+use JsonException;
+use Laravel\Ai\Approvals\Approval;
+use Laravel\Ai\Contracts\Approvable;
+use Laravel\Ai\Contracts\Tool;
+use Laravel\Ai\Tools\Request;
+use Laravel\Ai\Tools\ToolNameResolver;
+use LogicException;
+use Stringable;
+
+final class GuardedTool implements Approvable, Tool
+{
+    /**
+     * @var Closure(Request): mixed
+     */
+    private Closure $contextResolver;
+
+    private Approval|false|null $approvalRequirement = null;
+
+    /**
+     * @param  ActionContext|callable(Request): mixed  $context
+     */
+    public function __construct(
+        private readonly Tool $tool,
+        private readonly string $capability,
+        ActionContext|callable $context,
+        private readonly VerdictManager $verdict,
+        private readonly string $deniedMessage = 'This action was not authorized.',
+    ) {
+        $this->contextResolver = $context instanceof ActionContext
+            ? static fn (Request $request): ActionContext => $context
+            : Closure::fromCallable($context);
+    }
+
+    public function name(): string
+    {
+        return ToolNameResolver::resolve($this->tool);
+    }
+
+    public function description(): Stringable|string
+    {
+        return $this->tool->description();
+    }
+
+    /**
+     * @return array<string, Type>
+     */
+    public function schema(JsonSchema $schema): array
+    {
+        return $this->tool->schema($schema);
+    }
+
+    /**
+     * @throws JsonException
+     */
+    public function handle(Request $request): Stringable|string
+    {
+        $context = ($this->contextResolver)($request);
+
+        if (! $context instanceof ActionContext) {
+            throw new LogicException('A Verdict tool context resolver must return an ActionContext.');
+        }
+
+        $envelope = ActionEnvelope::wrap(
+            proposal: new ActionProposal(
+                capability: $this->capability,
+                arguments: $request->all(),
+                idempotencyKey: $request->toolCallId(),
+                metadata: ['transport' => 'laravel-ai'],
+            ),
+            context: $context,
+        );
+
+        $result = $this->verdict->run(
+            $envelope,
+            fn (): Stringable|string => $this->tool->handle($request),
+        );
+
+        if ($result->executed) {
+            if (! is_string($result->output) && ! $result->output instanceof Stringable) {
+                throw new LogicException('A wrapped Laravel AI tool must return a string or Stringable result.');
+            }
+
+            return $result->output;
+        }
+
+        return json_encode([
+            'status' => 'not_executed',
+            'capability' => $this->capability,
+            'decision' => $result->evaluation->decision->disposition->value,
+            'message' => $this->deniedMessage,
+        ], JSON_THROW_ON_ERROR);
+    }
+
+    public function requireApproval(?string $reason = null): static
+    {
+        $this->approvalRequirement = Approval::required($reason);
+
+        return $this;
+    }
+
+    public function withoutApproval(): static
+    {
+        $this->approvalRequirement = false;
+
+        return $this;
+    }
+
+    public function shouldRequestApproval(Request $request): ?Approval
+    {
+        if ($this->approvalRequirement === false) {
+            return null;
+        }
+
+        if ($this->approvalRequirement instanceof Approval) {
+            return $this->approvalRequirement;
+        }
+
+        return $this->tool instanceof Approvable
+            ? $this->tool->shouldRequestApproval($request)
+            : null;
+    }
+}

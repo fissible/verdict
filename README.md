@@ -2,11 +2,11 @@
 
 **Policy-bound actions, security evidence, and adversarial evaluation for Laravel AI agents.**
 
-> **Project status: design stage.** Verdict is not installable yet, and no public API is stable.
-> The examples in this README are design sketches intended to make the proposed behavior concrete.
-> They document the direction of the project, not features that already exist.
+> **Project status: early implementation.** The first runtime authorization slice exists on
+> `main`, but Verdict has no tagged release and no stable public API. Sections labeled planned,
+> proposed, or illustrative describe direction rather than shipped behavior.
 
-Verdict is a proposed Laravel package for applications that allow AI agents to read sensitive
+Verdict is an early Laravel package for applications that allow AI agents to read sensitive
 context, call tools, or change application state. Its central rule is simple:
 
 > **The model may propose an action. The application must authorize it.**
@@ -107,7 +107,56 @@ refunds.set_amount
 customers.find_by_id
 ```
 
-An illustrative capability definition might eventually look like this:
+The implemented foundation is intentionally smaller than the eventual fluent API. A capability
+currently names a Laravel ability and resolves the canonical policy target from an untrusted
+proposal:
+
+```php
+use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Facades\Verdict;
+use Laravel\Ai\Tools\Request;
+
+Verdict::capability(Capability::usingPolicy(
+    name: 'orders.view',
+    ability: 'view',
+    resolveTarget: fn (ActionEnvelope $envelope): Order => Order::findOrFail(
+        $envelope->proposal->arguments['order_id'],
+    ),
+));
+
+final class StorefrontAgent implements HasTools
+{
+    public function tools(): iterable
+    {
+        return [
+            Verdict::guard(
+                tool: new LookupOrder,
+                capability: 'orders.view',
+                context: fn (Request $request): ActionContext => new ActionContext(auth()->user()),
+            ),
+        ];
+    }
+}
+```
+
+`GuardedTool` delegates the existing Laravel AI tool name, description, schema, and approval
+requirement. At invocation time it binds the server-provided actor, resolves the target once,
+asks Laravel's Gate to inspect the ability, and only then calls the wrapped tool. Missing
+capabilities fail closed.
+
+The current wrapper authorizes the resolved target and then delegates to the existing tool
+handler. It cannot prove that an arbitrary handler operates on that exact target, prevent the
+handler from resolving different data, or close a time-of-check/time-of-use race for a mutation.
+Until Verdict adds a target-bound executor and transactional re-authorization, handlers remain
+responsible for using the same canonical resource and for applying ordinary Laravel transaction,
+locking, and idempotency practices.
+
+The model-provided tool-call ID is captured as an idempotency key in evidence. Verdict does **not**
+yet enforce idempotency, expiry, one-time nonces, confirmation, review, or rate limits.
+
+The longer-term fluent API remains an illustrative design:
 
 ```php
 Verdict::capability('orders.cancel')
@@ -120,7 +169,7 @@ Verdict::capability('orders.cancel')
     ->executeUsing(CancelOrder::class);
 ```
 
-The exact API has not been selected. The intended separation has:
+That full API has not been selected. The intended separation has:
 
 - The model selects a bounded capability and proposes semantic arguments.
 - Server-side code resolves references such as "my latest order."
@@ -165,9 +214,9 @@ canonical resource bound before execution.
 > Laravel decides whether the user may view the order. Verdict aims to ensure that an AI-proposed
 > order lookup cannot silently bypass that decision.
 
-Any eventual Verdict enforcement will only protect execution paths that actually pass through it.
-An audit command is planned to identify unguarded application tools and other known bypasses, but
-the exact integration surface still needs to be implemented and validated against Laravel AI.
+Verdict enforcement only protects execution paths that actually pass through `GuardedTool` or
+`VerdictManager`. An unwrapped tool remains an ordinary Laravel AI tool and can bypass Verdict.
+An audit command is planned to identify unguarded application tools and other known bypasses.
 
 ## Optional planner agents
 
@@ -325,6 +374,13 @@ latency, token usage, and available cost data
 The evidence store may contain highly sensitive information. The planned design will need
 configurable evidence levels, retention, tenant isolation, access authorization, pruning, and
 encryption. A hash of predictable personal information is not anonymization.
+
+The initial implementation records a decision, envelope ID, capability, detailed internal reason,
+provider tool-call ID, timestamp, and a deterministic SHA-256 fingerprint of normalized arguments
+through an `EvidenceRecorder` contract. It does not store raw arguments. The default recorder is a
+no-op because silently choosing a storage destination or retention policy would be unsafe;
+`InMemoryEvidenceRecorder` exists for tests and local development. Persistent stores and execution
+outcome records are not implemented yet.
 
 Verdict should record observable inputs, outputs, policy facts, and decisions. It should not
 request or store hidden model chain-of-thought.
@@ -527,27 +583,24 @@ The implementation will need to account for ordinary Laravel runtime behavior:
 
 These are design requirements, not implemented guarantees.
 
-## Proposed package shape
+## Package shape
 
-The first repository is expected to remain one Laravel package:
+The repository is one headless Laravel package:
 
 ```text
 fissible/verdict
     src/
         Capabilities/
-        Context/
+        Actions/
         Decisions/
         Evidence/
-        Evaluation/
         LaravelAi/
         Policies/
-        RateLimiting/
-        Signals/
     tests/
     workbench/
 ```
 
-The package is expected to be scaffolded from Laravel's official
+The package is scaffolded from the conventions in Laravel's official
 [`package-skeleton`](https://github.com/laravel/package-skeleton), using its Testbench workbench
 for the demo while keeping the distributed package headless.
 
@@ -556,10 +609,27 @@ after a real boundary and consumer appear.
 
 ## Installation
 
-Verdict is not currently published or installable. There is no Composer command to run yet.
+Verdict is not published to Packagist and has no tagged release. While the repository is private,
+authorized collaborators can install the development branch as a Composer VCS repository:
 
-The provisional target is PHP 8.3+, Laravel 12 or 13, and the official Laravel AI SDK. Exact
-constraints will be selected and tested when the package is scaffolded.
+```json
+{
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "git@github.com:fissible/verdict.git"
+        }
+    ]
+}
+```
+
+```bash
+composer require fissible/verdict:dev-main
+```
+
+The current constraints are PHP 8.3+, Laravel 12 or 13, and `laravel/ai` 0.10.2 or newer within the
+0.10 line. Laravel AI is pre-1.0, so Verdict verifies its adapter against released public contracts
+and should expect compatibility work as that SDK changes.
 
 Live evaluations will require developers to supply their own provider credentials and accept the
 associated provider costs and data-processing terms. Deterministic package tests should not
@@ -571,8 +641,8 @@ This roadmap is directional and may change as the integration is prototyped.
 
 | Phase | Scope | Status |
 |---|---|---|
-| Design | Threat model, vocabulary, package boundary, demo design | In progress |
-| Runtime foundation | Capability registry, guarded tools, decisions, Laravel Policy integration | Planned |
+| Design | Threat model, vocabulary, package boundary, demo design | Documented; ongoing |
+| Runtime foundation | Capability registry, guarded tools, decisions, Laravel Policy integration | In progress |
 | Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Planned |
