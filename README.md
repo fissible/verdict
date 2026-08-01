@@ -706,21 +706,35 @@ capability's deterministic authorization or grant additional authority.
 Not as a required dependency. The package is intended to be headless. The workbench demo can have
 a full interface, and optional development UI may follow later.
 
-## Origins
+## Origins and security foundations
 
 Verdict grows out of work on
 [`fissible/llm-triage-eval`](https://github.com/fissible/llm-triage-eval) and a broader interest in
 reproducible, evidence-backed evaluation of AI behavior.
 
-The project direction was also sharpened by Zendesk's
-[`AI Agent Abuse Prevention Engineer`](https://zendesk.wd1.myworkdayjobs.com/en-US/zendesk/job/AI-Agent-Abuse-Prevention-Engineer_R34849)
-posting, particularly its emphasis on threat modeling, provenance, policy gates, capability
-scoping, session lifetimes, sandboxing, behavioral analytics, containment, and incident forensics.
+The security model is informed by durable, vendor-neutral standards and research:
+
+- [`OWASP Agentic AI - Threats and Mitigations`](https://genai.owasp.org/resource/agentic-ai-threats-and-mitigations/)
+  provides a threat-model-based reference for agentic systems, including scoped tools and
+  privileges, session isolation and retention, sandboxed execution, behavioral monitoring, rate
+  limits, traceable logs, and post-incident review.
+- [`OWASP LLM06:2025 Excessive Agency`](https://genai.owasp.org/llmrisk/llm062025-excessive-agency/)
+  recommends minimizing tool functionality and permissions, executing actions in the user's
+  security context, independently authorizing downstream actions through complete mediation, and
+  requiring approval for high-impact operations.
+- [`NIST AI 600-1: Generative Artificial Intelligence Profile`](https://doi.org/10.6028/NIST.AI.600-1)
+  applies the AI Risk Management Framework to generative AI and covers threat modeling, retained
+  test and evaluation history, provenance, red teaming, post-deployment monitoring, incident
+  response, containment, and deactivation.
+- The peer-reviewed
+  [`AgentDojo`](https://papers.nips.cc/paper_files/paper/2024/hash/97091a5177d8dc64b1da8bf3e1f6fb54-Abstract-Datasets_and_Benchmarks_Track.html)
+  work demonstrates stateful, adversarial evaluation of tool-using agents over untrusted data,
+  with explicit utility and security outcomes and support for evolving attacks and defenses.
 
 Related security work includes the
 [`OWASP Top 10 for Agentic Applications`](https://genai.owasp.org/2025/12/09/owasp-top-10-for-agentic-applications-the-benchmark-for-agentic-security-in-the-age-of-autonomous-ai/).
-Verdict may map attack packs and evidence to relevant industry terminology, but such mappings
-would not constitute certification.
+These sources do not endorse Verdict. Verdict may map attack packs and evidence to their relevant
+terminology, but such mappings would not constitute conformance or certification.
 
 ## Feedback at this stage
 
