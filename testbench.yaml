@@ -1,6 +1,7 @@
 laravel: '@testbench'
 
 providers:
+  - Fissible\Verdict\VerdictServiceProvider
   - Workbench\App\Providers\WorkbenchServiceProvider
 
 migrations:
