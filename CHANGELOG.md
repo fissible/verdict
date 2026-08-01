@@ -31,3 +31,5 @@ All notable changes to Verdict will be documented in this file.
   separate security-containment and legitimate-utility scoring.
 - Add a versioned redacted JSON evaluation report and render the actual storefront attack and
   utility suite as an independent workbench lab.
+- Add deterministic structured field redaction after explicit projection, prevent custom context
+  transforms from expanding the allowlist, and record hashed transformation evidence.

@@ -86,13 +86,14 @@ it('projects PII to an exact destination and denies the same provider in another
         'payload' => [
             'first_name' => 'Avery',
             'locale' => 'en-US',
+            'email' => '[REDACTED]',
             'orders' => [
                 ['number' => 1002, 'status' => 'processing'],
             ],
         ],
     ])
-        ->and($scenario['local']['payload'])->not->toHaveKey('email')
         ->and($scenario['local']['payload'])->not->toHaveKey('ssn')
+        ->and($scenario['redacted'])->toBe(['email'])
         ->and($scenario['remote'])->toMatchArray([
             'destination' => 'remote-network:ollama-local',
             'permitted' => false,
@@ -100,6 +101,7 @@ it('projects PII to an exact destination and denies the same provider in another
         ])
         ->and($scenario['evidence'])->toHaveCount(2)
         ->and($scenario['evidence'][0]['disposition'])->toBe('permit')
+        ->and($scenario['evidence'][0]['transformation_count'])->toBe(1)
         ->and($scenario['evidence'][1]['disposition'])->toBe('deny');
 });
 

@@ -380,9 +380,11 @@ $result = Verdict::release(CustomerContext::from($customer))
     ->only([
         'first_name',
         'locale',
+        'email',
         'orders.*.number',
         'orders.*.status',
     ])
+    ->redact(['email'])
     ->to(Destination::connection('ollama-local', 'local-machine'));
 
 if (! $result->permitted) {
@@ -408,12 +410,18 @@ The implemented slice:
 - Requires source, trust, classification, destination connection, and destination trust zone.
 - Denies routes that have not been registered exactly.
 - Projects nested arrays using explicit paths such as `orders.*.status`.
+- Applies opt-in structured transforms after projection; `redact()` supports exact and wildcard
+  paths and replaces matching values with `[REDACTED]` by default.
+- Rejects a custom `ContextTransformer` if its output expands the projected field set.
 - Returns an empty payload on a policy denial.
-- Records disposition, route, classification, path fingerprints, and a released-payload
-  fingerprint without recording raw values.
+- Records disposition, route, classification, projected-path fingerprints, transform and
+  transformed-path fingerprints, and a released-payload fingerprint without recording raw
+  values.
 
-Transforms, tokenization, pluggable PII detectors, free-text scanning, and post-scrub validators
-remain planned. The intended broader pipeline is:
+Structured redaction is deterministic substitution, not PII detection or anonymization. Custom
+transforms run inside the application and must be reviewed like other security-sensitive code.
+Tokenization, pluggable PII detectors, free-text scanning, and post-scrub validators remain
+planned. The intended broader pipeline is:
 
 ```text
 exact destination-route policy
@@ -525,9 +533,9 @@ The implementation records action decisions and context-release decisions throug
 `EvidenceRecorder` contract. Action records include stage, envelope ID, capability, detailed
 internal reason, timestamp, and a deterministic SHA-256 fingerprint of normalized arguments. A
 confirmed bound execution also records an approval-stage permit with a hashed receipt reference.
-Context-release records contain the labeled route, classification, disposition, field-path
-fingerprints, and released-payload fingerprint. Neither record type includes raw arguments or
-released payload values.
+Context-release records contain the labeled route, classification, disposition, field-path and
+transform fingerprints, transformation count, and released-payload fingerprint. Neither record
+type includes raw arguments or released payload values.
 
 The default recorder is a no-op because silently choosing a storage destination or retention
 policy would be unsafe. `InMemoryEvidenceRecorder` exists only for tests and local development. It
@@ -721,7 +729,8 @@ the distributed package. It also contains three independent labs:
 - Argument-bound cancellation approval: changed arguments fail, the exact approved action
   executes once, and replay fails.
 - Destination-bound context release: an allowlisted customer projection is authorized and prepared
-  for a local Ollama connection while the same provider name in a remote trust zone is denied.
+  for a local Ollama connection, its explicitly allowed email is redacted, and the same provider
+  name in a remote trust zone is denied.
 - Deterministic security evaluation: the cross-customer attack and owned-order utility paths run
   through the actual Verdict capability, then render separate scores and a redacted versioned
   report.
@@ -941,7 +950,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Design | Threat model, vocabulary, package boundary, demo design | Documented; ongoing |
 | Runtime foundation | Capability registry, bound and guarded tools, staged decisions, Laravel Policy integration | First slice implemented |
 | Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Confirmation receipt slice implemented; broader identity and idempotency planned |
-| Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection and exact destination-route slice implemented; transforms and detectors planned |
+| Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection, structured redaction, transform non-expansion, and exact destination routes implemented; detectors and validators planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders implemented; levels, events, and audit command planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, observations, assertions, redacted JSON reports, and separate security/utility scoring implemented; live runners and baselines planned |
 | Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, context-release, and evaluation labs implemented; live-model path planned |

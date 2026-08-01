@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Context;
 
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Contracts\ContextTransformer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Arr;
+use LogicException;
 
 final readonly class ContextReleaseManager
 {
@@ -38,6 +40,7 @@ final readonly class ContextReleaseManager
     /**
      * @param  array<string, mixed>  $payload
      * @param  list<string>  $paths
+     * @param  list<ContextTransformer>  $transformers
      */
     public function release(
         array $payload,
@@ -46,7 +49,18 @@ final readonly class ContextReleaseManager
         DataClass $dataClass,
         array $paths,
         Destination $destination,
+        array $transformers = [],
     ): ContextReleaseResult {
+        $transformNames = array_map(function (ContextTransformer $transformer): string {
+            $name = $transformer->name();
+
+            if (trim($name) === '') {
+                throw new LogicException('A context transformer must have a non-empty name.');
+            }
+
+            return $name;
+        }, $transformers);
+
         if (! $this->policies->permits($source, $destination, $dataClass, $trust)) {
             $evidence = ContextReleaseEvidence::make(
                 source: $source,
@@ -59,6 +73,7 @@ final readonly class ContextReleaseManager
                 releasedPaths: [],
                 payloadFingerprint: null,
                 recordedAt: $this->clock->now(),
+                transformNames: $transformNames,
             );
             $this->evidence->recordRelease($evidence);
 
@@ -66,6 +81,25 @@ final readonly class ContextReleaseManager
         }
 
         $released = $this->projector->project($payload, $paths);
+        $projectedPaths = array_keys(Arr::dot($released));
+        $transformedPaths = [];
+
+        foreach ($transformers as $transformer) {
+            $transformation = $transformer->transform($released);
+            $resultPaths = array_keys(Arr::dot($transformation->payload));
+
+            if (array_diff($resultPaths, $projectedPaths) !== []) {
+                throw new LogicException('A context transformer must not expand the explicitly projected field set.');
+            }
+
+            if (array_diff($transformation->transformedPaths, $projectedPaths) !== []) {
+                throw new LogicException('A context transformer must report only explicitly projected field paths.');
+            }
+
+            $released = $transformation->payload;
+            $transformedPaths = [...$transformedPaths, ...$transformation->transformedPaths];
+        }
+
         $releasedPaths = array_keys(Arr::dot($released));
         $evidence = ContextReleaseEvidence::make(
             source: $source,
@@ -78,6 +112,8 @@ final readonly class ContextReleaseManager
             releasedPaths: $releasedPaths,
             payloadFingerprint: ArgumentFingerprint::make($released),
             recordedAt: $this->clock->now(),
+            transformNames: $transformNames,
+            transformedPaths: array_values(array_unique($transformedPaths)),
         );
         $this->evidence->recordRelease($evidence);
 

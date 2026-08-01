@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Context\ContextTransformationResult;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Destination;
 use Fissible\Verdict\Context\ReleasePolicy;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Contracts\ContextTransformer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Facades\Verdict;
@@ -92,6 +94,78 @@ it('fails closed when no release policy permits the exact destination route', fu
         ->and($result->evidence->disposition)->toBe('deny')
         ->and($result->evidence->releasedPathFingerprints)->toBe([])
         ->and($result->evidence->payloadFingerprint)->toBeNull();
+});
+
+it('redacts only explicitly projected structured fields and records redacted transform evidence', function (): void {
+    $source = Source::application('customer-profile');
+    $destination = Destination::connection('ollama-local', 'local-machine');
+
+    Verdict::releasePolicy(
+        ReleasePolicy::between($source, $destination)
+            ->allow(DataClass::PII)
+            ->whenTrustIs(Trust::Trusted),
+    );
+
+    $result = Verdict::release([
+        'first_name' => 'Avery',
+        'email' => 'avery@example.com',
+        'ssn' => '111-22-3333',
+    ])
+        ->source($source)
+        ->trust(Trust::Trusted)
+        ->classify(DataClass::PII)
+        ->only(['first_name', 'email'])
+        ->redact(['email'])
+        ->to($destination);
+
+    expect($result->payload)->toBe([
+        'first_name' => 'Avery',
+        'email' => '[REDACTED]',
+    ])->and($result->payload)->not->toHaveKey('ssn')
+        ->and($result->evidence->transformFingerprints)->toBe([
+            hash('sha256', 'structured_redaction'),
+        ])->and($result->evidence->transformedPathFingerprints)->toBe([
+            hash('sha256', 'email'),
+        ])->and(json_encode($result->evidence, JSON_THROW_ON_ERROR))
+        ->not->toContain('avery@example.com')
+        ->not->toContain('email');
+});
+
+it('stops a custom transformer from expanding the explicit field projection', function (): void {
+    $source = Source::application('customer-profile');
+    $destination = Destination::connection('ollama-local', 'local-machine');
+    $expander = new class implements ContextTransformer
+    {
+        public function name(): string
+        {
+            return 'unsafe_expander';
+        }
+
+        public function transform(array $payload): ContextTransformationResult
+        {
+            return new ContextTransformationResult(
+                payload: [...$payload, 'ssn' => '111-22-3333'],
+                transformedPaths: ['ssn'],
+            );
+        }
+    };
+
+    Verdict::releasePolicy(
+        ReleasePolicy::between($source, $destination)
+            ->allow(DataClass::PII)
+            ->whenTrustIs(Trust::Trusted),
+    );
+
+    expect(fn () => Verdict::release(['first_name' => 'Avery'])
+        ->source($source)
+        ->trust(Trust::Trusted)
+        ->classify(DataClass::PII)
+        ->only(['first_name'])
+        ->through($expander)
+        ->to($destination))->toThrow(
+            LogicException::class,
+            'must not expand the explicitly projected field set',
+        );
 });
 
 it('does not let an allowed route silently expand to another trust level or data class', function (

@@ -28,6 +28,9 @@ return new class extends Migration
             $table->char('approval_receipt_fingerprint', 64)->nullable();
             $table->json('requested_path_fingerprints')->nullable();
             $table->json('released_path_fingerprints')->nullable();
+            $table->json('transform_fingerprints')->nullable();
+            $table->json('transformed_path_fingerprints')->nullable();
+            $table->unsignedInteger('transformation_count')->default(0);
             $table->char('payload_fingerprint', 64)->nullable();
             $table->timestamp('recorded_at');
 

@@ -35,6 +35,9 @@ final readonly class DatabaseEvidenceRecorder implements EvidenceRecorder
             'approval_receipt_fingerprint' => $evidence->approvalReceiptFingerprint,
             'requested_path_fingerprints' => null,
             'released_path_fingerprints' => null,
+            'transform_fingerprints' => null,
+            'transformed_path_fingerprints' => null,
+            'transformation_count' => 0,
             'payload_fingerprint' => null,
             'recorded_at' => $evidence->recordedAt,
         ]);
@@ -66,6 +69,15 @@ final readonly class DatabaseEvidenceRecorder implements EvidenceRecorder
                 $evidence->releasedPathFingerprints,
                 JSON_THROW_ON_ERROR,
             ),
+            'transform_fingerprints' => json_encode(
+                $evidence->transformFingerprints,
+                JSON_THROW_ON_ERROR,
+            ),
+            'transformed_path_fingerprints' => json_encode(
+                $evidence->transformedPathFingerprints,
+                JSON_THROW_ON_ERROR,
+            ),
+            'transformation_count' => count($evidence->transformedPathFingerprints),
             'payload_fingerprint' => $evidence->payloadFingerprint,
             'recorded_at' => $evidence->recordedAt,
         ]);

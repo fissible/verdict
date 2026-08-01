@@ -247,7 +247,7 @@ final readonly class StorefrontScenarioRunner
                 ],
             ],
         ];
-        $paths = ['first_name', 'locale', 'orders.*.number', 'orders.*.status'];
+        $paths = ['first_name', 'locale', 'email', 'orders.*.number', 'orders.*.status'];
         $source = Source::application('customer-profile');
         $local = Destination::connection('ollama-local', 'local-machine');
         $remote = Destination::connection('ollama-local', 'remote-network');
@@ -258,6 +258,7 @@ final readonly class StorefrontScenarioRunner
             ->trust(Trust::Trusted)
             ->classify(DataClass::PII)
             ->only($paths)
+            ->redact(['email'])
             ->to($destination);
 
         $localResult = $release($local);
@@ -269,7 +270,8 @@ final readonly class StorefrontScenarioRunner
             'trust' => Trust::Trusted->value,
             'input' => $payload,
             'allowlist' => $paths,
-            'withheld' => ['email', 'dob', 'ssn', 'medical_notes', 'orders.*.payment_token'],
+            'redacted' => ['email'],
+            'withheld' => ['dob', 'ssn', 'medical_notes', 'orders.*.payment_token'],
             'local' => [
                 'destination' => $local->identity(),
                 'permitted' => $localResult->permitted,
@@ -387,6 +389,9 @@ final readonly class StorefrontScenarioRunner
             'requested_path_fingerprints' => $evidence->requestedPathFingerprints,
             'released_path_fingerprints' => $evidence->releasedPathFingerprints,
             'payload_fingerprint' => $evidence->payloadFingerprint,
+            'transform_fingerprints' => $evidence->transformFingerprints,
+            'transformed_path_fingerprints' => $evidence->transformedPathFingerprints,
+            'transformation_count' => count($evidence->transformedPathFingerprints),
         ];
     }
 }

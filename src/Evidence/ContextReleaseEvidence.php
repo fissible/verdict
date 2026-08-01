@@ -15,6 +15,8 @@ final readonly class ContextReleaseEvidence
     /**
      * @param  list<string>  $requestedPathFingerprints
      * @param  list<string>  $releasedPathFingerprints
+     * @param  list<string>  $transformFingerprints
+     * @param  list<string>  $transformedPathFingerprints
      */
     public function __construct(
         public string $source,
@@ -28,11 +30,15 @@ final readonly class ContextReleaseEvidence
         public array $releasedPathFingerprints,
         public ?string $payloadFingerprint,
         public DateTimeImmutable $recordedAt,
+        public array $transformFingerprints = [],
+        public array $transformedPathFingerprints = [],
     ) {}
 
     /**
      * @param  list<string>  $requestedPaths
      * @param  list<string>  $releasedPaths
+     * @param  list<string>  $transformNames
+     * @param  list<string>  $transformedPaths
      */
     public static function make(
         Source $source,
@@ -45,6 +51,8 @@ final readonly class ContextReleaseEvidence
         array $releasedPaths,
         ?string $payloadFingerprint,
         DateTimeImmutable $recordedAt,
+        array $transformNames = [],
+        array $transformedPaths = [],
     ): self {
         return new self(
             source: $source->identity(),
@@ -58,6 +66,8 @@ final readonly class ContextReleaseEvidence
             releasedPathFingerprints: array_map(self::fingerprintPath(...), $releasedPaths),
             payloadFingerprint: $payloadFingerprint,
             recordedAt: $recordedAt,
+            transformFingerprints: array_map(self::fingerprintPath(...), $transformNames),
+            transformedPathFingerprints: array_map(self::fingerprintPath(...), $transformedPaths),
         );
     }
 

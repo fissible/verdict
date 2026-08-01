@@ -33,6 +33,9 @@ beforeEach(function (): void {
         $table->char('approval_receipt_fingerprint', 64)->nullable();
         $table->json('requested_path_fingerprints')->nullable();
         $table->json('released_path_fingerprints')->nullable();
+        $table->json('transform_fingerprints')->nullable();
+        $table->json('transformed_path_fingerprints')->nullable();
+        $table->unsignedInteger('transformation_count')->default(0);
         $table->char('payload_fingerprint', 64)->nullable();
         $table->timestamp('recorded_at');
     });
@@ -93,6 +96,8 @@ it('persists context-release evidence without raw paths or payload values', func
         releasedPaths: ['first_name', 'orders.0.status'],
         payloadFingerprint: str_repeat('b', 64),
         recordedAt: new DateTimeImmutable('2026-08-01 12:00:00', new DateTimeZone('UTC')),
+        transformNames: ['structured_redaction'],
+        transformedPaths: ['email'],
     );
 
     databaseEvidenceRecorder()->recordRelease($evidence);
@@ -108,6 +113,8 @@ it('persists context-release evidence without raw paths or payload values', func
     $serialized = json_encode($row, JSON_THROW_ON_ERROR);
     $requested = json_decode((string) $row->requested_path_fingerprints, true, flags: JSON_THROW_ON_ERROR);
     $released = json_decode((string) $row->released_path_fingerprints, true, flags: JSON_THROW_ON_ERROR);
+    $transforms = json_decode((string) $row->transform_fingerprints, true, flags: JSON_THROW_ON_ERROR);
+    $transformedPaths = json_decode((string) $row->transformed_path_fingerprints, true, flags: JSON_THROW_ON_ERROR);
 
     expect((string) $row->record_type)->toBe('context_release')
         ->and((string) $row->destination)->toBe('local-machine:ollama-local')
@@ -121,6 +128,9 @@ it('persists context-release evidence without raw paths or payload values', func
             hash('sha256', 'first_name'),
             hash('sha256', 'orders.0.status'),
         ])
+        ->and($transforms)->toBe([hash('sha256', 'structured_redaction')])
+        ->and($transformedPaths)->toBe([hash('sha256', 'email')])
+        ->and((int) $row->transformation_count)->toBe(1)
         ->and($serialized)->not->toContain('first_name')
         ->and($serialized)->not->toContain('orders.0.status')
         ->and($serialized)->not->toContain('Avery');

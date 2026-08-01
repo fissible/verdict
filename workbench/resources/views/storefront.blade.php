@@ -383,6 +383,7 @@
                 <h3>{{ $release['local']['destination'] }}</h3>
                 <p class="muted">Only explicitly allowed fields were authorized and prepared for this local connection.</p>
                 <pre>{{ json_encode($release['local']['payload'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                <p class="fine-print">Redacted after projection: {{ implode(', ', $release['redacted']) }}</p>
                 <div class="withheld-list">
                     @foreach ($release['withheld'] as $field)
                         <code>{{ $field }}</code>
@@ -408,6 +409,9 @@
                         <div class="fine-print">{{ $record['reason'] }}</div>
                         @if ($record['payload_fingerprint'] !== null)
                             <code>{{ $record['payload_fingerprint'] }}</code>
+                        @endif
+                        @if ($record['transformation_count'] > 0)
+                            <div class="fine-print">{{ $record['transformation_count'] }} structured field transformed before release.</div>
                         @endif
                     </div>
                 @endforeach
