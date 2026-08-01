@@ -18,15 +18,21 @@
         }
 
         * { box-sizing: border-box; }
-        html { scroll-behavior: smooth; }
+        html {
+            min-height: 100%;
+            scroll-behavior: smooth;
+            background: #080d16;
+        }
 
         body {
+            min-height: 100vh;
             margin: 0;
             color: var(--ink);
             background:
                 radial-gradient(circle at 12% 8%, rgba(89, 72, 180, .24), transparent 34rem),
                 radial-gradient(circle at 88% 18%, rgba(22, 132, 112, .16), transparent 30rem),
                 #080d16;
+            background-repeat: no-repeat;
             font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
             line-height: 1.5;
         }
