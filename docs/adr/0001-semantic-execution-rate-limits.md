@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+> Amended by [ADR 0003](0003-execution-target-freshness.md). ADR 0003 changes the order of rate-limit
+> consumption and atomic approval-receipt consumption. Until its first implementation slice lands,
+> the runtime still follows this ADR's original approval-first order.
+
 ## Context
 
 Laravel already provides request and queue throttling. Verdict needs a narrower security boundary:
@@ -18,9 +22,11 @@ conversation limits, or execution idempotency.
   server-resolved target. Verdict hashes the capability name, policy name, window configuration,
   and binding before storage.
 - The limiter consumes an **authorized execution attempt** after execution-stage authorization and
-  approval consumption, immediately before the target-bound executor runs.
+  successful non-mutating approval validation. For confirmed capabilities, ADR 0003 places rate
+  consumption before atomic approval-receipt consumption; execution-claim admission remains later.
 - Policy denials, pending confirmations, approval mismatches, and missing executors do not consume
-  a unit.
+  a unit. A validation/consumption race may consume a unit when another request consumes or expires
+  the receipt after validation, but execution remains blocked.
 - Consumption is atomic and durable. The initial adapter uses a database transaction and row lock;
   concurrent first inserts retry the consume operation after a unique-key race.
 - A permitted or throttled rate-limit evaluation is recorded as its own evidence stage. Evidence
@@ -33,10 +39,12 @@ conversation limits, or execution idempotency.
 
 ## Retry and idempotency boundary
 
-Approval resumption does not double-consume because an approval receipt is single-use and the
-limiter runs only after that receipt is consumed successfully. Transport-level redelivery of an
-unconfirmed action may consume another unit because it may also execute the action again. Verdict
-does not disguise that larger execution-idempotency gap by deduplicating only the limiter.
+Repeated proposals while approval is pending fail non-mutating validation before the limiter runs.
+On approved resumption, the limiter runs after validation and before atomic receipt consumption. A
+concurrent loser may consume a rate unit but cannot consume the same receipt or execute the action.
+Transport-level redelivery of an unconfirmed action may consume another unit because it may also
+execute the action again. Verdict does not disguise that larger execution-idempotency gap by
+deduplicating only the limiter.
 
 ## Consequences
 
@@ -46,4 +54,3 @@ does not disguise that larger execution-idempotency gap by deduplicating only th
   applies the new limit to the current bucket.
 - Denied-target enumeration and proposal flooding are not covered by this slice. They require
   separate enforcement points and will be designed separately.
-

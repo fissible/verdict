@@ -179,9 +179,9 @@ handler is not an execution fallback.
 The execution-stage check currently reuses the proposal-stage target object. It can observe
 in-process changes to that object, but it does not reload external state and does not narrow a
 database time-of-check/time-of-use race. [ADR 0003](docs/adr/0003-execution-target-freshness.md)
-proposes an explicit target-at-execution policy, canonical target identity, refreshed approval
+defines an explicit target-at-execution policy, canonical target identity, refreshed approval
 binding, and fail-closed snapshot acknowledgement. It deliberately leaves transactions and locking
-for a separate design. Until that proposal is implemented, mutating executors remain responsible
+for a separate design. Until that decision is implemented, mutating executors remain responsible
 for ordinary Laravel freshness, transaction, locking, and idempotency practices.
 
 The model-provided tool-call ID is captured as transport metadata in evidence, not trusted as the

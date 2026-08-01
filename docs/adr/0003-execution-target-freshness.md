@@ -1,6 +1,6 @@
 # ADR 0003: Explicit execution-target freshness
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
@@ -42,7 +42,7 @@ This ADR does not provide serializable execution, a generic transaction wrapper,
 exactly-once side effects, an outbox, or automatic retries. Those require a separate execution
 strategy design.
 
-## Proposed API
+## API decision
 
 A target-bound capability must select one `ExecutionTargetPolicy` before it can execute through
 `BoundTool`.
@@ -119,7 +119,7 @@ against which identity is compared.
 
 ## Required execution order
 
-For `BoundTool`, the proposed flow is:
+For `BoundTool`, the required flow is:
 
 ```text
 1. Resolve the proposal-stage target.
@@ -151,7 +151,7 @@ Verdict should order gates by two related principles:
 2. Stateful gates run from more recoverable to less recoverable: a fixed-window rate-limit unit
    precedes a human approval receipt, and the strict execution claim remains the final gate.
 
-This proposal therefore requires a non-consuming approval validation operation in addition to the
+This decision therefore requires a non-consuming approval validation operation in addition to the
 existing atomic `consume()`. Validation checks Laravel's explicit approval context, the exact tool
 call and binding fingerprint, Approved status, and expiry without changing receipt state. The
 database implementation does not need to lock for this preflight read because atomic consumption
@@ -198,11 +198,10 @@ Wasting a time-recoverable rate unit is preferable to consuming a human approval
 request. Ordinary invalid, mismatched, pending, expired, or replayed receipts fail preflight and do
 not consume a rate-limit unit.
 
-This proposed ordering amends ADR 0001's current requirement that approval consumption precede
+This ordering amends ADR 0001's original requirement that approval consumption precede
 rate-limit consumption. Evidence order for a successful confirmed capability becomes proposal,
 approval preflight, target refresh, execution authorization, execution approval validation, rate
-limit, approval consumption, and execution claim. Approval evidence needs a phase field so
-non-consuming validation cannot be confused with state transition.
+limit, approval consumption, execution-claim admission, and execution-claim finalization.
 
 ## Failure semantics
 
@@ -218,7 +217,7 @@ non-consuming validation cannot be confused with state transition.
 | Refreshed approval-binding mismatch | New confirmation required | No | No | No |
 | Rate-limit throttle | Recorded throttle | No | No new unit; bucket is full | No |
 | Receipt consumed concurrently after validation | Confirmation remains required | No | Yes, if configured | No |
-| Duplicate execution claim | Recorded claim denial | Yes | Yes, if configured | No new claim |
+| Duplicate execution claim | Recorded claim denial | Yes, if configured | Yes, if configured | No new claim |
 
 Expected target disappearance is an ordinary fail-closed outcome only when the application signals
 it with `TargetNotResolvable`. Other exceptions remain operational faults and are not relabeled as
@@ -248,6 +247,38 @@ posture.
 
 The execution-stage Policy evidence then describes authorization of the execution target. Approval,
 rate-limit, and execution-claim evidence retain their separate stages.
+
+### Approval evidence phases
+
+Approval validation and consumption continue to use `EvaluationStage::Approval`; they do not add
+three stage enum cases. Add an `ApprovalEvidencePhase` string-backed enum with
+`ProposalValidation`, `ExecutionValidation`, and `Consumption` cases. Add two nullable fields to
+`DecisionEvidence` and the database adapter:
+
+- `approval_phase`: the applicable `ApprovalEvidencePhase` value;
+- `approval_outcome`: the applicable `ApprovalOutcome` value.
+
+The decision metadata keys use those same snake-case names. The database migration adds nullable
+`approval_phase` and `approval_outcome` strings with a length of 32 so existing and non-approval
+records remain valid.
+
+Every attempted approval validation or consumption records an approval-stage evaluation, including
+failures. Successful validation records a permit with outcome `approved`; failed validation records
+the corresponding confirmation-required decision and outcome. Consumption records outcome
+`consumed` only after the atomic Approved-to-Consumed transition succeeds; a failed consumption
+records its actual failure outcome and a confirmation-required decision. The existing opaque receipt
+fingerprint is included whenever a receipt is known. Raw receipt IDs and bindings remain excluded.
+
+For a successful confirmed capability with rate limiting and execution claims enabled, the complete
+trail contains up to nine decision records: proposal, proposal approval validation, target refresh,
+execution authorization, execution approval validation, rate limit, approval consumption, claim
+admission, and claim completion. An execution failure replaces claim completion with an
+indeterminate transition. The comparable current flow records up to six rows, so Slice 1 increases
+worst-case decision-record volume by three rows per operation.
+
+The default recorder remains a no-op. Applications opting into `DatabaseEvidenceRecorder` must
+account for the additional volume in their retention and deletion policy. Verdict still provides no
+evidence-pruning command; this slice must not imply otherwise.
 
 ## Transaction and locking boundary
 
@@ -325,7 +356,7 @@ That preserves compatibility but leaves the package's most important bound execu
 implicit stale-state assumption. Verdict has no tagged stable release, so the safer default should
 be established before one exists.
 
-## Proposed implementation slices
+## Implementation slices
 
 ### Slice 1: explicit target-at-execution policy
 
@@ -359,17 +390,15 @@ be established before one exists.
   behavior.
 - Do not begin implementation until those semantics survive a separate adversarial review.
 
-## Review focus
+## Implementation review focus
 
-Before Slice 1 is accepted, review should challenge:
+The API-level choices are accepted. Slice 1 implementation must still verify:
 
-1. Whether requiring an explicit policy for every executable `BoundTool` is the right pre-1.0
-   default, rather than making refresh opt-in.
-2. Whether two-phase, non-consuming approval validation has any incompatibility with Laravel AI
-   approval resumption not represented in the current deterministic tests.
-3. Whether `acceptStaleSnapshot` is sufficiently cautionary naming for an explicit non-fresh
-   target.
-4. Whether any existing rate-limit or execution-claim path still receives the proposal target after
-   the proposed reorder.
-5. Whether the future transaction boundary can preserve independently durable execution claims on
-   common Laravel database configurations.
+1. That two-phase, non-consuming approval validation behaves correctly through Laravel AI approval
+   resumption as well as deterministic direct invocation.
+2. That no existing approval, rate-limit, or execution-claim path receives the proposal target after
+   the required reorder.
+3. That database evidence schema changes and recorder tests cover every approval phase without
+   persisting raw receipt identifiers or bindings.
+4. Whether the future transaction boundary can preserve independently durable execution claims on
+   common Laravel database configurations; this remains deferred to Slice 2.
