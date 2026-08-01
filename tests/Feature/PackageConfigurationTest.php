@@ -5,7 +5,9 @@ declare(strict_types=1);
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
+use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\VerdictServiceProvider;
 use Illuminate\Support\ServiceProvider;
 
@@ -15,7 +17,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(2)
+    expect($migrations)->toHaveCount(3)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -45,6 +47,26 @@ it('resolves the configured database evidence recorder', function (): void {
     expect(app(EvidenceRecorder::class))->toBeInstanceOf(DatabaseEvidenceRecorder::class);
 });
 
+it('publishes and resolves the database rate-limit store', function (): void {
+    $migrations = ServiceProvider::pathsToPublish(
+        VerdictServiceProvider::class,
+        'verdict-rate-limit-migrations',
+    );
+
+    config()->set('verdict.rate_limits.store', DatabaseRateLimitStore::class);
+    $this->app->forgetInstance(RateLimitStore::class);
+
+    expect($migrations)->toHaveCount(1)
+        ->and(array_key_first($migrations))->toEndWith('create_verdict_rate_limit_buckets_table.php.stub')
+        ->and(app(RateLimitStore::class))->toBeInstanceOf(DatabaseRateLimitStore::class);
+});
+
+it('registers the expired rate-limit bucket pruning command', function (): void {
+    $this->artisan('verdict:prune-rate-limits')
+        ->expectsOutputToContain('Pruned 0 expired Verdict rate-limit bucket(s).')
+        ->assertSuccessful();
+});
+
 it('ships database-backed approval receipt defaults', function (): void {
     /** @var array<string, mixed> $defaults */
     $defaults = require __DIR__.'/../../config/verdict.php';
@@ -53,5 +75,8 @@ it('ships database-backed approval receipt defaults', function (): void {
         ->and($defaults['approvals']['table'])->toBe('verdict_approval_receipts')
         ->and($defaults['approvals']['ttl_seconds'])->toBe(900)
         ->and($defaults['evidence']['table'])->toBe('verdict_evidence')
-        ->and($defaults['evidence']['connection'])->toBeNull();
+        ->and($defaults['evidence']['connection'])->toBeNull()
+        ->and($defaults['rate_limits']['store'])->toBe(DatabaseRateLimitStore::class)
+        ->and($defaults['rate_limits']['table'])->toBe('verdict_rate_limit_buckets')
+        ->and($defaults['rate_limits']['connection'])->toBeNull();
 });

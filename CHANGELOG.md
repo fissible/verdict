@@ -35,3 +35,5 @@ All notable changes to Verdict will be documented in this file.
   transforms from expanding the allowlist, and record hashed transformation evidence.
 - Add repo-native JSON evaluation baselines with distinct behavioral regression, harness error,
   new-failure, improvement, recovery, added-coverage, and removed-coverage findings.
+- Add opt-in semantic execution rate limits with trusted application-defined bucket bindings,
+  atomic fixed-window database counters, throttle evidence, and expired-bucket pruning.

@@ -18,6 +18,11 @@ final readonly class DecisionEvidence
         public string $argumentFingerprint,
         public ?string $idempotencyKey,
         public ?string $approvalReceiptFingerprint,
+        public ?string $rateLimitKeyFingerprint,
+        public ?string $rateLimitPolicy,
+        public ?int $rateLimitLimit,
+        public ?int $rateLimitRemaining,
+        public ?DateTimeImmutable $rateLimitResetAt,
         public DateTimeImmutable $recordedAt,
     ) {}
 
@@ -33,6 +38,21 @@ final readonly class DecisionEvidence
             idempotencyKey: $evaluation->envelope->proposal->idempotencyKey,
             approvalReceiptFingerprint: is_string($evaluation->decision->metadata['approval_receipt_fingerprint'] ?? null)
                 ? $evaluation->decision->metadata['approval_receipt_fingerprint']
+                : null,
+            rateLimitKeyFingerprint: is_string($evaluation->decision->metadata['rate_limit_key_fingerprint'] ?? null)
+                ? $evaluation->decision->metadata['rate_limit_key_fingerprint']
+                : null,
+            rateLimitPolicy: is_string($evaluation->decision->metadata['rate_limit_policy'] ?? null)
+                ? $evaluation->decision->metadata['rate_limit_policy']
+                : null,
+            rateLimitLimit: is_int($evaluation->decision->metadata['rate_limit_limit'] ?? null)
+                ? $evaluation->decision->metadata['rate_limit_limit']
+                : null,
+            rateLimitRemaining: is_int($evaluation->decision->metadata['rate_limit_remaining'] ?? null)
+                ? $evaluation->decision->metadata['rate_limit_remaining']
+                : null,
+            rateLimitResetAt: is_string($evaluation->decision->metadata['rate_limit_reset_at'] ?? null)
+                ? new DateTimeImmutable($evaluation->decision->metadata['rate_limit_reset_at'])
                 : null,
             recordedAt: new DateTimeImmutable,
         );

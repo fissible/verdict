@@ -17,6 +17,7 @@ use Fissible\Verdict\Decisions\Decision as VerdictDecision;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\VerdictApprovalMiddleware;
+use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -76,28 +77,36 @@ beforeEach(function (): void {
 /**
  * @param  array<int, ApprovalOrder>  $orders
  */
-function approvalTool(array $orders, int &$executions, ?int $ttlSeconds = null): BoundTool
-{
+function approvalTool(
+    array $orders,
+    int &$executions,
+    ?int $ttlSeconds = null,
+    ?RateLimitPolicy $rateLimit = null,
+): BoundTool {
     $verdict = app(VerdictManager::class);
-    $verdict->capability(
-        Capability::usingPolicy(
-            name: 'orders.cancel',
-            ability: 'cancel',
-            resolveTarget: fn (ActionEnvelope $envelope): ApprovalOrder => $orders[$envelope->proposal->arguments['order_id']],
-        )->requiresConfirmation(
-            bindUsing: fn (ActionEnvelope $envelope, ApprovalOrder $order): array => [
-                'actor_id' => $envelope->context->actor,
-                'order_id' => $order->id,
-                'order_version' => $order->version,
-            ],
-            reason: 'Confirm cancellation of this order.',
-            ttlSeconds: $ttlSeconds,
-        )->executeUsing(function (AuthorizedAction $action) use (&$executions): string {
-            $executions++;
+    $capability = Capability::usingPolicy(
+        name: 'orders.cancel',
+        ability: 'cancel',
+        resolveTarget: fn (ActionEnvelope $envelope): ApprovalOrder => $orders[$envelope->proposal->arguments['order_id']],
+    )->requiresConfirmation(
+        bindUsing: fn (ActionEnvelope $envelope, ApprovalOrder $order): array => [
+            'actor_id' => $envelope->context->actor,
+            'order_id' => $order->id,
+            'order_version' => $order->version,
+        ],
+        reason: 'Confirm cancellation of this order.',
+        ttlSeconds: $ttlSeconds,
+    )->executeUsing(function (AuthorizedAction $action) use (&$executions): string {
+        $executions++;
 
-            return 'cancelled';
-        }),
-    );
+        return 'cancelled';
+    });
+
+    if ($rateLimit !== null) {
+        $capability = $capability->rateLimit($rateLimit);
+    }
+
+    $verdict->capability($capability);
 
     return $verdict->bound(
         definition: new ApprovalDefinitionTool,
@@ -105,6 +114,51 @@ function approvalTool(array $orders, int &$executions, ?int $ttlSeconds = null):
         context: new ActionContext(actor: 72),
     );
 }
+
+it('consumes a semantic limit only after confirmation succeeds', function (): void {
+    $executions = 0;
+    $tool = approvalTool(
+        [1001 => new ApprovalOrder(1001, 72)],
+        $executions,
+        rateLimit: RateLimitPolicy::fixedWindow(
+            name: 'per-customer-cancellation',
+            limit: 1,
+            windowSeconds: 60,
+            keyUsing: fn (ActionEnvelope $envelope, ApprovalOrder $order): array => [
+                'actor_id' => $envelope->context->actor,
+            ],
+        ),
+    );
+    $request = new Request(['order_id' => 1001], 'call-rate-limited-cancel');
+
+    $tool->shouldRequestApproval($request);
+    $challenge = app(ApprovalManager::class)->challengeForToolCall('call-rate-limited-cancel');
+
+    expect($challenge)->not->toBeNull();
+
+    $pending = json_decode((string) $tool->handle($request), true, flags: JSON_THROW_ON_ERROR);
+    expect($pending['decision'])->toBe('require_confirmation');
+
+    app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'customer:72');
+    $decisions = Decisions::from(['call-rate-limited-cancel' => Decision::approve()]);
+
+    expect(executeWithinApprovalMiddleware($tool, $request, $decisions))->toBe('cancelled')
+        ->and($executions)->toBe(1);
+
+    $replay = json_decode(
+        executeWithinApprovalMiddleware($tool, $request, $decisions),
+        true,
+        flags: JSON_THROW_ON_ERROR,
+    );
+    $evidence = app(EvidenceRecorder::class);
+
+    expect($replay['decision'])->toBe('require_confirmation')
+        ->and($evidence)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if ($evidence instanceof InMemoryEvidenceRecorder) {
+        expect(collect($evidence->all())->where('stage', 'rate_limit'))->toHaveCount(1);
+    }
+});
 
 function approvalPrompt(Decisions $decisions): AgentPrompt
 {

@@ -8,6 +8,7 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Console\Commands\PruneRateLimitBucketsCommand;
 use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
@@ -15,9 +16,12 @@ use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
+use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
+use Fissible\Verdict\RateLimits\RateLimitManager;
 use Fissible\Verdict\Support\SystemClock;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Database\DatabaseManager;
@@ -100,6 +104,37 @@ final class VerdictServiceProvider extends ServiceProvider
             return $instance;
         });
 
+        $this->app->singleton(RateLimitStore::class, function (Container $app): RateLimitStore {
+            $store = config('verdict.rate_limits.store', DatabaseRateLimitStore::class);
+
+            if (! is_string($store)) {
+                throw new LogicException('The Verdict rate-limit store configuration must contain a class name.');
+            }
+
+            if ($store === DatabaseRateLimitStore::class) {
+                $connection = config('verdict.rate_limits.connection');
+                $table = config('verdict.rate_limits.table', 'verdict_rate_limit_buckets');
+
+                return new DatabaseRateLimitStore(
+                    connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                    table: is_string($table) ? $table : 'verdict_rate_limit_buckets',
+                );
+            }
+
+            $instance = $app->make($store);
+
+            if (! $instance instanceof RateLimitStore) {
+                throw new LogicException("The [{$store}] rate-limit store must implement ".RateLimitStore::class.'.');
+            }
+
+            return $instance;
+        });
+
+        $this->app->scoped(RateLimitManager::class, fn (Container $app): RateLimitManager => new RateLimitManager(
+            store: $app->make(RateLimitStore::class),
+            clock: $app->make(Clock::class),
+        ));
+
         $this->app->scoped(ContextReleaseManager::class, fn (Container $app): ContextReleaseManager => new ContextReleaseManager(
             policies: $app->make(ReleasePolicyRegistry::class),
             projector: $app->make(FieldProjector::class),
@@ -116,6 +151,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 evidence: $app->make(EvidenceRecorder::class),
                 approvals: $app->make(ApprovalManager::class),
                 contextReleases: $app->make(ContextReleaseManager::class),
+                rateLimits: $app->make(RateLimitManager::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
             );
         });
@@ -127,6 +163,8 @@ final class VerdictServiceProvider extends ServiceProvider
             return;
         }
 
+        $this->commands([PruneRateLimitBucketsCommand::class]);
+
         $this->publishes([
             __DIR__.'/../config/verdict.php' => config_path('verdict.php'),
         ], ['verdict', 'verdict-config']);
@@ -137,12 +175,16 @@ final class VerdictServiceProvider extends ServiceProvider
         $evidenceMigration = [
             __DIR__.'/../database/migrations/create_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000001_create_verdict_evidence_table.php'),
         ];
+        $rateLimitMigration = [
+            __DIR__.'/../database/migrations/create_verdict_rate_limit_buckets_table.php.stub' => database_path('migrations/2026_08_01_000002_create_verdict_rate_limit_buckets_table.php'),
+        ];
 
         $this->publishesMigrations(
-            [...$approvalMigration, ...$evidenceMigration],
+            [...$approvalMigration, ...$evidenceMigration, ...$rateLimitMigration],
             ['verdict', 'verdict-migrations'],
         );
         $this->publishesMigrations($approvalMigration, 'verdict-approval-migrations');
         $this->publishesMigrations($evidenceMigration, 'verdict-evidence-migrations');
+        $this->publishesMigrations($rateLimitMigration, 'verdict-rate-limit-migrations');
     }
 }

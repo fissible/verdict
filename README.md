@@ -182,7 +182,8 @@ responsible for ordinary Laravel transaction, locking, and idempotency practices
 
 The model-provided tool-call ID is captured as an idempotency key in evidence. The confirmation
 slice described below enforces expiring, single-use approval receipts for `BoundTool`. Verdict does
-**not** yet enforce execution idempotency, review, or rate limits.
+**not** yet enforce execution idempotency or review. It does enforce the opt-in semantic execution
+limits described below.
 
 ### Verified confirmations
 
@@ -490,7 +491,42 @@ identity. Execution idempotency remains separate and unimplemented.
 Laravel should continue to handle ordinary HTTP and queue throttling. Verdict intends to add
 semantic limits that understand the principal, tenant, capability, resource, and decision phase.
 
-Examples include:
+The first implemented slice limits authorized execution attempts for a capability using an atomic,
+fixed-window store:
+
+```php
+use Fissible\Verdict\RateLimits\RateLimitPolicy;
+use Fissible\Verdict\Exceptions\TargetNotResolvable;
+
+$capability = Capability::usingPolicy(
+    name: 'orders.lookup',
+    ability: 'view',
+    resolveTarget: fn (ActionEnvelope $envelope): Order => Order::find(
+        $envelope->proposal->arguments['order_id'],
+    ) ?? throw TargetNotResolvable::make(),
+)->rateLimit(RateLimitPolicy::fixedWindow(
+    name: 'per-customer',
+    limit: 10,
+    windowSeconds: 60,
+    keyUsing: fn (ActionEnvelope $envelope, Order $order): array => [
+        'tenant_id' => $envelope->context->metadata['tenant_id'],
+        'customer_id' => $envelope->context->actor->getAuthIdentifier(),
+    ],
+    reason: 'Order lookup limit exceeded.',
+))->executeUsing(/* ... */);
+```
+
+The application defines the bucket from trusted context and the server-resolved target. Verdict
+hashes that binding together with the capability, policy, and window before it reaches storage.
+The unit is consumed after authorization and confirmation, immediately before execution. Policy
+denials and unsuccessful approval checks do not consume it. Database failures stop execution and
+remain visible as application faults rather than being mislabeled as throttles.
+
+A consumed unit means an authorized execution **attempt**, not a guaranteed successful external
+side effect. Transport redelivery and executor idempotency remain separate application concerns.
+See [ADR 0001](docs/adr/0001-semantic-execution-rate-limits.md) for the precise boundary.
+
+Later semantic limits may include:
 
 - Proposal attempts per principal and capability.
 - Denied cross-resource attempts.
@@ -943,6 +979,16 @@ php artisan vendor:publish --tag=verdict-evidence-migrations
 php artisan migrate
 ```
 
+Semantic execution limits use an atomic database store by default. Publish and run the rate-limit
+migration before attaching a `RateLimitPolicy` to a capability. Expired fixed-window rows are not
+needed for enforcement and can be pruned on an application-defined schedule:
+
+```bash
+php artisan vendor:publish --tag=verdict-rate-limit-migrations
+php artisan migrate
+php artisan verdict:prune-rate-limits
+```
+
 - `approvals.store` — the `ApprovalReceiptStore` implementation. The default database store uses
   atomic row-locked transitions. The in-memory implementation is only for deterministic tests.
 - `approvals.connection` and `approvals.table` — the database location for receipt state.
@@ -954,6 +1000,11 @@ php artisan migrate
   development; it is process-local and unbounded, and unsuitable for Octane, queues, or production.
 - `evidence.connection` and `evidence.table` — the database location used when
   `DatabaseEvidenceRecorder` is selected.
+- `rate_limits.store` — the `RateLimitStore` implementation. The database default coordinates
+  across requests, workers, and nodes. `InMemoryRateLimitStore` is only for deterministic tests and
+  local development.
+- `rate_limits.connection` and `rate_limits.table` — the database location for fixed-window bucket
+  counters.
 - `ai.denied_message` — the message returned to the model when a proposal is not executed. Internal
   denial reasons are recorded in evidence but are never included in this message.
 
@@ -971,6 +1022,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Design | Threat model, vocabulary, package boundary, demo design | Documented; ongoing |
 | Runtime foundation | Capability registry, bound and guarded tools, staged decisions, Laravel Policy integration | First slice implemented |
 | Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Confirmation receipt slice implemented; broader identity and idempotency planned |
+| Semantic limits | Per-capability execution attempts, trusted bucket bindings, durable counters, throttle evidence | Fixed-window execution-limit slice implemented; proposal, conversation, cost, and cumulative-risk budgets planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection, structured redaction, transform non-expansion, and exact destination routes implemented; detectors and validators planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders implemented; levels, events, and audit command planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, and repo-native baseline comparison implemented; live runners, baseline tooling, and statistical thresholds planned |

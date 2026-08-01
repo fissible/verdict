@@ -26,6 +26,11 @@ return new class extends Migration
             $table->char('argument_fingerprint', 64)->nullable();
             $table->char('idempotency_key_fingerprint', 64)->nullable();
             $table->char('approval_receipt_fingerprint', 64)->nullable();
+            $table->char('rate_limit_key_fingerprint', 64)->nullable();
+            $table->string('rate_limit_policy')->nullable();
+            $table->unsignedBigInteger('rate_limit_limit')->nullable();
+            $table->unsignedBigInteger('rate_limit_remaining')->nullable();
+            $table->timestamp('rate_limit_reset_at')->nullable();
             $table->json('requested_path_fingerprints')->nullable();
             $table->json('released_path_fingerprints')->nullable();
             $table->json('transform_fingerprints')->nullable();

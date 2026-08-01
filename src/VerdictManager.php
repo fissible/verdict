@@ -24,6 +24,7 @@ use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
+use Fissible\Verdict\RateLimits\RateLimitManager;
 use Illuminate\Contracts\Support\Arrayable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -36,6 +37,7 @@ final readonly class VerdictManager
         private EvidenceRecorder $evidence,
         private ApprovalManager $approvals,
         private ContextReleaseManager $contextReleases,
+        private RateLimitManager $rateLimits,
         private string $deniedMessage,
     ) {}
 
@@ -113,6 +115,12 @@ final readonly class VerdictManager
             return ExecutionResult::denied($evaluation);
         }
 
+        $rateLimitEvaluation = $this->rateLimit($evaluation);
+
+        if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
+            return ExecutionResult::denied($rateLimitEvaluation);
+        }
+
         return ExecutionResult::executed($evaluation, $executor($evaluation));
     }
 
@@ -171,6 +179,12 @@ final readonly class VerdictManager
             return ExecutionResult::denied($executionEvaluation);
         }
 
+        $rateLimitEvaluation = $this->rateLimit($executionEvaluation);
+
+        if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
+            return ExecutionResult::denied($rateLimitEvaluation);
+        }
+
         return ExecutionResult::executed(
             $executionEvaluation,
             $capability->execute(AuthorizedAction::fromExecutionEvaluation($executionEvaluation)),
@@ -226,5 +240,22 @@ final readonly class VerdictManager
         $this->evidence->record(DecisionEvidence::fromEvaluation($evaluation));
 
         return $evaluation;
+    }
+
+    private function rateLimit(Evaluation $evaluation): ?Evaluation
+    {
+        $capability = $evaluation->capability;
+
+        if ($capability === null || $capability->rateLimitPolicy() === null) {
+            return null;
+        }
+
+        return $this->record(new Evaluation(
+            envelope: $evaluation->envelope,
+            capability: $capability,
+            target: $evaluation->target,
+            decision: $this->rateLimits->consume($capability, $evaluation->envelope, $evaluation->target),
+            stage: EvaluationStage::RateLimit,
+        ));
     }
 }

@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Tests;
 
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\VerdictServiceProvider;
 use Illuminate\Foundation\Application;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -29,5 +30,6 @@ abstract class TestCase extends Orchestra
     {
         $app['config']->set('verdict.evidence.recorder', InMemoryEvidenceRecorder::class);
         $app['config']->set('verdict.approvals.store', InMemoryApprovalReceiptStore::class);
+        $app['config']->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 
 return [
     'approvals' => [
@@ -19,6 +20,14 @@ return [
         'recorder' => NullEvidenceRecorder::class,
         'connection' => null,
         'table' => 'verdict_evidence',
+    ],
+
+    'rate_limits' => [
+        // InMemoryRateLimitStore is only for tests and local development. Its process-local
+        // counters do not coordinate across requests, workers, or application nodes.
+        'store' => DatabaseRateLimitStore::class,
+        'connection' => null,
+        'table' => 'verdict_rate_limit_buckets',
     ],
 
     'ai' => [

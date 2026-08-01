@@ -8,6 +8,7 @@ use Closure;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
+use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use InvalidArgumentException;
 use LogicException;
 
@@ -39,6 +40,7 @@ final readonly class Capability
         ?callable $approvalBindingResolver = null,
         private ?string $confirmationReason = null,
         private ?int $confirmationTtlSeconds = null,
+        private ?RateLimitPolicy $rateLimitPolicy = null,
     ) {
         if (trim($this->name) === '') {
             throw new InvalidArgumentException('A capability must have a name.');
@@ -81,6 +83,7 @@ final readonly class Capability
             approvalBindingResolver: $this->approvalBindingResolver,
             confirmationReason: $this->confirmationReason,
             confirmationTtlSeconds: $this->confirmationTtlSeconds,
+            rateLimitPolicy: $this->rateLimitPolicy,
         );
     }
 
@@ -106,7 +109,27 @@ final readonly class Capability
             approvalBindingResolver: $bindUsing,
             confirmationReason: $reason,
             confirmationTtlSeconds: $ttlSeconds,
+            rateLimitPolicy: $this->rateLimitPolicy,
         );
+    }
+
+    public function rateLimit(RateLimitPolicy $policy): self
+    {
+        return new self(
+            name: $this->name,
+            ability: $this->ability,
+            resolveTarget: $this->targetResolver,
+            executor: $this->executor,
+            approvalBindingResolver: $this->approvalBindingResolver,
+            confirmationReason: $this->confirmationReason,
+            confirmationTtlSeconds: $this->confirmationTtlSeconds,
+            rateLimitPolicy: $policy,
+        );
+    }
+
+    public function rateLimitPolicy(): ?RateLimitPolicy
+    {
+        return $this->rateLimitPolicy;
     }
 
     public function confirmationRequired(): bool

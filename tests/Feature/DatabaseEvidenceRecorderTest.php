@@ -31,6 +31,11 @@ beforeEach(function (): void {
         $table->char('argument_fingerprint', 64)->nullable();
         $table->char('idempotency_key_fingerprint', 64)->nullable();
         $table->char('approval_receipt_fingerprint', 64)->nullable();
+        $table->char('rate_limit_key_fingerprint', 64)->nullable();
+        $table->string('rate_limit_policy')->nullable();
+        $table->unsignedInteger('rate_limit_limit')->nullable();
+        $table->unsignedInteger('rate_limit_remaining')->nullable();
+        $table->timestamp('rate_limit_reset_at')->nullable();
         $table->json('requested_path_fingerprints')->nullable();
         $table->json('released_path_fingerprints')->nullable();
         $table->json('transform_fingerprints')->nullable();
@@ -61,6 +66,11 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         argumentFingerprint: str_repeat('a', 64),
         idempotencyKey: 'provider-tool-call-secret',
         approvalReceiptFingerprint: null,
+        rateLimitKeyFingerprint: str_repeat('b', 64),
+        rateLimitPolicy: 'per-customer',
+        rateLimitLimit: 5,
+        rateLimitRemaining: 4,
+        rateLimitResetAt: new DateTimeImmutable('2026-08-01 12:01:00', new DateTimeZone('UTC')),
         recordedAt: $recordedAt,
     );
 
@@ -79,6 +89,9 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         ->and((string) $row->capability)->toBe('orders.view')
         ->and((string) $row->disposition)->toBe('deny')
         ->and((string) $row->argument_fingerprint)->toBe(str_repeat('a', 64))
+        ->and((string) $row->rate_limit_key_fingerprint)->toBe(str_repeat('b', 64))
+        ->and((string) $row->rate_limit_policy)->toBe('per-customer')
+        ->and((int) $row->rate_limit_remaining)->toBe(4)
         ->and((string) $row->idempotency_key_fingerprint)
         ->toBe(hash('sha256', 'provider-tool-call-secret'))
         ->not->toBe('provider-tool-call-secret');
