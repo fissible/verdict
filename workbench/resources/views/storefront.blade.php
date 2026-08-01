@@ -114,6 +114,7 @@
         .confirmation-controls .flow { margin: 0; }
         .confirmation-controls form { flex: none; }
         .confirmation-controls button { min-width: 230px; }
+        .confirmation-controls + .attempts { margin-top: 14px; }
         .results-section { scroll-margin-top: 24px; margin-top: 34px; }
         .results-intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
         .results-intro h2 { margin-bottom: 0; }
