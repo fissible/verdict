@@ -14,3 +14,6 @@ All notable changes to Verdict will be documented in this file.
 - Distinguish proposal and execution authorization evidence.
 - Convert explicitly signaled target-resolution failures into recorded denials.
 - Document the current freshness boundary and unsafe long-running use of in-memory evidence.
+- Add capability-bound, expiring, single-use approval receipts for synchronous Laravel AI
+  `BoundTool` execution, including a transactional database store and fail-closed approval
+  middleware, with a hashed receipt reference in decision evidence.

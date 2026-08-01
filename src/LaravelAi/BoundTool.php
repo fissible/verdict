@@ -10,6 +10,11 @@ use Laravel\Ai\Tools\Request;
 
 final class BoundTool extends AbstractVerdictTool
 {
+    protected function supportsVerifiedConfirmation(): bool
+    {
+        return true;
+    }
+
     protected function executeAction(ActionEnvelope $envelope, Request $request): ExecutionResult
     {
         return $this->verdict()->runBound($envelope);

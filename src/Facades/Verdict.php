@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Fissible\Verdict\Decisions\ExecutionResult runBound(\Fissible\Verdict\Actions\ActionEnvelope $envelope)
  * @method static \Fissible\Verdict\LaravelAi\GuardedTool guard(\Laravel\Ai\Contracts\Tool $tool, string $capability, \Fissible\Verdict\Actions\ActionContext|callable $context)
  * @method static \Fissible\Verdict\LaravelAi\BoundTool bound(\Laravel\Ai\Contracts\Tool $definition, string $capability, \Fissible\Verdict\Actions\ActionContext|callable $context)
+ * @method static \Fissible\Verdict\Approvals\ApprovalManager approvals()
  *
  * @see VerdictManager
  */

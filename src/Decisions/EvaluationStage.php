@@ -7,5 +7,6 @@ namespace Fissible\Verdict\Decisions;
 enum EvaluationStage: string
 {
     case Proposal = 'proposal';
+    case Approval = 'approval';
     case Execution = 'execution';
 }

@@ -166,10 +166,11 @@ faults execute the action. The definition tool exists only to provide Laravel AI
 handler is not an execution fallback.
 
 > [!WARNING]
-> `GuardedTool` and `Verdict::guard(...)` are migration adapters for existing Laravel AI tools.
-> Do not use them for new security-sensitive capabilities. They authorize a resolved target and
-> then delegate to an independent handler, so Verdict cannot establish that the handler acts on
-> the same target. Use `BoundTool` for new capabilities.
+> `GuardedTool` and `Verdict::guard(...)` help migrate your application's existing, pre-Verdict
+> Laravel AI tools onto Verdict's authorization boundary without rewriting them. Do not use them
+> for new security-sensitive capabilities. They authorize a resolved target and then delegate to
+> an independent handler, so Verdict cannot establish that the handler acts on the same target.
+> Use `BoundTool` for new capabilities.
 
 The execution-stage check currently reuses the proposal-stage target object. It can observe
 in-process changes to that object, but it does not reload external state and does not narrow a
@@ -177,8 +178,93 @@ database time-of-check/time-of-use race. Verdict does not yet define target iden
 resolution, database transactions, or locking for arbitrary target types. Mutating executors remain
 responsible for ordinary Laravel transaction, locking, and idempotency practices.
 
-The model-provided tool-call ID is captured as an idempotency key in evidence. Verdict does **not**
-yet enforce idempotency, expiry, one-time nonces, confirmation, review, or rate limits.
+The model-provided tool-call ID is captured as an idempotency key in evidence. The confirmation
+slice described below enforces expiring, single-use approval receipts for `BoundTool`. Verdict does
+**not** yet enforce execution idempotency, review, or rate limits.
+
+### Verified confirmations
+
+`BoundTool` capabilities may require confirmation, but they must explicitly define the trusted
+identity and state to which an approval is bound:
+
+```php
+Verdict::capability(
+    Capability::usingPolicy(
+        name: 'orders.cancel',
+        ability: 'cancel',
+        resolveTarget: fn (ActionEnvelope $envelope) => Order::find(
+            $envelope->proposal->arguments['order_id'],
+        ) ?? throw TargetNotResolvable::make(),
+    )->requiresConfirmation(
+        bindUsing: fn (ActionEnvelope $envelope, Order $order): array => [
+            'actor_id' => $envelope->context->actor->getAuthIdentifier(),
+            'tenant_id' => $order->tenant_id,
+            'order_id' => $order->getKey(),
+            'order_version' => $order->updated_at?->getTimestamp(),
+        ],
+        reason: 'Confirm cancellation of this order.',
+        ttlSeconds: 300,
+    )->executeUsing(fn (AuthorizedAction $action) => CancelOrder::run($action->target)),
+);
+```
+
+Verdict always includes the capability name and complete proposed arguments in the receipt
+fingerprint. The binding adds identity and canonical resource state that Verdict cannot infer for
+an arbitrary target. Include the principal, tenant, resource identity, and any state change that
+must invalidate approval. Raw binding values are hashed rather than stored in the receipt.
+
+Add `VerdictApprovalMiddleware` to an agent that resumes protected approvals:
+
+```php
+public function middleware(): array
+{
+    return [app(VerdictApprovalMiddleware::class)];
+}
+```
+
+When Laravel AI returns a `PendingApproval`, resolve its Verdict challenge inside an endpoint that
+has already authorized access to the conversation and pending call:
+
+```php
+use Laravel\Ai\Approvals\Decision as LaravelApprovalDecision;
+use Laravel\Ai\Approvals\Decisions;
+
+$challenge = Verdict::approvals()->challengeForToolCall($pendingApproval->id);
+
+abort_if($challenge === null, 409);
+
+$transition = Verdict::approvals()->approve(
+    receiptId: $challenge->receiptId,
+    toolCallId: $challenge->toolCallId,
+    approvedBy: 'customer:'.auth()->id(),
+);
+
+abort_unless($transition->succeeded(), 409);
+
+$response = $agent->prompt(Decisions::from([
+    $pendingApproval->id => LaravelApprovalDecision::approve(),
+]));
+```
+
+Use an opaque application identifier such as `customer:72` for `approvedBy`, not an email address
+or other unnecessary PII. Verdict does not authenticate this string; the application endpoint must
+authenticate the decision maker and authorize access to the conversation and pending action.
+
+The database store advances a receipt from pending to approved to consumed under a transaction and
+row lock. Execution requires all of the following: the unpredictable receipt ID was approved, the
+receipt is unexpired, Laravel is resuming with an explicit approval for that tool-call ID, the
+capability and full arguments still match, and the application-defined binding still matches.
+Direct `handle()` calls, replay, changed arguments, expired receipts, edited approvals, and wildcard
+approvals fail closed.
+
+Verdict does not assume provider tool-call IDs are globally unique. The database uniqueness
+boundary also includes the capability and exact binding fingerprint. A tool-call-only challenge
+lookup returns no result when multiple retained receipts make it ambiguous.
+
+This is an early synchronous Laravel AI integration. Streaming approval resumption is not yet
+supported because agent middleware returns before a stream is consumed; protected execution will
+fail closed without the scoped approval context. `GuardedTool` does not support verified
+confirmation because its independent handler cannot be bound to the authorized target.
 
 The longer-term fluent API remains an illustrative design:
 
@@ -352,8 +438,10 @@ An approval nonce and an execution idempotency key have different jobs:
 - An **idempotency key** is intentionally reused for retries of the same logical operation. It
   prevents a timeout or queue retry from performing the side effect twice.
 
-The package may expose these concepts through an approval state machine rather than as two public
-fields. In either design, the model must not generate them.
+The current `BoundTool` slice implements these as an internal receipt state machine. The Laravel AI
+tool-call ID identifies the pending call, while Verdict creates a separate unpredictable receipt ID
+for the approval decision. The model generates neither the receipt ID nor the decision-maker
+identity. Execution idempotency remains separate and unimplemented.
 
 ## Rate limits and risk budgets
 
@@ -402,12 +490,12 @@ encryption. A hash of predictable personal information is not anonymization.
 The initial implementation records a decision, evaluation stage, envelope ID, capability,
 detailed internal reason, provider tool-call ID, timestamp, and a deterministic SHA-256
 fingerprint of normalized arguments through an `EvidenceRecorder` contract. It does not store raw
-arguments. A bound execution normally creates proposal-stage and execution-stage records. The
-default recorder is a no-op because silently choosing a storage destination or retention policy
-would be unsafe; `InMemoryEvidenceRecorder` exists only for tests and local development. It is
-unbounded process-local state and must not be used with production, Octane, queue workers, or as a
-tenant-separated evidence store. Persistent stores and execution outcome records are not
-implemented yet.
+arguments. A confirmed bound execution also records an approval-stage permit with a hashed receipt
+reference. The default recorder is a no-op because silently choosing a storage destination or
+retention policy would be unsafe; `InMemoryEvidenceRecorder` exists only for tests and local
+development. It is unbounded process-local state and must not be used with production, Octane,
+queue workers, or as a tenant-separated evidence store. Persistent evidence stores and execution
+outcome records are not implemented yet.
 
 Verdict should record observable inputs, outputs, policy facts, and decisions. It should not
 request or store hidden model chain-of-thought.
@@ -608,7 +696,8 @@ The implementation will need to account for ordinary Laravel runtime behavior:
 - Policy and capability registration must work with cached configuration and long-running workers.
 - Live-model evaluations must not run as part of an ordinary deterministic test command.
 
-These are design requirements, not implemented guarantees.
+The confirmation receipt slice implements lifecycle-scoped approval context and database-backed,
+single-use receipts. The remaining items are design requirements, not implemented guarantees.
 
 ## Package shape
 
@@ -620,10 +709,12 @@ fissible/verdict
         Capabilities/
         Actions/
         Decisions/
+        Approvals/
         Evidence/
         LaravelAi/
         Policies/
     tests/
+    database/
     workbench/
 ```
 
@@ -662,6 +753,42 @@ Live evaluations will require developers to supply their own provider credential
 associated provider costs and data-processing terms. Deterministic package tests should not
 require provider credentials.
 
+## Configuration
+
+Verdict's service provider and `Verdict` facade are registered automatically through Laravel's
+package auto-discovery; no manual registration is required.
+
+Verdict ships a `config/verdict.php` file. Publish it to customize the runtime adapters:
+
+```bash
+php artisan vendor:publish --tag=verdict-config
+```
+
+Verified confirmations use a database receipt store by default. Publish and run its migration
+before enabling `requiresConfirmation(...)`:
+
+```bash
+php artisan vendor:publish --tag=verdict-migrations
+php artisan migrate
+```
+
+- `approvals.store` — the `ApprovalReceiptStore` implementation. The default database store uses
+  atomic row-locked transitions. The in-memory implementation is only for deterministic tests.
+- `approvals.connection` and `approvals.table` — the database location for receipt state.
+- `approvals.ttl_seconds` — the default receipt lifetime; a capability may select a shorter or
+  longer lifetime explicitly.
+- `evidence.recorder` — the `EvidenceRecorder` implementation used to record decisions. Defaults to
+  `NullEvidenceRecorder`, which discards evidence, because silently choosing a storage destination
+  or retention policy would be unsafe. `InMemoryEvidenceRecorder` is available for tests and local
+  development; it is process-local and unbounded, and unsuitable for Octane, queues, or production.
+- `ai.denied_message` — the message returned to the model when a proposal is not executed. Internal
+  denial reasons are recorded in evidence but are never included in this message.
+
+The receipt table intentionally retains terminal rows so an old tool-call cannot silently become a
+new approval after deletion. A bounded pruning or tombstone policy has not been implemented yet;
+do not delete terminal receipts while the corresponding Laravel AI conversation can still be
+resumed or replayed.
+
 ## Roadmap
 
 This roadmap is directional and may change as the integration is prototyped.
@@ -670,7 +797,7 @@ This roadmap is directional and may change as the integration is prototyped.
 |---|---|---|
 | Design | Threat model, vocabulary, package boundary, demo design | Documented; ongoing |
 | Runtime foundation | Capability registry, bound and guarded tools, staged decisions, Laravel Policy integration | First slice implemented |
-| Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Planned |
+| Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Confirmation receipt slice implemented; broader identity and idempotency planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Planned |

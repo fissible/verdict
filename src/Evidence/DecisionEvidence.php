@@ -17,6 +17,7 @@ final readonly class DecisionEvidence
         public ?string $reason,
         public string $argumentFingerprint,
         public ?string $idempotencyKey,
+        public ?string $approvalReceiptFingerprint,
         public DateTimeImmutable $recordedAt,
     ) {}
 
@@ -30,6 +31,9 @@ final readonly class DecisionEvidence
             reason: $evaluation->decision->reason,
             argumentFingerprint: ArgumentFingerprint::make($evaluation->envelope->proposal->arguments),
             idempotencyKey: $evaluation->envelope->proposal->idempotencyKey,
+            approvalReceiptFingerprint: is_string($evaluation->decision->metadata['approval_receipt_fingerprint'] ?? null)
+                ? $evaluation->decision->metadata['approval_receipt_fingerprint']
+                : null,
             recordedAt: new DateTimeImmutable,
         );
     }

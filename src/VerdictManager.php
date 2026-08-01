@@ -7,11 +7,13 @@ namespace Fissible\Verdict;
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
+use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Decisions\Decision;
+use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Decisions\ExecutionResult;
@@ -28,6 +30,7 @@ final readonly class VerdictManager
         private CapabilityRegistry $capabilities,
         private CapabilityAuthorizer $authorizer,
         private EvidenceRecorder $evidence,
+        private ApprovalManager $approvals,
         private string $deniedMessage,
     ) {}
 
@@ -64,11 +67,17 @@ final readonly class VerdictManager
             ));
         }
 
+        $decision = $this->authorizer->decide($capability, $envelope, $target);
+
+        if ($decision->permitsExecution() && $capability->confirmationRequired()) {
+            $decision = Decision::requireConfirmation($capability->confirmationReason());
+        }
+
         return $this->record(new Evaluation(
             envelope: $envelope,
             capability: $capability,
             target: $target,
-            decision: $this->authorizer->decide($capability, $envelope, $target),
+            decision: $decision,
             stage: EvaluationStage::Proposal,
         ));
     }
@@ -90,6 +99,29 @@ final readonly class VerdictManager
     public function runBound(ActionEnvelope $envelope): ExecutionResult
     {
         $proposalEvaluation = $this->evaluate($envelope);
+
+        if ($proposalEvaluation->decision->disposition === Disposition::RequireConfirmation) {
+            $receipt = $this->approvals->consume($proposalEvaluation);
+
+            if (! $receipt->succeeded()) {
+                return ExecutionResult::denied($proposalEvaluation);
+            }
+
+            $proposalEvaluation = $this->record(new Evaluation(
+                envelope: $envelope,
+                capability: $proposalEvaluation->capability,
+                target: $proposalEvaluation->target,
+                decision: Decision::permit(
+                    reason: 'An approved action receipt was consumed.',
+                    metadata: [
+                        'approval_receipt_fingerprint' => $receipt->receipt === null
+                            ? null
+                            : hash('sha256', $receipt->receipt->id),
+                    ],
+                ),
+                stage: EvaluationStage::Approval,
+            ));
+        }
 
         if (! $proposalEvaluation->decision->permitsExecution()) {
             return ExecutionResult::denied($proposalEvaluation);
@@ -139,6 +171,34 @@ final readonly class VerdictManager
     public function bound(Tool $definition, string $capability, ActionContext|callable $context): BoundTool
     {
         return new BoundTool($definition, $capability, $context, $this, $this->deniedMessage);
+    }
+
+    public function requestConfirmation(ActionEnvelope $envelope): ?Decision
+    {
+        if (! $this->capabilities->has($envelope->proposal->capability)) {
+            return null;
+        }
+
+        $capability = $this->capabilities->get($envelope->proposal->capability);
+
+        if (! $capability->confirmationRequired()) {
+            return null;
+        }
+
+        $evaluation = $this->evaluate($envelope);
+
+        if ($evaluation->decision->disposition !== Disposition::RequireConfirmation) {
+            return null;
+        }
+
+        $this->approvals->issue($evaluation);
+
+        return $evaluation->decision;
+    }
+
+    public function approvals(): ApprovalManager
+    {
+        return $this->approvals;
     }
 
     private function record(Evaluation $evaluation): Evaluation

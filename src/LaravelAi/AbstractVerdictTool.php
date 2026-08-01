@@ -68,21 +68,7 @@ abstract class AbstractVerdictTool implements Approvable, Tool
      */
     final public function handle(Request $request): Stringable|string
     {
-        $context = ($this->contextResolver)($request);
-
-        if (! $context instanceof ActionContext) {
-            throw new LogicException('A Verdict tool context resolver must return an ActionContext.');
-        }
-
-        $envelope = ActionEnvelope::wrap(
-            proposal: new ActionProposal(
-                capability: $this->capability,
-                arguments: $request->all(),
-                idempotencyKey: $request->toolCallId(),
-                metadata: ['transport' => 'laravel-ai'],
-            ),
-            context: $context,
-        );
+        $envelope = $this->envelope($request);
 
         $result = $this->executeAction($envelope, $request);
 
@@ -118,6 +104,14 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     public function shouldRequestApproval(Request $request): ?Approval
     {
+        $decision = $this->supportsVerifiedConfirmation()
+            ? $this->verdict->requestConfirmation($this->envelope($request))
+            : null;
+
+        if ($decision !== null) {
+            return Approval::required($decision->reason);
+        }
+
         if ($this->approvalRequirement === false) {
             return null;
         }
@@ -139,6 +133,30 @@ abstract class AbstractVerdictTool implements Approvable, Tool
     final protected function verdict(): VerdictManager
     {
         return $this->verdict;
+    }
+
+    protected function supportsVerifiedConfirmation(): bool
+    {
+        return false;
+    }
+
+    private function envelope(Request $request): ActionEnvelope
+    {
+        $context = ($this->contextResolver)($request);
+
+        if (! $context instanceof ActionContext) {
+            throw new LogicException('A Verdict tool context resolver must return an ActionContext.');
+        }
+
+        return ActionEnvelope::wrap(
+            proposal: new ActionProposal(
+                capability: $this->capability,
+                arguments: $request->all(),
+                idempotencyKey: $request->toolCallId(),
+                metadata: ['transport' => 'laravel-ai'],
+            ),
+            context: $context,
+        );
     }
 
     abstract protected function executeAction(ActionEnvelope $envelope, Request $request): ExecutionResult;
