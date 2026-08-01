@@ -17,3 +17,5 @@ All notable changes to Verdict will be documented in this file.
 - Add capability-bound, expiring, single-use approval receipts for synchronous Laravel AI
   `BoundTool` execution, including a transactional database store and fail-closed approval
   middleware, with a hashed receipt reference in decision evidence.
+- Add a deterministic Testbench storefront security lab comparing naive, manually authorized,
+  and Verdict-bound order access, plus argument tampering and approval replay demonstrations.

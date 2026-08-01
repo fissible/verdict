@@ -22,6 +22,9 @@
         <testsuite name="Unit">
             <directory>tests/Unit</directory>
         </testsuite>
+        <testsuite name="Workbench">
+            <directory>tests/Workbench</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>

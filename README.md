@@ -2,9 +2,10 @@
 
 **Policy-bound actions, security evidence, and adversarial evaluation for Laravel AI agents.**
 
-> **Project status: early implementation.** The first runtime authorization slice exists on
-> `main`, but Verdict has no tagged release and no stable public API. Sections labeled planned,
-> proposed, or illustrative describe direction rather than shipped behavior.
+> **Project status: early implementation.** The runtime authorization and verified-confirmation
+> slices exist on `main`, together with a deterministic storefront workbench. Verdict has no
+> tagged release and no stable public API. Sections labeled planned, proposed, or illustrative
+> describe direction rather than shipped behavior.
 
 Verdict is an early Laravel package for applications that allow AI agents to read sensitive
 context, call tools, or change application state. Its central rule is simple:
@@ -577,10 +578,11 @@ decide deterministic facts such as whether a forbidden tool ran or whether a res
 the authenticated principal. Evaluator prompts must also be treated as exposed to adversarial
 content.
 
-## Planned storefront demonstration
+## Storefront security lab
 
-The workbench application is planned as a customer-facing eCommerce assistant with product search,
-cart operations, order lookup, cancellation, and returns.
+The workbench contains the first deterministic slice of a customer-facing eCommerce security lab.
+It currently covers order lookup and cancellation; product search, cart operations, and returns
+remain planned.
 
 The most reproducible demonstration does not depend on successfully jailbreaking a model twice.
 It captures one model proposal and passes the same proposal through protected and unprotected
@@ -595,7 +597,7 @@ Resolved order owner:    customer_91
 Model proposal:          orders.view(order_id: 1002)
 ```
 
-The demo should honestly show three implementations:
+The implemented comparison honestly shows three implementations:
 
 | Implementation | Expected result |
 |---|---|
@@ -607,14 +609,20 @@ The point is not that Laravel needs Verdict to perform an ownership check. The p
 Verdict aims to make the secure pattern consistent, inspectable, and regression-tested across the
 application's AI action surface.
 
-The demo UI may show:
+The demo UI shows:
 
 ```text
 untrusted input | model proposal | policy decision | observed side effect
 ```
 
-The plan is to keep it in the package workbench rather than requiring routes, views, or frontend
-assets in the distributed package.
+It lives entirely in the package workbench and does not add routes, views, or frontend assets to
+the distributed package. It also demonstrates an argument-bound cancellation approval: changed
+arguments fail, the exact approved action executes once, and replay fails.
+
+The primary path intentionally uses a captured proposal rather than a live provider. Holding the
+proposal constant makes the authorization comparison reproducible and requires no credentials.
+An optional live-model path remains planned; it should feed its proposal into the same execution
+comparison rather than treating successful exploitation as deterministic.
 
 Additional demo cases may include indirect injection in a product document, refund abuse,
 argument changes after confirmation, approval replay, PII release, and multi-turn rate limits.
@@ -753,6 +761,23 @@ Live evaluations will require developers to supply their own provider credential
 associated provider costs and data-processing terms. Deterministic package tests should not
 require provider credentials.
 
+### Run the storefront security lab
+
+The demo runs from Testbench and uses only synthetic data:
+
+```bash
+composer install
+composer build
+php vendor/bin/testbench serve
+```
+
+Open the displayed local URL. The default cross-customer scenario compares a naive Laravel AI
+tool, an explicitly secured Laravel implementation, and Verdict's `BoundTool` using the same
+Policy. A selector also runs the legitimate owned-order path.
+
+The workbench configures process-local evidence and approval stores so the lab needs no production
+infrastructure. Those adapters are intentionally unsuitable for production, Octane, or queues.
+
 ## Configuration
 
 Verdict's service provider and `Verdict` facade are registered automatically through Laravel's
@@ -801,7 +826,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Planned |
-| Demo | Sandboxed eCommerce assistant and security trace | Planned |
+| Demo | Sandboxed eCommerce assistant and security trace | First deterministic workbench slice implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
 | Optional UI | Development viewer or framework-specific adapter | Exploratory |
 

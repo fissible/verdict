@@ -4,12 +4,100 @@ declare(strict_types=1);
 
 namespace Workbench\App\Providers;
 
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\AuthorizedAction;
+use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
+use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\VerdictManager;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use LogicException;
+use Workbench\App\Storefront\ActionLog;
+use Workbench\App\Storefront\Catalog;
+use Workbench\App\Storefront\Order;
+use Workbench\App\Storefront\OrderPolicy;
 
 final class WorkbenchServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // The eCommerce demonstration will be registered here.
+        $this->app->singleton(Catalog::class);
+        $this->app->scoped(ActionLog::class);
+        $this->app->scoped(InMemoryEvidenceRecorder::class);
+        $this->app->scoped(InMemoryApprovalReceiptStore::class);
+        $this->app->scoped(
+            EvidenceRecorder::class,
+            fn () => $this->app->make(InMemoryEvidenceRecorder::class),
+        );
+        $this->app->scoped(
+            ApprovalReceiptStore::class,
+            fn () => $this->app->make(InMemoryApprovalReceiptStore::class),
+        );
+
+        config()->set('verdict.evidence.recorder', InMemoryEvidenceRecorder::class);
+        config()->set('verdict.approvals.store', InMemoryApprovalReceiptStore::class);
+    }
+
+    public function boot(VerdictManager $verdict, Catalog $catalog): void
+    {
+        Gate::policy(Order::class, OrderPolicy::class);
+
+        $verdict->capability(
+            Capability::usingPolicy(
+                name: 'orders.view',
+                ability: 'view',
+                resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
+                    (int) $envelope->proposal->arguments['order_id'],
+                ),
+            )->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof Order) {
+                    throw new LogicException('The storefront view capability expected an order.');
+                }
+
+                return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
+            }),
+        );
+
+        $verdict->capability(
+            Capability::usingPolicy(
+                name: 'orders.cancel',
+                ability: 'cancel',
+                resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
+                    (int) $envelope->proposal->arguments['order_id'],
+                ),
+            )->requiresConfirmation(
+                bindUsing: function (ActionEnvelope $envelope, Order $order): array {
+                    $actorId = $envelope->context->actor instanceof Authenticatable
+                        ? $envelope->context->actor->getAuthIdentifier()
+                        : null;
+
+                    return [
+                        'actor_id' => $actorId,
+                        'tenant_id' => $envelope->context->metadata['tenant_id'] ?? null,
+                        'order_id' => $order->id,
+                        'order_version' => $order->version,
+                    ];
+                },
+                reason: 'Confirm cancellation of order #1001.',
+                ttlSeconds: 300,
+            )->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof Order) {
+                    throw new LogicException('The storefront cancellation capability expected an order.');
+                }
+
+                app(ActionLog::class)->record('orders.cancel', $action->target->id);
+
+                return json_encode([
+                    'status' => 'cancelled',
+                    'order_id' => $action->target->id,
+                ], JSON_THROW_ON_ERROR);
+            }),
+        );
+
+        $this->loadViewsFrom(__DIR__.'/../../resources/views', 'verdict-workbench');
     }
 }
