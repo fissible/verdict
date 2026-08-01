@@ -14,5 +14,6 @@ final readonly class Evaluation
         public ?Capability $capability,
         public mixed $target,
         public Decision $decision,
+        public EvaluationStage $stage,
     ) {}
 }

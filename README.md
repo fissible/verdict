@@ -114,6 +114,7 @@ proposal:
 ```php
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Facades\Verdict;
 use Laravel\Ai\Tools\Request;
@@ -124,15 +125,21 @@ Verdict::capability(Capability::usingPolicy(
     resolveTarget: fn (ActionEnvelope $envelope): Order => Order::findOrFail(
         $envelope->proposal->arguments['order_id'],
     ),
-));
+)->executeUsing(function (AuthorizedAction $action): string {
+    if (! $action->target instanceof Order) {
+        throw new LogicException('Expected a bound order.');
+    }
+
+    return $action->target->toJson();
+}));
 
 final class StorefrontAgent implements HasTools
 {
     public function tools(): iterable
     {
         return [
-            Verdict::guard(
-                tool: new LookupOrder,
+            Verdict::bound(
+                definition: new LookupOrder,
                 capability: 'orders.view',
                 context: fn (Request $request): ActionContext => new ActionContext(auth()->user()),
             ),
@@ -141,17 +148,28 @@ final class StorefrontAgent implements HasTools
 }
 ```
 
-`GuardedTool` delegates the existing Laravel AI tool name, description, schema, and approval
-requirement. At invocation time it binds the server-provided actor, resolves the target once,
-asks Laravel's Gate to inspect the ability, and only then calls the wrapped tool. Missing
-capabilities fail closed.
+`BoundTool` delegates the existing Laravel AI tool name, description, schema, and approval
+requirement, but never calls that tool's `handle()` method. At invocation time it:
 
-The current wrapper authorizes the resolved target and then delegates to the existing tool
-handler. It cannot prove that an arbitrary handler operates on that exact target, prevent the
-handler from resolving different data, or close a time-of-check/time-of-use race for a mutation.
-Until Verdict adds a target-bound executor and transactional re-authorization, handlers remain
-responsible for using the same canonical resource and for applying ordinary Laravel transaction,
-locking, and idempotency practices.
+1. Binds the server-provided actor and untrusted proposal into an envelope.
+2. Resolves one canonical target.
+3. Asks Laravel's Gate to inspect the target at the proposal stage.
+4. Re-inspects the same target immediately before execution.
+5. Passes an `AuthorizedAction` containing that target to the capability's deterministic executor.
+
+Missing capabilities, missing executors, and either denied authorization fail closed. The
+definition tool exists only to provide Laravel AI metadata; its raw handler is not an execution
+fallback.
+
+`GuardedTool` remains available as a compatibility adapter through `Verdict::guard(...)`. It
+authorizes a resolved target and then delegates to an existing tool handler. It cannot establish
+that arbitrary handler code uses the same target, so `BoundTool` is the recommended path for new
+capabilities.
+
+Execution-stage re-authorization narrows but does not eliminate a time-of-check/time-of-use race.
+Verdict does not yet open a database transaction or acquire a lock around the second check and
+mutation. Mutating executors remain responsible for ordinary Laravel transaction, locking, and
+idempotency practices.
 
 The model-provided tool-call ID is captured as an idempotency key in evidence. Verdict does **not**
 yet enforce idempotency, expiry, one-time nonces, confirmation, review, or rate limits.
@@ -375,12 +393,13 @@ The evidence store may contain highly sensitive information. The planned design 
 configurable evidence levels, retention, tenant isolation, access authorization, pruning, and
 encryption. A hash of predictable personal information is not anonymization.
 
-The initial implementation records a decision, envelope ID, capability, detailed internal reason,
-provider tool-call ID, timestamp, and a deterministic SHA-256 fingerprint of normalized arguments
-through an `EvidenceRecorder` contract. It does not store raw arguments. The default recorder is a
-no-op because silently choosing a storage destination or retention policy would be unsafe;
-`InMemoryEvidenceRecorder` exists for tests and local development. Persistent stores and execution
-outcome records are not implemented yet.
+The initial implementation records a decision, evaluation stage, envelope ID, capability,
+detailed internal reason, provider tool-call ID, timestamp, and a deterministic SHA-256
+fingerprint of normalized arguments through an `EvidenceRecorder` contract. It does not store raw
+arguments. A bound execution normally creates proposal-stage and execution-stage records. The
+default recorder is a no-op because silently choosing a storage destination or retention policy
+would be unsafe; `InMemoryEvidenceRecorder` exists for tests and local development. Persistent
+stores and execution outcome records are not implemented yet.
 
 Verdict should record observable inputs, outputs, policy facts, and decisions. It should not
 request or store hidden model chain-of-thought.
@@ -642,7 +661,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Phase | Scope | Status |
 |---|---|---|
 | Design | Threat model, vocabulary, package boundary, demo design | Documented; ongoing |
-| Runtime foundation | Capability registry, guarded tools, decisions, Laravel Policy integration | In progress |
+| Runtime foundation | Capability registry, bound and guarded tools, staged decisions, Laravel Policy integration | First slice implemented |
 | Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Planned |

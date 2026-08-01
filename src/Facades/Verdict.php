@@ -11,7 +11,9 @@ use Illuminate\Support\Facades\Facade;
  * @method static \Fissible\Verdict\VerdictManager capability(\Fissible\Verdict\Capabilities\Capability $capability)
  * @method static \Fissible\Verdict\Decisions\Evaluation evaluate(\Fissible\Verdict\Actions\ActionEnvelope $envelope)
  * @method static \Fissible\Verdict\Decisions\ExecutionResult run(\Fissible\Verdict\Actions\ActionEnvelope $envelope, callable $executor)
+ * @method static \Fissible\Verdict\Decisions\ExecutionResult runBound(\Fissible\Verdict\Actions\ActionEnvelope $envelope)
  * @method static \Fissible\Verdict\LaravelAi\GuardedTool guard(\Laravel\Ai\Contracts\Tool $tool, string $capability, \Fissible\Verdict\Actions\ActionContext|callable $context)
+ * @method static \Fissible\Verdict\LaravelAi\BoundTool bound(\Laravel\Ai\Contracts\Tool $definition, string $capability, \Fissible\Verdict\Actions\ActionContext|callable $context)
  *
  * @see VerdictManager
  */

@@ -12,6 +12,7 @@ final readonly class DecisionEvidence
     public function __construct(
         public string $envelopeId,
         public string $capability,
+        public string $stage,
         public string $disposition,
         public ?string $reason,
         public string $argumentFingerprint,
@@ -24,6 +25,7 @@ final readonly class DecisionEvidence
         return new self(
             envelopeId: $evaluation->envelope->id,
             capability: $evaluation->envelope->proposal->capability,
+            stage: $evaluation->stage->value,
             disposition: $evaluation->decision->disposition->value,
             reason: $evaluation->decision->reason,
             argumentFingerprint: ArgumentFingerprint::make($evaluation->envelope->proposal->arguments),

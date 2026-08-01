@@ -127,7 +127,10 @@ it('denies an idor proposal before the underlying Laravel AI tool executes', fun
 
     expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
 
-    /** @var InMemoryEvidenceRecorder $recorder */
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        throw new LogicException('Expected the in-memory evidence recorder.');
+    }
+
     $evidence = $recorder->latest();
 
     expect($evidence)->not->toBeNull()

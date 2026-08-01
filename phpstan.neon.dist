@@ -3,5 +3,4 @@ parameters:
     paths:
         - src
         - config
-        - tests
     tmpDir: build/phpstan

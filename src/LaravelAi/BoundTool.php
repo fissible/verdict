@@ -7,15 +7,11 @@ namespace Fissible\Verdict\LaravelAi;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Decisions\ExecutionResult;
 use Laravel\Ai\Tools\Request;
-use Stringable;
 
-final class GuardedTool extends AbstractVerdictTool
+final class BoundTool extends AbstractVerdictTool
 {
     protected function executeAction(ActionEnvelope $envelope, Request $request): ExecutionResult
     {
-        return $this->verdict()->run(
-            $envelope,
-            fn (): Stringable|string => $this->definition()->handle($request),
-        );
+        return $this->verdict()->runBound($envelope);
     }
 }
