@@ -59,6 +59,10 @@ jobs:
 
       - name: Type coverage
         if: runner.os != 'Windows'
+        env:
+          # Pest 4.0.x stores type-analysis results in one shared PHP cache file.
+          # Keep this check single-process so a fork cannot read a partial write.
+          FORK_MEM_PER_PROC: 1099511627776
         run: composer test:types
 
       - name: Test suite
