@@ -32,11 +32,30 @@ final readonly class StorefrontScenarioRunner
     ) {}
 
     /** @return array<string, mixed> */
+    public function preview(int $orderId): array
+    {
+        $customer = new Customer(72, 'Avery Customer');
+        $order = $this->catalog->order($orderId);
+
+        return [
+            'customer' => ['id' => $customer->id, 'name' => $customer->name],
+            'request' => "Where is order #{$orderId}?",
+            'proposal' => [
+                'capability' => 'orders.view',
+                'arguments' => ['order_id' => $orderId],
+            ],
+            'target' => $order->disclosure(),
+            'cross_customer' => $customer->id !== $order->customerId,
+        ];
+    }
+
+    /** @return array<string, mixed> */
     public function comparison(int $orderId): array
     {
         $customer = new Customer(72, 'Avery Customer');
         $order = $this->catalog->order($orderId);
         $arguments = ['order_id' => $orderId];
+        $preview = $this->preview($orderId);
 
         $naiveTool = new LookupOrder($this->catalog);
         $naiveDisclosure = $this->decode($naiveTool->handle(new Request($arguments, "naive-order-{$orderId}")));
@@ -59,14 +78,7 @@ final readonly class StorefrontScenarioRunner
         $verdictExecuted = ($verdictResult['status'] ?? null) !== 'not_executed';
 
         return [
-            'customer' => ['id' => $customer->id, 'name' => $customer->name],
-            'request' => "Where is order #{$orderId}?",
-            'proposal' => [
-                'capability' => 'orders.view',
-                'arguments' => $arguments,
-            ],
-            'target' => $order->disclosure(),
-            'cross_customer' => $customer->id !== $order->customerId,
+            ...$preview,
             'implementations' => [
                 'naive' => [
                     'label' => 'Naive Laravel AI tool',
@@ -124,6 +136,7 @@ final readonly class StorefrontScenarioRunner
             approvedBy: 'customer:72',
         );
         $decisions = Decisions::from([$toolCallId => LaravelApprovalDecision::approve()]);
+        $writesBefore = count($this->actions->all());
         $tampered = $this->approvalContext->within(
             $decisions,
             fn (): array => $this->decode($tool->handle(new Request([
@@ -135,6 +148,7 @@ final readonly class StorefrontScenarioRunner
             $decisions,
             fn (): array => $this->decode($tool->handle($originalRequest)),
         );
+        $writesAfterExactAction = count($this->actions->all());
         $replayed = $this->approvalContext->within(
             $decisions,
             fn (): array => $this->decode($tool->handle($originalRequest)),
@@ -166,6 +180,16 @@ final readonly class StorefrontScenarioRunner
                     'status' => 'blocked',
                     'result' => $replayed,
                 ],
+            ],
+            'execution_summary' => [
+                'sink' => 'Request-scoped in-memory action log',
+                'writes_before' => $writesBefore,
+                'writes_after' => count($this->actions->all()),
+                'writes_after_exact_action' => $writesAfterExactAction,
+                'blocked_attempts' => count(array_filter(
+                    [$tampered, $replayed],
+                    fn (array $result): bool => ($result['status'] ?? null) === 'not_executed',
+                )),
             ],
             'observed_actions' => $this->actions->all(),
             'evidence' => array_map(

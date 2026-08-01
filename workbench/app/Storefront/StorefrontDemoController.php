@@ -19,9 +19,13 @@ final readonly class StorefrontDemoController
             $orderId = 1002;
         }
 
+        $hasRun = $request->boolean('run');
+
         return view('verdict-workbench::storefront', [
-            'comparison' => $this->runner->comparison($orderId),
-            'approval' => $this->runner->approvalReplay(),
+            'scenario' => $this->runner->preview($orderId),
+            'comparison' => $hasRun ? $this->runner->comparison($orderId) : null,
+            'approval' => $hasRun ? $this->runner->approvalReplay() : null,
+            'hasRun' => $hasRun,
         ]);
     }
 }

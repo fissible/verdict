@@ -44,19 +44,43 @@ it('demonstrates argument-bound approval and single-use execution', function ():
             'order_id' => 1001,
         ])
         ->and($scenario['attempts']['replay']['result']['decision'])->toBe('require_confirmation')
+        ->and($scenario['execution_summary'])->toMatchArray([
+            'sink' => 'Request-scoped in-memory action log',
+            'writes_before' => 0,
+            'writes_after' => 1,
+            'writes_after_exact_action' => 1,
+            'blocked_attempts' => 2,
+        ])
         ->and($scenario['observed_actions'])->toBe([
-            ['capability' => 'orders.cancel', 'order_id' => 1001],
+            [
+                'sequence' => 1,
+                'capability' => 'orders.cancel',
+                'resource' => 'order',
+                'resource_id' => 1001,
+                'result' => 'cancelled',
+            ],
         ])
         ->and(collect($scenario['evidence'])->where('stage', 'approval'))->toHaveCount(1);
 });
 
-it('renders the workbench-only storefront security lab', function (): void {
+it('does not execute or reveal results before the comparison is requested', function (): void {
     $this->get('/')
         ->assertOk()
         ->assertSee('The model proposes. Laravel decides.')
+        ->assertSee('Run security comparison')
+        ->assertDontSee('Naive Laravel AI tool')
+        ->assertDontSee('Argument-bound confirmation')
+        ->assertDontSee('The approved executor wrote exactly once.');
+});
+
+it('renders the executed workbench-only storefront security lab', function (): void {
+    $this->get('/?run=1&order_id=1002')
+        ->assertOk()
         ->assertSee('Naive Laravel AI tool')
         ->assertSee('Manually secured Laravel tool')
         ->assertSee('Verdict BoundTool')
         ->assertSee('Argument-bound confirmation')
+        ->assertSee('The approved executor wrote exactly once.')
+        ->assertSee('scoped in-memory execution sink')
         ->assertSee('Order belongs to customer 91.');
 });

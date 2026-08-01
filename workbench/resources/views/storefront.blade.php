@@ -18,6 +18,7 @@
         }
 
         * { box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
 
         body {
             margin: 0;
@@ -60,8 +61,21 @@
             padding: 10px 12px;
             font: inherit;
         }
+        select {
+            appearance: none;
+            padding-right: 42px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Cpath d='m3 5 4 4 4-4' fill='none' stroke='%23d6deeb' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            background-size: 14px;
+        }
         button { cursor: pointer; border-color: #786ce3; background: #6558cf; font-weight: 700; }
-        form { display: flex; align-items: end; gap: 10px; flex-wrap: wrap; }
+        button:hover { border-color: #998eff; background: #7468dc; }
+        button:focus-visible, select:focus-visible { outline: 3px solid rgba(169, 156, 255, .3); outline-offset: 2px; }
+        .scenario-controls { display: grid; align-content: center; gap: 12px; padding: 4px 2px; }
+        .scenario-controls select, .scenario-controls button { width: 100%; }
+        .scenario-controls button { margin-top: 2px; }
+        .control-copy { margin-bottom: 2px; color: #b4c0d1; font-size: .88rem; }
         label { display: grid; gap: 5px; color: var(--muted); font-size: .82rem; }
 
         .comparison { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
@@ -82,18 +96,38 @@
         section { margin-top: 64px; }
         .section-copy { max-width: 760px; margin-bottom: 24px; color: #b4c0d1; }
         .attempts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-        .attempt { padding: 18px; }
+        .attempt { min-width: 0; padding: 18px; }
         .attempt strong { display: block; margin-bottom: 8px; }
+        .attempt pre { max-width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
         .attempt.blocked { border-color: rgba(85, 214, 166, .4); }
         .attempt.executed { border-color: rgba(246, 199, 107, .5); }
         .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 18px 0 22px; color: #b9c4d4; font: .78rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
         .flow span { border: 1px solid #34445f; border-radius: 999px; padding: 7px 10px; background: #101827; }
         .flow b { color: #65748c; }
+        .results-section { scroll-margin-top: 24px; margin-top: 34px; }
+        .results-intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+        .results-intro h2 { margin-bottom: 0; }
+        .reset-link { flex: none; color: #c8c0ff; font-size: .85rem; text-underline-offset: 3px; }
+        .effects { margin-top: 14px; padding: 22px; }
+        .effects-copy { max-width: 760px; margin-bottom: 18px; color: #b4c0d1; }
+        .effect-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+        .metric { min-width: 0; padding: 14px; border: 1px solid #34445f; border-radius: 12px; background: rgba(5, 9, 16, .48); }
+        .metric span { display: block; color: var(--muted); font-size: .75rem; }
+        .metric strong { display: block; margin-top: 3px; color: var(--ink); font-size: 1.4rem; }
+        .effect-details { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: 22px; margin-top: 22px; padding-top: 20px; border-top: 1px solid var(--line); }
+        .effect-details > div { min-width: 0; }
+        .effect-details pre { max-width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #cbd6e7; font: .78rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
         footer { margin-top: 68px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: .86rem; }
 
         @media (max-width: 880px) {
             .comparison, .attempts { grid-template-columns: 1fr; }
             .scenario { grid-template-columns: 1fr; }
+            .effect-details { grid-template-columns: 1fr; }
+            .results-intro { align-items: start; flex-direction: column; }
+        }
+
+        @media (max-width: 560px) {
+            .effect-metrics { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -106,27 +140,43 @@
     <div class="panel scenario">
         <div>
             <p class="eyebrow">Captured proposal</p>
-            <pre>{{ json_encode($comparison['proposal'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+            <pre>{{ json_encode($scenario['proposal'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
             <dl>
                 <dt>Authenticated principal</dt>
-                <dd>customer_{{ $comparison['customer']['id'] }}</dd>
+                <dd>customer_{{ $scenario['customer']['id'] }}</dd>
                 <dt>Resolved target owner</dt>
-                <dd>customer_{{ $comparison['target']['customer_id'] }}</dd>
+                <dd>customer_{{ $scenario['target']['customer_id'] }}</dd>
                 <dt>User request</dt>
-                <dd>“{{ $comparison['request'] }}”</dd>
+                <dd>“{{ $scenario['request'] }}”</dd>
             </dl>
         </div>
-        <form method="get" action="{{ route('verdict.demo') }}">
+        <form class="scenario-controls" method="get" action="{{ route('verdict.demo') }}#comparison-results">
+            <input type="hidden" name="run" value="1">
+            <div>
+                <p class="eyebrow">Run the lab</p>
+                <p class="control-copy">Choose a target, then execute the same proposal through all three security boundaries.</p>
+            </div>
             <label>
                 Scenario
                 <select name="order_id">
-                    <option value="1002" @selected($comparison['target']['id'] === 1002)>Cross-customer order #1002</option>
-                    <option value="1001" @selected($comparison['target']['id'] === 1001)>Customer's own order #1001</option>
+                    <option value="1002" @selected($scenario['target']['id'] === 1002)>Cross-customer order #1002</option>
+                    <option value="1001" @selected($scenario['target']['id'] === 1001)>Customer's own order #1001</option>
                 </select>
             </label>
-            <button type="submit">Run comparison</button>
+            <button type="submit">Run security comparison</button>
+            <span class="fine-print">Nothing below executes until you run the comparison.</span>
         </form>
     </div>
+
+    @if ($hasRun)
+    <section id="comparison-results" class="results-section">
+        <div class="results-intro">
+            <div>
+                <p class="eyebrow">Executed comparison</p>
+                <h2>Same proposal. Three application boundaries.</h2>
+            </div>
+            <a class="reset-link" href="{{ route('verdict.demo') }}">Reset the lab</a>
+        </div>
 
     <div class="comparison">
         @php($naive = $comparison['implementations']['naive'])
@@ -174,6 +224,7 @@
             @endforeach
         </article>
     </div>
+    </section>
 
     <section>
         <p class="eyebrow">Argument-bound confirmation</p>
@@ -194,18 +245,40 @@
             @endforeach
         </div>
 
-        <div class="panel scenario">
-            <div>
-                <p class="eyebrow">Observed side effects</p>
-                <pre>{{ json_encode($approval['observed_actions'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+        <div class="panel effects">
+            <p class="eyebrow">Observed execution</p>
+            <h3>The approved executor wrote exactly once.</h3>
+            <p class="effects-copy">This workbench uses a scoped in-memory execution sink. It exercises the real capability executor without requiring a database, queue, payment provider, or commerce API.</p>
+
+            <div class="effect-metrics">
+                <div class="metric">
+                    <span>Writes before execution</span>
+                    <strong>{{ $approval['execution_summary']['writes_before'] }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Writes after execution</span>
+                    <strong>{{ $approval['execution_summary']['writes_after'] }}</strong>
+                </div>
+                <div class="metric">
+                    <span>Blocked attempts</span>
+                    <strong>{{ $approval['execution_summary']['blocked_attempts'] }}</strong>
+                </div>
             </div>
-            <div>
-                <p class="eyebrow">Receipt fingerprint</p>
-                <div class="receipt">{{ $approval['receipt']['fingerprint'] }}</div>
-                <p class="fine-print">Raw receipt IDs and arguments are not stored in decision evidence.</p>
+
+            <div class="effect-details">
+                <div>
+                    <p class="eyebrow">Execution sink contents</p>
+                    <pre>{{ json_encode($approval['observed_actions'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                </div>
+                <div>
+                    <p class="eyebrow">Receipt fingerprint</p>
+                    <div class="receipt">{{ $approval['receipt']['fingerprint'] }}</div>
+                    <p class="fine-print">Raw receipt IDs and arguments are not stored in decision evidence.</p>
+                </div>
             </div>
         </div>
     </section>
+    @endif
 
     <footer>
         This UI exists only in Verdict's Testbench workbench. The distributed Laravel package remains headless. The manual implementation is intentionally shown as secure: Verdict's value is consistent mediation, bound execution, evidence, and regression testing—not replacing Laravel Policies.
