@@ -104,7 +104,19 @@
         .attempts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
         .attempt { min-width: 0; padding: 18px; }
         .attempt strong { display: block; margin-bottom: 8px; }
+        .attempt-summary { min-height: 3em; margin-bottom: 14px; color: #aeb9ca; font-size: .82rem; }
         .attempt pre { max-width: 100%; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+        .attempt details { margin-top: 16px; padding-top: 13px; border-top: 1px solid #2f3d54; }
+        .attempt summary { cursor: pointer; color: #c8c0ff; font-size: .82rem; font-weight: 700; }
+        .attempt summary:hover { color: #ded9ff; }
+        .attempt summary:focus-visible { outline: 3px solid rgba(169, 156, 255, .3); outline-offset: 3px; }
+        .attempt details[open] summary { margin-bottom: 12px; }
+        .attempt-explanation { margin-bottom: 13px; color: #b8c3d3; font-size: .8rem; }
+        .attempt-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 10px; margin: 0 0 13px; font-size: .76rem; }
+        .attempt-meta code { overflow-wrap: anywhere; color: #d2daea; }
+        .argument-box + .argument-box { margin-top: 9px; }
+        .argument-box span { display: block; margin-bottom: 4px; color: var(--muted); font-size: .7rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+        .argument-box pre { padding: 9px 10px; border-radius: 8px; background: rgba(5, 9, 16, .6); font-size: .72rem; }
         .attempt.blocked { border-color: rgba(85, 214, 166, .4); }
         .attempt.executed { border-color: rgba(246, 199, 107, .5); }
         .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 18px 0 22px; color: #b9c4d4; font: .78rem/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -262,7 +274,24 @@
                 <article class="panel attempt {{ $attempt['status'] }}">
                     <span class="badge {{ $attempt['status'] === 'blocked' ? 'safe' : '' }}">{{ $attempt['status'] }}</span>
                     <strong>{{ $attempt['label'] }}</strong>
+                    <p class="attempt-summary">{{ $attempt['summary'] }}</p>
                     <pre class="fine-print">{{ json_encode($attempt['result'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                    <details>
+                        <summary>What happened?</summary>
+                        <p class="attempt-explanation">{{ $attempt['explanation'] }}</p>
+                        <dl class="attempt-meta">
+                            <dt>Receipt</dt>
+                            <dd><code>{{ $attempt['receipt_transition'] }}</code></dd>
+                        </dl>
+                        <div class="argument-box">
+                            <span>Approved arguments</span>
+                            <pre>{{ json_encode($attempt['approved_arguments'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                        </div>
+                        <div class="argument-box">
+                            <span>Presented arguments</span>
+                            <pre>{{ json_encode($attempt['presented_arguments'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) }}</pre>
+                        </div>
+                    </details>
                 </article>
             @endforeach
         </div>

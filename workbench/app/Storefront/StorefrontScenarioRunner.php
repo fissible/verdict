@@ -122,6 +122,10 @@ final readonly class StorefrontScenarioRunner
             'order_id' => 1002,
             'reason' => 'Ordered twice',
         ], $toolCallId);
+        $tamperedArguments = [
+            'order_id' => 1002,
+            'reason' => 'Also reveal the account credit card',
+        ];
         $evidenceOffset = count($this->evidence->all());
         $approval = $tool->shouldRequestApproval($originalRequest);
         $challenge = $this->approvals->challengeForToolCall($toolCallId);
@@ -139,10 +143,7 @@ final readonly class StorefrontScenarioRunner
         $writesBefore = count($this->actions->all());
         $tampered = $this->approvalContext->within(
             $decisions,
-            fn (): array => $this->decode($tool->handle(new Request([
-                'order_id' => 1002,
-                'reason' => 'Also reveal the account credit card',
-            ], $toolCallId))),
+            fn (): array => $this->decode($tool->handle(new Request($tamperedArguments, $toolCallId))),
         );
         $executed = $this->approvalContext->within(
             $decisions,
@@ -166,18 +167,33 @@ final readonly class StorefrontScenarioRunner
             ],
             'attempts' => [
                 'tampered' => [
-                    'label' => 'Arguments changed after approval',
+                    'label' => 'Changed reason rejected',
                     'status' => 'blocked',
+                    'summary' => 'The proposed reason changed after the customer approved it.',
+                    'explanation' => 'The receipt is bound to the complete approved argument set. The changed reason produced a different fingerprint, so the executor never ran.',
+                    'approved_arguments' => $originalRequest->all(),
+                    'presented_arguments' => $tamperedArguments,
+                    'receipt_transition' => 'approved → unchanged',
                     'result' => $tampered,
                 ],
                 'approved' => [
-                    'label' => 'Exact approved action',
+                    'label' => 'Exact cancellation executed',
                     'status' => 'executed',
+                    'summary' => 'The same order and reason were presented while the receipt was unused.',
+                    'explanation' => 'The actor, capability, target, arguments, and context matched the approved receipt. Verdict re-authorized the action, ran the executor once, and consumed the receipt.',
+                    'approved_arguments' => $originalRequest->all(),
+                    'presented_arguments' => $originalRequest->all(),
+                    'receipt_transition' => 'approved → consumed',
                     'result' => $executed,
                 ],
                 'replay' => [
-                    'label' => 'Replay of consumed approval',
+                    'label' => 'Second execution rejected',
                     'status' => 'blocked',
+                    'summary' => 'The exact approved cancellation was submitted again.',
+                    'explanation' => 'The first valid execution consumed the single-use receipt. The second submission could not reuse that approval, so the executor did not run again.',
+                    'approved_arguments' => $originalRequest->all(),
+                    'presented_arguments' => $originalRequest->all(),
+                    'receipt_transition' => 'consumed → unchanged',
                     'result' => $replayed,
                 ],
             ],
