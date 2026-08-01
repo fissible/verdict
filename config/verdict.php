@@ -17,6 +17,8 @@ return [
         // InMemoryEvidenceRecorder is only for tests and local development. Its unbounded,
         // process-local state is unsafe for production, Octane, and queue workers.
         'recorder' => NullEvidenceRecorder::class,
+        'connection' => null,
+        'table' => 'verdict_evidence',
     ],
 
     'ai' => [

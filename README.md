@@ -3,9 +3,10 @@
 **Policy-bound actions, security evidence, and adversarial evaluation for Laravel AI agents.**
 
 > **Project status: early implementation.** Runtime authorization, verified confirmation, and
-> deterministic context-release slices exist on `main`, together with a storefront security
-> workbench. Verdict has no tagged release and no stable public API. Sections labeled planned,
-> proposed, or illustrative describe direction rather than shipped behavior.
+> deterministic context-release slices exist on `main`, together with an opt-in database
+> evidence recorder and a storefront security workbench. Verdict has no tagged release and no
+> stable public API. Sections labeled planned, proposed, or illustrative describe direction
+> rather than shipped behavior.
 
 Verdict is an early Laravel package for applications that allow AI agents to read sensitive
 context, call tools, or change application state. Its central rule is simple:
@@ -520,21 +521,32 @@ The evidence store may contain highly sensitive information. The planned design 
 configurable evidence levels, retention, tenant isolation, access authorization, pruning, and
 encryption. A hash of predictable personal information is not anonymization.
 
-The initial implementation records a decision, evaluation stage, envelope ID, capability,
-detailed internal reason, provider tool-call ID, timestamp, and a deterministic SHA-256
-fingerprint of normalized arguments through an `EvidenceRecorder` contract. It does not store raw
-arguments. A confirmed bound execution also records an approval-stage permit with a hashed receipt
-reference. The default recorder is a no-op because silently choosing a storage destination or
-retention policy would be unsafe; `InMemoryEvidenceRecorder` exists only for tests and local
-development. It is unbounded process-local state and must not be used with production, Octane,
-queue workers, or as a tenant-separated evidence store. Persistent evidence stores and execution
-outcome records are not implemented yet.
+The implementation records action decisions and context-release decisions through an
+`EvidenceRecorder` contract. Action records include stage, envelope ID, capability, detailed
+internal reason, timestamp, and a deterministic SHA-256 fingerprint of normalized arguments. A
+confirmed bound execution also records an approval-stage permit with a hashed receipt reference.
+Context-release records contain the labeled route, classification, disposition, field-path
+fingerprints, and released-payload fingerprint. Neither record type includes raw arguments or
+released payload values.
+
+The default recorder is a no-op because silently choosing a storage destination or retention
+policy would be unsafe. `InMemoryEvidenceRecorder` exists only for tests and local development. It
+is unbounded process-local state and must not be used with production, Octane, queue workers, or as
+a tenant-separated evidence store.
+
+An opt-in `DatabaseEvidenceRecorder` persists both record types. Before persistence it hashes the
+provider tool-call/idempotency key; it never stores the raw key. It does persist detailed internal
+reasons, route labels, capabilities, and correlation IDs, which may still be sensitive application
+metadata. Applications remain responsible for database encryption, tenant isolation, access
+authorization, retention, export, and deletion policies. No pruning command or execution-outcome
+record exists yet.
 
 Verdict should record observable inputs, outputs, policy facts, and decisions. It should not
 request or store hidden model chain-of-thought.
 
-Tamper-evident storage may be offered through an optional adapter in the future. Ordinary evidence
-storage should not be described as cryptographic proof.
+The database adapter is an ordinary mutable audit store. It is not append-only, immutable, signed,
+or tamper-evident and must not be described as cryptographic proof. A tamper-evident adapter may be
+offered separately in the future.
 
 ## Security signals and containment
 
@@ -833,6 +845,14 @@ php artisan vendor:publish --tag=verdict-migrations
 php artisan migrate
 ```
 
+Database evidence is opt-in. Select `DatabaseEvidenceRecorder::class` in the published Verdict
+configuration, then publish its migration and migrate:
+
+```bash
+php artisan vendor:publish --tag=verdict-evidence-migrations
+php artisan migrate
+```
+
 - `approvals.store` — the `ApprovalReceiptStore` implementation. The default database store uses
   atomic row-locked transitions. The in-memory implementation is only for deterministic tests.
 - `approvals.connection` and `approvals.table` — the database location for receipt state.
@@ -842,6 +862,8 @@ php artisan migrate
   `NullEvidenceRecorder`, which discards evidence, because silently choosing a storage destination
   or retention policy would be unsafe. `InMemoryEvidenceRecorder` is available for tests and local
   development; it is process-local and unbounded, and unsuitable for Octane, queues, or production.
+- `evidence.connection` and `evidence.table` — the database location used when
+  `DatabaseEvidenceRecorder` is selected.
 - `ai.denied_message` — the message returned to the model when a proposal is not executed. Internal
   denial reasons are recorded in evidence but are never included in this message.
 
@@ -860,7 +882,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Runtime foundation | Capability registry, bound and guarded tools, staged decisions, Laravel Policy integration | First slice implemented |
 | Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Confirmation receipt slice implemented; broader identity and idempotency planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection and exact destination-route slice implemented; transforms and detectors planned |
-| Evidence | Pluggable stores, redaction levels, security events, audit command | Planned |
+| Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders implemented; levels, events, and audit command planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Planned |
 | Demo | Sandboxed eCommerce assistant and security trace | First deterministic workbench slice implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |

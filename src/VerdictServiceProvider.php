@@ -15,6 +15,7 @@ use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
 use Fissible\Verdict\Support\SystemClock;
@@ -80,6 +81,16 @@ final class VerdictServiceProvider extends ServiceProvider
                 throw new LogicException('The Verdict evidence recorder configuration must contain a class name.');
             }
 
+            if ($recorder === DatabaseEvidenceRecorder::class) {
+                $connection = config('verdict.evidence.connection');
+                $table = config('verdict.evidence.table', 'verdict_evidence');
+
+                return new DatabaseEvidenceRecorder(
+                    connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                    table: is_string($table) ? $table : 'verdict_evidence',
+                );
+            }
+
             $instance = $app->make($recorder);
 
             if (! $instance instanceof EvidenceRecorder) {
@@ -120,8 +131,18 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../config/verdict.php' => config_path('verdict.php'),
         ], ['verdict', 'verdict-config']);
 
-        $this->publishesMigrations([
+        $approvalMigration = [
             __DIR__.'/../database/migrations/create_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_01_000000_create_verdict_approval_receipts_table.php'),
-        ], ['verdict', 'verdict-migrations']);
+        ];
+        $evidenceMigration = [
+            __DIR__.'/../database/migrations/create_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000001_create_verdict_evidence_table.php'),
+        ];
+
+        $this->publishesMigrations(
+            [...$approvalMigration, ...$evidenceMigration],
+            ['verdict', 'verdict-migrations'],
+        );
+        $this->publishesMigrations($approvalMigration, 'verdict-approval-migrations');
+        $this->publishesMigrations($evidenceMigration, 'verdict-evidence-migrations');
     }
 }

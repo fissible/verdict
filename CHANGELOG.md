@@ -24,3 +24,5 @@ All notable changes to Verdict will be documented in this file.
   evidence.
 - Add an independent storefront context-release lab comparing a permitted local Ollama route with
   a denied remote trust zone using the same provider name.
+- Add an opt-in database evidence recorder and publishable migration for action decisions and
+  context releases, hashing tool-call keys and retaining no raw arguments or released payloads.
