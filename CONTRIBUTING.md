@@ -76,3 +76,6 @@ A pull request should include:
 - migration or upgrade notes when existing applications must act.
 
 By contributing, you agree that your contribution is licensed under the repository's MIT license.
+
+Maintainers should follow [`RELEASES.md`](RELEASES.md) and use the repository's `release.sh` rather
+than editing tags or the `VERSION` file independently.

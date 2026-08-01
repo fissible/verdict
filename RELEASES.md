@@ -11,7 +11,7 @@ changes must be called out in the changelog and include an upgrade path when pra
 - Patch releases (`0.1.1`) contain compatible fixes, documentation, and narrowly additive changes.
 - Minor releases (`0.2.0`) may change APIs or migrations and must include upgrade notes.
 - Pre-release suffixes are reserved for builds that are not ready for ordinary developer-preview
-  installation. The first public developer preview is intended to be `v0.1.0`, not an alpha tag.
+  installation. `v0.1.0` is the first developer preview, not an alpha tag.
 
 Before 1.0, security and correctness fixes are supported on the latest released minor line. Older
 minor lines may receive a fix when the change is low-risk, but are not guaranteed maintenance.
@@ -55,8 +55,11 @@ A release is cut only when:
 7. Documentation distinguishes implemented behavior from planned behavior.
 8. Known security limitations are documented without overstating guarantees.
 
-The release commit is tagged only after these checks pass. Publication to Packagist and changing
-repository visibility are explicit maintainer actions, not automated side effects of a merge.
+The release commit is tagged only after these checks pass. `VERSION`, `release.sh`,
+`.cliff.toml`, and the tag-triggered GitHub release workflow follow the Fissible organization
+release convention. Run `bash release.sh patch`, `minor`, or `major` from a clean `main` branch for
+subsequent releases. Publication to Packagist and changing repository visibility are explicit
+maintainer actions, not automated side effects of a merge.
 
 ## Security releases
 

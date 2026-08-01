@@ -2,7 +2,9 @@
 
 All notable changes to Verdict will be documented in this file.
 
-## Unreleased
+## [Unreleased]
+
+## [0.1.0] - 2026-08-01
 
 - Scaffold the Laravel package for PHP 8.3 and Laravel 12/13.
 - Add capability registration and Laravel Gate/Policy authorization.
@@ -53,3 +55,7 @@ All notable changes to Verdict will be documented in this file.
 - Document the pre-1.0 public surface, support matrix, contribution workflow, and release policy.
 - Verify package discovery, configuration/migration publication, migration execution, and Artisan
   command registration in a clean Laravel consumer CI job.
+- Add Fissible-standard version, changelog, tag, and GitHub release tooling.
+
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/fissible/verdict/releases/tag/v0.1.0

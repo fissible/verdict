@@ -2,12 +2,12 @@
 
 **Policy-bound actions, security evidence, and adversarial evaluation for Laravel AI agents.**
 
-> **Project status: pre-release developer preview.** Runtime authorization, verified confirmation,
+> **Project status: pre-1.0 developer preview.** Runtime authorization, verified confirmation,
 > semantic execution limits, strict at-most-once executor admission, and deterministic
 > context-release slices exist on `main`, together with an opt-in database evidence recorder, a
-> deterministic security-evaluation foundation, and a storefront security workbench. The `v0.1.0`
-> scope is implemented, but Verdict has no tagged release or stable public API yet. Sections labeled
-> planned, proposed, or illustrative describe direction rather than shipped behavior.
+> deterministic security-evaluation foundation, and a storefront security workbench. `v0.1.0` is
+> the first tagged developer preview; the public API is not stable yet. Sections labeled planned,
+> proposed, or illustrative describe direction rather than shipped behavior.
 
 Verdict is an early Laravel package for applications that allow AI agents to read sensitive
 context, call tools, or change application state. Its central rule is simple:
@@ -1013,8 +1013,8 @@ after a real boundary and consumer appear.
 
 ## Installation
 
-Verdict is not published to Packagist and has no tagged release. While the repository is private,
-authorized collaborators can install the development branch as a Composer VCS repository:
+Verdict is not yet published to Packagist. While the repository is private, authorized
+collaborators can install the tagged developer preview as a Composer VCS repository:
 
 ```json
 {
@@ -1028,7 +1028,7 @@ authorized collaborators can install the development branch as a Composer VCS re
 ```
 
 ```bash
-composer require fissible/verdict:dev-main
+composer require fissible/verdict:^0.1
 ```
 
 The current constraints are PHP 8.3+, Laravel 12 or 13, and `laravel/ai` 0.10.2 or newer within the
@@ -1156,8 +1156,8 @@ This roadmap is directional and may change as the integration is prototyped.
 
 ### Release milestones
 
-- **`v0.1.0` — runtime developer preview:** implemented on `main`; release follows a green
-  compatibility matrix and explicit maintainer publication.
+- **`v0.1.0` — runtime developer preview:** released after the complete compatibility matrix and a
+  clean Laravel consumer install passed.
 - **[`v0.2.0` — provenance and live evaluation](https://github.com/fissible/verdict/milestone/1):**
   implementation-ready issues cover the redacted provenance ledger, Laravel AI provenance hooks,
   the first deterministic attack pack, baseline/CI commands, and an opt-in repeated-trial live
