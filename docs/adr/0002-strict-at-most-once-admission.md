@@ -45,3 +45,10 @@ Verdict provides strict at-most-once **admission to the configured executor** wi
 claim history. It does not promise exactly-once effects, successful completion, automatic recovery,
 or idempotency for execution paths that bypass Verdict.
 
+For the database store, this guarantee also requires the claim transaction to commit independently.
+An application transaction wrapped around the entire Verdict invocation on the same configured
+connection can make the inner claim transaction provisional and later roll it back. An executor
+that starts and commits its own transaction inside `executeUsing` is not the same pattern: the claim
+has already committed before executor entry. Until Verdict adds a fail-closed transaction-level
+guard, use a distinct `execution_claims.connection` whenever the whole Verdict invocation may run
+inside an application transaction.

@@ -78,10 +78,11 @@ should derive resource identity from trusted context and that target rather than
 model's arguments. This keeps model-controlled selectors out of the second resolution boundary.
 
 Some targets are immutable values, request-local objects, or snapshots for which there is no
-meaningful fresh read. Reuse remains possible, but must be acknowledged at the call site:
+meaningful fresh read. Reuse remains possible, but the lack of an external freshness check must be
+acknowledged at the call site:
 
 ```php
-->executionTarget(ExecutionTargetPolicy::reuseSnapshot(
+->executionTarget(ExecutionTargetPolicy::acceptStaleSnapshot(
     name: 'immutable-tax-table-version',
     identityUsing: fn (ActionEnvelope $envelope, TaxTable $table): array => [
         'table_version' => $table->version,
@@ -89,16 +90,18 @@ meaningful fresh read. Reuse remains possible, but must be acknowledged at the c
 ))
 ```
 
-`reuseSnapshot` retains today's behavior and evidence must say so. It is not a freshness guarantee.
-The explicit policy requirement applies to `BoundTool`; `GuardedTool` cannot establish that its
-independent handler uses either resolved target and therefore does not participate in this feature.
+`acceptStaleSnapshot` retains today's behavior and evidence must say so. The deliberately cautionary
+name makes the missing freshness guarantee visible in capability definitions and autocomplete; it
+does not assert that the application value is actually stale. The explicit policy requirement
+applies to `BoundTool`; `GuardedTool` cannot establish that its independent handler uses either
+resolved target and therefore does not participate in this feature.
 
 ### Canonical identity
 
 Both strategies require `identityUsing`. It returns an associative array containing only arrays,
 scalar values, and `null`, matching Verdict's other canonical binding APIs. Verdict fingerprints
 the capability, target-policy name, and identity before refresh, then fingerprints the execution
-target using the same function. For `reuseSnapshot`, both fingerprints describe the explicitly
+target using the same function. For `acceptStaleSnapshot`, both fingerprints describe the explicitly
 reused value; their equality does not imply that external state is fresh.
 
 Identity describes the stable logical resource, not all mutable state. For example, an order
@@ -121,45 +124,89 @@ For `BoundTool`, the proposed flow is:
 ```text
 1. Resolve the proposal-stage target.
 2. Inspect the proposal-stage Laravel Policy.
-3. If confirmation is required, remember that requirement but do not consume its receipt yet.
-4. Require an executable capability and an explicit execution-target policy.
+3. Require an executable capability and an explicit execution-target policy.
+4. If confirmation is required, non-mutatingly validate the receipt against the proposal target.
+   Stop here when no matching approved receipt exists.
 5. Fingerprint the proposal target's canonical identity.
 6. Refresh the target, or explicitly reuse the configured snapshot.
 7. Fingerprint the execution target and deny an identity mismatch.
 8. Inspect the Laravel Policy against the execution target.
-9. Validate and atomically consume confirmation against the execution target, if required.
+9. Non-mutatingly validate confirmation again against the execution target, if required.
 10. Consume the semantic rate-limit unit against the execution target, if configured.
-11. Atomically claim the logical operation against the execution target, if configured.
-12. Pass the execution target to `AuthorizedAction` and enter the executor.
-13. Finalize the execution claim as completed or indeterminate.
+11. Atomically consume confirmation against the execution target, if required.
+12. Atomically claim the logical operation against the execution target, if configured.
+13. Pass the execution target to `AuthorizedAction` and enter the executor.
+14. Finalize the execution claim as completed or indeterminate.
 ```
 
 Nothing after step 8 may use the proposal-stage target. Rate-limit and execution-claim bindings
 must be derived from the execution evaluation so that mutable versions or canonical state included
 by those policies are current as of the refresh.
 
-## Confirmation ordering
+## Gate ordering and confirmation
+
+Verdict should order gates by two related principles:
+
+1. Non-mutating rejection checks run before scarce state is consumed.
+2. Stateful gates run from more recoverable to less recoverable: a fixed-window rate-limit unit
+   precedes a human approval receipt, and the strict execution claim remains the final gate.
+
+This proposal therefore requires a non-consuming approval validation operation in addition to the
+existing atomic `consume()`. Validation checks Laravel's explicit approval context, the exact tool
+call and binding fingerprint, Approved status, and expiry without changing receipt state. The
+database implementation does not need to lock for this preflight read because atomic consumption
+remains the authority at time of use.
+
+Slice 1 should add these operations without changing the existing consumption contract:
+
+```php
+ApprovalManager::validate(Evaluation $evaluation): ApprovalTransition;
+
+ApprovalReceiptStore::validate(
+    string $toolCallId,
+    string $bindingFingerprint,
+    DateTimeImmutable $at,
+): ApprovalTransition;
+```
+
+A successful validation returns the existing Approved receipt and `ApprovalOutcome::Approved`; it
+does not introduce a new receipt state. Expected missing, mismatched, expired, and invalid-state
+outcomes retain their current meanings. `consume()` remains the only method that locks and performs
+the Approved-to-Consumed transition, so callers must never treat successful validation alone as
+authority to execute.
+
+The first validation occurs against the proposal evaluation. It preserves today's useful
+short-circuit: a repeated model proposal while approval is still pending does not perform a second
+target refresh and execution-stage `Gate::inspect()`. After refresh and execution authorization,
+Verdict validates again against the execution evaluation so mutable approval bindings are current.
 
 The approval receipt must not be consumed before target refresh and execution-stage authorization.
-Consumption should calculate its binding fingerprint using the execution evaluation and its
-refreshed target. This produces two important outcomes:
+It also must not be consumed before a configured temporary rate-limit gate. Final consumption
+calculates its binding fingerprint using the execution evaluation and its refreshed target. This
+produces three important outcomes:
 
 - If current policy denies the action, the approved receipt remains unused.
 - If an approval binding includes mutable state such as `order_version`, a change between proposal
   approval and execution produces a receipt mismatch and requires a new confirmation rather than
   consuming or applying the stale approval.
+- If a rate-limit bucket is full, the approved receipt remains available after the window resets.
 
-It is acceptable to perform target refresh and `Gate::inspect()` before atomically consuming the
-receipt because neither operation performs the protected side effect. An invalid or missing receipt
-still prevents rate-limit consumption, execution-claim admission, and executor entry.
+There is an unavoidable race between non-consuming validation and atomic receipt consumption. A
+concurrent request may consume or expire the receipt after validation. In that case the rate-limit
+unit has already been consumed, final receipt consumption fails, and execution remains blocked.
+Wasting a time-recoverable rate unit is preferable to consuming a human approval on a throttled
+request. Ordinary invalid, mismatched, pending, expired, or replayed receipts fail preflight and do
+not consume a rate-limit unit.
 
-This changes evidence order for confirmed capabilities to proposal, target refresh, execution
-authorization, approval consumption, rate limit, and execution claim. Evidence stages describe
-security decisions, not the start of the side effect.
+This proposed ordering amends ADR 0001's current requirement that approval consumption precede
+rate-limit consumption. Evidence order for a successful confirmed capability becomes proposal,
+approval preflight, target refresh, execution authorization, execution approval validation, rate
+limit, approval consumption, and execution claim. Approval evidence needs a phase field so
+non-consuming validation cannot be confused with state transition.
 
 ## Failure semantics
 
-| Condition | Result | Receipt consumed? | Rate unit consumed? | Claim created? |
+| Condition | Result | Receipt consumed by this attempt? | Rate unit consumed? | Claim created? |
 |---|---|---:|---:|---:|
 | No execution-target policy on a `BoundTool` capability | Recorded denial | No | No | No |
 | `TargetNotResolvable` during refresh | Recorded target-refresh denial | No | No | No |
@@ -167,24 +214,26 @@ security decisions, not the start of the side effect.
 | Invalid canonical identity | Application fault; execution stops | No | No | No |
 | Proposal/execution identity mismatch | Recorded target-refresh denial | No | No | No |
 | Execution-stage Policy denial | Recorded execution denial | No | No | No |
-| Approval mismatch, expiry, or replay | Confirmation remains required | No | No | No |
-| Rate-limit throttle | Recorded throttle | Yes, when confirmation applied | No new unit; bucket is full | No |
-| Duplicate execution claim | Recorded claim denial | Yes, when confirmation applied | Yes, if configured | No new claim |
+| Approval preflight mismatch, pending state, expiry, or replay | Confirmation remains required | No | No | No |
+| Refreshed approval-binding mismatch | New confirmation required | No | No | No |
+| Rate-limit throttle | Recorded throttle | No | No new unit; bucket is full | No |
+| Receipt consumed concurrently after validation | Confirmation remains required | No | Yes, if configured | No |
+| Duplicate execution claim | Recorded claim denial | Yes | Yes, if configured | No new claim |
 
 Expected target disappearance is an ordinary fail-closed outcome only when the application signals
 it with `TargetNotResolvable`. Other exceptions remain operational faults and are not relabeled as
 policy decisions.
 
-The table preserves the existing rate-limit and at-most-once ordering. A successfully consumed
-confirmation can be followed by a throttle or duplicate claim. Reordering those gates would create
-different replay and accounting semantics and is outside this ADR.
+The execution claim remains after both rate-limit and approval consumption, preserving ADR 0002.
+A successfully consumed confirmation can still be followed by a duplicate-claim denial, but not by
+a rate-limit throttle.
 
 ## Evidence
 
 Add a `target_refresh` evaluation stage. Its evidence should include:
 
 - target-policy name;
-- strategy (`refresh` or `reuse_snapshot`);
+- strategy (`refresh` or `accept_stale_snapshot`);
 - proposal target identity fingerprint;
 - execution target identity fingerprint;
 - whether the fingerprints matched;
@@ -220,15 +269,32 @@ idempotency and reconciliation.
 
 ### Security-state transactions
 
-Rate-limit counters and execution claims currently use their own store transactions. A future outer
-application transaction must not accidentally make those commits provisional. In particular, if an
-execution claim shares the same database connection and is rolled back with a failed executor, the
-logical operation could be admitted again, violating ADR 0002's strict-admission guarantee.
+Rate-limit counters and execution claims currently use their own store transactions, but those
+transactions are not independently durable when Verdict itself is invoked inside an already-active
+transaction on the same Laravel connection. In that live configuration, Laravel nests the store
+transaction. A later outer rollback can erase a claim that already returned `Claimed` or
+`Completed`, allowing the logical operation to be admitted again and violating ADR 0002.
 
-Any transactional-execution design must therefore define connection boundaries and failure
-semantics explicitly. It may require a separately committed security-state connection, a staged
-intent protocol, or a different orchestration model. Nested transactions or savepoints must not be
-assumed to provide independent durability.
+An executor that starts and completes its own `DB::transaction()` **inside** `executeUsing` is not
+the problematic pattern: the claim transaction has already committed before Verdict enters that
+executor. The hazard exists when application code, middleware, a test wrapper, or another package
+opens the transaction around the entire `BoundTool::handle()` or `VerdictManager::runBound()` call
+using the execution-claim store's connection.
+
+This is a current ADR 0002 constraint, not merely a Slice 2 concern. Documentation should recommend
+a distinct `execution_claims.connection` whenever an application may wrap the whole Verdict
+invocation in a transaction. A separate hardening slice should also fail closed when
+`DatabaseExecutionClaimStore::claim()` detects a pre-existing transaction on its connection, unless
+and until Verdict supports an explicitly coordinated transaction strategy.
+
+The same outer-transaction caveat applies to rate-limit and approval state: rollback can erase a
+consumed limit unit or restore a consumed approval receipt. Applications that wrap the whole
+Verdict invocation should place all durable Verdict stores on a separately committed security-state
+connection, not only execution claims. The hardening slice should evaluate transaction-level guards
+for every mutating database store operation. Any transactional-execution design must define
+connection boundaries and failure semantics explicitly. It may require a separately committed
+security-state connection, a staged intent protocol, or a different orchestration model. Nested
+transactions or savepoints must not be assumed to provide independent durability.
 
 ## Alternatives rejected
 
@@ -263,18 +329,28 @@ be established before one exists.
 
 ### Slice 1: explicit target-at-execution policy
 
-- Add `ExecutionTargetPolicy` with `refresh(...)` and `reuseSnapshot(...)` strategies.
+- Add `ExecutionTargetPolicy` with `refresh(...)` and `acceptStaleSnapshot(...)` strategies.
 - Require a policy for executable `BoundTool` capabilities.
 - Add canonical identity validation and fingerprinting for refresh policies.
 - Add the `target_refresh` evidence stage and fields.
 - Refresh, compare identity, authorize, and execute using one execution target.
-- Move confirmation consumption after refresh and execution authorization and bind it to the
-  execution target.
+- Add non-consuming approval validation, including an early proposal-stage preflight and a second
+  check bound to the execution target.
+- Place rate-limit consumption after successful approval validation but before atomic approval
+  consumption, then keep execution-claim admission last.
 - Namespace confirmation fingerprints with the execution-target policy name so deliberately
   versioned policy changes invalidate pending receipts.
 - Update built-in examples and workbench capabilities to select their strategy explicitly.
 - Test fresh external state, identity mismatch, missing target, unexpected faults, approval-version
-  mismatch, gate denial, gate ordering, rate-limit ordering, claim ordering, and snapshot reuse.
+  mismatch, gate denial, missing-policy denial before approval preflight, pending-approval
+  short-circuit, rate-limit preservation of an approved receipt, validation/consumption races, claim
+  ordering, and stale-snapshot acknowledgement.
+- Test a successful refresh whose stable identity is unchanged but whose mutable version is new,
+  asserting that approval, rate-limit, execution-claim, and executor inputs all use the execution
+  target rather than the proposal target.
+- Test a refresh callback that mutates and returns the proposal target instance, proving that the
+  proposal identity fingerprint was captured before the callback ran and an identity change cannot
+  compare equal to itself.
 
 ### Slice 2: transactional execution strategies
 
@@ -289,9 +365,10 @@ Before Slice 1 is accepted, review should challenge:
 
 1. Whether requiring an explicit policy for every executable `BoundTool` is the right pre-1.0
    default, rather than making refresh opt-in.
-2. Whether delayed confirmation consumption has any incompatibility with Laravel AI approval
-   resumption not represented in the current deterministic tests.
-3. Whether `reuseSnapshot` is sufficiently cautionary naming for an explicit non-fresh target.
+2. Whether two-phase, non-consuming approval validation has any incompatibility with Laravel AI
+   approval resumption not represented in the current deterministic tests.
+3. Whether `acceptStaleSnapshot` is sufficiently cautionary naming for an explicit non-fresh
+   target.
 4. Whether any existing rate-limit or execution-claim path still receives the proposal target after
    the proposed reorder.
 5. Whether the future transaction boundary can preserve independently durable execution claims on

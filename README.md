@@ -548,6 +548,15 @@ process can fail after an external service accepts a request but before Verdict 
 Executors and downstream APIs still need appropriate transaction, outbox, and idempotency designs.
 See [ADR 0002](docs/adr/0002-strict-at-most-once-admission.md) for the precise boundary.
 
+> [!WARNING]
+> Do not wrap the entire Verdict invocation in a database transaction on the durable Verdict
+> stores' connections. Laravel will nest their transactions, so an outer rollback can erase a claim,
+> restore a consumed approval, or refund a rate-limit unit after execution. An executor that opens
+> and commits its own transaction inside `executeUsing` after admission does not have this problem.
+> Configure `approvals.connection`, `rate_limits.connection`, and
+> `execution_claims.connection` to use a separately committed security-state connection when an
+> outer transaction cannot be avoided; runtime transaction-level guards are planned.
+
 ## Rate limits and risk budgets
 
 Laravel should continue to handle ordinary HTTP and queue throttling. Verdict intends to add
