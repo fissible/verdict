@@ -56,4 +56,9 @@ final readonly class SuiteResult
     {
         return new EvaluationReport($this);
     }
+
+    public function compareTo(EvaluationBaseline $baseline): BaselineComparison
+    {
+        return (new BaselineComparator)->compare($baseline, $this);
+    }
 }

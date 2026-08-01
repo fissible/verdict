@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
+use Fissible\Verdict\Evaluation\BaselineChangeKind;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\CaseStatus;
+use Fissible\Verdict\Evaluation\EvaluationBaseline;
 use Fissible\Verdict\Evaluation\EvaluationCase;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\ReproductionMetadata;
@@ -249,4 +251,48 @@ it('exports a versioned redacted report with evidence and separate scores', func
         ])
         ->and($json)->not->toContain($secret)
         ->and($json)->not->toContain('private output');
+});
+
+it('compares a checked-in report baseline without conflating regressions errors or coverage', function (): void {
+    $case = function (string $id, CasePurpose $purpose, CaseStatus $status): EvaluationCase {
+        return new EvaluationCase(
+            id: $id,
+            version: '1',
+            purpose: $purpose,
+            input: new CaseInput([], ['case' => $id]),
+            runner: function () use ($status): Observation {
+                if ($status === CaseStatus::Error) {
+                    throw new RuntimeException('Harness failed.');
+                }
+
+                return new Observation(
+                    disposition: $status === CaseStatus::Passed ? Disposition::Deny : Disposition::Permit,
+                    executed: $status !== CaseStatus::Passed,
+                );
+            },
+            assertions: [Assertions::notExecuted()],
+        );
+    };
+
+    $baselineResult = (new SecuritySuite('regression-suite', '1', [
+        $case('attack-regressed', CasePurpose::Security, CaseStatus::Passed),
+        $case('provider-error', CasePurpose::Security, CaseStatus::Passed),
+        $case('removed-case', CasePurpose::Utility, CaseStatus::Passed),
+    ]))->run();
+    $baseline = EvaluationBaseline::fromJson($baselineResult->report()->toJson());
+    $current = (new SecuritySuite('regression-suite', '2', [
+        $case('attack-regressed', CasePurpose::Security, CaseStatus::Failed),
+        $case('provider-error', CasePurpose::Security, CaseStatus::Error),
+        $case('added-case', CasePurpose::Security, CaseStatus::Passed),
+    ]))->run();
+
+    $comparison = $current->compareTo($baseline);
+
+    expect($comparison->hasBlockingChanges())->toBeTrue()
+        ->and(array_column($comparison->changes, 'kind'))->toBe([
+            BaselineChangeKind::BehavioralRegression,
+            BaselineChangeKind::HarnessError,
+            BaselineChangeKind::AddedCoverage,
+            BaselineChangeKind::RemovedCoverage,
+        ]);
 });

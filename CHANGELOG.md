@@ -33,3 +33,5 @@ All notable changes to Verdict will be documented in this file.
   utility suite as an independent workbench lab.
 - Add deterministic structured field redaction after explicit projection, prevent custom context
   transforms from expanding the allowlist, and record hashed transformation evidence.
+- Add repo-native JSON evaluation baselines with distinct behavioral regression, harness error,
+  new-failure, improvement, recovery, added-coverage, and removed-coverage findings.

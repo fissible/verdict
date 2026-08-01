@@ -652,12 +652,33 @@ secrets or raw adversarial content in those strings.
 
 `$result->report()` exports that data as an array or JSON using the versioned
 `verdict.evaluation-report.v1` schema. The report is an in-memory representation; Verdict does not
-yet persist, compare, sign, or upload evaluation reports.
+yet persist, sign, or upload evaluation reports.
+
+A redacted JSON report can be checked into the application repository as a baseline and compared
+with a current run:
+
+```php
+$baseline = EvaluationBaseline::fromJson(
+    File::get(base_path('tests/Baselines/storefront.json')),
+);
+
+$comparison = $result->compareTo($baseline);
+
+if ($comparison->hasBlockingChanges()) {
+    // Behavioral regression, harness error, or removed coverage.
+}
+```
+
+Comparison keeps behavioral regressions, newly observed failures, harness errors, improvements,
+recoveries, added coverage, and removed coverage distinct. A newly added failing case records both
+the coverage addition and its behavioral failure. Changing a case from security to utility is
+represented as removed security coverage plus added utility coverage. Verdict does not yet provide
+a baseline-writing command, persistence adapter, statistical thresholding, or CI formatter.
 
 The package does not yet provide attack packs, live-provider runners, repeated trials, baseline
-storage, regression comparison, additional report exporters, or automatic sandboxing. Application
-runners must use synthetic data and reversible or isolated executors. Live evaluations must
-eventually be explicitly invoked outside the ordinary deterministic test command.
+storage, additional report exporters, or automatic sandboxing. Application runners must use
+synthetic data and reversible or isolated executors. Live evaluations must eventually be
+explicitly invoked outside the ordinary deterministic test command.
 
 The longer-term evaluation design retains these requirements:
 
@@ -952,7 +973,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Identity and execution | Principal/tenant binding, confirmation state, expiry, idempotency | Confirmation receipt slice implemented; broader identity and idempotency planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection, structured redaction, transform non-expansion, and exact destination routes implemented; detectors and validators planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders implemented; levels, events, and audit command planned |
-| Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, observations, assertions, redacted JSON reports, and separate security/utility scoring implemented; live runners and baselines planned |
+| Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, and repo-native baseline comparison implemented; live runners, baseline tooling, and statistical thresholds planned |
 | Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
 | Optional UI | Development viewer or framework-specific adapter | Exploratory |
