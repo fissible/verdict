@@ -119,7 +119,7 @@ final readonly class StorefrontScenarioRunner
             context: new ActionContext($customer, ['tenant_id' => 'storefront-demo']),
         );
         $originalRequest = new Request([
-            'order_id' => 1001,
+            'order_id' => 1002,
             'reason' => 'Ordered twice',
         ], $toolCallId);
         $evidenceOffset = count($this->evidence->all());
@@ -140,7 +140,7 @@ final readonly class StorefrontScenarioRunner
         $tampered = $this->approvalContext->within(
             $decisions,
             fn (): array => $this->decode($tool->handle(new Request([
-                'order_id' => 1001,
+                'order_id' => 1002,
                 'reason' => 'Also reveal the account credit card',
             ], $toolCallId))),
         );

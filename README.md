@@ -592,9 +592,9 @@ Example:
 
 ```text
 Authenticated principal: customer_72
-Request:                 "Where is order #1002?"
+Request:                 "Where is order #1001?"
 Resolved order owner:    customer_91
-Model proposal:          orders.view(order_id: 1002)
+Model proposal:          orders.view(order_id: 1001)
 ```
 
 The implemented comparison honestly shows three implementations:

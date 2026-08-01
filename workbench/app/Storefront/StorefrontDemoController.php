@@ -13,10 +13,10 @@ final readonly class StorefrontDemoController
 
     public function __invoke(Request $request): View
     {
-        $orderId = $request->integer('order_id', 1002);
+        $orderId = $request->integer('order_id', 1001);
 
         if (! in_array($orderId, [1001, 1002], true)) {
-            $orderId = 1002;
+            $orderId = 1001;
         }
 
         $hasRun = $request->boolean('run');

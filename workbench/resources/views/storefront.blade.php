@@ -31,7 +31,7 @@
             line-height: 1.5;
         }
 
-        main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 58px 0 80px; }
+        main { width: min(1380px, calc(100% - 40px)); margin: 0 auto; padding: 58px 0 80px; }
         h1, h2, h3, p { margin-top: 0; }
         h1 { max-width: 780px; margin-bottom: 14px; font-size: clamp(2.35rem, 6vw, 5.4rem); line-height: .96; letter-spacing: -.055em; }
         h2 { margin-bottom: 8px; font-size: clamp(1.6rem, 3vw, 2.5rem); letter-spacing: -.035em; }
@@ -159,8 +159,8 @@
             <label>
                 Scenario
                 <select name="order_id">
-                    <option value="1002" @selected($scenario['target']['id'] === 1002)>Cross-customer order #1002</option>
-                    <option value="1001" @selected($scenario['target']['id'] === 1001)>Customer's own order #1001</option>
+                    <option value="1001" @selected($scenario['target']['id'] === 1001)>Cross-customer order #1001</option>
+                    <option value="1002" @selected($scenario['target']['id'] === 1002)>Customer's own order #1002</option>
                 </select>
             </label>
             <button type="submit">Run security comparison</button>
@@ -229,7 +229,7 @@
     <section>
         <p class="eyebrow">Argument-bound confirmation</p>
         <h2>Approval is permission for one exact action.</h2>
-        <p class="section-copy">The customer approves cancellation of order #1001 for one stated reason. Verdict rejects changed arguments, executes the exact approved action once, and rejects replay.</p>
+        <p class="section-copy">The customer approves cancellation of order #1002 for one stated reason. Verdict rejects changed arguments, executes the exact approved action once, and rejects replay.</p>
 
         <div class="flow">
             <span>pending</span><b>→</b><span>approved</span><b>→</b><span>consumed</span>

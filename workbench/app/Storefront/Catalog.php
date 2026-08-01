@@ -14,8 +14,8 @@ final readonly class Catalog
     public function __construct()
     {
         $this->orders = [
-            1001 => new Order(1001, 72, 'Canvas weekender bag', 'processing', 4),
-            1002 => new Order(1002, 91, 'Mechanical keyboard', 'shipped', 7),
+            1001 => new Order(1001, 91, 'Mechanical keyboard', 'shipped', 7),
+            1002 => new Order(1002, 72, 'Canvas weekender bag', 'processing', 4),
         ];
     }
 

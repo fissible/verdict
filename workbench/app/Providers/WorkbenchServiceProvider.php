@@ -82,7 +82,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
                         'order_version' => $order->version,
                     ];
                 },
-                reason: 'Confirm cancellation of order #1001.',
+                reason: 'Confirm cancellation of order #1002.',
                 ttlSeconds: 300,
             )->executeUsing(function (AuthorizedAction $action): string {
                 if (! $action->target instanceof Order) {
