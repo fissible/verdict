@@ -6,6 +6,12 @@ namespace Fissible\Verdict\Evidence;
 
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 
+/**
+ * Test and local-development recorder with unbounded process-local storage.
+ *
+ * Do not use this recorder in production, Octane, queue workers, or any other
+ * long-running process where records could accumulate or cross request boundaries.
+ */
 final class InMemoryEvidenceRecorder implements EvidenceRecorder
 {
     /**

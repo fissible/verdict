@@ -116,15 +116,16 @@ use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\Facades\Verdict;
 use Laravel\Ai\Tools\Request;
 
 Verdict::capability(Capability::usingPolicy(
     name: 'orders.view',
     ability: 'view',
-    resolveTarget: fn (ActionEnvelope $envelope): Order => Order::findOrFail(
+    resolveTarget: fn (ActionEnvelope $envelope): Order => Order::find(
         $envelope->proposal->arguments['order_id'],
-    ),
+    ) ?? throw TargetNotResolvable::make(),
 )->executeUsing(function (AuthorizedAction $action): string {
     if (! $action->target instanceof Order) {
         throw new LogicException('Expected a bound order.');
@@ -154,22 +155,27 @@ requirement, but never calls that tool's `handle()` method. At invocation time i
 1. Binds the server-provided actor and untrusted proposal into an envelope.
 2. Resolves one canonical target.
 3. Asks Laravel's Gate to inspect the target at the proposal stage.
-4. Re-inspects the same target immediately before execution.
+4. Re-inspects the same in-memory target immediately before execution.
 5. Passes an `AuthorizedAction` containing that target to the capability's deterministic executor.
 
-Missing capabilities, missing executors, and either denied authorization fail closed. The
-definition tool exists only to provide Laravel AI metadata; its raw handler is not an execution
-fallback.
+Missing capabilities, expected target-resolution failures, missing executors, and either denied
+authorization produce a recorded denial. Capability resolvers signal an expected missing or stale
+target by throwing `TargetNotResolvable`; unexpected resolver and authorizer exceptions remain
+application faults and are not mislabeled as policy decisions. Neither resolver nor authorizer
+faults execute the action. The definition tool exists only to provide Laravel AI metadata; its raw
+handler is not an execution fallback.
 
-`GuardedTool` remains available as a compatibility adapter through `Verdict::guard(...)`. It
-authorizes a resolved target and then delegates to an existing tool handler. It cannot establish
-that arbitrary handler code uses the same target, so `BoundTool` is the recommended path for new
-capabilities.
+> [!WARNING]
+> `GuardedTool` and `Verdict::guard(...)` are migration adapters for existing Laravel AI tools.
+> Do not use them for new security-sensitive capabilities. They authorize a resolved target and
+> then delegate to an independent handler, so Verdict cannot establish that the handler acts on
+> the same target. Use `BoundTool` for new capabilities.
 
-Execution-stage re-authorization narrows but does not eliminate a time-of-check/time-of-use race.
-Verdict does not yet open a database transaction or acquire a lock around the second check and
-mutation. Mutating executors remain responsible for ordinary Laravel transaction, locking, and
-idempotency practices.
+The execution-stage check currently reuses the proposal-stage target object. It can observe
+in-process changes to that object, but it does not reload external state and does not narrow a
+database time-of-check/time-of-use race. Verdict does not yet define target identity, execution-stage
+resolution, database transactions, or locking for arbitrary target types. Mutating executors remain
+responsible for ordinary Laravel transaction, locking, and idempotency practices.
 
 The model-provided tool-call ID is captured as an idempotency key in evidence. Verdict does **not**
 yet enforce idempotency, expiry, one-time nonces, confirmation, review, or rate limits.
@@ -398,8 +404,10 @@ detailed internal reason, provider tool-call ID, timestamp, and a deterministic 
 fingerprint of normalized arguments through an `EvidenceRecorder` contract. It does not store raw
 arguments. A bound execution normally creates proposal-stage and execution-stage records. The
 default recorder is a no-op because silently choosing a storage destination or retention policy
-would be unsafe; `InMemoryEvidenceRecorder` exists for tests and local development. Persistent
-stores and execution outcome records are not implemented yet.
+would be unsafe; `InMemoryEvidenceRecorder` exists only for tests and local development. It is
+unbounded process-local state and must not be used with production, Octane, queue workers, or as a
+tenant-separated evidence store. Persistent stores and execution outcome records are not
+implemented yet.
 
 Verdict should record observable inputs, outputs, policy facts, and decisions. It should not
 request or store hidden model chain-of-thought.

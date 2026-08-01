@@ -16,6 +16,7 @@ use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
 use Laravel\Ai\Contracts\Tool;
@@ -50,7 +51,18 @@ final readonly class VerdictManager
         }
 
         $capability = $this->capabilities->get($envelope->proposal->capability);
-        $target = $capability->resolveTarget($envelope);
+
+        try {
+            $target = $capability->resolveTarget($envelope);
+        } catch (TargetNotResolvable) {
+            return $this->record(new Evaluation(
+                envelope: $envelope,
+                capability: $capability,
+                target: null,
+                decision: Decision::deny(TargetNotResolvable::DECISION_REASON),
+                stage: EvaluationStage::Proposal,
+            ));
+        }
 
         return $this->record(new Evaluation(
             envelope: $envelope,
