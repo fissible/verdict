@@ -48,6 +48,8 @@ jobs:
           php artisan help verdict:prune-rate-limits
           php artisan help verdict:execution-claims
           php artisan help verdict:resolve-execution-claim
+          php artisan help verdict:evaluation-baseline
+          php artisan help verdict:evaluation-compare
 
   tests:
     runs-on: ${{ matrix.os }}

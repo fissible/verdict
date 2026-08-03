@@ -8,6 +8,8 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Console\Commands\CompareEvaluationCommand;
+use Fissible\Verdict\Console\Commands\CreateEvaluationBaselineCommand;
 use Fissible\Verdict\Console\Commands\ListExecutionClaimsCommand;
 use Fissible\Verdict\Console\Commands\PruneRateLimitBucketsCommand;
 use Fissible\Verdict\Console\Commands\ResolveExecutionClaimCommand;
@@ -201,6 +203,8 @@ final class VerdictServiceProvider extends ServiceProvider
         }
 
         $this->commands([
+            CompareEvaluationCommand::class,
+            CreateEvaluationBaselineCommand::class,
             ListExecutionClaimsCommand::class,
             PruneRateLimitBucketsCommand::class,
             ResolveExecutionClaimCommand::class,

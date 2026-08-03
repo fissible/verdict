@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add validated atomic evaluation-baseline creation and console or GitHub Actions comparison
+  commands with stable CI exit codes and escaped redacted findings.
 - Preserve curated changelog history and documentation notes during release preparation.
 - Mirror the repository's focused security topics in Composer package metadata.
 - Add scam resistance as an exploratory, provider-neutral roadmap area.

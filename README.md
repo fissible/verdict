@@ -787,8 +787,8 @@ custom assertion names or failure messages are included verbatim, so application
 secrets or raw adversarial content in those strings.
 
 `$result->report()` exports that data as an array or JSON using the versioned
-`verdict.evaluation-report.v1` schema. The report is an in-memory representation; Verdict does not
-yet persist, sign, or upload evaluation reports.
+`verdict.evaluation-report.v1` schema. The report starts as an in-memory representation. Verdict
+can validate and persist it as a repo-native baseline, but does not sign or upload reports.
 
 A redacted JSON report can be checked into the application repository as a baseline and compared
 with a current run:
@@ -805,14 +805,42 @@ if ($comparison->hasBlockingChanges()) {
 }
 ```
 
+The same workflow is available through Artisan. Baseline creation validates and canonicalizes the
+entire redacted report, refuses to overwrite an existing file unless `--force` is explicit, and
+uses a same-filesystem atomic replacement:
+
+```bash
+php artisan verdict:evaluation-baseline \
+  storage/app/verdict/current.json \
+  tests/Baselines/storefront.json
+
+php artisan verdict:evaluation-compare \
+  storage/app/verdict/current.json \
+  tests/Baselines/storefront.json
+```
+
+Use `--format=github` on the comparison command to emit escaped GitHub workflow annotations. Both
+formats return exit code `0` when no blocking change exists, `1` for a behavioral regression, new
+failure, harness error, or removed coverage, and `2` for malformed or missing files and command
+usage errors. Annotations contain only typed report fields and fingerprints; raw model input,
+output, or arbitrary unknown JSON fields are never printed.
+
+A GitHub Actions comparison step can fail the workflow on blocking findings while leaving the
+grouped annotations on the run:
+
+```yaml
+- name: Compare Verdict evaluation baseline
+  run: php artisan verdict:evaluation-compare current.json baseline.json --format=github
+```
+
 Comparison keeps behavioral regressions, newly observed failures, harness errors, improvements,
 recoveries, added coverage, and removed coverage distinct. A newly added failing case records both
 the coverage addition and its behavioral failure. Changing a case from security to utility is
 represented as removed security coverage plus added utility coverage. Verdict does not yet provide
-a baseline-writing command, persistence adapter, statistical thresholding, or CI formatter.
+a managed baseline store, statistical thresholding, or additional CI formats.
 
 The package does not yet provide attack packs, live-provider runners, repeated trials, baseline
-storage, additional report exporters, or automatic sandboxing. Application runners must use
+services, additional report exporters, or automatic sandboxing. Application runners must use
 synthetic data and reversible or isolated executors. Live evaluations must eventually be
 explicitly invoked outside the ordinary deterministic test command.
 
@@ -1137,7 +1165,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Semantic limits | Per-capability execution attempts, trusted bucket bindings, durable counters, throttle evidence | Fixed-window execution-limit slice implemented; proposal, conversation, cost, and cumulative-risk budgets planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection, structured redaction, transform non-expansion, and exact destination routes implemented; detectors and validators planned |
 | Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders include target-refresh and phased approval evidence; levels, retention tooling, events, and audit command planned |
-| Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, and repo-native baseline comparison implemented; live runners, baseline tooling, and statistical thresholds planned |
+| Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, atomic baseline creation, and console/GitHub CI comparison implemented; live runners and statistical thresholds planned |
 | Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, semantic-limit, at-most-once admission, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
 | Scam resistance | Provider-neutral fraud and scam risk signals, evidence, policy decisions, and containment; reputation and telecom intelligence remain optional adapters | Exploratory; taxonomy, false-positive policy, and adapter boundaries require design before implementation |
