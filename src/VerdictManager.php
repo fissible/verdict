@@ -25,6 +25,7 @@ use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\Exceptions\ExecutionClaimFinalizationFailed;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimAdmission;
@@ -48,6 +49,7 @@ final readonly class VerdictManager
         private ContextReleaseManager $contextReleases,
         private RateLimitManager $rateLimits,
         private ExecutionClaimManager $executionClaims,
+        private ProvenanceLedger $provenance,
         private string $deniedMessage,
     ) {}
 
@@ -280,6 +282,11 @@ final readonly class VerdictManager
     public function executionClaims(): ExecutionClaimManager
     {
         return $this->executionClaims;
+    }
+
+    public function provenance(): ProvenanceLedger
+    {
+        return $this->provenance;
     }
 
     private function record(Evaluation $evaluation): Evaluation

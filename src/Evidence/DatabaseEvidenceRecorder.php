@@ -4,9 +4,15 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Evidence;
 
+use DateTimeImmutable;
+use Fissible\Verdict\Context\ContextChannel;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Source;
+use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
+use LogicException;
 
 final readonly class DatabaseEvidenceRecorder implements EvidenceRecorder
 {
@@ -117,8 +123,67 @@ final readonly class DatabaseEvidenceRecorder implements EvidenceRecorder
         ]);
     }
 
+    public function recordProvenance(ProvenanceEntry $entry): void
+    {
+        $this->connection->table($this->table)->insert([
+            'id' => Str::uuid()->toString(),
+            'record_type' => 'provenance',
+            'correlation_id' => $entry->correlationId,
+            'stage' => 'input',
+            'disposition' => 'recorded',
+            'source' => $entry->source->identity(),
+            'trust' => $entry->trust->value,
+            'data_class' => $entry->dataClass->value,
+            'channel' => $entry->channel->value,
+            'component_label' => $entry->componentLabel,
+            'component_fingerprint' => $entry->componentFingerprint,
+            'content_fingerprint' => $entry->contentFingerprint,
+            'recorded_at' => $entry->recordedAt,
+        ]);
+    }
+
+    /** @return list<ProvenanceEntry> */
+    public function provenanceFor(string $correlationId): array
+    {
+        $rows = $this->connection->table($this->table)
+            ->where('record_type', 'provenance')
+            ->where('correlation_id', $correlationId)
+            ->orderBy('recorded_at')
+            ->orderBy('id')
+            ->get();
+        $entries = [];
+
+        foreach ($rows as $row) {
+            $entries[] = new ProvenanceEntry(
+                correlationId: (string) $row->correlation_id,
+                source: $this->source((string) $row->source),
+                trust: Trust::from((string) $row->trust),
+                dataClass: DataClass::from((string) $row->data_class),
+                channel: ContextChannel::from((string) $row->channel),
+                contentFingerprint: (string) $row->content_fingerprint,
+                componentLabel: $row->component_label === null ? null : (string) $row->component_label,
+                componentFingerprint: $row->component_fingerprint === null ? null : (string) $row->component_fingerprint,
+                recordedAt: new DateTimeImmutable((string) $row->recorded_at, new \DateTimeZone('UTC')),
+            );
+        }
+
+        return $entries;
+    }
+
     private function optionalFingerprint(?string $value): ?string
     {
         return $value === null ? null : hash('sha256', $value);
+    }
+
+    private function source(string $identity): Source
+    {
+        [$kind, $name] = array_pad(explode(':', $identity, 2), 2, '');
+
+        return match ($kind) {
+            'application' => Source::application($name),
+            'user' => Source::user($name),
+            'external' => Source::external($name),
+            default => throw new LogicException("Unknown provenance source kind [{$kind}]."),
+        };
     }
 }

@@ -2,13 +2,16 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Destination;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
 
@@ -54,6 +57,10 @@ beforeEach(function (): void {
         $table->json('transformed_path_fingerprints')->nullable();
         $table->unsignedInteger('transformation_count')->default(0);
         $table->char('payload_fingerprint', 64)->nullable();
+        $table->string('channel', 32)->nullable();
+        $table->string('component_label')->nullable();
+        $table->char('component_fingerprint', 64)->nullable();
+        $table->char('content_fingerprint', 64)->nullable();
         $table->timestamp('recorded_at');
     });
 });
@@ -177,4 +184,69 @@ it('persists context-release evidence without raw paths or payload values', func
         ->and($serialized)->not->toContain('first_name')
         ->and($serialized)->not->toContain('orders.0.status')
         ->and($serialized)->not->toContain('Avery');
+});
+
+it('persists and retrieves redacted provenance without mixing correlations', function (): void {
+    $recorder = databaseEvidenceRecorder();
+    $recordedAt = new DateTimeImmutable('2026-08-03 12:00:00', new DateTimeZone('UTC'));
+    $rawValues = [
+        'private prompt text',
+        'confidential document body',
+        'secret tool response',
+    ];
+    $entries = [
+        new ProvenanceEntry(
+            correlationId: 'invocation-1',
+            source: Source::user('customer'),
+            trust: Trust::Untrusted,
+            dataClass: DataClass::PII,
+            channel: ContextChannel::UserInput,
+            contentFingerprint: ContentFingerprint::make($rawValues[0]),
+            componentLabel: null,
+            componentFingerprint: null,
+            recordedAt: $recordedAt,
+        ),
+        new ProvenanceEntry(
+            correlationId: 'invocation-1',
+            source: Source::external('knowledge-base'),
+            trust: Trust::Untrusted,
+            dataClass: DataClass::Internal,
+            channel: ContextChannel::RetrievedDocument,
+            contentFingerprint: ContentFingerprint::make($rawValues[1]),
+            componentLabel: 'retriever',
+            componentFingerprint: ContentFingerprint::make('v2.1.0'),
+            recordedAt: $recordedAt->modify('+1 second'),
+        ),
+        new ProvenanceEntry(
+            correlationId: 'invocation-2',
+            source: Source::external('payment-api'),
+            trust: Trust::Trusted,
+            dataClass: DataClass::Sensitive,
+            channel: ContextChannel::ToolResult,
+            contentFingerprint: ContentFingerprint::make($rawValues[2]),
+            componentLabel: 'payment-client',
+            componentFingerprint: ContentFingerprint::make('v4'),
+            recordedAt: $recordedAt->modify('+2 seconds'),
+        ),
+    ];
+
+    foreach ($entries as $entry) {
+        $recorder->recordProvenance($entry);
+    }
+
+    $rows = app(DatabaseManager::class)->connection()->table('verdict_evidence')->get();
+    $serializedRows = json_encode($rows, JSON_THROW_ON_ERROR);
+    $correlated = $recorder->provenanceFor('invocation-1');
+
+    expect($rows)->toHaveCount(3)
+        ->and($correlated)->toHaveCount(2)
+        ->and(array_column($correlated, 'correlationId'))->each->toBe('invocation-1');
+
+    expect($correlated[1]->channel)->toBe(ContextChannel::RetrievedDocument)
+        ->and($correlated[1]->componentLabel)->toBe('retriever')
+        ->and($correlated[1]->componentFingerprint)->toBe(ContentFingerprint::make('v2.1.0'))
+        ->and($serializedRows)->not->toContain($rawValues[0])
+        ->and($serializedRows)->not->toContain($rawValues[1])
+        ->and($serializedRows)->not->toContain($rawValues[2])
+        ->and($serializedRows)->not->toContain('v2.1.0');
 });
