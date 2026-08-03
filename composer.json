@@ -4,9 +4,18 @@
   "description": "Policy-bound actions and security evidence for Laravel AI agents.",
   "keywords": [
     "ai",
+    "ai-agents",
+    "ai-security",
     "authorization",
+    "human-in-the-loop",
     "laravel",
-    "security"
+    "laravel-ai",
+    "llm-security",
+    "policy-enforcement",
+    "prompt-injection",
+    "red-teaming",
+    "security",
+    "security-testing"
   ],
   "homepage": "https://github.com/fissible/verdict",
   "license": "MIT",

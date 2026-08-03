@@ -55,10 +55,11 @@ A release is cut only when:
 7. Documentation distinguishes implemented behavior from planned behavior.
 8. Known security limitations are documented without overstating guarantees.
 
-The release commit is tagged only after these checks pass. `VERSION`, `release.sh`,
-`.cliff.toml`, and the tag-triggered GitHub release workflow follow the Fissible organization
-release convention. Run `bash release.sh patch`, `minor`, or `major` from a clean `main` branch for
-subsequent releases. Publication to Packagist and changing repository visibility are explicit
+The release commit is tagged only after these checks pass. `VERSION`, `release.sh`, the curated
+`CHANGELOG.md`, and the tag-triggered GitHub release workflow follow the Fissible organization
+release convention. The release script promotes the existing Unreleased notes without regenerating
+prior release history. Run `bash release.sh patch`, `minor`, or `major` from a clean `main` branch
+for subsequent releases. Publication to Packagist and changing repository visibility are explicit
 maintainer actions, not automated side effects of a merge. Verdict is currently public and
 registered on Packagist.
 

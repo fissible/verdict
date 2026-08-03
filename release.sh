@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# release.sh — fissible standard release script
-# Copy to the root of any fissible repo, or run directly.
+# release.sh — Verdict release script
 # Usage: bash release.sh [patch|minor|major]
-# Dependencies: git, git-cliff
+# Dependencies: git, php
 
 set -e
 
@@ -14,8 +13,9 @@ confirm() { printf '%s [y/N] ' "$1"; read -r ans; [[ "$ans" =~ ^[Yy]$ ]]; }
 # --- preflight checks ---
 
 [[ -f VERSION ]] || die "VERSION file not found — are you in a fissible repo root?"
-[[ -f .cliff.toml ]] || die ".cliff.toml not found — copy it from fissible/.github"
-command -v git-cliff >/dev/null 2>&1 || die "git-cliff not installed (brew install git-cliff)"
+[[ -f scripts/prepare-release-changelog.php ]] \
+    || die "scripts/prepare-release-changelog.php not found"
+command -v php >/dev/null 2>&1 || die "php not found"
 command -v git >/dev/null 2>&1 || die "git not found"
 
 current_branch=$(git rev-parse --abbrev-ref HEAD)
@@ -29,6 +29,7 @@ git diff --quiet && git diff --cached --quiet \
 
 current=$(cat VERSION)
 last_tag=$(git describe --tags --abbrev=0 2>/dev/null || printf '')
+[[ -n "$last_tag" ]] || die "A previous release tag is required"
 
 printf 'Current version : %s\n' "$current"
 printf 'Last tag        : %s\n' "${last_tag:-none}"
@@ -114,8 +115,9 @@ confirm "Proceed?" || { printf 'Aborted.\n'; exit 0; }
 
 # --- update files ---
 
+php scripts/prepare-release-changelog.php \
+    CHANGELOG.md "$new_version" "$last_tag" "$new_tag" "$(date +%F)"
 printf '%s\n' "$new_version" > VERSION
-RUST_LOG=error git-cliff --config .cliff.toml --tag "$new_tag" --output CHANGELOG.md
 
 # --- update package.json if present ---
 

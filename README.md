@@ -1140,6 +1140,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, and repo-native baseline comparison implemented; live runners, baseline tooling, and statistical thresholds planned |
 | Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, semantic-limit, at-most-once admission, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
+| Scam resistance | Provider-neutral fraud and scam risk signals, evidence, policy decisions, and containment; reputation and telecom intelligence remain optional adapters | Exploratory; taxonomy, false-positive policy, and adapter boundaries require design before implementation |
 | Optional UI | Development viewer or framework-specific adapter | Exploratory |
 
 ### Release milestones
@@ -1151,7 +1152,8 @@ This roadmap is directional and may change as the integration is prototyped.
   the first deterministic attack pack, baseline/CI commands, and an opt-in repeated-trial live
   runner.
 - **Later `0.x` releases:** operational events, distributed containment, evidence lifecycle,
-  additional budgets, and optional detector adapters remain directional until separately scoped.
+  additional budgets, scam-resistance signals and policy integration, and optional detector
+  adapters remain directional until separately scoped.
 
 Every issue in the `v0.2.0` milestone labeled `scope: ready` has selected design constraints and
 acceptance criteria suitable for an outside contribution. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
