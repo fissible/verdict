@@ -22,6 +22,9 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
     /** @var list<ContextReleaseEvidence> */
     private array $releaseRecords = [];
 
+    /** @var list<ProvenanceEntry> */
+    private array $provenanceRecords = [];
+
     public function record(DecisionEvidence $evidence): void
     {
         $this->records[] = $evidence;
@@ -30,6 +33,20 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
     public function recordRelease(ContextReleaseEvidence $evidence): void
     {
         $this->releaseRecords[] = $evidence;
+    }
+
+    public function recordProvenance(ProvenanceEntry $entry): void
+    {
+        $this->provenanceRecords[] = $entry;
+    }
+
+    /** @return list<ProvenanceEntry> */
+    public function provenanceFor(string $correlationId): array
+    {
+        return array_values(array_filter(
+            $this->provenanceRecords,
+            fn (ProvenanceEntry $entry): bool => $entry->correlationId === $correlationId,
+        ));
     }
 
     /**

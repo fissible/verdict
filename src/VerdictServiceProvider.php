@@ -24,6 +24,7 @@ use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
@@ -180,6 +181,11 @@ final class VerdictServiceProvider extends ServiceProvider
             clock: $app->make(Clock::class),
         ));
 
+        $this->app->scoped(ProvenanceLedger::class, fn (Container $app): ProvenanceLedger => new ProvenanceLedger(
+            evidence: $app->make(EvidenceRecorder::class),
+            clock: $app->make(Clock::class),
+        ));
+
         $this->app->scoped(VerdictManager::class, function (Container $app): VerdictManager {
             $message = config('verdict.ai.denied_message', 'This action was not authorized.');
 
@@ -191,6 +197,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 contextReleases: $app->make(ContextReleaseManager::class),
                 rateLimits: $app->make(RateLimitManager::class),
                 executionClaims: $app->make(ExecutionClaimManager::class),
+                provenance: $app->make(ProvenanceLedger::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
             );
         });
@@ -219,6 +226,7 @@ final class VerdictServiceProvider extends ServiceProvider
         ];
         $evidenceMigration = [
             __DIR__.'/../database/migrations/create_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000001_create_verdict_evidence_table.php'),
+            __DIR__.'/../database/migrations/add_provenance_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000004_add_provenance_to_verdict_evidence_table.php'),
         ];
         $rateLimitMigration = [
             __DIR__.'/../database/migrations/create_verdict_rate_limit_buckets_table.php.stub' => database_path('migrations/2026_08_01_000002_create_verdict_rate_limit_buckets_table.php'),

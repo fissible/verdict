@@ -4,6 +4,9 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add an explicit provider-agnostic provenance ledger with canonical redacted content fingerprints,
+  source/trust/classification/channel labels, correlation reads, and null, in-memory, and database
+  recorder support through an additive evidence migration.
 - Add validated atomic evaluation-baseline creation and console or GitHub Actions comparison
   commands with stable CI exit codes and escaped redacted findings.
 - Preserve curated changelog history and documentation notes during release preparation.

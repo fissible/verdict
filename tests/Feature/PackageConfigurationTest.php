@@ -8,9 +8,12 @@ use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
+use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
+use Fissible\Verdict\Facades\Verdict;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\VerdictServiceProvider;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\ServiceProvider;
 
 it('publishes the durable approval receipt migration', function (): void {
@@ -19,7 +22,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(4)
+    expect($migrations)->toHaveCount(5)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -30,9 +33,44 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(1)
-        ->and(array_key_first($migrations))->toEndWith('create_verdict_evidence_table.php.stub')
-        ->and(array_values($migrations)[0])->toEndWith('create_verdict_evidence_table.php');
+    expect($migrations)->toHaveCount(2)
+        ->and(array_keys($migrations)[0])->toEndWith('create_verdict_evidence_table.php.stub')
+        ->and(array_keys($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php.stub')
+        ->and(array_values($migrations)[0])->toEndWith('create_verdict_evidence_table.php')
+        ->and(array_values($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php');
+});
+
+it('adds provenance columns without replacing existing evidence rows', function (): void {
+    $connection = app(DatabaseManager::class)->connection();
+    $schema = $connection->getSchemaBuilder();
+    $schema->dropIfExists('verdict_evidence');
+    $create = require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub';
+    $addProvenance = require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub';
+
+    $create->up();
+    $connection->table('verdict_evidence')->insert([
+        'id' => '019894b2-7af0-7000-8000-000000000001',
+        'record_type' => 'decision',
+        'correlation_id' => 'invocation-before-upgrade',
+        'stage' => 'proposal',
+        'disposition' => 'deny',
+        'transformation_count' => 0,
+        'recorded_at' => '2026-08-01 12:00:00',
+    ]);
+
+    $addProvenance->up();
+
+    expect($schema->hasColumns('verdict_evidence', [
+        'channel',
+        'component_label',
+        'component_fingerprint',
+        'content_fingerprint',
+    ]))->toBeTrue()
+        ->and($connection->table('verdict_evidence')->count())->toBe(1)
+        ->and($connection->table('verdict_evidence')->value('correlation_id'))
+        ->toBe('invocation-before-upgrade');
+
+    $schema->dropIfExists('verdict_evidence');
 });
 
 it('resolves the configured database receipt store', function (): void {
@@ -47,6 +85,11 @@ it('resolves the configured database evidence recorder', function (): void {
     $this->app->forgetInstance(EvidenceRecorder::class);
 
     expect(app(EvidenceRecorder::class))->toBeInstanceOf(DatabaseEvidenceRecorder::class);
+});
+
+it('exposes the scoped provenance ledger through the manager and facade', function (): void {
+    expect(app(ProvenanceLedger::class))->toBeInstanceOf(ProvenanceLedger::class)
+        ->and(Verdict::provenance())->toBeInstanceOf(ProvenanceLedger::class);
 });
 
 it('publishes and resolves the database rate-limit store', function (): void {

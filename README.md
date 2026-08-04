@@ -4,10 +4,11 @@
 
 > **Project status: pre-1.0 developer preview.** Runtime authorization, verified confirmation,
 > semantic execution limits, strict at-most-once executor admission, and deterministic
-> context-release slices exist on `main`, together with an opt-in database evidence recorder, a
-> deterministic security-evaluation foundation, and a storefront security workbench. `v0.1.0` is
-> the first tagged developer preview; the public API is not stable yet. Sections labeled planned,
-> proposed, or illustrative describe direction rather than shipped behavior.
+> context-release slices exist on `main`, together with an explicit redacted provenance ledger, an
+> opt-in database evidence recorder, a deterministic security-evaluation foundation, and a
+> storefront security workbench. `v0.1.0` is the first tagged developer preview; the public API is
+> not stable yet. Sections labeled planned, proposed, or illustrative describe direction rather
+> than shipped behavior.
 
 Verdict is an early Laravel package for applications that allow AI agents to read sensitive
 context, call tools, or change application state. Its central rule is simple:
@@ -478,9 +479,10 @@ Untrusted instructions can enter through more than the user's message:
 - MCP tools and servers.
 - Another agent.
 
-Verdict intends to preserve source and trust labels as content is passed between agents and tools.
-A summary of an untrusted document does not become trusted merely because a model produced the
-summary.
+Verdict can preserve explicitly supplied source, trust, classification, and channel labels through
+its provenance ledger. A summary of an untrusted document does not become trusted merely because a
+model produced the summary. Automatic Laravel AI integration is separate from the explicit core
+API and remains planned.
 
 The practical limits of provenance tracking will depend on the integration points Laravel AI
 exposes. Verdict should document those limits rather than imply visibility it does not have.
@@ -663,27 +665,71 @@ The evidence store may contain highly sensitive information. The planned design 
 configurable evidence levels, retention, tenant isolation, access authorization, pruning, and
 encryption. A hash of predictable personal information is not anonymization.
 
-The implementation records action decisions and context-release decisions through an
-`EvidenceRecorder` contract. Action records include stage, envelope ID, capability, detailed
-internal reason, timestamp, and a deterministic SHA-256 fingerprint of normalized arguments.
+The implementation records action decisions, context-release decisions, and explicit context
+provenance through an `EvidenceRecorder` contract. Action records include stage, envelope ID,
+capability, detailed internal reason, timestamp, and a deterministic SHA-256 fingerprint of
+normalized arguments.
 Target-refresh records contain policy, strategy, proposal/execution identity fingerprints, and the
 match result. Confirmed bound executions distinguish proposal validation, execution validation, and
 atomic consumption while retaining only a hashed receipt reference.
 Context-release records contain the labeled route, classification, disposition, field-path and
-transform fingerprints, transformation count, and released-payload fingerprint. Neither record
-type includes raw arguments or released payload values.
+transform fingerprints, transformation count, and released-payload fingerprint. Decision and
+context-release records include neither raw arguments nor released payload values.
+
+Callers can explicitly record which labeled inputs entered one invocation without retaining those
+inputs:
+
+```php
+use Fissible\Verdict\Context\ContextChannel;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Source;
+use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Facades\Verdict;
+
+$entry = Verdict::provenance()->record(
+    correlationId: 'invocation-01J4Z8X9',
+    source: Source::external('knowledge-base'),
+    trust: Trust::Untrusted,
+    dataClass: DataClass::Internal,
+    channel: ContextChannel::RetrievedDocument,
+    content: ['title' => $document->title, 'body' => $document->body],
+    componentLabel: 'catalog-retriever',
+    componentVersion: 'v2.1.0',
+);
+
+$inputs = Verdict::provenance()->forCorrelation('invocation-01J4Z8X9');
+```
+
+`content` must be a scalar, `null`, or a nested native array of those values. Associative keys are
+sorted recursively before hashing, while list order and scalar types remain significant. The raw
+content and component version are fingerprinted before the recorder is called and are absent from
+`ProvenanceEntry` serialization and database rows. The optional component label is retained as
+readable evidence, so it must be a stable non-sensitive identifier rather than a filename, URL, or
+metadata value. Correlation, component, and version labels accept only letters, numbers, dots,
+underscores, and hyphens.
+
+Verdict does not infer trust or classification. The application must provide `Source`, `Trust`,
+`DataClass`, and `ContextChannel` for every record, and a summary of untrusted input remains
+untrusted unless the application explicitly establishes a different policy. Recorder failures
+propagate as application faults; callers must not treat a thrown write as successful provenance.
+
+Content and component fingerprints are deterministic. A hash of a predictable prompt, identifier,
+version, filename, URL, or personal value can be guessed and must be treated as correlation—not
+anonymization, encryption, or proof that the underlying input is safe. The ledger records only
+inputs explicitly passed to it; it does not parse rendered prompts, observe provider internals, or
+recover provenance that an integration discarded.
 
 The default recorder is a no-op because silently choosing a storage destination or retention
 policy would be unsafe. `InMemoryEvidenceRecorder` exists only for tests and local development. It
 is unbounded process-local state and must not be used with production, Octane, queue workers, or as
 a tenant-separated evidence store.
 
-An opt-in `DatabaseEvidenceRecorder` persists both record types. Before persistence it hashes the
-provider tool-call/idempotency key; it never stores the raw key. It does persist detailed internal
-reasons, route labels, capabilities, and correlation IDs, which may still be sensitive application
-metadata. Applications remain responsible for database encryption, tenant isolation, access
-authorization, retention, export, and deletion policies. No pruning command or execution-outcome
-record exists yet.
+An opt-in `DatabaseEvidenceRecorder` persists all three record types. Before persistence it hashes
+the provider tool-call/idempotency key; it never stores the raw key. It does persist detailed
+internal reasons, route labels, capabilities, and correlation IDs, which may still be sensitive
+application metadata. Applications remain responsible for database encryption, tenant isolation,
+access authorization, retention, export, and deletion policies. No pruning command or
+execution-outcome record exists yet.
 
 Verdict should record observable inputs, outputs, policy facts, and decisions. It should not
 request or store hidden model chain-of-thought.
@@ -1099,7 +1145,8 @@ php artisan migrate
 ```
 
 Database evidence is opt-in. Select `DatabaseEvidenceRecorder::class` in the published Verdict
-configuration, then publish its migration and migrate:
+configuration, then publish its migrations and migrate. Existing installations receive an additive
+provenance migration; existing action and context-release rows remain valid:
 
 ```bash
 php artisan vendor:publish --tag=verdict-evidence-migrations
@@ -1164,7 +1211,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Identity and execution | Principal/tenant binding, target freshness, confirmation state, expiry, duplicate admission, idempotency | Explicit execution-target refresh/snapshot policies, confirmation receipts, and opt-in strict at-most-once executor admission implemented; transactional execution and exactly-once effects remain application-specific |
 | Semantic limits | Per-capability execution attempts, trusted bucket bindings, durable counters, throttle evidence | Fixed-window execution-limit slice implemented; proposal, conversation, cost, and cumulative-risk budgets planned |
 | Context release | Source labels, field projection, PII scrubber contracts, destination policy | Deterministic projection, structured redaction, transform non-expansion, and exact destination routes implemented; detectors and validators planned |
-| Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders include target-refresh and phased approval evidence; levels, retention tooling, events, and audit command planned |
+| Evidence | Pluggable stores, redaction levels, security events, audit command | Null, in-memory, and opt-in database recorders include explicit redacted provenance, target-refresh, and phased approval evidence; levels, retention tooling, events, and audit command planned |
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, atomic baseline creation, and console/GitHub CI comparison implemented; live runners and statistical thresholds planned |
 | Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, semantic-limit, at-most-once admission, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
