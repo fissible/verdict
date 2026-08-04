@@ -1168,7 +1168,7 @@ This roadmap is directional and may change as the integration is prototyped.
 | Evaluation | Deterministic attack cases, live-model suites, baselines, reports | Deterministic cases, assertions, redacted JSON reports, separate scoring, atomic baseline creation, and console/GitHub CI comparison implemented; live runners and statistical thresholds planned |
 | Demo | Sandboxed eCommerce assistant and security trace | Deterministic authorization, confirmation, semantic-limit, at-most-once admission, context-release, and evaluation labs implemented; live-model path planned |
 | Containment | Kill switches and application-defined containment hooks | Exploratory |
-| Scam resistance | Provider-neutral fraud and scam risk signals, evidence, policy decisions, and containment; reputation and telecom intelligence remain optional adapters | Exploratory; taxonomy, false-positive policy, and adapter boundaries require design before implementation |
+| Communications risk | Provider-neutral `RiskSignal` and `RiskAssessment` contracts, evidence, policy decisions, and containment for fraud/scam-adjacent actions; reputation and telecom intelligence remain optional adapters | Exploratory and adjacent; taxonomy, false-positive policy, and adapter boundaries require design before implementation |
 | Optional UI | Development viewer or framework-specific adapter | Exploratory |
 
 ### Release milestones
@@ -1182,6 +1182,38 @@ This roadmap is directional and may change as the integration is prototyped.
 - **Later `0.x` releases:** operational events, distributed containment, evidence lifecycle,
   additional budgets, scam-resistance signals and policy integration, and optional detector
   adapters remain directional until separately scoped.
+
+### Post-v0.2 exploratory track: communications risk
+
+This is deliberately an adjacent design track, not a commitment to make Verdict a general scam
+detection or consumer-protection product. The package boundary under consideration is:
+
+- **`RiskSignal`** — a provider-neutral, redacted observation from an application, telecom
+  integration, reputation service, or evaluator. A signal should identify its category, source,
+  confidence, freshness, and evidence fingerprint without pretending to prove that a person,
+  number, message, or destination is fraudulent.
+- **`RiskAssessment`** — an application-scoped aggregation of signals and trusted context. It can
+  expose reasons, uncertainty, and expiry to policy code, but it should not become an opaque,
+  globally portable scam score.
+- **Governance integration** — policies may translate an assessment into `permit`, `deny`,
+  `require_confirmation`, `require_review`, or `throttle`, with redacted evidence and evaluation
+  results. High-risk communications should be able to require independent verification before an
+  agent discloses information, sends money, follows a link, calls a supplied number, or initiates
+  unusual communications activity.
+- **Optional adapters** — `fissible/phone`, Mesabit, and third-party services may collect
+  domain-specific signals; Verdict should consume them at the authorization boundary rather than
+  own a telecom reputation database. Caller-ID authentication is also not content authentication;
+  the FCC describes STIR/SHAKEN as authenticating caller-ID information, not establishing that a
+  call's claims are trustworthy.
+- **Evaluation and evidence** — a future deterministic pack should test scam-resistance controls
+  alongside legitimate lookalikes, measuring both containment and task utility. Raw transcripts,
+  phone numbers, and vendor payloads should not become the default evidence record.
+
+The initial taxonomy and policy examples should be grounded in primary sources and versioned with
+their provenance. For example, the FTC identifies unexpected requests, urgency, prescribed
+hard-to-reverse payment methods, and independent verification as useful scam-resistance guidance;
+these are signals for an application's policy, not a universal classifier. This track should stay
+out of `v0.2.0` until its scope and package boundary are separately accepted.
 
 Every issue in the `v0.2.0` milestone labeled `scope: ready` has selected design constraints and
 acceptance criteria suitable for an outside contribution. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
