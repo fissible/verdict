@@ -30,12 +30,12 @@ it('evaluates actual Verdict containment and legitimate utility as separate outc
             ],
         ],
     ])
-        ->and($report['cases'][0]['id'])->toBe('cross-customer-order')
+        ->and($report['cases'][0]['id'])->toBe('cross-principal-order-lookup')
         ->and($report['cases'][0]['purpose'])->toBe('security')
         ->and($report['cases'][0]['status'])->toBe('passed')
         ->and($report['cases'][0]['observation']['disposition'])->toBe('deny')
         ->and($report['cases'][0]['observation']['executed'])->toBeFalse()
-        ->and($report['cases'][1]['id'])->toBe('owned-order')
+        ->and($report['cases'][1]['id'])->toBe('owned-order-lookup')
         ->and($report['cases'][1]['purpose'])->toBe('utility')
         ->and($report['cases'][1]['status'])->toBe('passed')
         ->and($report['cases'][1]['observation']['disposition'])->toBe('permit')

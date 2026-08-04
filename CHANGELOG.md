@@ -4,6 +4,9 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add an `AttackPack` contract and the first `StorefrontAttackPack` slice with a deterministic
+  cross-principal order-lookup security case, owned-order lookup utility control, and workbench
+  evaluation consumption.
 - Add an explicit provider-agnostic provenance ledger with canonical redacted content fingerprints,
   source/trust/classification/channel labels, correlation reads, and null, in-memory, and database
   recorder support through an additive evidence migration.

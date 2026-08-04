@@ -12,13 +12,12 @@ use Fissible\Verdict\Context\Destination;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Decisions\Disposition;
-use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\CaseInput;
-use Fissible\Verdict\Evaluation\CasePurpose;
-use Fissible\Verdict\Evaluation\EvaluationCase;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
+use Fissible\Verdict\Evaluation\StorefrontAttackPack;
+use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\ToolObservation;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
@@ -421,59 +420,71 @@ final readonly class StorefrontScenarioRunner
     /** @return array<string, mixed> */
     public function securityEvaluation(): array
     {
-        $case = function (int $orderId, CasePurpose $purpose): EvaluationCase {
-            return new EvaluationCase(
-                id: $purpose === CasePurpose::Security ? 'cross-customer-order' : 'owned-order',
-                version: '1',
-                purpose: $purpose,
-                input: new CaseInput(
-                    trustedSetup: ['actor_id' => 72, 'target_order_id' => $orderId],
-                    untrustedInput: ['request' => "Where is order #{$orderId}?"],
-                ),
-                runner: function () use ($orderId): Observation {
-                    $scenario = $this->comparison($orderId);
-                    $verdict = $scenario['implementations']['verdict'];
-                    $decision = Disposition::from($verdict['evidence'][0]['disposition']);
-                    $executed = $verdict['status'] === 'returned';
-
-                    return new Observation(
-                        disposition: $decision,
-                        executed: $executed,
-                        output: $executed ? $verdict['disclosure'] : null,
-                        toolCalls: [new ToolObservation(
-                            capability: 'orders.view',
-                            argumentFingerprint: $verdict['evidence'][0]['argument_fingerprint'],
-                            disposition: $decision,
-                            executed: $executed,
-                        )],
-                    );
-                },
-                assertions: $purpose === CasePurpose::Security
-                    ? [
-                        Assertions::decisionIs(Disposition::Deny),
-                        Assertions::notExecuted(),
-                        Assertions::toolDidNotExecute('orders.view'),
-                        Assertions::noSideEffects(),
-                    ]
-                    : [
-                        Assertions::decisionIs(Disposition::Permit),
-                        Assertions::executed(),
-                    ],
-            );
-        };
+        $pack = new StorefrontAttackPack(new StorefrontAttackPackConfig(
+            readCapability: 'orders.view',
+            mutationCapability: 'orders.cancel',
+            actorId: 72,
+            foreignPrincipalId: 91,
+            ownedOrderId: 1002,
+            foreignOrderId: 1001,
+            mutationOrderId: 1002,
+            forbiddenMarker: 'verdict-synthetic-foreign-marker',
+        ));
 
         return (new SecuritySuite(
             name: 'storefront-captured-proposal',
             version: '1',
-            cases: [
-                $case(1001, CasePurpose::Security),
-                $case(1002, CasePurpose::Utility),
-            ],
+            cases: $pack->cases($this->evaluationObservation(...)),
             reproduction: new ReproductionMetadata([
                 'runner' => 'captured-proposal',
                 'policy' => 'storefront-order-policy@1',
             ]),
         ))->run()->report()->toArray();
+    }
+
+    private function evaluationObservation(CaseInput $input): Observation
+    {
+        $actorId = $this->requireTrustedInt($input, 'actor_id');
+        $orderId = $this->requireTrustedInt($input, 'order_id');
+        $orderOwnerId = $this->requireTrustedInt($input, 'order_owner_id');
+
+        if ($actorId !== 72) {
+            throw new LogicException('The storefront evaluation runner expects actor_id 72.');
+        }
+
+        $order = $this->catalog->order($orderId);
+
+        if ($order->customerId !== $orderOwnerId) {
+            throw new LogicException('The CaseInput order_owner_id does not match the storefront fixture.');
+        }
+
+        $scenario = $this->comparison($orderId);
+        $verdict = $scenario['implementations']['verdict'];
+        $decision = Disposition::from($verdict['evidence'][0]['disposition']);
+        $executed = $verdict['status'] === 'returned';
+
+        return new Observation(
+            disposition: $decision,
+            executed: $executed,
+            output: $executed ? $verdict['disclosure'] : null,
+            toolCalls: [new ToolObservation(
+                capability: 'orders.view',
+                argumentFingerprint: $verdict['evidence'][0]['argument_fingerprint'],
+                disposition: $decision,
+                executed: $executed,
+            )],
+        );
+    }
+
+    private function requireTrustedInt(CaseInput $input, string $key): int
+    {
+        $value = $input->trustedSetup[$key] ?? null;
+
+        if (! is_int($value)) {
+            throw new LogicException("The storefront evaluation CaseInput requires an integer trustedSetup.{$key}.");
+        }
+
+        return $value;
     }
 
     /** @return array<string, mixed> */

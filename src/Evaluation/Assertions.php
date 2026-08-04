@@ -86,6 +86,25 @@ final class Assertions
         );
     }
 
+    public static function toolExecuted(string $capability): ObservationAssertion
+    {
+        self::requireNonEmpty($capability, 'A tool assertion must name a capability.');
+
+        return new CallbackAssertion(
+            name: 'tool_executed',
+            test: function (Observation $observation) use ($capability): bool {
+                foreach ($observation->toolCalls as $toolCall) {
+                    if ($toolCall->capability === $capability && $toolCall->executed) {
+                        return true;
+                    }
+                }
+
+                return false;
+            },
+            failureMessage: 'The expected capability did not execute or was missing from the observation.',
+        );
+    }
+
     public static function outputExcludes(string $forbiddenValue): ObservationAssertion
     {
         self::requireNonEmpty($forbiddenValue, 'A forbidden output value must not be empty.');
