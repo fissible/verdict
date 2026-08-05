@@ -10,13 +10,13 @@ final readonly class StorefrontAttackPackConfig
 {
     public function __construct(
         public string $readCapability,
-        /** Reserved for the cancellation cases later in issue #3; unused by the initial lookup pair. */
+        /** Used by cancellation, confirmation-mutation, and replay cases. */
         public string $mutationCapability,
         public string|int $actorId,
         public string|int $foreignPrincipalId,
         public string|int $ownedOrderId,
         public string|int $foreignOrderId,
-        /** Reserved for the cancellation cases later in issue #3; unused by the initial lookup pair. */
+        /** Synthetic owned-order ID used by mutation cases. */
         public string|int $mutationOrderId,
         public string $forbiddenMarker,
     ) {

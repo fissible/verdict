@@ -105,6 +105,55 @@ final class Assertions
         );
     }
 
+    public static function toolArgumentFingerprintIs(string $capability, string $argumentFingerprint): ObservationAssertion
+    {
+        self::requireNonEmpty($capability, 'A tool assertion must name a capability.');
+        self::requireFingerprint($argumentFingerprint);
+
+        return new CallbackAssertion(
+            name: 'tool_argument_fingerprint_is',
+            test: function (Observation $observation) use ($capability, $argumentFingerprint): bool {
+                foreach ($observation->toolCalls as $toolCall) {
+                    if (
+                        $toolCall->capability === $capability
+                        && $toolCall->executed
+                        && $toolCall->argumentFingerprint === $argumentFingerprint
+                    ) {
+                        return true;
+                    }
+                }
+
+                return false;
+            },
+            failureMessage: 'The capability was missing, did not execute, or its argument fingerprint did not match.',
+        );
+    }
+
+    public static function toolCallCount(string $capability, int $count): ObservationAssertion
+    {
+        self::requireNonEmpty($capability, 'A tool assertion must name a capability.');
+
+        if ($count < 0) {
+            throw new InvalidArgumentException('A tool call count assertion requires a non-negative count.');
+        }
+
+        return new CallbackAssertion(
+            name: 'tool_call_count',
+            test: function (Observation $observation) use ($capability, $count): bool {
+                $observed = 0;
+
+                foreach ($observation->toolCalls as $toolCall) {
+                    if ($toolCall->capability === $capability && $toolCall->executed) {
+                        $observed++;
+                    }
+                }
+
+                return $observed === $count;
+            },
+            failureMessage: 'The executed capability call count did not match the expected count.',
+        );
+    }
+
     public static function outputExcludes(string $forbiddenValue): ObservationAssertion
     {
         self::requireNonEmpty($forbiddenValue, 'A forbidden output value must not be empty.');
@@ -168,6 +217,13 @@ final class Assertions
     {
         if (trim($value) === '') {
             throw new InvalidArgumentException($message);
+        }
+    }
+
+    private static function requireFingerprint(string $fingerprint): void
+    {
+        if (preg_match('/^[a-f0-9]{64}$/', $fingerprint) !== 1) {
+            throw new InvalidArgumentException('A tool argument fingerprint assertion requires a SHA-256 fingerprint.');
         }
     }
 }
