@@ -12,6 +12,7 @@ All notable changes to Verdict will be documented in this file.
 - Preserve curated changelog history and documentation notes during release preparation.
 - Mirror the repository's focused security topics in Composer package metadata.
 - Add scam resistance as an exploratory, provider-neutral roadmap area.
+- Add synchronous Laravel AI prompt and explicitly classified tool-result provenance hooks.
 
 ## [0.1.1] - 2026-08-01
 
