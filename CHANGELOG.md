@@ -4,6 +4,9 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add an `AttackPack` contract and deterministic `StorefrontAttackPack` with paired lookup,
+  cancellation, confirmation-mutation, replay, and retrieved-document security/utility cases, plus
+  workbench evaluation consumption.
 - Add an explicit provider-agnostic provenance ledger with canonical redacted content fingerprints,
   source/trust/classification/channel labels, correlation reads, and null, in-memory, and database
   recorder support through an additive evidence migration.
