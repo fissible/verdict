@@ -15,6 +15,7 @@ use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -65,9 +66,10 @@ function laravelAiProvenancePrompt(
     string $prompt,
     ?string $invocationId = null,
     ?Decisions $approvalDecisions = null,
+    ?Agent $agent = null,
 ): AgentPrompt {
     return new AgentPrompt(
-        agent: Mockery::mock(Agent::class),
+        agent: $agent ?? Mockery::mock(Agent::class),
         prompt: $prompt,
         attachments: ['attachment.txt'],
         provider: Mockery::mock(TextProvider::class),
@@ -148,6 +150,167 @@ it('uses the PromptingAgent invocation ID without fingerprinting a revised combi
     expect($entries)->toHaveCount(1)
         ->and($entries[0]->contentFingerprint)->toBe(ContentFingerprint::make('original user request'))
         ->and($entries[0]->contentFingerprint)->not->toBe(ContentFingerprint::make('original user request'.PHP_EOL.PHP_EOL.'retrieved document content'));
+});
+
+it('discards deferred provenance when downstream middleware fails before the invocation event', function (): void {
+    $agent = Mockery::mock(Agent::class);
+    $middleware = laravelAiProvenanceMiddleware(source: Source::user('agent-prompt'));
+
+    expect(fn (): mixed => $middleware->handle(
+        laravelAiProvenancePrompt('failed request', agent: $agent),
+        fn (): never => throw new RuntimeException('Downstream middleware failed.'),
+    ))->toThrow(RuntimeException::class, 'Downstream middleware failed.');
+
+    $middleware->handle(
+        laravelAiProvenancePrompt('later request', agent: $agent),
+        function (AgentPrompt $received): string {
+            event(new PromptingAgent('later-invocation', $received));
+
+            return 'next result';
+        },
+    );
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        return;
+    }
+
+    $entries = $recorder->provenanceFor('later-invocation');
+
+    expect($entries)->toHaveCount(1)
+        ->and($entries[0]->contentFingerprint)->toBe(ContentFingerprint::make('later request'))
+        ->and($entries[0]->contentFingerprint)->not->toBe(ContentFingerprint::make('failed request'));
+});
+
+it('fails closed instead of ambiguously correlating overlapping prompts for one agent', function (): void {
+    $agent = Mockery::mock(Agent::class);
+    $middleware = laravelAiProvenanceMiddleware(source: Source::user('agent-prompt'));
+    $overlappingNextCalled = false;
+
+    $middleware->handle(
+        laravelAiProvenancePrompt('first request', agent: $agent),
+        function (AgentPrompt $received) use ($agent, $middleware, &$overlappingNextCalled): string {
+            expect(fn (): mixed => $middleware->handle(
+                laravelAiProvenancePrompt('overlapping request', agent: $agent),
+                function () use (&$overlappingNextCalled): string {
+                    $overlappingNextCalled = true;
+
+                    return 'should not run';
+                },
+            ))->toThrow(LogicException::class, 'Prompt provenance is already pending for this agent instance.');
+
+            event(new PromptingAgent('first-invocation', $received));
+
+            return 'next result';
+        },
+    );
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class)
+        ->and($overlappingNextCalled)->toBeFalse();
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        return;
+    }
+
+    $entries = $recorder->provenanceFor('first-invocation');
+
+    expect($entries)->toHaveCount(1)
+        ->and($entries[0]->contentFingerprint)->toBe(ContentFingerprint::make('first request'))
+        ->and($entries[0]->contentFingerprint)->not->toBe(ContentFingerprint::make('overlapping request'));
+});
+
+it('does not let an earlier cleanup token discard a later registration', function (): void {
+    $agent = Mockery::mock(Agent::class);
+    $registry = new PromptProvenanceRegistry;
+
+    $firstRegistration = $registry->remember(
+        $agent,
+        'first request',
+        Source::user('agent-prompt'),
+        Trust::Untrusted,
+        DataClass::Internal,
+    );
+
+    expect($registry->consume($agent)['prompt'] ?? null)->toBe('first request');
+
+    $registry->remember(
+        $agent,
+        'second request',
+        Source::user('agent-prompt'),
+        Trust::Untrusted,
+        DataClass::Internal,
+    );
+
+    $registry->forgetIfPending($agent, $firstRegistration);
+
+    expect($registry->consume($agent)['prompt'] ?? null)->toBe('second request');
+});
+
+it('does not let approval resumption consume another prompt registration', function (): void {
+    $agent = Mockery::mock(Agent::class);
+    $middleware = laravelAiProvenanceMiddleware(source: Source::user('agent-prompt'));
+
+    $middleware->handle(
+        laravelAiProvenancePrompt('original request', agent: $agent),
+        function (AgentPrompt $received) use ($agent): string {
+            $approval = laravelAiProvenancePrompt(
+                'approve the pending action',
+                'approval-invocation',
+                Decisions::from(['tool-call-1' => true]),
+                $agent,
+            );
+
+            event(new PromptingAgent('approval-event', $approval));
+            event(new PromptingAgent('original-invocation', $received));
+
+            return 'next result';
+        },
+    );
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        return;
+    }
+
+    $entries = $recorder->provenanceFor('original-invocation');
+
+    expect($recorder->provenanceFor('approval-invocation'))->toBe([])
+        ->and($recorder->provenanceFor('approval-event'))->toBe([])
+        ->and($entries)->toHaveCount(1)
+        ->and($entries[0]->contentFingerprint)->toBe(ContentFingerprint::make('original request'));
+});
+
+it('correlates sequential prompts from the same agent independently', function (): void {
+    $agent = Mockery::mock(Agent::class);
+    $middleware = laravelAiProvenanceMiddleware(source: Source::user('agent-prompt'));
+
+    foreach (['first-invocation' => 'first request', 'second-invocation' => 'second request'] as $invocationId => $content) {
+        $middleware->handle(
+            laravelAiProvenancePrompt($content, agent: $agent),
+            function (AgentPrompt $received) use ($invocationId): string {
+                event(new PromptingAgent($invocationId, $received));
+
+                return 'next result';
+            },
+        );
+    }
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        return;
+    }
+
+    expect($recorder->provenanceFor('first-invocation'))->toHaveCount(1)
+        ->and($recorder->provenanceFor('first-invocation')[0]->contentFingerprint)->toBe(ContentFingerprint::make('first request'))
+        ->and($recorder->provenanceFor('second-invocation'))->toHaveCount(1)
+        ->and($recorder->provenanceFor('second-invocation')[0]->contentFingerprint)->toBe(ContentFingerprint::make('second request'));
 });
 
 it('does not duplicate user provenance on approval resumption', function (): void {

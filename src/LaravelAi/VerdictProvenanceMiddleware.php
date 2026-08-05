@@ -48,13 +48,20 @@ final readonly class VerdictProvenanceMiddleware
                 throw new InvalidArgumentException('A Laravel AI invocation ID is required when prompt provenance is not container-managed.');
             }
 
-            $container->make(PromptProvenanceRegistry::class)->remember(
+            $registry = $container->make(PromptProvenanceRegistry::class);
+            $registration = $registry->remember(
                 agent: $prompt->agent,
                 prompt: $prompt->prompt,
                 source: $source,
                 trust: $this->trust,
                 dataClass: $this->dataClass,
             );
+
+            try {
+                return $next($prompt);
+            } finally {
+                $registry->forgetIfPending($prompt->agent, $registration);
+            }
         }
 
         return $next($prompt);
