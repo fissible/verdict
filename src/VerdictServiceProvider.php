@@ -22,6 +22,7 @@ use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
@@ -192,6 +193,16 @@ final class VerdictServiceProvider extends ServiceProvider
             evidence: $app->make(EvidenceRecorder::class),
             clock: $app->make(Clock::class),
         ));
+
+        $this->app->singleton(LiveEvaluationRunner::class, function (): LiveEvaluationRunner {
+            $liveEnabled = config('verdict.evaluation.live_enabled', false);
+            $maximumTrials = config('verdict.evaluation.maximum_trials', 25);
+
+            return new LiveEvaluationRunner(
+                liveEnabled: $liveEnabled === true,
+                maximumTrials: is_int($maximumTrials) ? $maximumTrials : 25,
+            );
+        });
 
         $this->app->scoped(VerdictManager::class, function (Container $app): VerdictManager {
             $message = config('verdict.ai.denied_message', 'This action was not authorized.');
