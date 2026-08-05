@@ -51,6 +51,40 @@ jobs:
           php artisan help verdict:evaluation-baseline
           php artisan help verdict:evaluation-compare
 
+  coverage:
+    runs-on: ubuntu-latest
+    name: Code coverage
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo, sqlite, pdo_sqlite, bcmath, intl
+          tools: composer:v2
+          coverage: pcov
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:12.*" "orchestra/testbench:10.*" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction --no-progress --no-scripts
+          composer run prepare
+
+      - name: Enforce code coverage
+        run: vendor/bin/pest --coverage --min=80 --coverage-html=build/coverage
+
+      - name: Upload coverage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: code-coverage-html
+          path: build/coverage
+          if-no-files-found: error
+          retention-days: 7
+
   tests:
     runs-on: ${{ matrix.os }}
 
