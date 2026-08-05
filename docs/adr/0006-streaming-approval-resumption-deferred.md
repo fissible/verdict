@@ -1,6 +1,24 @@
 # ADR 0006: Streaming approval resumption is deferred, not rejected
 
-Status: Accepted
+Status: Accepted (corrected — see "Correction" below)
+
+## Correction
+
+This ADR originally claimed streaming approval resumption was blocked on a Laravel AI capability gap:
+"a token or callback Laravel AI issues mid-stream that an authorized endpoint can later use to resume
+emission — which does not currently exist in Laravel AI's public surface." That claim is inaccurate.
+Laravel AI v0.10.2 (the vendored version) already provides everything this would require:
+
+- `Laravel\Ai\Contracts\Approvable` / `Laravel\Ai\Concerns\InteractsWithApprovals`, which
+  `AbstractVerdictTool` already implements, wiring `shouldRequestApproval()` directly into
+  `VerdictManager::requestConfirmation()`.
+- `Laravel\Ai\Streaming\Events\ToolApprovalRequest`, a stream event carrying `pendingApprovals` and
+  raw `providerContentBlocks` explicitly for replay when a stream pauses for approval.
+- Resumption via `AgentPrompt->approvalDecisions` / `Decisions` — a fresh-request replay, the exact
+  mechanism Verdict's synchronous confirmation flow (README:273-275) already uses today.
+
+The real blocker is Verdict-side, tracked in
+[issue #22](https://github.com/fissible/verdict/issues/22): see "Decision" below.
 
 ## Context
 
@@ -20,33 +38,38 @@ and distinguish "not designed yet" from "rejected."
 
 ## Decision
 
-Streaming approval resumption is **deferred**, not rejected. It is not implemented today because:
+Streaming approval resumption is **deferred**, not rejected. It is not implemented today because of a
+Verdict-side context-lifetime bug, not a missing Laravel AI capability:
 
-1. Laravel AI's agent middleware — where `VerdictApprovalMiddleware` and the confirmation challenge
-   live — returns control before a streamed response is fully consumed. A `PendingApproval` raised
-   mid-stream has no synchronous point at which Verdict can pause the stream, surface the challenge,
-   and later resume emission from the same position without Laravel AI providing that resumption
-   primitive itself.
-2. Verdict's approval scope is deliberately per-request (README:254-280): an endpoint resolves the
-   challenge only after it has already authorized access to the conversation and pending call. A
-   streamed approval would need an equivalent scoped resumption point — a token or callback Laravel
-   AI issues mid-stream that an authorized endpoint can later use to resume emission — which does not
-   currently exist in Laravel AI's public surface.
+`VerdictApprovalMiddleware::handle()` wraps `$next($prompt)` in `ApprovalExecutionContext::within()`,
+which pushes an "approved tool call IDs" frame, runs the callback, and pops the frame in a `finally`
+block as soon as the callback *returns*. For a synchronous prompt, `$next($prompt)` fully resolves the
+turn — including tool execution — before returning, so the frame is present for the whole time
+`ApprovalManager::executionStateFailure()` needs it. For a streamed prompt, `$next($prompt)` returns a
+`Laravel\Ai\Responses\StreamableAgentResponse` immediately: it wraps a *lazy* generator, so the actual
+tool execution (and the approval check) only happens later, during iteration — after `within()`'s
+`finally` block has already popped the frame. `ApprovalExecutionContext::allows($toolCallId)` then
+finds an empty frame stack and `ApprovalManager::executionStateFailure()` fails closed with
+`ApprovalOutcome::InvalidState`, even for an already-approved decision.
 
-Verdict does not need to design this speculatively. When Laravel AI's streaming API exposes a
-resumable mid-stream approval point (a callback, a resumption token, or an equivalent), Verdict
-should evaluate binding `VerdictApprovalMiddleware` to it. Until then, capabilities that require
-confirmation and might run under a streamed agent must fail closed (as they already do), not silently
-skip the approval boundary.
+Verdict's approval scope is deliberately per-request (README:254-280): an endpoint resolves the
+challenge only after it has already authorized access to the conversation and pending call. Extending
+`ApprovalExecutionContext`'s frame lifetime across a streamed response's iteration — rather than
+popping it when the middleware callback merely *returns* — closes this gap using primitives Laravel AI
+already exposes. This is scoped implementation work, tracked in
+[issue #22](https://github.com/fissible/verdict/issues/22), not a design question awaiting an upstream
+capability. Until issue #22 lands, capabilities that require confirmation and might run under a
+streamed agent must continue to fail closed (as they already do), not silently skip the approval
+boundary.
 
 ## Consequences
 
 - No new API surface is added by this ADR. `BoundTool` and `GuardedTool` behavior is unchanged.
-- README:293-296 already states the limitation; this ADR adds the reasoning behind it so a future
-  contributor can evaluate whether a new Laravel AI capability actually closes the gap, rather than
-  re-litigating whether the gap is intentional.
-- A future capability in Laravel AI that provides a scoped mid-stream resumption point should trigger
-  revisiting this ADR, not a fresh design discussion from zero.
+- README:293-296 already states the limitation; this ADR adds the reasoning behind it, corrected to
+  identify the actual cause and point at issue #22 rather than an upstream capability gap.
+- Issue #22 (extending `ApprovalExecutionContext`'s scope across `StreamableAgentResponse`
+  consumption) is the concrete next step. Closing it resolves this ADR's limitation without requiring
+  any new Laravel AI capability.
 
 ## Alternatives rejected
 
@@ -69,4 +92,4 @@ moment one exists, likely incompatibly.
 
 This is closer to today's actual failure mode, but leaving it undocumented would let a contributor
 mistake the gap for an oversight and attempt to "fix" it by weakening the approval boundary instead
-of by closing the actual missing capability.
+of by closing issue #22, the actual fix.
