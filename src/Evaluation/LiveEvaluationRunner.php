@@ -23,8 +23,8 @@ final readonly class LiveEvaluationRunner
 
         $clock ??= new SystemClock;
         $startedAt = $clock->now();
-        $scores = array_map(
-            static fn (EvaluationCase $case): array => ['passed' => 0, 'failed' => 0, 'errors' => 0],
+        $counters = array_map(
+            static fn (EvaluationCase $case): LiveEvaluationScoreCounter => new LiveEvaluationScoreCounter,
             $suite->cases,
         );
 
@@ -32,25 +32,21 @@ final readonly class LiveEvaluationRunner
             $result = $suite->run($clock);
 
             foreach ($result->cases as $index => $case) {
-                match ($case->status) {
-                    CaseStatus::Passed => $scores[$index]['passed']++,
-                    CaseStatus::Failed => $scores[$index]['failed']++,
-                    CaseStatus::Error => $scores[$index]['errors']++,
-                };
+                $counters[$index]->record($case->status);
             }
         }
 
         $cases = array_map(
-            static fn (EvaluationCase $case, array $score): LiveEvaluationCaseResult => new LiveEvaluationCaseResult(
+            static fn (EvaluationCase $case, LiveEvaluationScoreCounter $counter): LiveEvaluationCaseResult => new LiveEvaluationCaseResult(
                 id: $case->id,
                 version: $case->version,
                 purpose: $case->purpose,
                 trustedSetupFingerprint: $case->input->trustedSetupFingerprint(),
                 untrustedInputFingerprint: $case->input->untrustedInputFingerprint(),
-                score: new Score($score['passed'], $score['failed'], $score['errors']),
+                score: $counter->score(),
             ),
             $suite->cases,
-            $scores,
+            $counters,
         );
 
         return new LiveEvaluationResult(
