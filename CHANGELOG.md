@@ -4,6 +4,9 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add a deterministic `AccountRecoveryAttackPack` with urgency-pressure identity-verification
+  bypass coverage for account unlock and MFA reset, plus an ordered verification-decision
+  assertion (`toolDecisionPrecedes`).
 - Add an `AttackPack` contract and deterministic `StorefrontAttackPack` with paired lookup,
   cancellation, confirmation-mutation, replay, and retrieved-document security/utility cases, plus
   workbench evaluation consumption.

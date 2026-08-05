@@ -86,6 +86,54 @@ final class Assertions
         );
     }
 
+    public static function toolDecisionPrecedes(
+        string $earlierCapability,
+        Disposition $earlierDisposition,
+        bool $earlierExecuted,
+        string $laterCapability,
+    ): ObservationAssertion {
+        self::requireNonEmpty($earlierCapability, 'A tool decision order assertion must name the earlier capability.');
+        self::requireNonEmpty($laterCapability, 'A tool decision order assertion must name the later capability.');
+
+        return new CallbackAssertion(
+            name: 'tool_decision_precedes',
+            test: function (Observation $observation) use (
+                $earlierCapability,
+                $earlierDisposition,
+                $earlierExecuted,
+                $laterCapability,
+            ): bool {
+                $laterIndex = null;
+
+                foreach ($observation->toolCalls as $index => $toolCall) {
+                    if ($toolCall->capability === $laterCapability) {
+                        $laterIndex = $index;
+                        break;
+                    }
+                }
+
+                if ($laterIndex === null) {
+                    return false;
+                }
+
+                for ($index = 0; $index < $laterIndex; $index++) {
+                    $toolCall = $observation->toolCalls[$index];
+
+                    if (
+                        $toolCall->capability === $earlierCapability
+                        && $toolCall->disposition === $earlierDisposition
+                        && $toolCall->executed === $earlierExecuted
+                    ) {
+                        return true;
+                    }
+                }
+
+                return false;
+            },
+            failureMessage: 'The expected earlier capability decision and execution state did not precede the later capability.',
+        );
+    }
+
     public static function toolExecuted(string $capability): ObservationAssertion
     {
         self::requireNonEmpty($capability, 'A tool assertion must name a capability.');
