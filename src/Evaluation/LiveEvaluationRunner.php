@@ -23,7 +23,10 @@ final readonly class LiveEvaluationRunner
 
         $clock ??= new SystemClock;
         $startedAt = $clock->now();
-        $scores = array_fill(0, count($suite->cases), ['passed' => 0, 'failed' => 0, 'errors' => 0]);
+        $scores = array_map(
+            static fn (EvaluationCase $case): array => ['passed' => 0, 'failed' => 0, 'errors' => 0],
+            $suite->cases,
+        );
 
         for ($trial = 0; $trial < $options->trials; $trial++) {
             $result = $suite->run($clock);
