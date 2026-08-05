@@ -22,18 +22,25 @@ use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
+use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
+use Fissible\Verdict\LaravelAi\RecordAgentPromptProvenance;
+use Fissible\Verdict\LaravelAi\RecordToolResultProvenance;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitManager;
 use Fissible\Verdict\Support\SystemClock;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Ai\Events\PromptingAgent;
+use Laravel\Ai\Events\ToolInvoked;
 use LogicException;
 
 final class VerdictServiceProvider extends ServiceProvider
@@ -48,6 +55,7 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->singleton(CapabilityAuthorizer::class, LaravelPolicyAuthorizer::class);
         $this->app->singleton(Clock::class, SystemClock::class);
         $this->app->scoped(ApprovalExecutionContext::class);
+        $this->app->scoped(PromptProvenanceRegistry::class);
 
         $this->app->singleton(ApprovalReceiptStore::class, function (Container $app): ApprovalReceiptStore {
             $store = config('verdict.approvals.store', DatabaseApprovalReceiptStore::class);
@@ -186,6 +194,16 @@ final class VerdictServiceProvider extends ServiceProvider
             clock: $app->make(Clock::class),
         ));
 
+        $this->app->singleton(LiveEvaluationRunner::class, function (): LiveEvaluationRunner {
+            $liveEnabled = config('verdict.evaluation.live_enabled', false);
+            $maximumTrials = config('verdict.evaluation.maximum_trials', 25);
+
+            return new LiveEvaluationRunner(
+                liveEnabled: $liveEnabled === true,
+                maximumTrials: is_int($maximumTrials) ? $maximumTrials : 25,
+            );
+        });
+
         $this->app->scoped(VerdictManager::class, function (Container $app): VerdictManager {
             $message = config('verdict.ai.denied_message', 'This action was not authorized.');
 
@@ -205,6 +223,10 @@ final class VerdictServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $events = $this->app->make(Dispatcher::class);
+        $events->listen(PromptingAgent::class, RecordAgentPromptProvenance::class);
+        $events->listen(ToolInvoked::class, RecordToolResultProvenance::class);
+
         if (! $this->app->runningInConsole()) {
             return;
         }
