@@ -7,6 +7,7 @@ use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
@@ -141,4 +142,20 @@ it('ships database-backed approval receipt defaults', function (): void {
         ->and($defaults['execution_claims']['store'])->toBe(DatabaseExecutionClaimStore::class)
         ->and($defaults['execution_claims']['table'])->toBe('verdict_execution_claims')
         ->and($defaults['execution_claims']['connection'])->toBeNull();
+});
+
+it('ships disabled, bounded live evaluation defaults', function (): void {
+    /** @var array<string, mixed> $defaults */
+    $defaults = require __DIR__.'/../../config/verdict.php';
+
+    expect($defaults['evaluation']['live_enabled'])->toBeFalse()
+        ->and($defaults['evaluation']['maximum_trials'])->toBe(25);
+});
+
+it('resolves the configured live evaluation runner', function (): void {
+    config()->set('verdict.evaluation.live_enabled', true);
+    config()->set('verdict.evaluation.maximum_trials', 2);
+    $this->app->forgetInstance(LiveEvaluationRunner::class);
+
+    expect(app(LiveEvaluationRunner::class))->toBeInstanceOf(LiveEvaluationRunner::class);
 });

@@ -46,4 +46,11 @@ return [
     'ai' => [
         'denied_message' => 'This action was not authorized.',
     ],
+
+    'evaluation' => [
+        // Live evaluation makes real provider calls. It requires this configuration opt-in and
+        // LiveEvaluationOptions(enabled: true) at the call site.
+        'live_enabled' => false,
+        'maximum_trials' => 25,
+    ],
 ];
