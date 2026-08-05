@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-05
+
 - Add a deterministic `AccountRecoveryAttackPack` with urgency-pressure identity-verification
   bypass coverage for account unlock and MFA reset, plus an ordered verification-decision
   assertion (`toolDecisionPrecedes`).
@@ -79,6 +81,7 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/fissible/verdict/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/fissible/verdict/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/fissible/verdict/releases/tag/v0.1.0
