@@ -481,8 +481,57 @@ Untrusted instructions can enter through more than the user's message:
 
 Verdict can preserve explicitly supplied source, trust, classification, and channel labels through
 its provenance ledger. A summary of an untrusted document does not become trusted merely because a
-model produced the summary. Automatic Laravel AI integration is separate from the explicit core
-API and remains planned.
+model produced the summary.
+
+### Laravel AI prompt and tool-result integration
+
+Synchronous Laravel AI agents can opt into prompt provenance with middleware. Trust and data class
+are intentionally selected by the application; the source defaults to `user:agent-prompt` only:
+
+```php
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
+use Laravel\Ai\Contracts\HasMiddleware;
+
+final class StorefrontAgent implements HasMiddleware
+{
+    public function middleware(): array
+    {
+        return [new VerdictProvenanceMiddleware(
+            provenance: app(ProvenanceLedger::class),
+            trust: Trust::Untrusted,
+            dataClass: DataClass::Internal,
+        )];
+    }
+}
+```
+
+The middleware records the original prompt, leaves the `AgentPrompt` unchanged, and avoids
+duplicating the user entry when Laravel AI resumes an approval. Laravel AI's synchronous middleware
+stage does not expose its generated invocation ID; Verdict carries the original prompt to the
+released `PromptingAgent` event and records it there. If an application retrieval middleware has a
+correlation ID, it should record a document before appending it:
+
+```php
+$provenanceMiddleware->recordRetrievedDocument(
+    correlationId: $invocationId,
+    document: $document,
+    source: Source::external('catalog-search'),
+    trust: Trust::Untrusted,
+    dataClass: DataClass::Internal,
+    componentLabel: 'retriever',
+    componentVersion: 'v1',
+);
+$prompt = $prompt->append($document['body']);
+```
+
+Tool results are recorded only for tools that explicitly implement
+`ClassifiesToolResult`. The contract supplies source, trust, and data class; Verdict fingerprints
+the result and never writes its raw value, arguments, or attachments to evidence. Unclassified
+tools produce no tool-result provenance entry. This integration currently targets synchronous
+Laravel AI events; streaming behavior remains separately unproven.
 
 The practical limits of provenance tracking will depend on the integration points Laravel AI
 exposes. Verdict should document those limits rather than imply visibility it does not have.
