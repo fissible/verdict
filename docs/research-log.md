@@ -1233,3 +1233,147 @@ algorithm agility and structural revisions over 6962; nothing that changes a Ver
 decision. Also surveyed: write-once-read-many storage and syslog signing as pre-Merkle
 approaches, and the distinction between tamper-*evident* and tamper-*proof*, which ADR 0007
 already draws correctly.
+
+## 8. Digital forensics
+
+Forensics asks a question the rest of this survey does not: months later, with the incident
+over and the people gone, can anyone reconstruct what happened and defend that
+reconstruction to someone hostile?
+
+### NIST SP 800-86 — guide
+
+Kent, Chevalier, Grance, Dang. "Guide to Integrating Forensic Techniques into Incident
+Response." NIST Special Publication 800-86, 2006.
+
+- Structures forensics as four phases — collection, examination, analysis, reporting — with
+  the recurring obligation of "preserving the integrity of the information and maintaining a
+  strict chain of custody for the data."
+- The chain-of-custody decision is made *before* collection: analysts or management should
+  decide "on the need to collect and preserve evidence in a way that supports its use in
+  future legal or internal disciplinary proceedings." Where that need exists, "a clearly
+  defined chain of custody should be followed to avoid allegations of mishandling or
+  tampering of evidence."
+- Chain of custody is enumerated concretely: "keeping a log of every person who had physical
+  custody of the evidence, documenting the actions that they performed on the evidence and
+  at what time, storing the evidence in a secure location when it is not being used, making
+  a copy of the evidence and performing examination and analysis using only the copied
+  evidence, and verifying the integrity of the original and copied evidence."
+- The default is preservation: "If it is unclear whether or not evidence needs to be
+  preserved, by default it generally should be preserved."
+- Integrity is established by hashing — compute the digest of original and copy "then
+  comparing the digests to make sure that they are the same."
+- Analysis works on copies, never originals, and every step is logged with the tools used,
+  because "the documentation allows other analysts to repeat the process later if needed."
+- Timestamps are treated as untrustworthy by default. File times "may not always be
+  accurate," with the listed causes being that "the computer's clock does not have the
+  correct time... may not have been synchronized regularly with an authoritative time
+  source," that time may lack the expected precision, and that "an attacker may have altered
+  the recorded file times."
+- Cross-source correlation is "complicated by unintentional or intentional discrepancies in
+  time settings among systems," and the mitigation is organizational: "it is usually
+  beneficial to analysts if an organization maintains its systems with accurate
+  timestamping," via NTP.
+- Retention is a policy that must be decided in advance, "supporting historical reviews of
+  system and network activity, complying with requests or requirements to preserve data
+  relating to ongoing litigation and investigations, and destroying data that is no longer
+  needed." Organizations should "determine how many hours' or days' worth of data should be
+  retained, and ensure that systems and applications have sufficient storage available."
+- Collection can itself create liability: capturing content with "privacy or security
+  implications" exposes it to analysts, and "long-term storage of such information might
+  violate an organization's data retention policy."
+
+**Primitive — chain of custody.** Evidence is only as good as the unbroken, documented
+account of who held it and what they did to it.
+**Verdict:** `already implements` in the small, and the gap is the one issue #11 addresses.
+Verdict's evidence is machine-generated and never leaves the database, so most of SP 800-86's
+physical apparatus is inapplicable — there is no bag, tag, or photograph. The transferable
+requirement is integrity verification, which is precisely `restore-evidence-tamper-caveat`
+and issue #11 from section 7.
+
+**Primitive — record time as observed, and treat it as contestable.**
+**Verdict:** `should investigate`. SP 800-86 names three causes of untrustworthy timestamps,
+and two apply directly to Verdict. Every security-state timestamp — `claimedAt`,
+`completedAt`, `indeterminateAt`, `recordedAt`, `expiresAt` — comes from the injected
+`Clock`, bound to `SystemClock` in `src/VerdictServiceProvider.php:56`. Verdict's records
+inherit the host's clock accuracy without recording that they did so, and nothing
+distinguishes "this approval expired" from "this server's clock drifted." That is the same
+underlying exposure as `clock-trust-assumption` from section 1 and the approval-expiry window
+from section 4, seen from the investigator's side rather than the attacker's, and it belongs
+in that ADR's scope as a third motivation rather than a new candidate.
+
+The third cause — "an attacker may have altered the recorded file times" — is the tamper
+question, already tracked.
+
+**Primitive — retention decided in advance, with preservation as the default.**
+**Verdict:** `already implements`, and unusually well. ADR 0009 is a retention policy
+argued from first principles: execution claims are retained indefinitely because "deleting a
+claim row changes the guarantee it exists to provide," and pruning by age "would silently
+reopen ADR 0002's admission guarantee." It prescribes archival rather than deletion, forbids
+pruning `Claimed` or `Indeterminate` rows, and refuses to ship a default window because
+"short is a downstream-system property Verdict cannot know." That is SP 800-86's
+preserve-by-default posture reached independently, and the rate-limit store's pruning command
+is the correctly-scoped exception for state with "no ongoing meaning" (ADR 0001).
+
+The one asymmetry: ADR 0009 governs execution claims, and no equivalent ADR governs
+*evidence* retention, which `docs/limitations.md` leaves entirely to the application
+("review data release, provider, logging, and retention practices"). Given that evidence is
+the layer an investigator actually reads, and that SP 800-86 treats long-term retention of
+sensitive content as itself a liability, the absence is defensible but undocumented as a
+choice. Folding into `evidence-verification-cadence` from section 7 rather than adding a
+candidate — an operator told how often to verify evidence should be told how long to keep it
+in the same breath.
+
+---
+
+### The stale-citation problem is a chain-of-custody problem — finding
+
+Section 7 recorded that commit `ea818ab` deleted the README's tamper-evidence caveat. Applying
+SP 800-86's framing — documentation whose provenance cannot be verified is not evidence of
+anything — the problem is larger than one passage.
+
+Every ADR from 0005 through 0012 cites the README by line number. The README is now 194
+lines. Counting citations in `docs/adr/`:
+
+- `0005` cites README:188-193 and 295-296
+- `0006` cites README:213-296, 254-280, 273-275 (twice), 293-296 (twice), 1218-1235, 1441-1458
+- `0007` cites README:713-715 and 786-788
+- `0008` cites README:713-715 (twice) and 765-767
+- `0009` cites README:617 and 605-617
+- `0010` cites README:678-689, 1471, and 1471-1501
+- `0011` cites README:486-539, 1218-1221, 1271, and 1290 (three times)
+- `0012` cites README:684 (four times) and 1218-1231, 1223-1231
+
+That is 22 citations across 8 ADRs. All but a handful point past the end of the file, and
+the survivors point into a document whose content was entirely rewritten, so none of them
+resolve to what they claim. Several are load-bearing: ADR 0009's guarantee-horizon argument,
+ADR 0007's evidence-layering argument, and ADR 0008's privacy-model argument each quote the
+README as the normative statement the ADR is reasoning about.
+
+ADRs are the repository's record of *why* decisions were made — the closest thing it has to
+a forensic timeline. A timeline whose every citation dangles cannot be checked by the person
+who most needs to check it: a future contributor deciding whether a decision still applies.
+Since `ea818ab` moved content into `docs/security-model.md`, `docs/limitations.md`, and
+`docs/architecture.md`, the citations should be repointed at those files by *section
+heading* rather than line number, so the next reorganization does not break them again.
+
+This is a documentation-integrity defect on the current branch, not a research finding, and
+it should be fixed before the branch merges rather than queued behind the ADR slate.
+**Candidate:** `repoint-adr-citations` (pairs with `restore-evidence-tamper-caveat`)
+
+---
+
+**Surveyed, no hook.** **Order of volatility** (RFC 3227, and SP 800-86's collection
+ordering): governs what to capture first from a live host before it evaporates — Verdict's
+security state is durable database rows, and its in-memory state is gone at request end by
+design. **Bit-stream imaging, write blockers, and slack-space recovery**: media-level
+acquisition with no software-library counterpart. **ISO/IEC 27037** (identification,
+collection, acquisition, preservation) and **SWGDE** best practices: consistent with SP
+800-86 on every point that transfers, and adding no distinct primitive for this analysis.
+**Anti-forensics** — timestomping, log wiping, and trail obfuscation: the adversary model
+that motivates tamper-evidence, already tracked by issue #11. **Forensic readiness** as a
+pre-incident program: an organizational posture rather than a package feature, though it is
+the frame that makes `evidence-verification-cadence` worth writing down. Also surveyed:
+super-timeline construction from heterogeneous sources, and the admissibility questions
+(authentication, hearsay, best evidence) that determine whether any of this survives contact
+with a proceeding — out of scope for a package, but the reason chain of custody is specified
+as tightly as it is.
