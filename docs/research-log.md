@@ -1377,3 +1377,118 @@ super-timeline construction from heterogeneous sources, and the admissibility qu
 (authentication, hearsay, best evidence) that determine whether any of this survives contact
 with a proceeding — out of scope for a package, but the reason chain of custody is specified
 as tightly as it is.
+
+## 9. Runtime verification
+
+### Runtime Verification via Rational Monitor with Imperfect Information — paper
+
+Ferrando and Malvone. ACM Trans. Softw. Eng. Methodol. 35(3), Article 74, February 2026.
+`doi.org/10.1145/3735130`.
+
+- Runtime Verification checks a running system's execution trace against a formal property,
+  usually in Linear Temporal Logic. It is deliberately not exhaustive — "a violation of
+  expected behaviour is only detected if it occurs in the execution trace" — which is what
+  makes it lightweight enough to run in production, unlike model checking.
+- Standard RV uses a three-valued verdict domain. A monitor returns ⊤ "if all continuations
+  of σ satisfy φ; ⊥ if all possible continuations of σ violate φ; ? otherwise." The third
+  value "is specific to RV" and exists because the system is still running: "the monitor can
+  only safely conclude any of the two final verdicts if it is sure such a verdict will never
+  change."
+- Traditional RV assumes **perfect information** — the monitor sees everything. The paper's
+  premise is that this fails for autonomous systems with faulty or unaffordable sensors.
+- The core hazard of imperfect information is stated crisply: when a trace is missing an
+  atomic proposition, that absence "could be incorrectly interpreted as the negation of those
+  propositions." Hence, "it is crucial to differentiate between knowing that something is not
+  true and recognising that something is simply unknown."
+- The fix is to duplicate atomic propositions and add an explicit *undefined* value, yielding
+  additional verdicts beyond ⊤/⊥/?: `uu` (no continuation satisfies or violates), `?≁⊥`
+  ("unknown, but it will never be violated from the monitor's point of view"), and `?≁⊤`, its
+  dual. Uncertainty is thereby graded rather than lumped.
+- A **rational monitor** goes further and "can dynamically manage its visibility." Two
+  classes: *active*, which reasons up front about which information it needs, and *reactive*,
+  which updates its knowledge during execution.
+- Visibility is treated as an economic problem. Each equivalence class of indistinguishable
+  propositions carries a `cost` to make visible and a `payoff` derived from how much that
+  proposition determines the formula's outcome; the monitor solves a knapsack problem to
+  choose what to observe within a resource bound. The motivating example is a robot whose
+  energy budget forbids polling every sensor.
+- Monitors are realized as Moore machines, so the whole construction compiles to a state
+  machine whose output depends only on the current state.
+
+**Primitive — a monitor with imperfect information must distinguish "false" from "unknown,"
+and must say so in its verdict domain.**
+**Verdict:** `already implements`, more thoroughly than its own documentation claims, and
+this paper supplies the vocabulary for saying why the design is right.
+
+Verdict's verdict domain is not boolean. `Disposition` has five values — `Permit`, `Deny`,
+`RequireConfirmation`, `RequireReview`, `Throttle` (`src/Decisions/Disposition.php`) — and
+`Decision::permitsExecution()` collapses them to a boolean only at the admission point
+(`src/Decisions/Decision.php`), which is the correct fail-closed reduction. `Deny` is the
+paper's ⊥. `RequireConfirmation` and `RequireReview` are `?` — the monitor declining to
+conclude — and they are *active* in exactly the paper's sense, because each one triggers
+the acquisition of the missing information rather than guessing at it.
+
+The same distinction appears again in the claim state machine.
+`ExecutionClaimStatus::Indeterminate` exists precisely because Verdict cannot see whether a
+thrown executor's side effect landed, and `VerdictManager::executeAfterRateLimit()` marks the
+claim indeterminate rather than released on a throw (`src/VerdictManager.php:346-358`).
+Releasing it would be the error the paper names: treating absence of confirmation as
+confirmation of absence. ADR 0002 reached this conclusion from first principles; the RV
+literature shows it is a general theorem about monitors, not a payments-specific judgement
+call.
+
+Worth stating in `docs/security-model.md`, which currently presents the threat model as a
+list of failures Verdict makes "less likely" without naming why some outcomes are
+deliberately inconclusive. Small documentation gain, no code change.
+
+**Primitive — acquiring visibility has a cost, and which unknowns to resolve is a budgeted
+choice.**
+**Verdict:** `already implements` the mechanism, `should adopt` the framing. Verdict already
+exposes exactly this trade twice. `ExecutionTargetPolicy` offers `refresh()` against
+`acceptStaleSnapshot()` — buy fresh information with a database read, or accept a stale
+snapshot as "an explicit choice" (`docs/security-model.md`). And `requiresConfirmation()`
+buys the most expensive visibility available: a human.
+
+This is the **fourth** independent source bearing on `confirmation-fatigue-guidance`, after
+tacit's confirmation fatigue in section 1, the confused-deputy literature's "even
+sophisticated users grow habituated to clicking OK" in section 3, and its own citation of
+the same effect. The contribution here is the formal reason: the paper models the monitor's
+resource bound explicitly and selects observations by payoff, where payoff is how much the
+proposition actually determines the outcome. Applied to Verdict, human attention is the
+bounded resource, and a capability that requires confirmation for facts the human cannot
+meaningfully evaluate spends the budget for no payoff. That is a sharper piece of guidance
+than "don't over-prompt," and it is the argument `docs/security-model.md`'s
+`requiresConfirmation()` section should make.
+
+**Primitive — monitorability.** Only some properties can be decided from a finite prefix of
+an execution.
+**Verdict:** `already implements` implicitly, and the framing is worth borrowing. Verdict's
+guarantees are safety properties — nothing unauthorized is *admitted* — and a safety
+violation is always witnessed by a finite prefix, which is why an in-process monitor can
+enforce them at all. Every limitation in `docs/limitations.md` that Verdict declines is a
+liveness or downstream property: that a refund eventually completes, that no bypassed path
+exists, that a provider behaved. Those cannot be concluded from what Verdict observes, at
+any point, by construction rather than by omission. Saying so would convert that document
+from a list of caveats into a statement of where the boundary necessarily falls.
+
+**Primitive — the rational monitor's knapsack over cost and payoff.**
+**Verdict:** `intentionally rejects`. Verdict has no formal property to compute payoffs
+against, no LTL specification of its capabilities, and no automatic way to price a database
+read against a human interruption. The capability author makes these choices declaratively,
+per operation, which is the same decision made by a person instead of a solver — appropriate
+for a library whose safeguards are meant to be "independent choices per operation"
+(`docs/security-model.md`) and legible to a reviewer. Automating it would require the
+application to specify its capabilities in temporal logic, which is a far larger imposition
+than Verdict makes anywhere else.
+
+---
+
+**Surveyed, no hook.** **LTL₃ and the Bauer–Leucker–Schallhart** three-valued semantics that
+the paper builds on: the source of the ⊤/⊥/? domain, already captured above. **Monitor
+synthesis from LTL to Moore machines**, and the automata constructions (`Ã` variants) the
+paper re-engineers: implementation machinery for a specification language Verdict does not
+have. **Decentralised and distributed RV**: monitors coordinating over partial local traces,
+which is the multi-process case Verdict explicitly is not. Also surveyed: the paper's robotic
+case study and its prototype LTL monitoring library, and the related work on monitorability
+under silent actions and unknown event interleaving — the latter is a different uncertainty
+model (ordering unknown, content known) from Verdict's (content unobservable).
