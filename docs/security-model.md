@@ -2,6 +2,8 @@
 
 Verdict is an application-controlled authorization boundary for AI-triggered actions. It protects the capability path you register and execute through Verdict; it does not make an entire AI application safe by itself.
 
+Terms used below are defined in the [glossary](glossary.md).
+
 The central boundary is simple: a model proposes a capability and arguments, while the application resolves the target, evaluates policy, and decides whether the executor may run.
 
 ## Independent policies
