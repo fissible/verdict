@@ -283,3 +283,185 @@ policy-combining algorithms; the combining algorithms are the Cedar entry's terr
 XACML's own are widely considered over-general. Also surveyed without hooks: Rego's
 partial evaluation, Zanzibar's Leopard indexing system and tuple-storage sharding, and
 Cedar's entity-hierarchy `in` operator.
+
+## 3. Object-capability systems
+
+These systems answer a question Verdict is in the business of answering: how do you safely
+give software authority?
+
+### The confused deputy — paper
+
+Norm Hardy, "The Confused Deputy (or why capabilities might have been invented)."
+ACM SIGOPS Operating Systems Review, 1988.
+
+- A confused deputy is a program tricked by a less-privileged caller into misusing its own
+  authority. It is a form of privilege escalation in which nobody explicitly changes any
+  permission.
+- The original scenario: a timesharing compiler let users name a file for debugging
+  output. The compiler also kept usage statistics in `(SYSX)STAT`, so it held write
+  permission across the `SYSX` directory — which also contained the billing records in
+  `(SYSX)BILL`. A user invoked the compiler naming `(SYSX)BILL` as the debug output
+  destination. The open succeeded, because the *compiler's* rights were applied rather
+  than the user's, and the billing data was overwritten.
+- The compiler is the deputy because it acts on the user's behalf; it is confused because
+  it was manipulated into destroying a file the user could never have touched directly.
+- Two ingredients are essential: the designator for the resource does not carry the
+  authority needed to reach it, and the program's own permission is used implicitly. String
+  filenames are incidental — the *separation* is the vulnerability.
+- Capability systems avoid the class by binding designation and authority into one
+  unforgeable thing. Had the client passed a file descriptor rather than a name, the
+  compiler could not have named the billing file at all, because it held no capability to
+  it.
+- The article surveys an alternative: have the service act with the *client's* permissions
+  rather than its own. It names the drawbacks precisely — it demands deliberate security
+  effort from the server, and a careless server may simply skip it; it becomes complicated
+  when the server is itself a client of another service; and it requires trusting the
+  server not to abuse the borrowed rights.
+- Modern instances include CSRF (the browser is the deputy, with cookies supplying ambient
+  authority), the Samy worm, clickjacking (the *user* is the deputy), FTP bounce, and
+  personal firewalls launching a browser to reach the network.
+- On personal firewalls, it observes that prompting users about chained launches helps
+  little, "since false positives are common and even sophisticated users grow habituated to
+  clicking OK."
+- Contemporary treatments now list AI agent delegation as an instance: an administrator
+  authorizes an agent, which delegates onward to a second agent that was never vetted.
+
+**Primitive — the confused deputy.** Authority misuse arising because a designation crosses
+a trust boundary while the permission applied to it silently changes.
+**Verdict:** `already implements`, and this is the clearest available framing of why Verdict
+exists. An AI tool call is the confused-deputy setup exactly: the model is the
+less-privileged party supplying a designation (`order_id` in `ActionProposal::$arguments`),
+and the application executor is the deputy holding real authority. The naive
+implementation — `refundOrder($modelSuppliedId)` — is Hardy's compiler verbatim.
+
+Verdict takes the alternative Hardy describes, acting with the *client's* permissions:
+`LaravelPolicyAuthorizer::decide()` evaluates the ability with
+`forUser($envelope->context->actor)` against the application-resolved target
+(`src/Policies/LaravelPolicyAuthorizer.php`), so the deputy's ambient authority is never
+what admits the action. Verdict also refuses to accept the model's object reference,
+resolving the target from trusted storage instead (`README.md`, `docs/security-model.md`).
+
+What makes this worth recording is that Hardy's stated drawbacks of that alternative are,
+one for one, the limitations Verdict already documents. "Demands deliberate security effort
+from the server, and a careless server may skip it" is `docs/limitations.md`'s "a poorly
+scoped target resolver or policy remains an application bug" and "no protection for
+bypassed paths." "Complicated when the server is itself a client of another service" is
+"no guarantee of downstream side effects." Verdict chose a known trade-off and documented
+its known costs. The README's motivating example would land harder if it named the pattern.
+**Candidate:** `confused-deputy-framing`
+
+**Primitive — habituation defeats interactive prompting.** A third independent source, after
+the tacit paper's "confirmation fatigue" and its own citation of the same effect.
+**Verdict:** `should adopt` (as documentation). Reinforces `confirmation-fatigue-guidance`
+from section 1. Three separate literatures converging on this is enough to justify saying
+so in `docs/security-model.md` rather than leaving `requiresConfirmation()` to look like a
+control that scales.
+
+---
+
+### The object-capability model — model
+
+Dennis and Van Horn (1966); Mark Miller, *Robust Composition* (PhD thesis, Johns Hopkins,
+2006). Realized in KeyKOS, EROS, CapROS, Coyotos, seL4; and in E, Joe-E, Caja, Monte.
+
+- A capability is a transferable right to perform operations on an object. Wielding one
+  requires an unforgeable reference plus a message naming the operation; the entire model
+  rests on references being unforgeable.
+- **Designation and authorization are the same act.** A reference unambiguously designates
+  one object *and* confers permission to send it messages. There is no separate permission
+  table consulted afterward — which is precisely why the confused deputy cannot arise.
+- **No ambient authority.** Objects interact only by sending messages on references held,
+  so no program has background privilege by virtue of who is running it. Language features
+  that break this — assignment to another object's instance variables, reflection over
+  object metadata, and the pervasive ability to import primitive modules such as
+  `java.io.File` — are called out as *undeniable authority*.
+- A reference is obtained in exactly four ways: initial conditions, parenthood (the creator
+  of an object holds the only reference to it), endowment (a creator grants its child a
+  chosen subset of its own references), and introduction (a party holding references to two
+  others passes one to the other).
+- **Only connectivity begets connectivity.** Authority propagates strictly along a
+  preexisting chain of references. The practical consequence is that information-flow
+  properties can be analyzed over the reference graph without reading object code, so
+  guarantees survive the introduction of new and possibly malicious objects.
+- **Attenuation** is the core pattern: from one reference, mint a proxy carrying
+  restrictions — read-only, revocable — that vets messages and forwards only permitted
+  ones. Restricted forwarders and revocable forwarders (caretakers) are instances.
+- **Deep attenuation** applies a restriction transitively to everything reachable through
+  the attenuated reference, typically via a *membrane*.
+- The model aligns with ordinary object-oriented virtues: encapsulation, information hiding,
+  and separation of concerns are the same discipline as least privilege. Tribble's analogy
+  is handing a valet a car key while withholding the right of ownership — a distinction
+  identity-based access control handles poorly when permissions shift dynamically.
+- Some things labeled capabilities fall outside the model; POSIX capabilities are the
+  standard counterexample.
+
+**Primitive — designation combined with authorization in an unforgeable reference.**
+**Verdict:** `intentionally rejects` at the target level, `already implements` at the tool
+level, and the split is worth stating carefully because Verdict's vocabulary invites the
+wrong reading.
+
+Verdict's `Capability` is a **named policy bundle**, not an object capability. It is
+identified by a string (`ActionProposal::$capability`), resolved through a registry that is
+a plain name-to-object map (`src/Capabilities/CapabilityRegistry.php`), and it authorizes by
+consulting Laravel's `Gate` against an actor identity — which is ambient authority in the
+ocap sense. Designation and authorization are separate acts: the model supplies arguments
+naming *which* order, and a policy check on the resolved object decides separately whether
+that is allowed. In ocap terms this is an ACL system operated with discipline.
+
+At the tool level, however, Verdict is closer to the model than it looks.
+`AbstractVerdictTool::__construct()` takes `private readonly string $capability`
+(`src/LaravelAi/AbstractVerdictTool.php`), so a `BoundTool` is welded to exactly one
+capability by the application at construction. A model cannot mint a tool, cannot retarget
+one at a different capability, and cannot invoke a capability for which it was handed no
+tool. The set of tools an agent holds is granted by endowment and is not extensible by the
+agent — which is genuinely "only connectivity begets connectivity," enforced by Laravel AI's
+tool registration rather than by Verdict.
+
+Both halves of that are true, neither is documented, and the name `Capability` points at the
+half that is false. A contributor reading the ocap literature could reasonably propose
+unforgeable capability handles as an alignment fix, when the actual design decision is that
+Verdict delegates authority to Laravel's identity-based authorization on purpose. That
+decision deserves an ADR.
+**Candidate:** `capability-is-not-an-ocap`
+
+**Primitive — attenuation and revocable forwarders.** Mint a restricted or revocable proxy
+from a reference you hold rather than sharing the reference itself.
+**Verdict:** `should investigate`. This is the third independent appearance of attenuation
+in this survey, after `authgate-kernel`'s signed delegation chains and tacit's observation
+that an outer agent can grant a sub-agent a subset of its own capabilities. Verdict has no
+mechanism by which one capability yields a weaker one, and no sub-agent model at all. The
+revocable-forwarder pattern is also the cleanest known answer to the bulk-invalidation
+question raised in section 1, since revocation becomes switching off a proxy rather than
+hunting down issued credentials. Reinforces `subagent-delegation-question` and
+`bulk-approval-invalidation` rather than adding a third candidate.
+
+**Primitive — least authority over least privilege.** Grant the narrowest authority that
+still lets the work happen, rather than the narrowest permission on a fixed identity.
+**Verdict:** `already implements` in guidance, if not in mechanism.
+`docs/security-model.md` instructs that "a capability should use the smallest set that
+adequately protects its real side effect," and `README.md` frames the safeguards as
+independent choices per operation rather than a uniform bundle.
+
+**Primitive — analyze the reference graph instead of the code.** Authority propagation is a
+property of connectivity, checkable without reading implementations.
+**Verdict:** `intentionally rejects`. There is no reference graph to analyze. Verdict's
+authority relationships live in Laravel policies, which are arbitrary PHP, and in
+application-supplied resolver and executor closures (`src/Capabilities/Capability.php`).
+Static analysis of authority would require the capability-safe language discipline the tacit
+paper depends on, which PHP does not provide and which Verdict cannot impose on host
+applications. This is the same boundary already recorded against tacit in section 1.
+
+---
+
+**Surveyed, no hook.** **KeyKOS** and **EROS**: orthogonal persistence with system-wide
+atomic checkpoints, and EROS's verified confinement mechanism — the checkpointing model has
+no bearing on a request-scoped library whose security state is ordinary database rows
+(ADR 0007), and confinement is the information-flow question already recorded under tacit.
+**CapTP** and the E language's distributed layer: promise pipelining, third-party handoff,
+and distributed revocation — Verdict holds no remote object references and passes no
+capabilities across a network boundary, so none of the distributed-ocap machinery has a
+counterpart. **seL4**: machine-checked kernel proofs, an assurance argument about an
+operating system kernel rather than a transferable authorization primitive. Also surveyed:
+sealer–unsealer pairs and rights amplification, Miller's membrane construction in detail,
+Joe-E's and Caja's Java and JavaScript subsetting, and POSIX capabilities as a
+counterexample to the model.
