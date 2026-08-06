@@ -465,3 +465,259 @@ operating system kernel rather than a transferable authorization primitive. Also
 sealer–unsealer pairs and rights amplification, Miller's membrane construction in detail,
 Joe-E's and Caja's Java and JavaScript subsetting, and POSIX capabilities as a
 counterexample to the model.
+
+## 4. Distributed systems primitives
+
+Verdict is not a distributed system. It is a request-scoped library in a single PHP process.
+But it *coordinates* with things that are — databases, queues, payment processors — and the
+primitives this literature developed for that coordination transfer directly.
+
+### Fencing tokens — argument
+
+Martin Kleppmann, "How to do distributed locking." 2016. Written as a critique of Redlock,
+but the durable contribution is the fencing-token argument.
+
+- A distributed lock is not a mutex: nodes and networks fail independently, so holding a
+  lease is not the same as still holding it.
+- The canonical failure: a client acquires a lease, is paused by a stop-the-world GC pause
+  outlasting the lease, and writes anyway when it wakes. Another client legitimately
+  acquired the lock meanwhile. HBase shipped this bug.
+- You cannot fix this by checking lease expiry immediately before writing, because "GC can
+  pause a running thread at *any point*, including the point that is maximally inconvenient
+  for you." Page faults, network-backed disk reads, CPU contention, and a stray `SIGSTOP`
+  produce the same effect, and network delay alone reproduces it without any pause at all.
+- The remedy is a **fencing token**: "simply a number that increases (e.g. incremented by
+  the lock service) every time a client acquires the lock," attached to every write.
+- The token is useless unless the far end enforces it: "this requires the storage server to
+  take an active role in checking tokens, and rejecting any writes on which the token has
+  gone backwards." Client 1 wakes with token 33, the server has already processed token 34,
+  and the stale write is rejected.
+- Redlock's core flaw is that "it does not have any facility for generating fencing tokens" —
+  its random value is not monotonic, and generating monotonic tokens across nodes would
+  itself require consensus.
+- Locks split into two purposes. For **efficiency**, a failed lock costs duplicated work.
+  For **correctness**, it costs "a corrupted file, data loss, permanent inconsistency."
+  The engineering advice differs sharply between the two.
+- Safety must hold unconditionally under arbitrary pauses, delays, and wrong clocks; only
+  liveness may depend on timing. Timeouts are guesses about failure, never proof of it.
+
+**Primitive — the fencing token.** A monotonic counter issued at acquisition, carried on
+every downstream write, and checked by the resource that receives it.
+**Verdict:** `should adopt`. This is the sharpest finding in the survey so far, because
+Verdict already computes a fencing token and then throws it away.
+
+`ExecutionClaimManager` mints each claim with `id: Str::random(64)`
+(`src/ExecutionClaims/ExecutionClaimManager.php:34`), and `DatabaseExecutionClaimStore`
+keys claims by binding fingerprint, so re-claiming a released claim **reuses the same row
+and increments the counter** — `'attempt_count' => $existing->attemptCount + 1`
+(`src/ExecutionClaims/DatabaseExecutionClaimStore.php:135`). A stable identity plus a
+counter that increases on every re-acquisition is a fencing token in Kleppmann's exact
+sense, already durable in the database and already exposed on the `ExecutionClaim` value
+object (`src/ExecutionClaims/ExecutionClaim.php`).
+
+The executor never sees it. `AuthorizedAction` carries only `envelope`, `capability`, and
+`target` (`src/Actions/AuthorizedAction.php`), and it is constructed from the *execution*
+evaluation at `src/VerdictManager.php:232` — before `executeAfterRateLimit()` admits the
+claim at all. The executor is then invoked as a bare `$executor()` with no arguments
+(`src/VerdictManager.php:344`). So the one piece of code that talks to the payment
+processor cannot learn the claim identity or attempt number that Verdict just computed on
+its behalf.
+
+The cost of this shows up in the documentation as an unavoidable-sounding limitation.
+`docs/limitations.md` tells applications an execution claim "cannot guarantee exactly-once
+completion in a payment processor, email API, queue, or remote system after the executor
+begins," and instructs them to "design external integrations with idempotency keys."
+Kleppmann's argument says the first half is permanently true — the resource server must
+participate, and Verdict cannot make it. But the second half is work Verdict is currently
+making applications redo, badly, from a value it is already holding. An application forced
+to invent its own idempotency key will typically derive it from the model-supplied
+arguments, which is exactly the untrusted input Verdict exists to distrust.
+**Candidate:** `claim-identity-for-executors`
+
+**Primitive — safety must not depend on timing; a lease checked before use can expire
+during use.**
+**Verdict:** `should investigate`, as documentation. Verdict validates approval expiry
+against the injected clock (`ApprovalReceipt::isExpiredAt()` returns
+`$time >= $this->expiresAt`, `src/Approvals/ApprovalReceipt.php:28`) at
+`ApprovalEvidencePhase::ExecutionValidation`, then consumes the approval, admits the claim,
+and only then runs the executor. Every one of those steps is a point at which the process
+can pause. Kleppmann's argument is that no rearrangement closes this window — a receipt
+valid at check time can be arbitrarily stale by the time the side effect lands.
+
+That is inherent and not a defect. But `docs/limitations.md` documents the analogous window
+for *targets* ("No complete TOCTOU protection") and says nothing about the same window for
+*approval expiry*, which readers are likelier to assume is exact. Reinforces
+`clock-trust-assumption` from section 1 rather than adding a separate candidate; the
+approval-expiry window belongs in that ADR's scope.
+
+**Primitive — locks for efficiency versus locks for correctness.**
+**Verdict:** `already implements`. `atMostOnce()` is unambiguously a correctness lock, and
+Verdict treats it that way: store failures are operational faults rather than denials
+(ADR 0004), a failed executor marks the claim indeterminate rather than releasing it
+(`src/VerdictManager.php:346-358`), and a failure to record even that outcome throws
+`ExecutionClaimFinalizationFailed`. There is no fail-open path. The
+`Claimed`/`Completed`/`Indeterminate`/`Released` state machine
+(`src/ExecutionClaims/ExecutionClaimStatus.php`) preserves the distinction Kleppmann warns
+against collapsing: "we do not know" is a distinct outcome from "it did not happen."
+
+---
+
+### Idempotency-Key HTTP header — standard
+
+Jena and Dalal, `draft-ietf-httpapi-idempotency-key-header-07`, IETF httpapi WG, October
+2025. Expired Internet-Draft, Standards Track intent. Deployed under this or an equivalent
+name by Stripe, Adyen, PayPal, Square, Twilio, WorldPay, and Google Standard Payments.
+
+- Defines a request header letting clients make non-idempotent methods "such as `POST` or
+  `PATCH` fault-tolerant." The motivating case is a timed-out POST after which the client
+  "is left uncertain about the status of the resource."
+- The **client** generates the key. It is "a unique value generated by the client which the
+  resource uses to recognize subsequent retries of the same request." UUIDs or similarly
+  random identifiers are recommended.
+- Keys must be unique and must not be reused with a different payload.
+- The server may additionally compute an **idempotency fingerprint** from the request
+  payload — a checksum over the whole payload or over selected elements — to judge whether
+  two requests bearing the same key are genuinely the same request.
+- Three server behaviors are specified. Unseen key: process normally. Retry after
+  completion: replay "the result of the previously completed operation, success or an
+  error." Retry while the first is still in flight: return a conflict error rather than
+  reprocessing.
+- Error mapping: 400 for a missing required key, 422 for a key reused with a different
+  payload, 409 for a request still outstanding under the same key.
+- Security considerations name two risks from weak keys: injection, when a server does a
+  cache lookup without validating the client-supplied key, and data leaks, where
+  low-entropy keys let attackers guess keys "and use them to fetch existing idempotent
+  cache entries, belonging to other clients." Mitigations: publish a key format, validate
+  against it, and use a composite lookup key mixing the client key with server-side
+  attributes.
+- Servers may require time-based keys so expired entries can be purged, and should document
+  the expiration policy.
+
+**Primitive — key plus payload fingerprint.** An opaque unique key establishes *which*
+operation; a fingerprint over the payload establishes that a retry is genuinely the same
+operation rather than a different one wearing the same key.
+**Verdict:** `already implements`, in a form that matches the draft closely enough to be
+worth naming. Verdict's execution claim is exactly this two-part construction: `id` is the
+opaque key and `bindingFingerprint` is the payload fingerprint, and the store keys on the
+fingerprint rather than the id (`findLockedByBinding`,
+`src/ExecutionClaims/DatabaseExecutionClaimStore.php`). The draft's three server behaviors
+map onto Verdict's outcomes: unseen fingerprint inserts and admits; a `Claimed` row denies,
+which is the draft's 409; a `Completed` row denies, which is where the draft would replay.
+
+Two differences are worth recording honestly. Verdict **does not store the output**, so it
+cannot replay a completed operation's result the way the draft specifies — a duplicate is
+denied rather than answered with the original response. That is the correct default for a
+security boundary, where returning a cached side-effect result could itself leak, and it
+should stay a deliberate difference rather than drift into a gap. Second, the draft's
+low-entropy warning is already satisfied: `Str::random(64)` draws from PHP's CSPRNG, and
+evidence records `hash('sha256', $claim->id)` rather than the id itself
+(`src/ExecutionClaims/ExecutionClaimManager.php:130`), consistent with ADR 0008.
+
+This standard also strengthens `claim-identity-for-executors` above. The draft's model is
+that the *client* supplies the key — and when Verdict's executor calls Stripe, Verdict's
+application is the client. Verdict holds a high-entropy, per-operation, binding-scoped
+identifier that is precisely what the draft asks that client to send, and does not offer it.
+
+---
+
+### Transactional outbox — pattern
+
+Richardson, `microservices.io/patterns/data/transactional-outbox.html`.
+
+- Addresses the dual-write problem: "How to atomically update the database and send messages
+  to a message broker?" Sending inside the transaction risks the transaction not committing;
+  sending after it risks crashing before the send.
+- "2PC is not an option. The database and/or the message broker might not support 2PC," and
+  coupling a service transactionally to both is undesirable regardless.
+- The service writes the outgoing message to an outbox table **in the same local
+  transaction** as the entity updates, so a rollback discards both. A separate message relay
+  — transaction log tailing or a polling publisher — forwards them.
+- Guarantees that "messages are guaranteed to be sent if and only if the database
+  transaction commits," and preserves application send order.
+- Delivery is at-least-once: the relay may crash after publishing but before recording that
+  it did. "A message consumer must be idempotent, perhaps by tracking the IDs of the
+  messages that it has already processed."
+
+**Primitive — atomic co-commit of a side effect's intent with the state change that
+justifies it.**
+**Verdict:** `intentionally rejects`, and the reasoning is one of the more interesting
+contrasts in this survey. The outbox pattern says: put the auxiliary write *inside* the
+business transaction so they commit together. ADR 0004 says the opposite —
+`IndependentTransactionGuard::assertNoOuterTransaction()` throws `UnsafeOuterTransaction`
+if any Verdict store mutation would run inside an application transaction
+(`src/ExecutionClaims/DatabaseExecutionClaimStore.php`, and the approval and rate-limit
+stores).
+
+Both are right, because the failure modes are opposite. The outbox protects a message that
+must *not* be sent if the business change rolls back. Verdict protects a claim that must
+*still hold* if the business change rolls back — otherwise a rollback silently returns a
+consumed approval or erases the record that an action was admitted, and the replay guarantee
+evaporates after the application has already reported success. Sharing a transaction is
+exactly the hazard ADR 0004 names.
+
+The genuinely useful transfer is the *reason* the outbox works: it removes a distributed
+agreement problem by co-locating the write. Verdict removes the same problem by requiring
+independent durability instead. Neither reaches for 2PC. That symmetry is worth a sentence
+in ADR 0004's alternatives, which currently rejects nested transactions and savepoints but
+does not mention the pattern a reader coming from microservices literature will most likely
+propose. Not worth an ADR of its own.
+
+---
+
+### Saga — pattern
+
+Richardson, `microservices.io/patterns/data/saga.html`; originally Garcia-Molina and Salem,
+1987.
+
+- A saga is "a sequence of local transactions," each committing in its own database and
+  triggering the next, used where a business transaction spans services and "2PC is not an
+  option."
+- Failure is handled by **compensating transactions** that explicitly undo already-committed
+  work, coordinated either by choreography (each service publishes events others react to)
+  or orchestration (a coordinator issues commands and reads replies).
+- The stated drawbacks are the interesting part. There is no automatic rollback: "a
+  developer must design compensating transactions that explicitly undo changes made earlier
+  in a saga."
+- And there is **no isolation** — the I in ACID is absent, so concurrent sagas can observe
+  each other's intermediate states. Developers "must typically use countermeasures, which
+  are design techniques that implement isolation," and "careful analysis is needed to select
+  and correctly implement" them. (The page names no specific countermeasure; it defers to
+  *Microservices Patterns* ch. 4.3. Not summarized here, since the source does not contain
+  them.)
+- Sagas need the outbox or event sourcing to atomically commit state and publish the next
+  step.
+
+**Primitive — compensation in place of rollback, at the cost of isolation.**
+**Verdict:** `intentionally rejects` as a mechanism, `already implements` as an assignment
+of responsibility. Verdict has no notion of a multi-step business transaction and no
+compensation model; a capability is a single admitted side effect.
+`docs/limitations.md` already places compensation with the application — "design external
+integrations with idempotency keys, transactional outboxes, reconciliation, and compensating
+operations where appropriate" — which is the right boundary. Verdict cannot know what
+compensating a refund means.
+
+The saga literature does supply the correct vocabulary for one thing Verdict already does:
+an `Indeterminate` claim is the state a saga would need a compensating step to resolve, and
+`ExecutionClaimResolution::Completed`/`Retryable`
+(`src/ExecutionClaims/ExecutionClaimResolution.php`) is a human- or operator-driven
+resolution rather than an automatic one. That is a deliberate and defensible choice, and
+ADR 0002 covers it.
+
+---
+
+**Surveyed, no hook.** **Vector clocks** and **version vectors**: causality tracking across
+replicas that may concurrently write. Verdict has one writer per request against one
+database; there is no concurrent-replica divergence to order, and the causality question
+Zanzibar raises was already answered in section 2 by in-process evaluation. **CRDTs**:
+conflict-free merge requires that conflicting updates be *mergeable*, which is precisely
+what a security decision must not be — two conflicting authorization outcomes must resolve
+to deny, not to a join. **Consensus** (Paxos, Raft, viewstamped replication): Verdict's
+atomicity comes from a single database's transactions and row locks, and introducing a
+replicated log would mean owning the availability and operational burden that ADR 0004
+explicitly declines. **Optimistic concurrency control**: `docs/limitations.md` already
+assigns version checks and row locks to the application, and Verdict's target refresh is
+deliberately a re-read plus re-authorization (section 2) rather than a compare-and-swap,
+because Verdict does not own the write. **Leases** as a liveness mechanism, separately from
+the fencing-token argument above. Also surveyed: two-phase commit and its blocking
+coordinator failure mode, exactly-once as a delivery myth versus effectively-once as an
+end-to-end property, and at-least-once plus idempotence as the practical substitute.
