@@ -1047,3 +1047,189 @@ kernel-level capture feeding graph anomaly detection — a systems-monitoring po
 than a library primitive, and one whose graph is built from syscalls Verdict never sees.
 Also surveyed: provenance bundles as signed units, and the distinction between provenance
 *capture* and provenance *analysis*.
+
+## 7. Audit systems
+
+Attest already shares DNA with this ecosystem, and issue #11 already proposes an
+`AttestEvidenceRecorder`. This section therefore looks for what that issue does *not* cover.
+
+### Certificate Transparency — RFC 6962
+
+Laurie, Langley, Kasper. RFC 6962 (Experimental, 2013), obsoleted by RFC 9162 (CT v2.0).
+
+- Targets CA misissuance by making issuance publicly observable rather than by preventing it.
+  The spec is explicit about the limit: "The logs do not themselves prevent misissue, but
+  they ensure that interested parties (particularly those named in certificates) can detect
+  such misissuance."
+- Detection is not automatic either: "The logs do not themselves detect misissued
+  certificates; they rely instead on interested parties, such as domain owners, to monitor
+  them."
+- The log is an append-only **Merkle Hash Tree** over SHA-256, with domain-separated
+  hashing — `0x00` prefix for leaves, `0x01` for internal nodes — because "this domain
+  separation is required to give second preimage resistance." Tree shape "is uniquely
+  determined by the number of leaves."
+- An **audit path** (inclusion proof) is "the shortest list of additional nodes in the
+  Merkle Tree required to compute the Merkle Tree Hash for that tree." Verification
+  recomputes the root: "If the root computed from the audit path matches the true root, then
+  the audit path is proof that the leaf exists in the tree."
+- A **consistency proof** is the append-only guarantee, verifying "that the first m inputs
+  D[0:m] are equal in both trees" — the old tree is a prefix of the new one, so nothing was
+  rewritten. Both proof types are O(log n), bounded by ceil(log2(n)) + 1 nodes.
+- A **Signed Certificate Timestamp** is "the log's promise to incorporate the certificate in
+  the Merkle Tree within a fixed amount of time known as the Maximum Merge Delay (MMD)."
+  The MMD bounds exposure: it is "the maximum period of time during which a misissued
+  certificate can be used without being available for audit."
+- The **Signed Tree Head** commits to a root hash, tree size, and timestamp, and must be
+  available on demand no older than the MMD, re-signed with a fresh timestamp even when
+  nothing new is submitted.
+- Two roles do the work. **Monitors** watch whole logs — "a monitor needs to, at least,
+  inspect every new entry in each log it watches." **Auditors** check partial data:
+  consistency between any two STHs, and inclusion of an SCT in an STH dated after
+  SCT timestamp + MMD.
+- **Gossip** catches equivocation: "All clients should gossip with each other, exchanging
+  STHs at least; this is all that is required to ensure that they all have a consistent
+  view," and "as soon as two conflicting Signed Tree Heads for the same log are detected,
+  this is cryptographic proof of that log's misbehavior." Consistency proofs mean "if a log
+  attempts to show different things to different people, this can be efficiently detected by
+  comparing tree roots."
+- An SCT proves publication, not correctness: it "is not a guarantee that the certificate is
+  not misissued."
+
+**Primitive — transparency logs shift the goal from prevention to efficient, third-party
+detection.**
+**Verdict:** `should investigate`, tracked by issue #11, which this reading substantially
+strengthens rather than changes. Two things in RFC 6962 go beyond that issue's scope and are
+worth capturing before the adapter is built.
+
+First, **hash chain and Merkle tree are not the same guarantee.** A hash-chained log makes
+tampering detectable by replaying the chain — verification is O(n) and requires the whole
+log. A Merkle tree adds O(log n) inclusion proofs and consistency proofs, which is what lets
+a *third party* verify one record, or verify that the log has only ever been appended to,
+without holding or trusting the whole log. Issue #11 buys detection-on-verification;
+CT-style proofs would buy portable verification. That is a deliberate scope choice worth
+recording as such rather than discovering later.
+
+Second, and more important: **a tamper-evident log nobody verifies is not a control.** CT
+works because monitors and auditors are a defined, staffed role with a bounded latency
+(the MMD). Issue #11 delivers `attest:verify` as a command; it does not establish who runs
+it, how often, or what happens when it fails. `docs/limitations.md`'s "Operational
+responsibilities" list is the natural home for a verification cadence, and it currently ends
+at "review data release, provider, logging, and retention practices." Without that, an
+attested evidence store is strictly better than a mutable one but still only detects
+tampering at the moment somebody chooses to look.
+**Candidate:** `evidence-verification-cadence`
+
+**Primitive — non-equivocation requires an external observer.** A single operator can serve
+a self-consistent forked view forever; only gossip or an external anchor exposes it.
+**Verdict:** `already implements` by proxy, and issue #11 should say so. Attest's optional
+Bitcoin-anchored timestamping is the external anchor that plays gossip's role for a
+single-operator log — it makes the operator unable to rewrite history without contradicting
+a commitment they do not control. That is the strongest argument for anchoring being part of
+the adapter rather than an optional extra, and it is not currently the stated rationale.
+
+---
+
+### SCITT — architecture
+
+`draft-ietf-scitt-architecture-22`, IETF SCITT WG. Supply Chain Integrity, Transparency, and
+Trust.
+
+- Addresses supply-chain traceability, deliberately declining to model the semantics of the
+  statements it carries, which are "opaque to Transparency Service, and MAY be encrypted."
+- A **Signed Statement** is "an identifiable and non-repudiable Statement about an Artifact
+  signed by an Issuer," carried as COSE_Sign1.
+- A **Receipt** is "a cryptographic proof that a Signed Statement is included in the
+  Verifiable Data Structure" — signed proofs of verifiable data-structure properties,
+  required to support inclusion proofs and optionally consistency proofs. Critically, a
+  Receipt is "universally verifiable without online access to the TS."
+- A **Transparent Statement** is "a Signed Statement that is augmented with a Receipt created
+  via Registration in a Transparency Service." The Receipt occupies an unprotected COSE
+  header, so the object "remains a valid Signed Statement and may be registered again in a
+  different Transparency Service."
+- **Registration Policy** is "the pre-condition enforced by the Transparency Service before
+  registering a Signed Statement." Policies and trust anchors "must themselves be registered
+  on the log so they are auditable," and the service applies the most recently committed
+  policy at registration time.
+- Required log properties: append-only, non-equivocation, replayability. `iss` identifies the
+  signer; `sub` groups statements about one artifact so relying parties can "ensure
+  completeness and Non-equivocation across Statements."
+- Identity is bound cryptographically at signing; authorization is separate and
+  deployment-specific. "It is the role of the relying party to decide which Transparency
+  Services and Issuers they choose to trust."
+- The honest limit, stated plainly: "Transparency does not prevent dishonest or compromised
+  Issuers, but it holds them accountable." Registration "only proves it was produced by an
+  Issuer," and issuers may still make false statements or selectively withhold them.
+- Explicit non-goals include revocation strategies, key discovery, statement storage,
+  relying-party trust decisions, and the choice of verifiable data structure.
+
+**Primitive — the registration policy is part of the audited record.** A log entry means
+nothing unless you also know what checks were in force when it was accepted.
+**Verdict:** `should adopt`. This is the **third** independent source arguing for it, after
+Cedar's and OPA's decision-log revisions in section 2 and PROV's plan-and-version notion in
+section 6. SCITT states it as a hard requirement: the policy must be on the log, and the
+version applied is the one committed at registration time.
+
+Verdict's `DecisionEvidence` records `targetPolicy`, `rateLimitPolicy`, and
+`executionClaimPolicy` as *names* (`src/Evidence/DecisionEvidence.php`), so evidence for a
+capability whose rate limit was silently raised from 5 to 500 is byte-identical to evidence
+from before the change. Three separate audit and authorization literatures converging on
+this makes it the best-corroborated finding in the survey.
+**Candidate:** `capability-configuration-fingerprint` (from section 2; this is corroboration,
+not a new candidate)
+
+**Primitive — the receipt as a portable artifact the relying party verifies offline.**
+**Verdict:** `intentionally rejects`, but the name collision deserves a note. Verdict's
+`ApprovalReceipt` is not a receipt in SCITT's sense: it is a database row representing a
+pending or granted human approval, validated and consumed inside the same process
+(`src/Approvals/ApprovalReceipt.php`), and it never leaves as a verifiable artifact. Nothing
+Verdict returns from `runBound()` lets a caller verify offline that an operation was
+authorized. That is a defensible boundary for an in-process library — the caller is inside
+the trust boundary already — but a reader arriving from the transparency ecosystem will
+read "receipt" as SCITT's meaning. Worth a sentence in ADR 0007, which already draws the
+evidence/attestation line, rather than a candidate of its own.
+
+---
+
+### The README no longer states that evidence is not tamper-evident — regression
+
+Not a research finding, but it surfaced while grounding this section and it is
+security-relevant.
+
+ADR 0007 quotes the README as stating the evidence store is "an ordinary mutable audit
+store... not append-only, immutable, signed, or tamper-evident," citing README:786-788
+(`docs/adr/0007-evidence-layering.md:24-27`). Issue #11's problem statement quotes the same
+passage as its premise.
+
+That passage no longer exists. Commit `ea818ab` ("docs: redesign README for progressive
+disclosure") reduced the README from 1,614 lines to 194 and deleted the caveat without
+relocating it. Neither `docs/limitations.md` nor `docs/security-model.md` — both added in
+that same commit — contains any statement that evidence is not tamper-evident.
+`docs/limitations.md` covers PII inference under its fingerprint-first heading and stops
+there. ADR 0007's other README citations (713-715, 779-781) are stale for the same reason.
+
+What remains in the README is `README.md:153`, which says "context-release policies and
+layered evidence help you decide what may be disclosed to a model and what audit evidence is
+retained." A reader who gets only that could reasonably conclude the evidence store is
+audit-grade. Under CT's framing the distinction is the whole point: an unverifiable log is a
+claim by its operator, and RFC 6962 exists because that is not good enough.
+
+The fix is small — restore the caveat to `docs/limitations.md` as its own subsection and
+repoint ADR 0007 at it — but it should not wait for the ADR slate.
+**Candidate:** `restore-evidence-tamper-caveat`
+
+---
+
+**Surveyed, no hook.** **Sigstore** and **Rekor**: keyless signing via short-lived
+OIDC-bound certificates (Fulcio) with a Rekor transparency log — the ephemeral-key model
+solves key management for software publishing, a problem Verdict does not have, and Rekor's
+log semantics are the RFC 6962 material above. **The Update Framework (TUF)** and
+**in-toto**: role separation with threshold signing, and link metadata attesting supply-chain
+steps; in-toto's layout-versus-link split is structurally similar to the registration-policy
+point already captured from SCITT. **Crosby and Wallach**, "Efficient Data Structures for
+Tamper-Evident Logging" (USENIX Security 2009): the history tree RFC 6962's construction
+derives from, and the origin of the tamper-evident-log-versus-trusted-hardware framing.
+**Trillian** as a general-purpose verifiable log implementation. **RFC 9162** (CT v2.0):
+algorithm agility and structural revisions over 6962; nothing that changes a Verdict
+decision. Also surveyed: write-once-read-many storage and syslog signing as pre-Merkle
+approaches, and the distinction between tamper-*evident* and tamper-*proof*, which ADR 0007
+already draws correctly.
