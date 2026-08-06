@@ -2,6 +2,10 @@
 
 Status: Accepted (rejection)
 
+## Related issues
+
+- [#19](https://github.com/fissible/verdict/issues/19) (open) documents which security features are verified in streamed and queued execution modes.
+
 ## Context
 
 README:1290 already names the tension this ADR resolves: "Streaming output cannot be retracted after

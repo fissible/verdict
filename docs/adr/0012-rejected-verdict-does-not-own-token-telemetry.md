@@ -2,6 +2,10 @@
 
 Status: Accepted (rejection, narrowed from the original proposal)
 
+## Related issues
+
+- [#18](https://github.com/fissible/verdict/issues/18) (open) audits Verdict's Laravel AI dependency surface and undocumented assumptions, including provider-owned behavior.
+
 ## Context
 
 The backlog's "ideas explicitly rejected" suggestion named "making Verdict responsible for provider

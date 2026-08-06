@@ -6,6 +6,12 @@ Status: Accepted
 > consumption and atomic approval-receipt consumption. Until its first implementation slice lands,
 > the runtime still follows this ADR's original approval-first order.
 
+## Related issues
+
+- [#16](https://github.com/fissible/verdict/issues/16) (open) benchmarks rate-limit contention and latency.
+- [#19](https://github.com/fissible/verdict/issues/19) (open) consolidates the accepted gate ordering for readers.
+- [#20](https://github.com/fissible/verdict/issues/20) (open) adds genuine concurrent-access coverage for rate limits.
+
 ## Context
 
 Laravel already provides request and queue throttling. Verdict needs a narrower security boundary:

@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+## Related issues
+
+- [#19](https://github.com/fissible/verdict/issues/19) (open) documents the accepted security-state ordering and execution-mode compatibility.
+
 ## Context
 
 `BoundTool` currently resolves a target once during proposal evaluation and reuses that same
