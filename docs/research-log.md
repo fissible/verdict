@@ -1850,3 +1850,285 @@ claims**, and **OpenID Connect** ID tokens: the surrounding ecosystem RFC 8693 e
 surveyed: continuous access evaluation as an alternative to short token lifetimes, and the
 "never trust, always verify" formulation, which the NIST tenets state more precisely and less
 sloganishly.
+
+## 12. Agent governance — the three closing papers
+
+Three 2026 papers on securing autonomous agents specifically. They are the most directly
+comparable prior art to Verdict in this entire log, and they are useful mainly as an outside
+check on whether Verdict's design choices are the ones this field converges on.
+
+### Ramachandran & Mishra — Identity-Aware Governance for Autonomous AI Agents
+
+SSRN 6439998, March 2026. Framework paper, developed alongside a NIST NCCoE comment
+submission.
+
+- Frames the core defect as **ambient authority inheritance**: "the agent operates with
+  whatever credentials exist in the runtime environment, regardless of who triggered the action
+  or what they are authorized to do," so "a junior engineer's prompt and a principal
+  architect's prompt execute with identical permissions."
+- The paper's central distinction is **governance by trust versus governance by enforcement**.
+  Governance by trust "places policy instructions in prompts or configuration files that the
+  model reads and chooses to comply with," and "provides no security guarantees." Governance by
+  enforcement "places policy evaluation at an infrastructure layer that the agent cannot access
+  or modify," where "authorization decisions are made by deterministic systems outside the
+  model's context window." Only the second "provides the assurance level required."
+- Proposes a four-layer identity model: agent type, agent instance (SPIFFE-aligned), **delegated
+  human identity** — "whose authority the agent operates under... the critical missing layer in
+  all current agent frameworks" — and session/task identity.
+- Requires **identity-inherited permissions**: agents "inherit the scoped permissions of the
+  triggering user, not ambient credentials. This limits blast radius of any compromise to what
+  the triggering user could have done directly."
+- Names the **oracle problem**: "the agent is simultaneously actor and witness to its own
+  actions. An agent can report success while having silently failed, hallucinated the action, or
+  taken a different action than intended." Current proposals to log the reasoning chain "rely on
+  the agent itself producing this log, with no independent verification."
+- Treats **hallucination as a first-class security threat**, distinct from adversarial attack:
+  agents hallucinate tool parameters, hallucinate authorization ("reasoning that they have
+  permission when they do not"), and emit chain-of-thought that is "post-hoc rationalizations
+  rather than accurate reflections." Audit systems should "treat reasoning chains as
+  supplementary evidence rather than authoritative records."
+- Names **composition attacks within authorized scope**: "each individual step passes per-call
+  authorization checks, but the sequence collectively achieves an unauthorized outcome." An
+  authorized file read plus an authorized network call is exfiltration. Proposes sequence-aware
+  evaluation, then concedes it "cannot anticipate all novel compositions."
+- Section 7.2, "The Model as Adversary": "a security framework that treats the LLM as a
+  compliant, predictable component will systematically underestimate risk."
+- Their top recommendation to the standards community is to **standardize "on behalf of"
+  delegation**, "the single highest-impact deliverable — every other control depends on reliably
+  answering 'whose authority is this agent operating under?'"
+
+**Primitive — governance by enforcement, outside the model's context window.**
+**Verdict:** `already implements`, and this paper supplies the cleanest external vocabulary yet
+for what Verdict's tagline compresses into four words. "Models propose. Applications authorize"
+*is* the trust/enforcement distinction. `VerdictManager::runBound()` evaluates policy in PHP,
+against application-registered `Capability` and `ExecutionTargetPolicy` objects, in a code path
+the model cannot reach or influence; the model's only input is the argument payload inside
+`ActionEnvelope`. Nothing in the decision path reads model output as instruction. Worth citing
+this framing in the docs, because "governance by trust vs governance by enforcement" explains
+Verdict's value proposition to a security reviewer faster than any of Verdict's own prose does.
+
+**Primitive — identity-inherited permissions bounded by the triggering user.**
+**Verdict:** `already implements`. `LaravelPolicyAuthorizer` evaluates
+`Gate::forUser($envelope->context->actor)`, so a capability resolves against the human's own
+Laravel policy and the agent gains nothing the actor did not already have. Blast radius is
+bounded by the actor exactly as the paper asks. This is a stronger property than Verdict
+currently claims for itself.
+
+**Primitive — the oracle problem: the agent is actor and witness.**
+**Verdict:** `already implements`, structurally and probably without having framed it this way.
+Two mechanisms matter. First, `DecisionEvidence` is written by `VerdictManager`, not by the
+executor or the model, and the executor receives an `AuthorizedAction` carrying only envelope,
+capability, and target — it has no handle on the evidence recorder or the claim. Second,
+completion is inferred from control flow rather than self-report: `$output = $executor();`
+(`src/VerdictManager.php:344`), and a throw marks the claim indeterminate (`:346-358`) while a
+normal return completes it. A model that claims "I refunded the order" cannot cause a claim to
+be marked complete; only actually returning from the executor does that. Verdict's record is
+therefore a witness account, not a defendant's statement — which is the property the paper says
+is missing everywhere. This deserves a documented sentence.
+
+The residual gap is the paper's stronger version — *independent action verification*, querying
+the target system to confirm the effect. Verdict deliberately does not do this
+(`ExecutionResult::executed($evaluation, $output)` passes the executor's return through
+untouched), and shouldn't: verifying that a refund actually landed is domain logic. Worth being
+explicit that the boundary is "Verdict witnesses admission and completion, not effect."
+
+**Primitive — composition attacks: authorized steps summing to an unauthorized outcome.**
+**Verdict:** `should investigate`, with the caveat that the paper itself concedes no complete
+defense exists. Verdict authorizes strictly per-call: each `runBound()` evaluates one
+capability against one target, and no state carries across calls except through the stores.
+The one primitive that spans calls is the semantic rate limit, and it is genuinely
+sequence-aware in a limited sense — `RateLimitPolicy::fixedWindow()` takes an
+application-supplied `$keyUsing` resolver (`src/RateLimits/RateLimitPolicy.php:44-52`), so an
+application can deliberately key one bucket across several capabilities and give a whole class
+of operations a shared budget. That converts "ten small refunds" from ten independently
+authorized actions into one exhausted budget.
+
+This is a real partial answer to composition attacks that Verdict's documentation never frames
+as one — it is presented purely as rate limiting. A worked example of a cross-capability shared
+bucket, explained as bounding a sequence rather than a frequency, would be a documentation
+change with security value and no code change.
+**Candidate:** `shared-bucket-composition-bound`
+
+**Primitive — the delegated human identity layer.**
+**Verdict:** `should investigate` — the **sixth** and final appearance of the delegation theme,
+and the paper calls it "the single highest-impact deliverable" in the field. Nothing new to add
+beyond section 11's `subagent-delegation-question` and `actor-identity-in-evidence`, except
+that the convergence is now unanimous across every agent-security source surveyed.
+
+---
+
+### Llambí-Morillas & Fernández-Fernández — Toward cryptographically verifiable authorization for autonomous AI agents
+
+arXiv:2607.21325v1 [cs.CR], July 2026. Formal model plus a Groth16 zk-SNARK proof of concept.
+
+- Argues authorization for agents should be studied as a cryptographically verifiable relation
+  binding "an agent principal, a concrete authorization request, an execution context, and the
+  satisfaction of an applicable policy."
+- Opens with the observation that authentication does not imply authorization, and neither does
+  delegation: `Delegate(U, Ai, κ) ⇏ AuthZ(qi)`. "Delegation may establish authority over a broad
+  class of operations, while the permissibility of a concrete request may still depend on the
+  target resource, the execution context, the applicable policy version, and temporal validity."
+- The paper's central contribution is a **three-way structural separation**, stated as
+  `Identity Binding ≢ Authorization Request Binding ≢ Runtime Execution Binding`. "A system may
+  correctly authenticate an agent yet fail to bind authorization evidence to a specific request.
+  It may likewise bind evidence to a request without guaranteeing that the same request is
+  executed at runtime. These are structurally distinct security properties requiring separate
+  mechanisms."
+- **Runtime execution binding is the one they cannot solve.** `VerifyAuth(pp, xq, π) = 1 ⇏
+  qexec = qauth`. The gap "is structural rather than incidental. A ZK circuit is evaluated at
+  proof generation time over a committed representation of the intended request; it has no
+  access to the runtime state at execution time and cannot constrain what the agent subsequently
+  does with the authorization it receives."
+- Their TOCTOU statement is explicit: "If verification occurs at time tv and execution at
+  te > tv, the relevant context may change: `ctv ≠ cte`," therefore
+  `Authorized(q, ctv) = 1 ⇏ Authorized(q, cte) = 1`.
+- Their proposed fix requires "a trust anchor that operates at execution time rather than at
+  proof generation time... remote attestation, a trusted execution environment, or verifiable
+  execution receipts." Table 2 lists runtime execution binding as **Open**, mechanism: "No
+  trusted execution evidence."
+- Replay resistance is a nonce plus gateway state, and they note honestly that "circuit
+  verification is stateless, whereas replay resistance requires" external state.
+- On authorization frequency: "a low-frequency model, in which a proof is generated once per
+  task plan and verified once at the gateway, presents a fundamentally different latency budget
+  from a high-frequency model in which each tool invocation triggers an independent
+  authorization cycle," and reducing frequency "increases the importance of binding the
+  authorized plan to subsequent execution."
+- Multi-hop delegation is left open too: a proof that agent Ak satisfies a local policy "does
+  not by itself establish that Ak was authorized to act under the scope delegated by Ai, or that
+  scope has not been expanded across hops."
+- They warn that a valid proof of the wrong relation is still wrong: if the circuit "does not
+  faithfully encode the intended organizational policy... then a valid proof may correspond to
+  an incorrectly authorized decision."
+
+**Primitive — runtime execution binding, distinct from request binding.**
+**Verdict:** `already implements`, and this is the most striking single finding in the log. The
+property this paper formalizes as its central open problem is the property
+`ExecutionTargetPolicy` exists to provide. `runBound()` refreshes the target immediately before
+execution and re-authorizes against the refreshed value (`src/VerdictManager.php:182`, `:192`),
+and the execution claim's binding fingerprint ties admission to that specific resolved target.
+Verdict closes `Authorized(q, ctv) = 1 ⇏ Authorized(q, cte) = 1` by making tv and te adjacent
+and by refusing to execute if the target moved in between.
+
+Verdict achieves this not cryptographically but architecturally — it is *in the same process
+as* the executor, so it has the execution-time trust anchor a gateway does not. That is the
+whole reason an in-process library can offer something a ZK gateway cannot, and it is a
+sharper argument for Verdict's deployment model than "it's convenient." It is also the fourth
+corroboration of `reauthorize-after-refresh`, and the strongest, because here the absence of
+the mechanism is stated as an unsolved research problem.
+
+**Primitive — the three-layer binding separation as a design vocabulary.**
+**Verdict:** `should adopt` as documentation. The triad maps onto Verdict almost field by field:
+identity binding is `ActionContext::$actor` and the Laravel gate; authorization-request binding
+is the argument fingerprint plus idempotency key in `DecisionEvidence`; runtime execution
+binding is the target policy plus the claim binding fingerprint. Laying the three out against
+Verdict's components would let a reader see which mechanism serves which property, and would
+make the actor gap from section 11 visible as a hole in the first column rather than as a
+missing field in a list of 25.
+**Candidate:** `binding-layers-documentation`
+
+**Primitive — scope attenuation must be proved across delegation hops.**
+**Verdict:** `should investigate`. Same theme, and it adds one specific requirement the other
+five sources left implicit: it is not enough to record that delegation happened, the system must
+establish "that scope has not been expanded across hops." That is the ocap attenuation
+requirement from section 3 restated as a verification obligation. Folded into
+`subagent-delegation-question`.
+
+**Primitive — a valid proof of an unfaithful policy is still an unsafe decision.**
+**Verdict:** `already implements` at the level Verdict operates. Their concern — the encoded
+relation may not match the intended policy, and nothing detects the divergence — is the reason
+Verdict delegates to Laravel gates rather than defining a policy language: the application's
+existing, already-tested authorization logic *is* the intended policy, so there is no encoding
+step to get wrong. Worth noting as a deliberate advantage of not inventing a policy DSL (a
+choice section 2 recorded against Cedar and Rego). It also reinforces
+`capability-configuration-fingerprint`: what Verdict *cannot* currently detect is the policy
+changing between two recorded decisions.
+
+---
+
+### Li et al. — Agent-BOM: Toward Security-Auditable LLM Agents
+
+arXiv:2605.06812v1 [cs.AI], May 2026. Huazhong UST, NTU Singapore, Fudan, and others.
+
+- Motivating problem is a **semantic gap**: "the same physical action may have different
+  security meanings under different semantic paths." A file deletion "may be an authorized user
+  request, or it may be an unauthorized action induced by poisoned retrieved content, malicious
+  memory residue, or deceptive inter-agent messages."
+- "System logs and API traces can record what happened, but they rarely explain how the goal was
+  formed, how the context was contaminated, what reasoning supported the action, or why the
+  decision was made." SBOMs and runtime logs "provide only fragmented evidence."
+- Agent-BOM is a hierarchical attributed directed graph `BS = (A, V, E, α)` splitting a **static
+  capability layer** (models, tools, prompts, long-term memory) from a **runtime semantic layer**
+  (goals, contexts, reasoning, decisions, actions), joined by cross-layer binding edges that
+  record "when and why a runtime state invokes a static capability object."
+- Four edge families: structural dependency, runtime evolution, cross-layer binding, and
+  cross-agent propagation.
+- The **attribute schema** is what makes it more than a provenance graph: `α` attaches security
+  metadata — `Source`, `Integrity_status`, `Basis`, `Intent`, `Environment_change`,
+  `Authentication_status`, `Permission_scope`, `Confirmation_status` — to nodes and edges,
+  because "graph topology can recover factual paths, but topology alone lacks normative security
+  context."
+- Auditing is a four-stage query: risk-entry localization, backward tracing to root cause,
+  forward tracing to assess propagation, and rule-based adjudication. Rules are instantiated
+  against the OWASP Agentic Top 10.
+- Rule 9 (ASI09, Human-Agent Trust Exploitation) is the one closest to Verdict: entry is an
+  external or observation node; adjudication requires that the entry "carries unverified or
+  fabricated semantics," that backward tracing shows it "comes from a compromised external
+  system," and that forward tracing shows "the agent bypasses `Confirmation_status` mechanisms
+  and uses the exploited trust to execute high-risk actions."
+- Rule 6 (memory poisoning) traces a `Source` attribute backward to the origin of fabricated
+  memory, then forward to any downstream node that reused it — cross-session contamination is
+  only visible because the trace crosses sessions.
+- Deployed as a plugin, reconstructing attack chains from live executions.
+
+**Primitive — provenance as a traversable graph rather than a flat log.**
+**Verdict:** `intentionally rejects` at this scale, with one narrower piece worth taking.
+`ProvenanceEntry` (`src/Evidence/ProvenanceEntry.php:16-25`) records `correlationId`, `source`,
+`trust`, `dataClass`, `channel`, `contentFingerprint`, and an optional component label and
+fingerprint. Its security attributes are a close match for Agent-BOM's `Source` and
+`Integrity_status`: `Trust`, `DataClass`, and `ContextChannel` are exactly the "normative
+security context" the paper says topology alone lacks, and Verdict attaches them by
+construction rather than by instrumentation. Modelling agent goals, reasoning trajectories, and
+prompt templates as graph nodes is out of scope for a library that never sees the model's
+reasoning.
+
+What Verdict lacks is **edges**. Entries sharing a `correlationId` form a set, not a chain —
+`grep` for derivation or parent fields in `src/` returns nothing. Backward tracing in
+Agent-BOM's sense ("this tool result was derived from that retrieved document") cannot be
+performed against `verdict_provenance` because the derivation was never recorded. This is the
+**second** corroboration of the gap section 6 found in W3C PROV's `wasDerivedFrom`, and the two
+sources reach it from opposite directions: PROV from a general model of causality, Agent-BOM
+from the specific need to trace a poisoned document to the action it caused. Two independent
+arrivals at the same missing field is the strongest signal in this log for a schema change.
+**Candidate:** `provenance-derivation-edges`
+
+**Primitive — a confirmation-bypass audit rule (ASI09).**
+**Verdict:** `already implements` the enforcement, and this is a useful confirmation of what
+the evidence schema gets right. `DecisionEvidence` records `approvalReceiptFingerprint`,
+`approvalPhase`, and `approvalOutcome`, so "did this action carry a valid confirmation" is
+directly answerable — Agent-BOM's `Confirmation_status` attribute, already present. And because
+Verdict enforces rather than audits, a bypassed confirmation does not produce a detectable
+audit path; it produces a denial. The paper is describing detection for systems that cannot
+prevent. Reinforces the enforcement-over-detection framing from the first paper in this section.
+
+---
+
+**Surveyed, no hook.** **OWASP Agentic Top 10 / OWASP Top 10 for LLM Applications** — the risk
+taxonomy Agent-BOM's rules instantiate; useful as a checklist for a future threat-model doc but
+not a primitive. **Greshake et al., indirect prompt injection** (arXiv:2302.12173) and **Zou et
+al., universal adversarial suffixes** (arXiv:2307.15043) — model-layer attacks; Verdict's
+position is that these are the reason enforcement lives outside the model, already covered.
+**Hubinger et al., sleeper agents** (arXiv:2401.05566) — training-time backdoors as a supply
+chain risk at the model layer; no library-side primitive. **ClawHavoc / CVE-2026-25253** and
+Cisco's finding that 26% of 31,000 analyzed agent skills contained vulnerabilities — motivating
+evidence for tool supply-chain integrity, which is the application's dependency problem, not
+Verdict's. **NIST NCCoE, "Accelerating the Adoption of Software and AI Agent Identity and
+Authorization"** and **NIST's RFI 91 FR 698** — active standards processes worth tracking for
+whatever "on behalf of" pattern emerges, but currently draft concept papers with nothing to
+implement against. **OpenID Foundation, "Identity management for agentic AI"** (2025 whitepaper)
+— same territory as RFC 8693 in section 11. **NGAC** (NIST next-generation access control) —
+attribute-based access control, same family as the policy engines in section 2. **Groth16 and
+zk-SNARK constructions**, Poseidon hashing, trusted-setup ceremonies — the cryptographic
+machinery of the CVA prototype, irrelevant to an in-process library that does not need to
+convince a remote verifier of anything. **LangSmith, Prov-Agent, Agent-Sentry** — agent
+observability and execution-provenance tooling; adjacent to Verdict's ledger but positioned as
+external monitors rather than enforcement points.
