@@ -14,7 +14,8 @@ scoped to the feature at hand rather than stated once as a general property:
 
 - Provenance: "A hash of a predictable prompt, identifier, version, filename, URL, or personal value
   can be guessed and must be treated as correlation—not anonymization, encryption, or proof that the
-  underlying input is safe." (README:765-767)
+  underlying input is safe."
+  ([limitations: no PII inference](../limitations.md#no-pii-inference))
 - Target-refresh evidence: "An unkeyed fingerprint is pseudonymous, not anonymous: low-entropy
   identifiers may be enumerable when an observer knows the input format." (ADR 0003, "Evidence"
   section)
@@ -24,7 +25,8 @@ scoped to the feature at hand rather than stated once as a general property:
   `execution_claim_binding_fingerprint` (`src/ExecutionClaims/ExecutionClaimManager.php:127-135`),
   never the raw binding.
 - General evidence: "The evidence store may contain highly sensitive information... A hash of
-  predictable personal information is not anonymization." (README:713-715)
+  predictable personal information is not anonymization."
+  ([limitations: no tamper-evident evidence](../limitations.md#no-tamper-evident-evidence))
 
 Each instance is correct and consistent with the others, but a contributor implementing a new
 evidence-producing feature (or reviewing issue #11's attest adapter, which inherits this same
@@ -58,7 +60,7 @@ Verdict's evidence privacy model is one property, applied uniformly:
    application's security posture**, not Verdict's. Verdict's obligation is to never store the raw
    value in the first place; what an application does with the resulting evidence store (encryption
    at rest, access control, retention) is unchanged by this ADR and remains explicitly out of scope
-   per README:713-715.
+   per [limitations: no tamper-evident evidence](../limitations.md#no-tamper-evident-evidence).
 
 ## Consequences
 

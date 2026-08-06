@@ -8,7 +8,8 @@ Status: Accepted (rejection)
 
 ## Context
 
-README:1290 already names the tension this ADR resolves: "Streaming output cannot be retracted after
+[Limitations: no content moderation or factual review](../limitations.md#no-content-moderation-or-factual-review)
+already names the tension this ADR resolves: "Streaming output cannot be retracted after
 it has been sent; sensitive response checks may need buffering or documented limitations." Verdict
 performs context-*release* checks (outbound data leaving the application toward the model, via
 `ContextReleaseManager`) and tool-call authorization (via `VerdictManager`), but has no mechanism that
@@ -38,14 +39,18 @@ Reasoning:
    execution* and *context release into the model* — both are discrete, evaluable events with a clear
    before/after. Model-generated free text is not a discrete event Verdict can evaluate once; it's a
    continuous stream owned by Laravel AI and the provider. Verdict remaining "a thin adapter around
-   [Laravel AI's] public extension points" (README:1218-1221) means it should not grow a response-
+   [Laravel AI's] public extension points"
+   ([architecture: relationship to Laravel AI](../architecture.md#relationship-to-laravel-ai)) means it should not grow a response-
    interception layer Laravel AI itself doesn't provide a public hook for.
 4. **The actual mitigations are elsewhere in the design already.** Tool-call arguments and results are
    authorized/classified through `BoundTool`/`GuardedTool` and `ClassifiesToolResult` before they can
-   re-enter model context (README:486-539); that is where Verdict's leverage over sensitive data
+   re-enter model context
+   ([architecture: Laravel AI lifecycle integration](../architecture.md#laravel-ai-lifecycle-integration));
+   that is where Verdict's leverage over sensitive data
    actually is. What the model *says* in free text, after legitimate tool results were already
    properly scoped, is a content-moderation problem, which the threat model already excludes:
-   "Establish factual correctness or provide general content moderation" (README:1271).
+   "Establish factual correctness or provide general content moderation"
+   ([limitations](../limitations.md#no-content-moderation-or-factual-review)).
 
 ## Consequences
 
@@ -53,7 +58,7 @@ Reasoning:
 - Applications that need to redact or block sensitive content in streamed model output must implement
   that at their own transport layer (e.g. a proxy or a non-streaming fallback for capabilities known
   to risk sensitive disclosure), fully outside Verdict.
-- README:1290's existing caveat stands as the accurate statement of this limitation; this ADR
+- The existing limitations caveat stands as the accurate statement of this limitation; this ADR
   documents why it will not be closed rather than leaving it open-ended.
 
 ## Alternatives rejected
@@ -72,4 +77,4 @@ users care about, making the latency cost land precisely where it's least accept
 Rejected because an opt-in flag would still require Verdict to implement and maintain the buffering
 and inspection machinery item 2 and 3 above argue against, for a fraction of users, while implying to
 everyone else that non-buffered streaming is unchecked by design — which it already is, explicitly,
-per README:1290.
+per [limitations: no content moderation or factual review](../limitations.md#no-content-moderation-or-factual-review).

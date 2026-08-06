@@ -10,7 +10,8 @@ Status: Accepted
 ## Context
 
 `ExecutionClaimStore` (`src/Contracts/ExecutionClaimStore.php`) durably records every claimed logical
-operation so ADR 0002's at-most-once guarantee holds "within the retained claim history." README:617
+operation so ADR 0002's at-most-once guarantee holds "within the retained claim history."
+[Limitations: no guarantee of downstream side effects](../limitations.md#no-guarantee-of-downstream-side-effects)
 already states the consequence plainly: "Claim rows are part of the guarantee horizon, so Verdict
 provides no automatic pruning command." This is unlike the rate-limit store, which *does* need
 pruning because expired buckets are unbounded state with no ongoing meaning (ADR 0001: "Expired
@@ -47,7 +48,8 @@ application accepts that tradeoff:
    manually even after pruning.
 2. Never prune a claim in `Claimed` or `Indeterminate` status — only `Completed` or `Released` claims
    are candidates, and only after operator investigation per the existing
-   `verdict:resolve-execution-claim` workflow (README:605-617).
+   `verdict:resolve-execution-claim` workflow
+   ([limitations: no guarantee of downstream side effects](../limitations.md#no-guarantee-of-downstream-side-effects)).
 3. Document the chosen window in the application's own operational runbook; Verdict has no way to
    validate that an application-chosen window is sound for that application's transport.
 
