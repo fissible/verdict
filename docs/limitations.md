@@ -20,6 +20,18 @@ Only tools and code paths that use Verdict are protected. An unwrapped Laravel A
 
 An execution claim controls Verdict admission. It cannot guarantee exactly-once completion in a payment processor, email API, queue, or remote system after the executor begins. Design external integrations with idempotency keys, transactional outboxes, reconciliation, and compensating operations where appropriate.
 
+When an executor fails without a conclusive outcome, Verdict marks the claim indeterminate rather than guessing or caching a potentially sensitive result. An operator must investigate and reconcile it:
+
+```bash
+php artisan verdict:execution-claims
+php artisan verdict:resolve-execution-claim CLAIM_ID completed \
+    --by=operator:7 --reason="Carrier confirmed cancellation succeeded"
+php artisan verdict:resolve-execution-claim CLAIM_ID retryable \
+    --by=operator:7 --reason="Carrier confirmed no request was accepted"
+```
+
+Resolving a claim as `retryable` releases it for one explicit retry. A claim still marked active requires `--force`, which should be used only after application-specific investigation. Claim rows are part of the guarantee horizon, so Verdict provides no automatic pruning command; see [ADR 0009](adr/0009-execution-claim-retention.md).
+
 ### No provider-internal inspection
 
 Verdict does not inspect model weights, hidden reasoning, provider-side tool behavior, or arbitrary provider telemetry. Its Laravel AI integrations observe the package-supported application lifecycle, not every detail of a provider implementation.
@@ -27,6 +39,18 @@ Verdict does not inspect model weights, hidden reasoning, provider-side tool beh
 ### No PII inference
 
 Verdict’s fingerprint-first evidence model avoids recording raw content by default. It is not a data-loss-prevention product and does not infer whether arbitrary prompts, tool arguments, or provider responses contain PII. Classify data before releasing it to a provider and configure all application logging accordingly.
+
+Content and component fingerprints are deterministic. A hash of a predictable prompt, identifier, version, filename, URL, or personal value can be guessed and must be treated as correlation—not anonymization, encryption, or proof that the underlying input is safe.
+
+### No tamper-evident evidence
+
+The database evidence adapter is an ordinary mutable audit store. It is not append-only, immutable, signed, or tamper-evident, and it must not be described as cryptographic proof. A row recording a decision, approval, or provenance fact can be edited or deleted without detection. A tamper-evident adapter may be offered separately in the future; see [ADR 0007](adr/0007-evidence-layering.md).
+
+The evidence store may also contain highly sensitive information. Configurable evidence levels, retention, tenant isolation, access authorization, pruning, and encryption remain application responsibilities.
+
+### No content moderation or factual review
+
+Verdict does not establish factual correctness or provide general content moderation. It also does not buffer or inspect streamed model output: streaming output cannot be retracted after it has been sent, so sensitive response checks may need to happen before generation rather than after. See [ADR 0011](adr/0011-rejected-verdict-does-not-buffer-streamed-output.md).
 
 ### No universal security policy
 

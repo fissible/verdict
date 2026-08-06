@@ -20,24 +20,26 @@ Laravel AI v0.10.2 (the vendored version) already provides everything this would
 - `Laravel\Ai\Streaming\Events\ToolApprovalRequest`, a stream event carrying `pendingApprovals` and
   raw `providerContentBlocks` explicitly for replay when a stream pauses for approval.
 - Resumption via `AgentPrompt->approvalDecisions` / `Decisions` — a fresh-request replay, the exact
-  mechanism Verdict's synchronous confirmation flow (README:273-275) already uses today.
+  mechanism Verdict's synchronous confirmation flow already uses today
+  ([architecture: resolving an approval](../architecture.md#resolving-an-approval)).
 
 The real blocker is Verdict-side, tracked in
 [issue #22](https://github.com/fissible/verdict/issues/22): see "Decision" below.
 
 ## Context
 
-Verdict's confirmation flow (README:213-296) resumes a Laravel AI agent after approval by calling
+Verdict's confirmation flow resumes a Laravel AI agent after approval by calling
 `$agent->prompt(Decisions::from([...]))` inside a synchronous request/response cycle
-(README:273-275). README:293-296 already states the current limitation plainly: "Streaming approval
-resumption is not yet supported because agent middleware returns before a stream is consumed;
-protected execution will fail closed without the scoped approval context." `GuardedTool` cannot
+([architecture: resolving an approval](../architecture.md#resolving-an-approval)), which states the
+current limitation plainly: "Streaming approval resumption is not yet supported, because agent
+middleware returns before a stream is consumed; protected execution fails closed without the scoped
+approval context." `GuardedTool` cannot
 support verified confirmation at all, for the unrelated reason covered in
 [ADR 0005](0005-guardedtool-is-a-bounded-migration-bridge.md).
 
 The architecture-review backlog asked whether streamed approval resumption is feasible,
 architecturally compatible, or intentionally out of scope, and what Laravel AI capability it would
-require. The roadmap table (README:1441-1458) does not list a streaming milestone, which reads as
+require. No release milestone schedules streaming approval resumption, which reads as
 silent scope-narrowing rather than a stated decision. This ADR exists to make that decision explicit
 and distinguish "not designed yet" from "rejected."
 
@@ -57,7 +59,8 @@ tool execution (and the approval check) only happens later, during iteration —
 finds an empty frame stack and `ApprovalManager::executionStateFailure()` fails closed with
 `ApprovalOutcome::InvalidState`, even for an already-approved decision.
 
-Verdict's approval scope is deliberately per-request (README:254-280): an endpoint resolves the
+Verdict's approval scope is deliberately per-request
+([architecture: resolving an approval](../architecture.md#resolving-an-approval)): an endpoint resolves the
 challenge only after it has already authorized access to the conversation and pending call. Extending
 `ApprovalExecutionContext`'s frame lifetime across a streamed response's iteration — rather than
 popping it when the middleware callback merely *returns* — closes this gap using primitives Laravel AI
@@ -70,7 +73,7 @@ boundary.
 ## Consequences
 
 - No new API surface is added by this ADR. `BoundTool` and `GuardedTool` behavior is unchanged.
-- README:293-296 already states the limitation; this ADR adds the reasoning behind it, corrected to
+- The architecture guide already states the limitation; this ADR adds the reasoning behind it, corrected to
   identify the actual cause and point at issue #22 rather than an upstream capability gap.
 - Issue #22 (extending `ApprovalExecutionContext`'s scope across `StreamableAgentResponse`
   consumption) is the concrete next step. Closing it resolves this ADR's limitation without requiring
@@ -89,7 +92,8 @@ distinct question from buffering for redaction — see
 ### Build a Verdict-owned streaming resumption mechanism independent of Laravel AI
 
 Verdict deliberately remains a thin adapter around Laravel AI's public extension points
-(README:1218-1235). Implementing stream pausing/resumption itself would duplicate transport-layer
+([architecture: relationship to Laravel AI](../architecture.md#relationship-to-laravel-ai)).
+Implementing stream pausing/resumption itself would duplicate transport-layer
 concerns Laravel AI owns and would need to be reconciled with Laravel AI's own streaming API the
 moment one exists, likely incompatibly.
 

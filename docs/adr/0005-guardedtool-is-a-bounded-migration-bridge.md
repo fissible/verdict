@@ -14,11 +14,12 @@ an independent closure. Verdict authorizes a resolved target and then calls that
 prove the closure acts on the same target it authorized. `BoundTool` closes that gap by deriving the
 executor's `AuthorizedAction` directly from the refreshed execution target (ADR 0003).
 
-The README already documents this as an explicit, intentional limitation (README:188-193): a
-`[!WARNING]` block states `GuardedTool` exists to migrate pre-Verdict tools onto the authorization
-boundary without rewriting them, that it should not be used for new security-sensitive capabilities,
-and that `BoundTool` is the primitive for new work. `GuardedTool` also cannot support verified
-confirmation (README:295-296) or an execution-target policy (ADR 0003's explicit-policy requirement
+The documentation already records this as an explicit, intentional limitation
+([architecture: GuardedTool migration bridge](../architecture.md#guardedtool-migration-bridge)):
+`GuardedTool` exists to migrate pre-Verdict tools onto the authorization
+boundary without rewriting them, it should not be used for new security-sensitive capabilities,
+and `BoundTool` is the primitive for new work. `GuardedTool` also cannot support verified
+confirmation or an execution-target policy (ADR 0003's explicit-policy requirement
 applies only to `BoundTool`) for the same reason: Verdict cannot bind an independent handler to a
 specific target.
 

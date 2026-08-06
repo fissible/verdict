@@ -21,9 +21,10 @@ boundary between them as a single design decision:
   decision, not the decision's authority. ADR 0004 explicitly excludes `DatabaseEvidenceRecorder`
   from its transaction guard: "evidence persistence and transaction ownership are application
   policy, and evidence is not itself an authorization gate."
-- **Attestation** — not yet implemented. README:786-788 states the evidence store is "an ordinary
-  mutable audit store... not append-only, immutable, signed, or tamper-evident," with a
-  tamper-evident adapter "offered separately in the future." Issue #11 proposes this adapter, backed
+- **Attestation** — not yet implemented.
+  [Limitations: no tamper-evident evidence](../limitations.md#no-tamper-evident-evidence) states the
+  evidence store is "an ordinary mutable audit store... not append-only, immutable, signed, or
+  tamper-evident," with a tamper-evident adapter "offered separately in the future." Issue #11 proposes this adapter, backed
   by `fissible/attest`.
 
 These layers already have different guarantees and different owners in the code, but a reader has to
@@ -42,7 +43,8 @@ conflate them:
    change what already executed; it changes what can later be investigated or audited. Evidence
    persistence failures propagate as application faults (the recorder throws), but evidence writes
    are not wrapped in the same fail-closed transaction guard as operational state, and evidence
-   recorder selection, retention, and encryption remain application policy (README:713-715, 779-781).
+   recorder selection, retention, and encryption remain application policy
+   ([limitations: no tamper-evident evidence](../limitations.md#no-tamper-evident-evidence)).
 3. **Attestation is a property evidence can optionally gain, not a replacement for either layer
    above.** An attested evidence record is still evidence — it answers "was this evidence tampered
    with after the fact," not "was this operation authorized." Issue #11's `AttestEvidenceRecorder`

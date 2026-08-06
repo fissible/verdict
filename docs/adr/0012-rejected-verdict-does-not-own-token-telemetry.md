@@ -10,15 +10,18 @@ Status: Accepted (rejection, narrowed from the original proposal)
 
 The backlog's "ideas explicitly rejected" suggestion named "making Verdict responsible for provider
 token telemetry" as something that would push the package away from its core philosophy. Taken
-literally, that would contradict README:684, which already lists "Token or cost budgets per tenant"
-under "Later semantic limits may include," and contradicts
+literally, that would contradict the roadmap item "Token or cost budgets per tenant," listed under
+"Later semantic limits may include" and carried into
+[ADR 0010](0010-future-semantic-limit-meters.md)'s context section, and contradicts
 [ADR 0010](0010-future-semantic-limit-meters.md)'s cumulative/value meter category, which the backlog
 itself asked to have designed. This ADR resolves that conflict by rejecting the part of the idea that
 actually conflicts with Verdict's philosophy, rather than rejecting token/cost budgeting outright.
 
-Verdict's own ownership table (README:1218-1231) already assigns "Generation limits and events" to
-Laravel AI's column, not Verdict's — the framework this backlog item was gesturing at is already
-encoded in the README; it just hadn't been stated as a rejection with reasoning.
+Verdict's own ownership table
+([architecture: relationship to Laravel AI](../architecture.md#relationship-to-laravel-ai)) already
+assigns "Generation limits and events" to Laravel AI's column, not Verdict's — the framework this
+backlog item was gesturing at is already encoded in the docs; it just hadn't been stated as a
+rejection with reasoning.
 
 ## Decision
 
@@ -26,7 +29,7 @@ Verdict does not collect, measure, or become the system of record for provider t
 monetary cost. That remains Laravel AI's and the provider adapter's responsibility, consistent with
 the existing ownership table.
 
-What Verdict *may* do, and what README:684 and ADR 0010 correctly still list as a live roadmap item,
+What Verdict *may* do, and what ADR 0010 correctly still lists as a live roadmap item,
 is **consume a usage/cost value that Laravel AI already reports** as input to a policy decision — the
 same way ADR 0001's rate-limit policy consumes a fixed unit per attempt. The distinction:
 
@@ -46,7 +49,7 @@ inputs.
 
 - No token/cost measurement code is added to Verdict independent of what a future ADR 0010
   implementation slice consumes from Laravel AI's own reporting.
-- README:684's "Token or cost budgets per tenant" bullet stands as accurate and is not removed or
+- The "Token or cost budgets per tenant" roadmap bullet stands as accurate and is not removed or
   reworded by this ADR — it describes the consuming-policy version of this idea, not the rejected
   telemetry-ownership version.
 - A future contributor proposing "Verdict tracks token usage" should read this ADR as a rejection of
@@ -56,7 +59,7 @@ inputs.
 
 ### Reject token/cost budgets from the roadmap entirely
 
-Rejected as too broad: it would contradict README:684 and remove a legitimate, already-scoped
+Rejected as too broad: it would contradict ADR 0010 and remove a legitimate, already-scoped
 roadmap item to resolve a narrower objection. The actual concern (Verdict becoming a telemetry/billing
 system) is fully addressed by restricting Verdict to consuming already-reported values.
 
@@ -64,5 +67,7 @@ system) is fully addressed by restricting Verdict to consuming already-reported 
 
 Rejected because Verdict has no way to independently verify token counts without duplicating
 provider-specific tokenization logic per model/provider, which is exactly the provider-mechanics
-ownership Laravel AI already holds (README:1223-1231). A disagreeing second source of truth would be
+ownership Laravel AI already holds
+([architecture: relationship to Laravel AI](../architecture.md#relationship-to-laravel-ai)). A
+disagreeing second source of truth would be
 more confusing than trusting the one Laravel AI already reports.

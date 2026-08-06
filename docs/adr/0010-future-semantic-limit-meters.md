@@ -5,8 +5,8 @@ Status: Proposed
 ## Context
 
 ADR 0001 implements exactly one meter: authorized execution attempts per fixed window, consumed
-"after execution-stage authorization and successful non-mutating approval validation." README:678-689
-lists further meters as directional roadmap items without a design:
+"after execution-stage authorization and successful non-mutating approval validation." The pre-v0.2
+README listed further meters as directional roadmap items without a design:
 
 ```text
 Proposal attempts per principal and capability.
@@ -54,8 +54,8 @@ future implementation should not force them through ADR 0001's single `RateLimit
    reported value* the same way ADR 0001's meter consumes a fixed unit — but Verdict is consuming a
    number it was told, not measuring or billing anything itself. Cumulative risk is the least defined
    of the six bullets and should not be scheduled for implementation until a concrete risk model
-   exists to consume from (this is adjacent to the "Post-v0.2 exploratory track: communications risk"
-   section, README:1471-1501, which already treats risk scoring as a separately-scoped track).
+   exists to consume from (this is adjacent to the post-v0.2 exploratory communications-risk track,
+   which already treats risk scoring as a separately-scoped concern).
 
 A future implementation should therefore add at most one new policy type per meter category above
 (attempt, outcome, cumulative), not six independent meters, and each should state its own consumption
@@ -69,8 +69,8 @@ point the way ADR 0001 and ADR 0002 each state theirs precisely.
   (evidence-visible, consistent with every other consumption point) or an out-of-band counter.
 - Where a cumulative/value meter's balance resets, if ever, and what "budget exceeded" should do to
   an in-flight multi-step agent conversation.
-- Whether cumulative risk needs any implementation before the communications-risk track (README:1471)
-  defines what a `RiskAssessment` actually contains.
+- Whether cumulative risk needs any implementation before the communications-risk track defines what
+  a `RiskAssessment` actually contains.
 
 ## Consequences
 

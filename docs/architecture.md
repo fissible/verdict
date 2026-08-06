@@ -76,15 +76,60 @@ You provide the target resolver, approval binding, policy objects, executor, and
 
 ## GuardedTool migration bridge
 
-`GuardedTool` exists as a bounded migration bridge for older integrations. It can authorize a model-facing tool handler, but it cannot prove that a separate handler executes against the exact target Verdict authorized.
+`GuardedTool` and `Verdict::guard(...)` exist as a bounded migration bridge, to move an application’s existing pre-Verdict Laravel AI tools onto Verdict’s authorization boundary without rewriting them. They authorize a resolved target and then delegate to an independent handler, so Verdict cannot establish that the handler acts on the same target.
 
-Use `BoundTool` for new capabilities and migrate security-sensitive actions to it. The rationale and boundary are documented in [ADR 0005](adr/0005-guardedtool-is-a-bounded-migration-bridge.md).
+Do not use them for new security-sensitive capabilities. `GuardedTool` also does not support verified confirmation, because its independent handler cannot be bound to the authorized target. Use `BoundTool` for new capabilities and migrate security-sensitive actions to it. The rationale and boundary are documented in [ADR 0005](adr/0005-guardedtool-is-a-bounded-migration-bridge.md).
 
 ## Laravel AI lifecycle integration
 
 Verdict also integrates with Laravel AI lifecycle events to record prompt and tool-result provenance using fingerprints rather than raw content. This supports audit evidence; it does not inspect provider internals or make raw provider output safe to store.
 
+### Resolving an approval
+
+When Laravel AI returns a `PendingApproval`, resolve its Verdict challenge inside an endpoint that has already authorized access to the conversation and pending call:
+
+```php
+use Laravel\Ai\Approvals\Decision as LaravelApprovalDecision;
+use Laravel\Ai\Approvals\Decisions;
+
+$challenge = Verdict::approvals()->challengeForToolCall($pendingApproval->id);
+
+abort_if($challenge === null, 409);
+
+$transition = Verdict::approvals()->approve(
+    receiptId: $challenge->receiptId,
+    toolCallId: $challenge->toolCallId,
+    approvedBy: 'customer:'.auth()->id(),
+);
+
+abort_unless($transition->succeeded(), 409);
+
+$response = $agent->prompt(Decisions::from([
+    $pendingApproval->id => LaravelApprovalDecision::approve(),
+]));
+```
+
+Approval scope is deliberately per-request: the endpoint authenticates the decision maker, approves one receipt bound to one tool call, and resumes the agent. Use an opaque application identifier such as `customer:72` for `approvedBy`, not an email address or other unnecessary PII — Verdict does not authenticate this string.
+
+This is an early synchronous integration. Streaming approval resumption is not yet supported, because agent middleware returns before a stream is consumed; protected execution fails closed without the scoped approval context. See [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md).
+
 For evaluations, Verdict provides deterministic harness primitives and an opt-in live runner. The live runner is provider-neutral at the package boundary; the application supplies the closure that invokes its chosen provider.
+
+## Relationship to Laravel AI
+
+Verdict does not duplicate what Laravel AI already owns. It adds an authorization boundary in front of it and leaves transport, generation, and conversation mechanics where they are.
+
+| Laravel AI owns | Verdict adds | The application still owns |
+| --- | --- | --- |
+| Agents and prompts | Capability envelopes | Authentication and tenancy |
+| Provider and model selection | Context-release decisions | Laravel Policies and business rules |
+| Tool schemas and invocation | Mandatory authorization phase | Domain services and commands |
+| Structured output | Provenance and sensitivity labels | Credentials and provider agreements |
+| Conversations and streaming | Security evidence and signals | Retention and compliance decisions |
+| Human approval mechanics | Argument-bound approval policy | Operator and customer experience |
+| Generation limits and events | Security suites and regressions | Incident-response program |
+
+Verdict builds on Laravel AI’s public extension points rather than replacing them. Where a concern is already Laravel AI’s — streamed response transport, token and cost telemetry, generation limits — Verdict does not grow a second, disagreeing source of truth. See [ADR 0011](adr/0011-rejected-verdict-does-not-buffer-streamed-output.md) and [ADR 0012](adr/0012-rejected-verdict-does-not-own-token-telemetry.md).
 
 ## Configuration and migrations
 
