@@ -721,3 +721,170 @@ because Verdict does not own the write. **Leases** as a liveness mechanism, sepa
 the fencing-token argument above. Also surveyed: two-phase commit and its blocking
 coordinator failure mode, exactly-once as a delivery myth versus effectively-once as an
 end-to-end property, and at-least-once plus idempotence as the practical substitute.
+
+## 5. Database transaction research
+
+Every TOCTOU discussion eventually lands here. Verdict's three durable stores are the only
+places the package owns concurrency correctness rather than delegating it, so this is the
+section where "the application owns transactions" stops being an answer.
+
+### A Critique of ANSI SQL Isolation Levels — paper
+
+Berenson, Bernstein, Gray, Melton, O'Neil, O'Neil. ACM SIGMOD '95.
+
+- Argues the ANSI SQL isolation levels are defined by a list of prohibited phenomena that is
+  both ambiguous and incomplete, and rebuilds the hierarchy on phenomena that can be stated
+  as histories.
+- Adds phenomena ANSI omits, including dirty write (P0), lost update (P4), read skew (A5A),
+  and write skew (A5B), and shows the ANSI levels cannot distinguish real implementations
+  such as Cursor Stability and Snapshot Isolation.
+- Defines **Snapshot Isolation**: each transaction "reads data from a snapshot of the
+  (committed) data as of the time the transaction started, called its Start-Timestamp,"
+  and "is never blocked attempting a read." Updates by transactions active after that
+  timestamp are invisible.
+- Commit uses **first-committer-wins**: T1 "successfully commits only if no other
+  transaction T2 with a Commit-Timestamp in T1's execution interval [Start-Timestamp,
+  Commit-Timestamp] wrote data that T1 also wrote." This prevents lost updates (P4).
+- **Write skew (A5B)**: "Suppose T1 reads x and y, which are consistent with C(), and then a
+  T2 reads x and y, writes x, and commits. Then T1 writes y. If there were a constraint
+  between x and y, it might be violated." As a history:
+  `r1[x]...r2[y]...w1[y]...w2[x]`. The canonical example is a bank constraint where
+  individual balances may go negative "as long as the sum of commonly held balances remains
+  non-negative."
+- First-committer-wins does not catch write skew, because the two transactions write
+  *different* items. The constraint spans them; the write sets do not intersect.
+- The paper's sharpest example for present purposes is a predicate-sum constraint: "a set of
+  job tasks determined by a predicate cannot have a sum of hours greater than 8. T1 reads
+  this predicate, determines the sum is only 7 hours and adds a new task of 1 hour duration,
+  while a concurrent transaction T2 does the same thing." Because "the two transactions are
+  inserting different data items (and different index entries as well, if any), this
+  scenario is not precluded by First-Committer-Wins and can occur in Snapshot Isolation."
+- Snapshot Isolation is nonetheless surprisingly strong — stronger than READ COMMITTED, and
+  it precludes phantoms in the strict ANSI sense (A3) — which is exactly why it is dangerous:
+  it passes the ANSI checklist while admitting A5B.
+- Snapshot Isolation and REPEATABLE READ are incomparable: SI prohibits A3 but allows A5B;
+  REPEATABLE READ does the opposite.
+
+**Primitive — write skew.** Two transactions each read a consistent state, each write a
+different item, each commit, and together violate a constraint neither violated alone.
+**Verdict:** `already implements`, and the reason it is correct is a design decision that
+currently looks like an implementation detail.
+
+Berenson's 8-hour job-task example is structurally identical to a Verdict semantic rate
+limit: a predicate-scoped count bounded by a threshold, with concurrent transactions each
+reading a count below the limit and each adding one. The naive implementation — count the
+matching action rows, compare to the limit, insert another — is that anomaly verbatim, and
+it survives Snapshot Isolation.
+
+`DatabaseRateLimitStore` does not do that. It materialises a **bucket row** keyed on
+`(bucket_fingerprint, window_starts_at)` and locks that single row with `lockForUpdate()`
+before reading `attempts` and updating it (`src/RateLimits/DatabaseRateLimitStore.php:57`).
+This converts a predicate sum into a single-row read-modify-write, which turns A5B into
+ordinary contention on one item — the case first-committer-wins and row locks both handle.
+The disjoint-write-set condition that makes write skew possible is engineered away.
+
+The remaining hole is the phantom: before the first bucket exists there is no row to lock,
+so two transactions can both find nothing and both insert. Verdict closes it with the unique
+index `verdict_rate_limit_bucket_window_unique`
+(`database/migrations/create_verdict_rate_limit_buckets_table.php.stub:20-22`), catches
+`UniqueConstraintViolationException`, and re-enters `consumeLocked()` with `mayInsert:
+false` — with a comment stating the point exactly: "Another transaction created the first
+bucket concurrently. Retry the actual consume operation so this caller is counted rather
+than merely reading its row." `DatabaseExecutionClaimStore` uses the same construction
+against `binding_fingerprint`, which the migration declares `->unique()`
+(`database/migrations/create_verdict_execution_claims_table.php.stub:17`).
+
+So the correctness argument for both limits rests on three things that must stay together:
+one contended row per logical constraint, a unique index making concurrent creation of that
+row impossible, and a lock-plus-retry path on constraint violation. None of that is written
+down. A contributor optimizing the rate limiter to count evidence rows, or adding a limit
+scope without the matching unique index, would silently reintroduce A5B — and it would pass
+every single-threaded test. Issue #20 already covers adding concurrent-access coverage
+(ADR 0004), but the *invariant* deserves stating, not just testing.
+**Candidate:** `single-contended-row-invariant`
+
+---
+
+### PostgreSQL transaction isolation — reference
+
+PostgreSQL documentation, "Transaction Isolation."
+
+- Read Committed is PostgreSQL's default; internally only three levels exist, since Read
+  Uncommitted behaves as Read Committed. PostgreSQL's Repeatable Read is stronger than the
+  standard requires and does not allow phantom reads.
+- Under **Read Committed**, `SELECT FOR UPDATE` on a row a concurrent transaction has
+  updated waits, then re-evaluates the `WHERE` clause against the new row version and locks
+  and returns that version. No error is raised.
+- Under **Repeatable Read**, the same situation is fatal: if the first updater commits, "the
+  repeatable read transaction will be rolled back with the message `ERROR: could not
+  serialize access due to concurrent update`," because such a transaction "cannot modify or
+  lock rows changed by other transactions after the repeatable read transaction began."
+- The required response is unambiguous: "When an application receives this error message, it
+  should abort the current transaction and retry the whole transaction from the beginning,"
+  and "applications using this level must be prepared to retry transactions due to
+  serialization failures."
+- **Serializable** adds SSI monitoring on top of Repeatable Read, detecting read/write
+  dependency cycles via non-blocking predicate locks (`SIReadLock`) and rolling one
+  transaction back with `ERROR: could not serialize access due to read/write dependencies
+  among transactions`. Its documented example is a write skew over two predicate sums.
+- Both levels signal with **SQLSTATE 40001**, and the docs stress needing "a generalized way
+  of handling serialization failures... because it will be very hard to predict exactly
+  which transactions might contribute to the read/write dependencies."
+- Under Serializable, "it is possible to see unique constraint violations caused by conflicts
+  with overlapping Serializable transactions even after explicitly checking that the key
+  isn't present before attempting to insert it."
+- Snapshot stability is not consistency: "attempts to enforce business rules by transactions
+  running at this isolation level are not likely to work correctly without careful use of
+  explicit locks."
+
+**Primitive — the isolation level is part of the concurrency contract, not an operator
+detail.** The same `SELECT FOR UPDATE` blocks under one level and aborts under another.
+**Verdict:** `should investigate`. Verdict's stores catch exactly one database exception —
+`UniqueConstraintViolationException` — in `DatabaseRateLimitStore::consume()` and
+`DatabaseExecutionClaimStore::claim()`. A serialization failure is not that exception, and
+there is no retry loop.
+
+Under PostgreSQL's default Read Committed, this is fine: `lockForUpdate()` blocks, re-reads
+the updated row, and the counter logic sees the post-update `attempts`. Under Repeatable
+Read or Serializable on the store connection, a concurrent claim or consume raises SQLSTATE
+40001 and Verdict propagates it. ADR 0004 already establishes that "store exceptions remain
+operational faults rather than ordinary model-visible denials," so this **fails closed** —
+the executor is not admitted, and no security property is violated. The consequences are
+that a legitimate second action surfaces an operational exception instead of a clean
+rate-limit or replay denial, and that the retry the database is explicitly asking for never
+happens.
+
+The gap is that this contract is nowhere stated. Searching the repository for isolation
+level yields one line, ADR 0003:353, and it is about the *application's* transaction, not
+Verdict's stores. ADR 0004 tells operators to put Verdict stores on a separately committed
+connection but says nothing about what isolation level that connection must use — and an
+operator who has just been told to create a dedicated connection for security state is
+precisely the operator who might reach for `SERIALIZABLE` on it, reasoning that stricter is
+safer. Here, stricter converts denials into exceptions.
+
+Two things follow, and the second is a genuine open question rather than a conclusion.
+First, ADR 0004's operator guidance should state the assumed isolation level and the
+consequence of raising it. Second, whether Verdict should catch SQLSTATE 40001 and retry —
+the way it already retries on unique-constraint violation — needs to be settled against a
+real database rather than argued from the documentation. **This must be validated
+experimentally before it is decided.** The behavior of `lockForUpdate()` under MySQL/InnoDB's
+default REPEATABLE READ is *not* asserted here, because it was not verified; InnoDB's
+current-read semantics differ from PostgreSQL's and the difference is the whole question.
+Verdict supports both drivers, so the matrix needs testing, not reasoning.
+**Candidate:** `store-isolation-level-contract`
+
+---
+
+**Surveyed, no hook.** **Adya, Liskov, O'Neil**, "Generalized Isolation Level Definitions"
+(ICDE 2000): implementation-independent definitions via serialization graphs, motivated by
+the same critique; the finer-grained level definitions do not change any Verdict decision.
+**Fekete, Liarokapis, O'Neil, O'Neil, Shasha**, "Making Snapshot Isolation Serializable," and
+**Cahill, Röhm, Fekete**, "Serializable Isolation for Snapshot Databases" (the SSI work
+PostgreSQL implements): read as background for the isolation-level entry above rather than
+summarized here, since PostgreSQL's own documentation states the operational contract
+Verdict actually depends on. **Two-phase locking** and **multiversion concurrency control**
+as mechanisms. **`SELECT ... FOR UPDATE SKIP LOCKED`** as a queue-claiming idiom: not
+applicable, because Verdict must contend for a specific binding rather than find any
+available row. Also surveyed: the ANSI phenomena P0–P4 individually, Cursor Stability, and
+the distinction between a transaction that is *atomic* and one that is *isolated* — Verdict
+needs both from its stores, and ADR 0004 addresses only the first.
