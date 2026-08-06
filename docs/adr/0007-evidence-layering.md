@@ -2,6 +2,11 @@
 
 Status: Accepted
 
+## Related issues
+
+- [#1](https://github.com/fissible/verdict/issues/1) (closed; delivered) implemented the provenance ledger and evidence records described by this layering model.
+- [#11](https://github.com/fissible/verdict/issues/11) (open) proposes the optional tamper-evident evidence recorder.
+
 ## Context
 
 Verdict currently persists data across three conceptually different stores, and nothing states the

@@ -2,6 +2,11 @@
 
 Status: Accepted
 
+## Related issues
+
+- [#1](https://github.com/fissible/verdict/issues/1) (closed; delivered) implemented fingerprint-first provenance and evidence records.
+- [#11](https://github.com/fissible/verdict/issues/11) (open) must preserve this privacy boundary in an attest-backed recorder.
+
 ## Context
 
 Verdict's evidence design repeats a single privacy claim in at least five separate places, each time

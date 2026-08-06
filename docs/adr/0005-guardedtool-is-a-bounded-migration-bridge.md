@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+## Related issues
+
+- [#15](https://github.com/fissible/verdict/issues/15) (open) makes `GuardedTool` use visible in evidence so applications can audit migration debt.
+
 ## Context
 
 `GuardedTool` (`src/LaravelAi/GuardedTool.php`) wraps an application's existing Laravel AI `Tool`

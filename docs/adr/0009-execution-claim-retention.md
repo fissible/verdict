@@ -2,6 +2,11 @@
 
 Status: Accepted
 
+## Related issues
+
+- [#16](https://github.com/fissible/verdict/issues/16) (open) measures execution-claim behavior under contention.
+- [#20](https://github.com/fissible/verdict/issues/20) (open) adds genuine concurrent-access coverage for execution claims.
+
 ## Context
 
 `ExecutionClaimStore` (`src/Contracts/ExecutionClaimStore.php`) durably records every claimed logical
