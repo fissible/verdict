@@ -888,3 +888,162 @@ applicable, because Verdict must contend for a specific binding rather than find
 available row. Also surveyed: the ANSI phenomena P0–P4 individually, Cursor Stability, and
 the distinction between a transaction that is *atomic* and one that is *isolated* — Verdict
 needs both from its stores, and ADR 0004 addresses only the first.
+
+## 6. Provenance
+
+Verdict records what happened. Provenance research studies why it happened. Verdict already
+has a provenance subsystem, which makes this the section where the comparison is against
+existing code rather than against an absence.
+
+### W3C PROV — standard
+
+W3C PROV Model Primer (and PROV-DM). W3C Recommendation, 2013.
+
+- Provenance describes the origins of things, for uses including deciding "whether to trust
+  it," determining ownership, verifying that a process complied with requirements, and
+  reproducing how something was generated. It is metadata, but not all metadata is
+  provenance — an image's size is not.
+- Three core types. **Entity**: "physical, digital, conceptual, or other kinds of thing are
+  called entities." **Activity**: "activities are how entities come into existence and how
+  their attributes change to become new entities." **Agent**: "an agent takes a role in an
+  activity such that the agent can be assigned some degree of responsibility for the
+  activity taking place."
+- To describe an agent's own provenance it must be declared both as an agent and as an
+  entity — responsibility and origin are separate axes.
+- The core relations are `wasGeneratedBy` (entity ← activity), `used` (activity → entity),
+  `wasAssociatedWith` (activity → agent), `wasAttributedTo` (entity → agent),
+  `wasDerivedFrom` (entity → entity, where one entity's "existence, content, characteristics
+  and so on are at least partly due to another entity"), `wasInformedBy` (activity →
+  activity), and `actedOnBehalfOf`, which expresses delegation — an agent "acting on behalf
+  of others, e.g. an employee on behalf of their organization," letting chains of
+  responsibility be expressed.
+- Three complementary perspectives: **agent-centered** (who was involved),
+  **object-centered** (tracing origins between artifacts), and **process-centered** (the
+  steps taken). A complete record needs all three.
+- Supporting notions: roles (application-specific, so PROV defines none), plans
+  (pre-defined procedures an agent follows), and time.
+- A **bundle** groups provenance assertions and is itself an entity, so provenance of
+  provenance can be asserted — the primer's example is a blogger recording that she
+  personally verified her sources.
+
+**Primitive — provenance as a graph of entities, activities, and agents, not a log.** The
+edges are the content; a timestamped list of observations is not provenance in this sense.
+**Verdict:** `already implements` the agent- and object-centered halves, `intentionally
+rejects` true derivation, and has a concrete, cheap gap in between.
+
+Verdict's `ProvenanceEntry` maps onto PROV more closely than the naming suggests
+(`src/Evidence/ProvenanceEntry.php`). The entity is the content, identified pseudonymously
+by `contentFingerprint`. The agent is `source`, qualified by `trust`. The activity is
+`channel` — `ContextChannel` distinguishes `UserInput`, `RetrievedDocument`, `ToolResult`,
+and `ApplicationContext` (`src/Context/ContextChannel.php`), which is a process-centered
+classification of how content entered. `componentLabel` and `componentFingerprint` are a
+plan-and-version pair. `correlationId` is a bundle identifier. `recordedAt` is time. That is
+a defensible PROV subset, and the constructor enforces its integrity — a component
+fingerprint requires a component label, and every fingerprint must be a lowercase SHA-256
+digest.
+
+What is missing is `wasDerivedFrom`. Entries under one correlation are a flat,
+timestamp-ordered list; nothing says the tool result was derived from the retrieved
+document. **Verdict cannot supply that edge and should not pretend to.** Establishing that
+an untrusted document actually influenced a model's tool call requires attribution inside
+the model, which `docs/limitations.md` explicitly disclaims as "no provider-internal
+inspection." Recording a derivation edge Verdict cannot observe would be worse than
+recording none. This is a genuine `intentionally rejects`, and it is worth stating in those
+terms rather than leaving the omission to look like incompleteness.
+
+**Primitive — `actedOnBehalfOf`, delegation of responsibility between agents.**
+**Verdict:** `should investigate`. Fourth independent appearance of the delegation question,
+after `authgate-kernel`'s signed chains, tacit's sub-agent capability subsets, and the
+object-capability attenuation patterns in section 3. PROV contributes the observation that
+delegation is a *provenance* relation as much as an authorization one: the question "who is
+answerable for this action" outlives the question "who was permitted to take it."
+Reinforces `subagent-delegation-question`.
+
+---
+
+### Provenance and decision evidence are not joinable — finding
+
+This is a finding about Verdict rather than an external source, but it emerged from applying
+PROV's agent/activity/entity framing to the existing schema, so it belongs here.
+
+Verdict records both halves of the question an AI security boundary most wants answered —
+*what untrusted content was in the agent's context when this capability was authorized?* —
+in the same table, and cannot join them.
+
+`verdict_evidence` carries a single `correlation_id` column
+(`database/migrations/create_verdict_evidence_table.php.stub:16`) discriminated by
+`record_type`, and the provenance migration adds an index built precisely for correlation
+queries: `['record_type', 'correlation_id', 'recorded_at']`, named
+`verdict_evidence_provenance_correlation_index`
+(`database/migrations/add_provenance_to_verdict_evidence_table.php.stub`).
+
+The two record types populate that column from disjoint identifier namespaces:
+
+- **Provenance** uses Laravel AI's invocation id. `RecordAgentPromptProvenance` records
+  `correlationId: $event->invocationId`, `RecordToolResultProvenance` records the same
+  (`src/LaravelAi/RecordToolResultProvenance.php:28`), and
+  `VerdictProvenanceMiddleware` uses `$prompt->invocationId`. So prompt and tool-result
+  entries for one agent run correlate to each other correctly.
+- **Decisions** use the envelope id: `'correlation_id' => $evidence->envelopeId`
+  (`src/Evidence/DatabaseEvidenceRecorder.php:29`), and `ActionEnvelope` mints
+  `id: $id ?? Str::uuid()->toString()` (`src/Actions/ActionEnvelope.php:26`) — a fresh UUID
+  per envelope, created inside `AbstractVerdictTool::envelope()`.
+
+Nothing carries the invocation id across. `AbstractVerdictTool::envelope()` sets
+`idempotencyKey: $request->toolCallId()` and `metadata: ['transport' => 'laravel-ai']`
+(`src/LaravelAi/AbstractVerdictTool.php:151-158`); `ActionContext` holds only `actor` and
+`metadata` (`src/Actions/ActionContext.php`); and `invocationId` appears nowhere in `src`
+outside the three provenance recorders. An application can stuff it into
+`ActionContext::$metadata` by hand, but the decision record's `correlation_id` remains the
+envelope UUID regardless.
+
+The consequence is specific. Verdict can tell you an untrusted `RetrievedDocument` with
+fingerprint F entered invocation I, and separately that capability C was denied under
+envelope E. It cannot tell you that E happened during I. Every investigative question that
+motivates provenance in an AI system — did untrusted content precede this action, which
+sources were present when this approval was requested, does this denial cluster with a
+particular document — needs exactly that edge. PROV would call it `wasInformedBy`: not a
+claim about causation, just about which activity a decision occurred within. That is a claim
+Verdict *can* make honestly, unlike derivation, because it is a containment fact Verdict
+observes directly.
+
+The fix appears small — thread the invocation id onto the envelope and record it — but it
+touches the evidence schema, the Laravel AI integration, and ADR 0007's layering, so it
+needs a decision rather than a patch.
+**Candidate:** `provenance-decision-correlation`
+
+---
+
+**Primitive — reproducible computation.** Re-run the recorded process and obtain the same
+result, using provenance as the recipe.
+**Verdict:** `intentionally rejects`, for a reason already settled. ADR 0008's
+fingerprint-first model means evidence records SHA-256 digests rather than content, so no
+decision can be recomputed from its evidence — only checked for equality against a
+recomputed digest. That is the correct trade for a security boundary handling prompts and
+tool arguments, and it is the same reasoning that makes `wasDerivedFrom` unavailable.
+
+It does sharpen one existing candidate. Reproducibility asks whether the same inputs would
+yield the same decision *today*, and Verdict cannot answer that, because `DecisionEvidence`
+records `targetPolicy`, `rateLimitPolicy`, and `executionClaimPolicy` as *names* only, never
+their configuration (`src/Evidence/DecisionEvidence.php`). A capability whose rate limit was
+raised from 5 to 500 produces evidence indistinguishable from one whose limit never moved.
+PROV's plan-and-version notion is the right framing, and `ProvenanceEntry` already has the
+`componentLabel`/`componentFingerprint` pair for exactly this purpose on the context side —
+it simply is not applied to capability configuration on the decision side. Reinforces
+`capability-configuration-fingerprint` from section 2, and suggests the mechanism.
+
+---
+
+**Surveyed, no hook.** **PROV-O**, **PROV-N**, and **PROV-CONSTRAINTS**: the OWL ontology,
+textual notation, and inference/validity rules. Verdict has no RDF surface and no reason to
+grow one; the transferable content is the data model above. **Provenance in scientific
+workflow systems** (Taverna, Kepler, VisTrails) and the older Open Provenance Model:
+workflow-graph capture aimed at re-execution, which is the reproducibility question already
+rejected. **Fine-grained data provenance in databases** — why/where/how provenance,
+provenance semirings, and lineage in Trio: attributes an output tuple to input tuples
+through *known query semantics*, which is precisely the property an LLM invocation lacks.
+**Provenance-based intrusion detection** (CamFlow, whole-system provenance graphs, PROV-Tracer):
+kernel-level capture feeding graph anomaly detection — a systems-monitoring posture rather
+than a library primitive, and one whose graph is built from syscalls Verdict never sees.
+Also surveyed: provenance bundles as signed units, and the distinction between provenance
+*capture* and provenance *analysis*.
