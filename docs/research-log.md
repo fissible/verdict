@@ -1650,3 +1650,203 @@ verification budget to justify a formal specification, though the *discipline* o
 invariants as state predicates transfers for free and is the recommendation recorded above.
 Also surveyed: Paxos and *The Part-Time Parliament* (consensus, already dismissed in section
 4), and the bakery algorithm.
+
+## 11. Zero Trust and identity propagation
+
+The emphasis here is identity propagation: when an AI agent takes an action, whose identity
+is it acting under, and can the system tell afterwards?
+
+### NIST SP 800-207 — Zero Trust Architecture
+
+Rose, Borchert, Mitchell, Connelly. NIST SP 800-207, August 2020.
+
+- Zero trust moves defenses "from static, network-based perimeters to focus on users, assets,
+  and resources," assuming "no implicit trust granted to assets or user accounts based solely
+  on their physical or network location." Ownership earns nothing either.
+- It "focuses on protecting resources (assets, services, workflows, network accounts, etc.),
+  not network segments," because network position "is no longer seen as the prime component
+  to the security posture of the resource."
+- Tenet 3: "Access to individual enterprise resources is granted on a per-session basis...
+  Access should also be granted with the least privileges needed to complete the task.
+  However, authentication and authorization to one resource will not automatically grant
+  access to a different resource."
+- Tenet 4: "Access to resources is determined by dynamic policy—including the observable state
+  of client identity, application/service, and the requesting asset—and may include other
+  behavioral and environmental attributes." Client identity "can include the user account (or
+  service identity) and any associated attributes... or artifacts to authenticate automated
+  tasks."
+- Tenet 6 is the operative one here: "All resource authentication and authorization are
+  dynamic and strictly enforced before access is allowed. This is a constant cycle of
+  obtaining access, scanning and assessing threats, adapting, and continually reevaluating
+  trust." Reauthorization triggers are enumerated as "time-based, **new resource requested,
+  resource modification**, anomalous subject activity detected."
+- Tenet 5: "No asset is inherently trusted," and posture is evaluated at request time.
+- Tenet 7: collect as much state as possible and feed it back into policy.
+- The tenets are explicitly aspirational: "not all tenets may be fully implemented in their
+  purest form for a given strategy."
+
+**Primitive — reauthorize on resource modification, not once per session.**
+**Verdict:** `already implements`, and this is the **third** independent corroboration of
+`reauthorize-after-refresh`, after Zanzibar's new enemy problem (section 2) and Lamport's
+argument for stating it as a state invariant (section 10). NIST lists "resource
+modification" as a named reauthorization trigger; Verdict's `runBound()` refreshes the target
+and re-runs `$this->authorizer->decide(...)` against the refreshed value
+(`src/VerdictManager.php:182`, `:192`). Verdict satisfies tenet 6 on its protected path and
+does not say so anywhere.
+
+**Primitive — per-request authorization scoped to one resource, granting nothing else.**
+**Verdict:** `already implements`. Tenet 3's "authentication and authorization to one
+resource will not automatically grant access to a different resource" is exactly the argument
+`docs/security-model.md` already makes about approvals: approval "is for that binding—not for
+a broad conversational intent." A conversation is a session; Verdict deliberately refuses to
+treat it as an authorization scope. Useful external backing for a design choice the docs
+currently assert without support.
+
+---
+
+### RFC 8693 — OAuth 2.0 Token Exchange
+
+Jones, Nadalin, Campbell (Ed.), Bradley, Mortimore. IETF, January 2020. Standards Track.
+
+- Defines a token-exchange grant so an authorization server can act as a Security Token
+  Service, for the case where service A must call service C on behalf of user B.
+- **Impersonation** collapses identities: when A impersonates B, A "is indistinguishable from
+  B in that context," and "for all intents and purposes, when A is impersonating B, A is B
+  within the context of the rights authorized by the token." Downstream sees only B.
+- **Delegation** preserves both: "principal A still has its own identity separate from B," and
+  "any actions taken are being taken by A representing B." The RFC's summary — "in a sense, A
+  is an agent for B."
+- The request distinguishes them structurally. `subject_token` (required) "represents the
+  identity of the party on behalf of whom the request is being made"; `actor_token`
+  (optional) "represents the identity of the acting party." With only a subject token,
+  "delegation is impossible," so the request is inherently impersonation.
+- The **`act` claim** exists to "express that delegation has occurred and identify the acting
+  party to whom authority has been delegated." It carries identity claims only — `exp`, `nbf`,
+  and `aud` "are not meaningful when used within an `act` claim."
+- `act` claims **nest into a chain**: "the outermost `act` claim represents the current actor
+  while nested `act` claims represent prior actors," recording delegation history back to the
+  original subject.
+- The access-control rule is strict: consumers "MUST only consider the token's top-level
+  claims and the party identified as the current actor." Prior actors are informational and
+  must not affect authorization.
+- **`may_act`** is the pre-authorization counterpart — it "makes a statement that one party is
+  authorized to become the actor and act on behalf of another party," consulted by the STS
+  before issuing.
+- Security considerations are blunt: "both delegation and impersonation introduce unique
+  security issues," and "any time one principal is delegated the rights of another principal,
+  the potential for abuse is a concern." The recommended mitigations are narrow `scope` and
+  short lifetimes, since scope "restricts the contexts in which the delegated rights can be
+  exercised." Privacy guidance suggests minimizing token data and using pseudonymous
+  identifiers.
+
+**Primitive — delegation is impersonation plus a preserved, auditable acting identity.**
+**Verdict:** `should investigate`, and this is the **fifth** appearance of the delegation
+theme — after `authgate-kernel`'s signed chains (section 1), tacit's sub-agent capability
+subsets (section 1), ocap attenuation and caretakers (section 3), and PROV's `actedOnBehalfOf`
+(section 6). RFC 8693 is the most directly transferable of the five, because it is a deployed
+standard whose data model is two fields and a nesting rule rather than a new architecture.
+
+`ActionContext` carries a single `mixed $actor` plus freeform `metadata`
+(`src/Actions/ActionContext.php`), and `LaravelPolicyAuthorizer` evaluates
+`forUser($envelope->context->actor)`. In RFC 8693's terms Verdict is **impersonation-only by
+construction**: the application must pick one identity, and whichever it picks, the other is
+lost. Pass the human user and the record cannot show an agent was involved; pass a service
+identity and the policy no longer reflects the human's authority. There is no way to say
+"agent A acting for user B," which is precisely the situation Verdict exists to govern.
+
+The RFC's own mitigation for delegation risk — narrow scope and short lifetime — is
+interesting here because Verdict already has both, in `Capability` scoping and approval
+expiry. What it lacks is the acting identity that would make those mitigations attributable.
+Worth noting that the RFC's "consumers MUST only consider... the current actor" rule means a
+delegation chain is for audit, not authorization — which keeps the scope of any Verdict
+version of this small.
+
+---
+
+### DecisionEvidence records no actor — finding
+
+Following the identity thread into the evidence schema produced the sharpest gap in this
+section.
+
+`DecisionEvidence` has 25 fields (`src/Evidence/DecisionEvidence.php:12-38`). They cover the
+envelope id, capability, stage, disposition, reason, argument fingerprint, idempotency key,
+approval receipt fingerprint and phase and outcome, target policy and strategy and both target
+identity fingerprints and whether they matched, rate-limit key fingerprint and policy and
+limit and remaining and reset time, execution claim fingerprint and binding fingerprint and
+policy and status and attempt, and the recorded timestamp.
+
+None of them identifies the actor.
+
+Verdict's central claim is "Models propose. Applications authorize," and the authorization it
+performs is `forUser($actor)`. The evidence records what was decided, about which capability,
+against which target, under which policies — and omits the subject the decision was made
+about. An investigator reading `verdict_evidence` can establish that a refund was permitted
+against a target whose identity fingerprints matched, and cannot establish who did it. Under
+NIST tenet 4, client identity is the primary input to the policy decision; under SP 800-86
+(section 8), the point of the record is later reconstruction.
+
+The omission is not a documented decision. ADR 0008, the evidence privacy model, contains no
+mention of actor, subject, or identity at all. And the privacy rationale that would justify
+it argues the other way: every other potentially sensitive value in this schema is recorded as
+a SHA-256 fingerprint rather than dropped — arguments, targets, rate-limit keys, claim
+bindings. An `actorFingerprint` would be consistent with ADR 0008's fingerprint-first model,
+would support correlation across records without storing an email address, and matches
+RFC 8693's own privacy guidance about pseudonymous identifiers. The `rateLimitKeyFingerprint`
+field partially covers this today, but only when a rate limit is configured, and only as an
+opaque composite.
+
+This is a small schema addition with a large investigative payoff, and it is the natural place
+to also carry an optional acting identity if the delegation question above is ever taken up.
+**Candidate:** `actor-identity-in-evidence`
+
+---
+
+### SPIFFE — specification
+
+`spiffe.io`, SPIFFE concepts. SPIRE is the reference implementation.
+
+- Gives workloads cryptographically verifiable identity "without shipping bootstrap secrets
+  alongside the application," solving the secret-zero problem for service-to-service auth.
+- A **SPIFFE ID** "is a string that uniquely and specifically identifies a workload," shaped
+  as `spiffe://<trust domain>/<workload identifier>`.
+- A **trust domain** "corresponds to the trust root of a system," and should split along
+  physical or practice boundaries — staging must not share a trust domain with production.
+- An **SVID** "is the document with which a workload proves its identity to a resource or
+  caller," valid "if it has been signed by an authority within the SPIFFE ID's trust domain."
+  X.509-SVIDs are preferred; JWT-SVIDs are "susceptible to replay attacks" but necessary when
+  an L7 proxy terminates the connection.
+- The Workload API "does not require that a calling workload have any knowledge of its own
+  identity, or possess any authentication token when calling the API" — identity is derived
+  from what the platform can observe about the caller, not from what the caller presents.
+- All keys and certificates are short-lived and automatically rotated, narrowing the exposure
+  window from any leak.
+- SPIFFE assumes workload isolation is provided elsewhere and declares it out of scope.
+
+**Primitive — identity derived from observable properties rather than presented credentials.**
+**Verdict:** `intentionally rejects`, and the reason is worth writing down once because the
+question will recur. Verdict is an in-process library. There is no network hop between the
+proposer and the enforcer, no workload to attest, and no credential to rotate — the actor
+arrives as a PHP object in `ActionContext`, and the trust boundary Verdict polices is between
+a *model's proposal* and an *application's execution*, not between two services. Adopting
+workload identity would mean Verdict authenticating a caller that is already inside its own
+process, which is the confused-deputy mitigation applied to the wrong boundary.
+
+The transferable observation is narrower and already recorded: SPIFFE separates *workload*
+identity from *user* identity as a matter of course, which is the same separation RFC 8693
+formalizes as subject and actor, and which Verdict's single `$actor` field cannot express.
+
+---
+
+**Surveyed, no hook.** **SPIRE**: node attestation and workload attestation, the registration
+model, and nested SPIRE servers — implementation machinery for the identity model rejected
+above. **BeyondCorp** (Google's papers, 2014 onward): device inventory, tiered trust, and the
+access proxy that moved authorization from the VPN perimeter to a per-request gateway. The
+access-proxy pattern is the PDP/PEP split already covered by OPA in section 2, and the device
+trust tier has no counterpart in a library that never sees a device. **NIST SP 800-207A**
+(zero trust for cloud-native application access) and **CISA's Zero Trust Maturity Model**:
+deployment guidance and maturity scoring for enterprises, not primitives. **mTLS** and service
+meshes as the transport for workload identity. **OAuth 2.0 scopes and the `azp`/`client_id`
+claims**, and **OpenID Connect** ID tokens: the surrounding ecosystem RFC 8693 extends. Also
+surveyed: continuous access evaluation as an alternative to short token lifetimes, and the
+"never trust, always verify" formulation, which the NIST tenets state more precisely and less
+sloganishly.
