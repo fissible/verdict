@@ -4,8 +4,8 @@ Status: Accepted
 
 ## Related issues
 
-- A follow-up issue adds `docs/glossary.md`, where the naming rule in Decision §4 becomes
-  enforceable rather than advisory.
+- [#44](https://github.com/fissible/verdict/issues/44) (open) adds `docs/glossary.md`, where the naming
+  rule in Decision §4 becomes enforceable rather than advisory.
 - [#17](https://github.com/fissible/verdict/issues/17) (open) audits public extension-contract
   stability; `Capability` is the largest surface in that audit and its intended semantics belong in
   writing before the audit fixes them.

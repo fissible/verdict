@@ -4,9 +4,10 @@ Status: Accepted
 
 ## Related issues
 
-- A follow-up issue records a configuration fingerprint in `DecisionEvidence` (Decision §1).
-- A second follow-up issue adds the capability configuration registry that makes the fingerprint
-  resolvable (Decision §2).
+- [#32](https://github.com/fissible/verdict/issues/32) (open) records a configuration fingerprint in
+  `DecisionEvidence` (Decision §1).
+- [#33](https://github.com/fissible/verdict/issues/33) (open) adds the capability configuration registry
+  that makes the fingerprint resolvable (Decision §2–4).
 - [#11](https://github.com/fissible/verdict/issues/11) (open) adds tamper-evident evidence. The registry
   described here is an ordinary table and inherits whatever that issue decides; the two are
   complementary, not alternatives.

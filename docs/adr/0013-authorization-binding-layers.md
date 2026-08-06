@@ -8,8 +8,8 @@ Status: Accepted
   ordering; it is the natural home for the invariant stated below.
 - [#20](https://github.com/fissible/verdict/issues/20) (open) adds genuine concurrency tests, which is
   where the invariant becomes executable rather than documentary.
-- A follow-up issue (not yet filed) adds actor identity to `DecisionEvidence`, closing the gap this
-  ADR names in the first binding layer.
+- [#31](https://github.com/fissible/verdict/issues/31) (open) adds actor and subject identity to
+  `DecisionEvidence`, closing the gap this ADR names in the first binding layer.
 
 ## Context
 

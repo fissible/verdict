@@ -4,9 +4,10 @@ Status: Accepted
 
 ## Related issues
 
-- A follow-up issue adds a subject/actor split to `ActionContext` and records actor identity in
-  `DecisionEvidence`. It is the only implementation work this ADR implies, and it is the prerequisite
-  for either mechanism below being *demonstrable* after the fact.
+- [#31](https://github.com/fissible/verdict/issues/31) (open) adds a subject/actor split to
+  `ActionContext` and records actor identity in `DecisionEvidence`. It is the only implementation work
+  this ADR implies, and it is the prerequisite for either mechanism below being *demonstrable* after the
+  fact.
 - [#15](https://github.com/fissible/verdict/issues/15) (open) makes `GuardedTool` usage observable in
   evidence; the same gap — Verdict knows something at decision time that evidence cannot show — recurs
   here.

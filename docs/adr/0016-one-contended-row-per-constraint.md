@@ -8,7 +8,8 @@ Status: Accepted
   C1 below is what those tests exist to assert; without it they are a collection of unrelated scenarios.
 - [#16](https://github.com/fissible/verdict/issues/16) (open) benchmarks concurrency for the same three
   stores.
-- A follow-up issue measures the isolation-level question left open in Decision §6.
+- [#37](https://github.com/fissible/verdict/issues/37) (open) measures the isolation-level question left
+  open in Decision §6, and is expected to produce the follow-on ADR referenced there.
 
 ## Context
 
