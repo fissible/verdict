@@ -154,6 +154,19 @@ it('executes the underlying tool after the policy permits the bound actor and re
         ->and($tool->invocations)->toBe(1);
 });
 
+it('keeps guarded tools working with a non-executable capability', function (): void {
+    $orders = [1001 => new TestOrder(1001, 72)];
+    $tool = new LookupOrderTool($orders);
+    $verdict = app(VerdictManager::class);
+    registerOrderLookupCapability($verdict, $orders);
+
+    $guarded = $verdict->guard($tool, 'orders.view', new ActionContext(new TestCustomer(72)));
+    $result = json_decode((string) $guarded->handle(new Request(['order_id' => 1001])), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result)->toBe(['id' => 1001, 'customer_id' => 72])
+        ->and($tool->invocations)->toBe(1);
+});
+
 it('fails closed when a tool references an unregistered capability', function (): void {
     $tool = new LookupOrderTool([1001 => new TestOrder(1001, 72)]);
     $guarded = app(VerdictManager::class)->guard(
