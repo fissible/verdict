@@ -1492,3 +1492,161 @@ which is the multi-process case Verdict explicitly is not. Also surveyed: the pa
 case study and its prototype LTL monitoring library, and the related work on monitorability
 under silent actions and unknown event interleaving — the latter is a different uncertainty
 model (ordering unknown, content known) from Verdict's (content unobservable).
+
+## 10. Lamport
+
+A scoped cut, chosen for bearing on questions this survey already raised rather than for
+coverage.
+
+### Buridan's Principle — paper
+
+Leslie Lamport. Written 1984, published *Foundations of Physics* 42 (2012).
+
+- States a general impossibility: "**Buridan's Principle.** A discrete decision based upon an
+  input having a continuous range of values cannot be made within a bounded length of time."
+- The parable: the ass starves because it cannot decide which of two hay piles to eat "within
+  the bounded length of time before it starves." The escape is to give up one of the two
+  properties — "a continuous mechanism must either forgo discreteness, permitting a
+  continuous range of decisions, or must allow an unbounded length of time to make the
+  decision."
+- The railroad crossing makes it concrete and consequential: a driver "must make a discrete
+  decision, to wait for the train or to cross the tracks, in the bounded length of time before
+  the train gets there. By Buridan's Principle, this is impossible."
+- In computing the same thing is called the **Arbiter Problem** — "a device that makes a
+  discrete (usually binary) decision based upon a continuous input value is called an
+  arbiter."
+- The classic instance is interrupt handling. While the interrupt flag is being set "its state
+  is a continuous function of the time at which the device began setting it," so an
+  unsynchronized peripheral gives the CPU a continuous input for a binary decision it must
+  make before the next instruction. "The computer is thus trying to do something that is
+  impossible."
+- The physical symptom is metastability: intermediate voltages that "could be interpreted as
+  a 0 by some circuits and a 1 by others." The machine "stops acting like a digital device and
+  starts acting like a continuous (analog) one, with unpredictable results."
+- The problem went unrecognized "because engineers did not believe that their binary circuit
+  elements could ever produce '1/2's'."
+- The engineering resolution is the important part, and it is not a fix. The problem "is solved
+  in modern computers by allowing enough time for deciding so the probability of not reaching
+  a decision soon enough is much smaller than the probability of other types of failure" —
+  deciding after the third succeeding instruction rather than the current one. With good
+  design "the probability of not having reached a decision by time t is an exponentially
+  decreasing function of t."
+- Crucially, "the problem is not one of making the 'right' decision... the problem is simply
+  making a decision."
+
+**Primitive — a boundary decision on a continuous input cannot be made reliably in bounded
+time; buy margin instead.**
+**Verdict:** `should adopt`, and this converts an existing candidate from a caveat into
+actionable guidance.
+
+`ApprovalReceipt::isExpiredAt()` returns `$time >= $this->expiresAt`
+(`src/Approvals/ApprovalReceipt.php:28`) — a discrete decision (expired or not) over a
+continuous input (time), evaluated at a moment Verdict does not control, against a clock
+whose accuracy Verdict does not verify (`src/VerdictServiceProvider.php:56`). Section 4
+established via Kleppmann that the window between this check and the executor's side effect
+cannot be closed by rearrangement. Buridan explains *why* that is not a defect to be fixed:
+it is the arbiter problem, and it has no bounded-time solution.
+
+What it does supply is the mitigation, and it is one Verdict can state as guidance today at
+no code cost. Lamport's answer to the arbiter is margin — make the decision far from the
+boundary, so the probability of landing in the ambiguous region is dominated by other
+failure modes. Applied to approvals: **an approval expiry window should be chosen to be much
+longer than the worst-case latency between validation and execution.** A capability with a
+30-second expiry in a system where approval validation, rate limiting, claim admission, and
+a slow executor can span seconds is deciding near the boundary on every call. A window of
+minutes decides far from it. `docs/security-model.md` currently tells applications the
+binding facts matter and that approval "is consumed before execution," and says nothing about
+how to size the window. That is the one genuinely actionable thing to say about it.
+**Candidate:** `clock-trust-assumption` (from section 1; this supplies its recommendation
+rather than adding a candidate)
+
+---
+
+### Time, Clocks, and the Ordering of Events in a Distributed System — paper
+
+Leslie Lamport. CACM 21(7), 1978. Dijkstra Prize; ACM SIGOPS Hall of Fame.
+
+From Lamport's own annotation on his publications page, plus the paper's standard content:
+
+- The framing came from special relativity: there is no invariant total order on events, only
+  a partial order in which one event precedes another "iff e1 can causally affect e2."
+- The insight he singles out is that timestamps can supply a total order *consistent with*
+  causality — "This realization may have been brilliant. Having realized it, everything else
+  was trivial."
+- He notes the prior algorithm by Johnson and Thomas "allowed anomalies violating causality,"
+  which his correction removes.
+- He complains that readers miss the paper's actual subject: implementing an arbitrary
+  distributed state machine, since a distributed system "can be described as a particular
+  sequential state machine." Mutual exclusion was chosen only as the simplest illustration.
+- The physical-clock synchronization theorem was "something of an afterthought," and its
+  unexpectedly hard proof foreshadowed later clock-synchronization work.
+
+**Primitive — causality is a partial order; timestamps are a device for extending it, not a
+substitute for it.**
+**Verdict:** `should investigate`, and this is the cleanest statement of the section 6
+finding. Verdict's evidence records `recorded_at` from the injected clock and indexes on
+`['record_type', 'correlation_id', 'recorded_at']`. Within a correlation, that ordering is
+meaningful. *Across* the two correlation namespaces — provenance keyed by Laravel AI's
+invocation id, decisions keyed by the envelope UUID (`src/Evidence/DatabaseEvidenceRecorder.php:29`,
+`:131`) — there is nothing but timestamps, and Lamport's point is precisely that timestamps
+without a causal edge cannot establish that one event could have affected another. Two records
+a millisecond apart may be causally linked or entirely unrelated, and the log cannot say
+which. Threading the invocation id onto the envelope is exactly the missing happens-before
+edge. Reinforces `provenance-decision-correlation`.
+
+---
+
+### Specification method — annotations
+
+Lamport's annotations on SIFT (1978) and *On-the-fly Garbage Collection* (1978).
+
+- On SIFT he calls it "a very early example of the basic specification and verification method
+  I still advocate": write the spec as a state-transition system, then show each lower-level
+  step either implements a higher-level step or is "a 'stuttering' step" leaving the
+  higher-level state unchanged.
+- On the garbage-collection paper he states the lesson that shaped everything after: "behavioral
+  proofs are unreliable and one should always use state-based reasoning for concurrent
+  algorithms."
+
+**Primitive — express correctness as a predicate over states, not as an argument about the
+order in which code runs.**
+**Verdict:** `should adopt`, and it is the strongest available argument for two candidates
+this survey has already raised on independent grounds.
+
+Both of them are, right now, behavioral arguments. `reauthorize-after-refresh` (section 2)
+holds because `VerdictManager::runBound()` happens to refresh the target at
+`src/VerdictManager.php:182` before re-authorizing at `:192`; reorder those statements and
+nothing fails. `single-contended-row-invariant` (section 5) holds because
+`DatabaseRateLimitStore::consumeLocked()` happens to lock one row before reading `attempts`,
+and because a unique index happens to exist in a migration stub; change either and the write
+skew returns silently. In both cases the correctness argument lives in the sequence of
+statements, which is exactly the reasoning Lamport says is unreliable.
+
+The state-based restatements are short and testable. For the first: *no execution-stage
+decision may be derived from a target snapshot older than the refresh for that envelope.*
+For the second: *every rate-limit and execution-claim constraint corresponds to exactly one
+database row, protected by a unique index, and admission requires holding a lock on it.*
+Written that way, they are properties a test or a reviewer can check against, rather than an
+ordering a refactor can quietly break. Issue #19 already consolidates "the accepted gate
+ordering for readers" (ADR 0004) and is the natural place for the first.
+
+---
+
+**Surveyed, no hook.** **The Byzantine Generals Problem** (1982) and **Reaching Agreement in
+the Presence of Faults** (1980), read via Lamport's annotations rather than in full: 3n+1
+processors to tolerate n faults, or 2n+1 with digital signatures. Verdict has a single
+trusted process and no replicas to disagree, so there is no agreement problem to solve.
+Lamport's observation that the signatures there are "a metaphor," needing security only
+against random failure rather than an adversary, is a useful caution against reading
+cryptographic machinery into problems that do not have adversaries — but it changes nothing
+here. **Sequential consistency** (1979): Lamport credits the paper's value to its "simple,
+precise definition of sequential consistency" as a correctness condition for
+multiprocessors. Verdict's ordering guarantees are enforced by database transactions and row
+locks, not by a memory model, and PHP's request-scoped shared-nothing execution means there
+is no concurrent-memory question inside the process at all. **TLA+**, **The Temporal Logic of
+Actions**, and *Specifying Systems*: the tooling that operationalizes the state-based
+reasoning above — not proposed for Verdict, which has neither the concurrency surface nor the
+verification budget to justify a formal specification, though the *discipline* of writing
+invariants as state predicates transfers for free and is the recommendation recorded above.
+Also surveyed: Paxos and *The Part-Time Parliament* (consensus, already dismissed in section
+4), and the bakery algorithm.
