@@ -7,13 +7,20 @@ namespace Fissible\Verdict\Evaluation;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Evidence\ProvenanceEntry;
 use InvalidArgumentException;
 
 final readonly class Observation
 {
     /**
+     * Provenance on the live Observation is for attack-pack assertions only.
+     * ObservationEvidence::fromObservation() does not project these entries into
+     * reports or baselines; #43 must not redesign report evidence. Future
+     * provenance/decision work (#29/#30) may extend reporting separately.
+     *
      * @param  list<ToolObservation>  $toolCalls
      * @param  list<string>  $sideEffects
+     * @param  list<ProvenanceEntry>  $provenanceEntries
      */
     public function __construct(
         public ?Disposition $disposition,
@@ -21,9 +28,11 @@ final readonly class Observation
         public mixed $output = null,
         public array $toolCalls = [],
         public array $sideEffects = [],
+        public array $provenanceEntries = [],
     ) {
         $this->assertToolCalls($this->toolCalls);
         $this->assertSideEffects($this->sideEffects);
+        $this->assertProvenanceEntries($this->provenanceEntries);
     }
 
     /**
@@ -67,6 +76,18 @@ final readonly class Observation
         foreach ($sideEffects as $sideEffect) {
             if (! is_string($sideEffect) || trim($sideEffect) === '') {
                 throw new InvalidArgumentException('Every observed side effect must have a non-empty name.');
+            }
+        }
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $provenanceEntries
+     */
+    private function assertProvenanceEntries(array $provenanceEntries): void
+    {
+        foreach ($provenanceEntries as $entry) {
+            if (! $entry instanceof ProvenanceEntry) {
+                throw new InvalidArgumentException('Every observed provenance entry must be a ProvenanceEntry.');
             }
         }
     }
