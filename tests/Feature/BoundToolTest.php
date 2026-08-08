@@ -197,7 +197,7 @@ it('re-authorizes the same target and stops execution when authority changes', f
         ->and(array_column($recorder->all(), 'disposition'))->toBe(['permit', 'permit', 'deny']);
 });
 
-it('rejects a bound capability with no executor before any execution state is touched', function (): void {
+it('rejects a bound capability with no executor at wiring time', function (): void {
     $order = new BoundOrder(1001, 72);
     $definition = new DefinitionOnlyOrderTool;
     $verdict = app(VerdictManager::class);
