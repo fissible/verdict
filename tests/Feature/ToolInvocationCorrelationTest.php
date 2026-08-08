@@ -11,6 +11,7 @@ use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Events\InvokingTool;
 use Laravel\Ai\Events\ToolInvoked;
+use Laravel\Ai\Gateway\FakeTextGateway;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Tools\Request;
@@ -179,7 +180,7 @@ it('cannot express more than one tool call per step through the fake gateway', f
     expect(array_count_values(CorrelationProbe::events())['handle'] ?? 0)->toBe(0);
 });
 
-it('keeps every tool call identifiable across a nested agent-as-tool invocation', function (): void {
+it('hides the nested clobber when each agent is faked separately', function (): void {
     Ai::fakeAgent(InnerAgent::class, [
         new ToolCall(id: 'call_inner', name: 'ProbeTool', arguments: []),
         'inner done',
@@ -206,7 +207,10 @@ it('keeps every tool call identifiable across a nested agent-as-tool invocation'
     // Request::toolCallId() stays correct for the tool that is actually running.
     expect($trace[2])->toBe('handle:call_inner');
 
-    // The event-carried ids are what to check for clobbering.
+    // Each faked agent gets its own cloned provider, so the invocation id is never actually
+    // shared and no clobbering is visible. Production memoizes one provider per name, where
+    // the outer event does carry the inner id — see the shared-provider test below. A fake
+    // returns green here for a defect that exists in production.
     [$outerInvoking, $innerInvoking] = [CorrelationProbe::$trace[0], CorrelationProbe::$trace[1]];
     [$innerInvoked, $outerInvoked] = [CorrelationProbe::$trace[3], CorrelationProbe::$trace[4]];
 
@@ -226,4 +230,35 @@ it('isolates provider state under a fake in a way production does not', function
     $agent = new ProbeAgent;
 
     expect(Ai::textProviderFor($agent))->not->toBe(Ai::textProviderFor($agent));
+});
+
+it('reports the nested tool invocation id on the outer ToolInvoked event', function (): void {
+    // Resolving the provider directly and swapping the gateway onto it, rather than going
+    // through Ai::fakeAgent(), keeps both agents on the one memoized instance that production
+    // uses. A single gateway serves both generations, so the script is in nesting order.
+    Ai::textProvider('openai')->useTextGateway(new FakeTextGateway([
+        new ToolCall(id: 'call_outer', name: 'InnerAgent', arguments: ['task' => 'go']),
+        new ToolCall(id: 'call_inner', name: 'ProbeTool', arguments: []),
+        'inner done',
+        'outer done',
+    ]));
+
+    (new OuterAgent)->prompt('go');
+
+    [$outerInvoking, $innerInvoking] = [CorrelationProbe::$trace[0], CorrelationProbe::$trace[1]];
+    [$innerInvoked, $outerInvoked] = [CorrelationProbe::$trace[3], CorrelationProbe::$trace[4]];
+
+    // GeneratesText::$currentToolInvocationId is one property on the provider. The nested
+    // generation overwrites it and never restores it, so the outer tool's completion event
+    // reports the inner tool's id. This is an upstream defect; the test pins it so a future
+    // laravel/ai release that fixes it fails here rather than changing evidence silently.
+    expect($outerInvoked['tool_call_id'])->toBe($innerInvoked['tool_call_id'])
+        ->and($outerInvoked['tool_call_id'])->not->toBe($outerInvoking['tool_call_id']);
+
+    // InvokingTool is dispatched in the same frame as the handle() it precedes, so it is
+    // correct at the moment it fires. Only the trailing event is affected.
+    expect($innerInvoking['tool_call_id'])->toBe($innerInvoked['tool_call_id']);
+
+    // Request::toolCallId() is a parameter, not shared state, so it is never affected.
+    expect(CorrelationProbe::$trace[2]['tool_call_id'])->toBe('call_inner');
 });
