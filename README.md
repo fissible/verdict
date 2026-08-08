@@ -186,6 +186,7 @@ The complete, deliberately specific list is in [limitations](docs/limitations.md
 - [Security model and threat model](docs/security-model.md)
 - [Architecture and Laravel AI integration](docs/architecture.md)
 - [Limitations and application responsibilities](docs/limitations.md)
+- [Glossary](docs/glossary.md)
 - [Architecture decision records](docs/adr/)
 - [Release policy](RELEASES.md)
 
