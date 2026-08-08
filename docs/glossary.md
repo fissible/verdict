@@ -7,12 +7,23 @@ entries, and no entries for terms Verdict invented and uses once.
 Each entry gives Verdict's meaning, where the term is used, and the competing
 meaning that must not be assumed.
 
+**Naming rules.** In Verdict's source, documentation, and ADRs:
+
+- "Capability" always means the Verdict class. Where the object-capability sense
+  is meant, write "object capability" in full. (ADR 0014 §4)
+- "Delegation" is reserved for attenuating propagation of a principal's own
+  authority. "Escalation" or "elevated approval" names the trusted-subsystem
+  case. They are not synonyms. (ADR 0015 §4)
+- `approvedBy` records who satisfied a condition, never who delegated authority.
+  (ADR 0015 §4)
+
 ## Actor
 
-The authenticated principal whose authorization is evaluated. In practice it is
-the application identity passed through `ActionContext`.
+The application-supplied principal whose authorization is evaluated, passed
+through `ActionContext`. Verdict does not authenticate it, the same way it does
+not authenticate `approvedBy`.
 
-Used in `src/Actions/ActionContext.php`, `docs/security-model.md`.
+Used in `src/Actions/ActionContext.php`, `docs/security-model.md`, ADR 0015.
 
 Competing meaning: any person or role. In Verdict it means the specific identity
 the application chooses to authorize.
@@ -22,7 +33,7 @@ the application chooses to authorize.
 A durable record that a human approved a specific, bound action. It is consumed
 before execution and cannot be reused for a different binding.
 
-Used in `src/Approvals/`, `docs/security-model.md`.
+Used in `src/Approvals/`, `docs/architecture.md`.
 
 Competing meaning: a generic confirmation. In Verdict it is a single-use,
 canonically bound security state.
@@ -31,9 +42,11 @@ canonically bound security state.
 
 The canonical, application-defined facts that scope a safeguard. Approval
 bindings, claim bindings, and execution-target bindings use the same idea but
-are not interchangeable.
+are not interchangeable. ADR 0013 separates three distinct layers — identity,
+the authorization request, and runtime execution binding — which are frequently
+conflated.
 
-Used in `docs/architecture.md`, `docs/security-model.md`.
+Used in `docs/architecture.md`, `docs/security-model.md`, ADR 0013.
 
 Competing meaning: any association between two values. In Verdict a binding is
 the deliberately chosen identity that a policy or receipt is tied to.
@@ -60,23 +73,35 @@ admission identity.
 
 ## Delegation
 
-Authority deliberately passed to another party under an explicit, attenuating
-policy. It never silently expands the original grant.
+Attenuating propagation of a principal's own authority: a delegated hop may
+narrow scope but never add authority, broaden scope, or extend validity.
 
-Used in `docs/architecture.md`, `docs/security-model.md`.
+Verdict does not model multi-hop agent identity today. ADR 0015 states the
+attenuation property in advance as Invariant D1, constraining any future
+delegation model rather than introducing one.
 
-Competing meaning: any transfer of work. In Verdict delegation preserves the
-authority boundary and its attenuation invariant.
+Used in ADR 0015.
+
+Competing meaning: any transfer of work. In Verdict delegation is specifically
+the authority-preserving case, and it is not what an approval does.
 
 ## Escalation
 
-An increase in authority beyond the configured grant. It is never implicit and
-must not happen through delegation.
+Conditional exercise of a *different* principal's authority — typically the
+application's own — with an approval as an input to the policy rather than a
+source of authority. Verdict already expresses this: `requiresConfirmation()`
+binds the approval to one concrete request and `atMostOnce()` bounds it to a
+single execution. The Laravel gate decides against the business's rules, not the
+approver's.
 
-Used in `docs/architecture.md`, `docs/security-model.md`.
+Nothing is attenuated here, so Invariant D1 does not apply. The approver is not
+lending their permissions.
 
-Competing meaning: a harmless privilege bump. In Verdict escalation is a
-security-relevant change that requires an explicit, controlled decision.
+Used in ADR 0015.
+
+Competing meaning: a principal gaining more authority than it was granted. In
+Verdict nothing is widened; a second principal's authority is exercised under
+conditions.
 
 ## Evidence
 
@@ -121,20 +146,24 @@ audit trail with a privacy-first shape.
 
 ## Subject
 
-The resource entity being acted upon, used interchangeably with the application
-target in policy evaluation.
+The principal on whose behalf an action is taken, as distinct from the actor who
+takes it — RFC 8693's subject/actor split.
 
-Used in `docs/architecture.md`, `docs/security-model.md`.
+Verdict does not model this yet. `ActionContext` carries a single actor, so
+evidence records that an approval was consumed but not on whose behalf. ADR 0015
+names the gap and fixes the shape; the entry exists so the term is not reused
+for something else in the meantime.
 
-Competing meaning: the principal performing an action. Verdict uses actor for
-that role and subject for the resource.
+Used in ADR 0015.
+
+Competing meaning: the resource being acted upon. Verdict calls that the target.
 
 ## Target
 
 The application-selected resource that authorization, approvals, claims, limits,
 and execution operate on.
 
-Used in `src/Actions/ActionEnvelope.php`, `docs/security-model.md`.
+Used in `src/Capabilities/Capability.php`, `docs/security-model.md`.
 
 Competing meaning: a destination. In Verdict the target is the trusted resource
 the executor is allowed to act on.
