@@ -26,6 +26,7 @@ use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\Exceptions\ExecutionClaimFinalizationFailed;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimAdmission;
@@ -246,6 +247,12 @@ final readonly class VerdictManager
      */
     public function bound(Tool $definition, string $capability, ActionContext|callable $context): BoundTool
     {
+        $registered = $this->capabilities->get($capability);
+
+        if (! $registered->isExecutable()) {
+            throw CapabilityNotExecutable::named($registered->name);
+        }
+
         return new BoundTool($definition, $capability, $context, $this, $this->deniedMessage);
     }
 

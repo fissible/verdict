@@ -4,6 +4,9 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Reject unregistered and non-executable capabilities when `Verdict::bound()` constructs a tool, so a
+  missing `->executeUsing()` surfaces as a wiring error instead of a request-time deny.
+
 ## [0.2.0] - 2026-08-05
 
 - Add a deterministic `AccountRecoveryAttackPack` with urgency-pressure identity-verification

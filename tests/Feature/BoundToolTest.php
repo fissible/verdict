@@ -10,6 +10,9 @@ use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
+use Fissible\Verdict\Exceptions\UnknownCapability;
+use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Auth\Access\Response;
@@ -194,7 +197,7 @@ it('re-authorizes the same target and stops execution when authority changes', f
         ->and(array_column($recorder->all(), 'disposition'))->toBe(['permit', 'permit', 'deny']);
 });
 
-it('fails closed when a bound capability has no executor', function (): void {
+it('rejects a bound capability with no executor at wiring time', function (): void {
     $order = new BoundOrder(1001, 72);
     $definition = new DefinitionOnlyOrderTool;
     $verdict = app(VerdictManager::class);
@@ -204,13 +207,37 @@ it('fails closed when a bound capability has no executor', function (): void {
         resolveTarget: fn (ActionEnvelope $envelope): BoundOrder => $order,
     ));
 
-    $tool = $verdict->bound(
+    expect(fn (): BoundTool => $verdict->bound(
         $definition,
         'orders.bound-view',
         new ActionContext(new BoundCustomer(72)),
+    ))->toThrow(
+        CapabilityNotExecutable::class,
+        'orders.bound-view',
     );
-    $result = json_decode((string) $tool->handle(new Request(['order_id' => 1001])), true, flags: JSON_THROW_ON_ERROR);
 
-    expect($result['decision'])->toBe('deny')
+    $recorder = app(EvidenceRecorder::class);
+
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        throw new LogicException('Expected the in-memory evidence recorder.');
+    }
+
+    expect($recorder->all())->toBe([])
         ->and($definition->invocations)->toBe(0);
+});
+
+it('rejects a bound capability that is not registered', function (): void {
+    $definition = new DefinitionOnlyOrderTool;
+    $verdict = app(VerdictManager::class);
+
+    expect(fn (): BoundTool => $verdict->bound(
+        $definition,
+        'orders.missing',
+        new ActionContext(new BoundCustomer(72)),
+    ))->toThrow(
+        UnknownCapability::class,
+        'orders.missing',
+    );
 });
