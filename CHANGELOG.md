@@ -7,6 +7,10 @@ All notable changes to Verdict will be documented in this file.
 - Reject unregistered and non-executable capabilities when `Verdict::bound()` constructs a tool, so a
   missing `->executeUsing()` surfaces as a wiring error instead of a request-time deny.
 
+- Add a deterministic `RagBorneInjectionAttackPack` covering unauthorized, confirmable,
+  argument-manipulation, and untrusted retrieved-document provenance cases for
+  RAG-borne injection, plus an Observation-local provenance assertion.
+
 ## [0.2.0] - 2026-08-05
 
 - Add a deterministic `AccountRecoveryAttackPack` with urgency-pressure identity-verification
