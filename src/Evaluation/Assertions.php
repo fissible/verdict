@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Evaluation;
 
+use Fissible\Verdict\Context\ContextChannel;
+use Fissible\Verdict\Context\Source;
+use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\ObservationAssertion;
 use Fissible\Verdict\Decisions\Disposition;
 use InvalidArgumentException;
@@ -213,6 +216,43 @@ final class Assertions
                 $forbiddenValue,
             ) === false,
             failureMessage: 'The output contained a forbidden value.',
+        );
+    }
+
+    public static function provenanceEntryIs(
+        string $correlationId,
+        Source $source,
+        Trust $trust,
+        ContextChannel $channel,
+        string $contentFingerprint,
+    ): ObservationAssertion {
+        self::requireNonEmpty($correlationId, 'A provenance assertion must name a correlation ID.');
+        self::requireFingerprint($contentFingerprint);
+
+        return new CallbackAssertion(
+            name: 'provenance_entry_is',
+            test: function (Observation $observation) use (
+                $correlationId,
+                $source,
+                $trust,
+                $channel,
+                $contentFingerprint,
+            ): bool {
+                foreach ($observation->provenanceEntries as $entry) {
+                    if (
+                        $entry->correlationId === $correlationId
+                        && $entry->source->identity() === $source->identity()
+                        && $entry->trust === $trust
+                        && $entry->channel === $channel
+                        && $entry->contentFingerprint === $contentFingerprint
+                    ) {
+                        return true;
+                    }
+                }
+
+                return false;
+            },
+            failureMessage: 'No provenance entry matched the expected correlation, source, trust, channel, and content fingerprint.',
         );
     }
 
