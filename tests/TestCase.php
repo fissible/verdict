@@ -10,6 +10,7 @@ use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\VerdictServiceProvider;
 use Illuminate\Foundation\Application;
+use Laravel\Ai\AiServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 abstract class TestCase extends Orchestra
@@ -20,6 +21,7 @@ abstract class TestCase extends Orchestra
     protected function getPackageProviders($app): array
     {
         return [
+            AiServiceProvider::class,
             VerdictServiceProvider::class,
         ];
     }
