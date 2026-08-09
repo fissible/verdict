@@ -189,6 +189,7 @@ final class VerdictServiceProvider extends ServiceProvider
             projector: $app->make(FieldProjector::class),
             evidence: $app->make(EvidenceRecorder::class),
             clock: $app->make(Clock::class),
+            invocations: $app->make(InvocationContext::class),
         ));
 
         $this->app->scoped(ProvenanceLedger::class, fn (Container $app): ProvenanceLedger => new ProvenanceLedger(
@@ -218,6 +219,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 rateLimits: $app->make(RateLimitManager::class),
                 executionClaims: $app->make(ExecutionClaimManager::class),
                 provenance: $app->make(ProvenanceLedger::class),
+                invocations: $app->make(InvocationContext::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
             );
         });

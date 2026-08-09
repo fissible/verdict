@@ -43,7 +43,7 @@ final readonly class DecisionEvidence
         }
     }
 
-    public static function fromEvaluation(Evaluation $evaluation): self
+    public static function fromEvaluation(Evaluation $evaluation, ?string $invocationId = null): self
     {
         return new self(
             envelopeId: $evaluation->envelope->id,
@@ -108,6 +108,7 @@ final readonly class DecisionEvidence
                 ? $evaluation->decision->metadata['execution_claim_attempt']
                 : null,
             recordedAt: new DateTimeImmutable,
+            invocationId: $invocationId,
         );
     }
 }
