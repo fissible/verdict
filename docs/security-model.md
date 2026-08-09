@@ -71,6 +71,8 @@ $records = DB::table('verdict_evidence')
 
 Decision rows retain their envelope identifier in `correlation_id`; it is deliberately separate from `invocation_id`.
 
+An `invocation_id` is a containment fact: Verdict observed that those records occurred during the same Laravel AI invocation. It does not establish that a particular provenance entry influenced, caused, or derived a decision. Derivation edges are deliberately separate work in #30; consumers must not infer causality from co-occurrence.
+
 ## Threat model
 
 Verdict is designed to make these failures less likely on its protected path:
