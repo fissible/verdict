@@ -28,7 +28,7 @@ use Fissible\Verdict\Evidence\ContentFingerprint;
  * Case (4) asserts only facts available today (trust, external source, retrieved
  * channel, content fingerprint, correlation). It does not claim that a
  * provenance entry caused or informed a decision. Provenance→decision
- * correlation and derivation edges are issues #29 and #30.
+ * correlation is #29; derivation edges remain #30.
  */
 final readonly class RagBorneInjectionAttackPack implements AttackPack
 {
