@@ -7,7 +7,7 @@ use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
-use Fissible\Verdict\VerdictManager;
+use Fissible\Verdict\Facades\Verdict;
 
 function invocationEvidenceEnvelope(string $capability): ActionEnvelope
 {
@@ -18,13 +18,11 @@ function invocationEvidenceEnvelope(string $capability): ActionEnvelope
 }
 
 it('records no invocation ID for direct run and runBound calls outside Laravel AI', function (): void {
-    $verdict = app(VerdictManager::class);
-
-    $verdict->run(
+    Verdict::run(
         invocationEvidenceEnvelope('orders.direct-run'),
         fn (): never => throw new LogicException('The unregistered capability must not execute.'),
     );
-    $verdict->runBound(invocationEvidenceEnvelope('orders.direct-run-bound'));
+    Verdict::runBound(invocationEvidenceEnvelope('orders.direct-run-bound'));
 
     $recorder = app(EvidenceRecorder::class);
     expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
