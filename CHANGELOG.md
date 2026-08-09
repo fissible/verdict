@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-08
+
 - Reject unregistered and non-executable capabilities when `Verdict::bound()` constructs a tool, so a
   missing `->executeUsing()` surfaces as a wiring error instead of a request-time deny.
 
@@ -88,7 +90,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/fissible/verdict/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fissible/verdict/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/fissible/verdict/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/fissible/verdict/releases/tag/v0.1.0
