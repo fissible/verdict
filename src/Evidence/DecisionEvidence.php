@@ -36,7 +36,12 @@ final readonly class DecisionEvidence
         public ?string $executionClaimStatus,
         public ?int $executionClaimAttempt,
         public DateTimeImmutable $recordedAt,
-    ) {}
+        public ?string $invocationId = null,
+    ) {
+        if ($this->invocationId !== null) {
+            ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
+        }
+    }
 
     public static function fromEvaluation(Evaluation $evaluation): self
     {

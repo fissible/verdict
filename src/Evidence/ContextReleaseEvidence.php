@@ -32,7 +32,12 @@ final readonly class ContextReleaseEvidence
         public DateTimeImmutable $recordedAt,
         public array $transformFingerprints = [],
         public array $transformedPathFingerprints = [],
-    ) {}
+        public ?string $invocationId = null,
+    ) {
+        if ($this->invocationId !== null) {
+            ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
+        }
+    }
 
     /**
      * @param  list<string>  $requestedPaths
@@ -53,6 +58,7 @@ final readonly class ContextReleaseEvidence
         DateTimeImmutable $recordedAt,
         array $transformNames = [],
         array $transformedPaths = [],
+        ?string $invocationId = null,
     ): self {
         return new self(
             source: $source->identity(),
@@ -68,6 +74,7 @@ final readonly class ContextReleaseEvidence
             recordedAt: $recordedAt,
             transformFingerprints: array_map(self::fingerprintPath(...), $transformNames),
             transformedPathFingerprints: array_map(self::fingerprintPath(...), $transformedPaths),
+            invocationId: $invocationId,
         );
     }
 

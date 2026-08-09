@@ -103,6 +103,7 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         executionClaimStatus: 'completed',
         executionClaimAttempt: 1,
         recordedAt: $recordedAt,
+        invocationId: 'invocation-123',
     );
 
     databaseEvidenceRecorder()->record($evidence);
