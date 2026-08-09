@@ -14,37 +14,33 @@ corrected — the issues are the source of truth for scope, this is the source o
 
 ---
 
-## v0.3.0 — Evaluation harness completeness
+## v0.3.0 — Evaluation harness extension *(cut)*
 
-**Theme.** Finish the evaluation story started in v0.2.0, and make the release metadata honest again.
+**Theme.** Ship the RAG-borne injection pack and the `BoundTool` wiring fix, and make the release
+metadata honest again.
 
-Two changes already landed on `main` unmilestoned and form this release's feature content.
+Everything in this release landed on `main` before the milestone existed. It was cut deliberately small
+rather than held open for further scope — the attack pack has standing value now, and #29/#30 were
+waiting on nothing but a tag.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| — | — | — | ✅ `RagBorneInjectionAttackPack` (#43, merged in #55) |
-| — | — | — | ✅ Reject non-executable capabilities at `BoundTool` construction (#35) |
-| [#48](https://github.com/fissible/verdict/issues/48) `CaseStatus::Pending` for cases blocked on unlanded dependencies | M | none | Open |
-| [#38](https://github.com/fissible/verdict/issues/38) Document approval TTL sizing against worst-case latency | XS | none | Open |
-| [#39](https://github.com/fissible/verdict/issues/39) Document confirmation-fatigue guidance | XS | none | Open |
-| [#40](https://github.com/fissible/verdict/issues/40) Frame shared rate-limit buckets as a composition bound | XS | none | Open |
-| [#41](https://github.com/fissible/verdict/issues/41) Add evidence-verification cadence to operational responsibilities | XS | none | Open |
-| — | S | none | `RELEASES.md`: refresh the supported platform matrix and public-surface section, both still written for `0.1.x` |
+| [#43](https://github.com/fissible/verdict/issues/43) RAG-borne injection attack pack | M | none | ✅ merged in #55 |
+| [#35](https://github.com/fissible/verdict/issues/35) Reject non-executable capabilities at `BoundTool` construction | S | none | ✅ |
+| [#50](https://github.com/fissible/verdict/issues/50) Spike: measure Laravel AI tool-invocation correlation | S | none | ✅ unblocks #29 |
+| — | S | none | ✅ `RELEASES.md` support matrix and public-surface refresh; `MILESTONES.md` added |
 
-**Why #48 here.** #43 surfaced it, and the RAG pack shipped with a skipped case that is exactly what
-`CaseStatus::Pending` exists to express. Shipping the pack without it leaves the subsystem stating a
-limitation it has no vocabulary for.
-
-**Why the four XS docs here.** They are the entire remaining operational-guidance backlog, they have no
-dependencies, and they cost under an hour each. Clearing them closes a category rather than leaving four
-loose ends across future milestones.
+**Why so small.** The alternative was holding the tag for #48 and four XS doc issues — roughly a day of
+work unrelated to what had already landed. Tagging first and moving that scope to v0.4.0 got the pack
+released and freed the provenance chain to start immediately. A tag is a point in history; work in
+flight does not need to wait for it.
 
 ---
 
 ## v0.4.0 — Provenance chain and dependency honesty
 
 **Theme.** Make provenance a chain rather than a set, and stop depending on Laravel AI's surface by
-assumption.
+assumption. Also absorbs the evaluation and documentation scope displaced when v0.3.0 was cut small.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
@@ -52,10 +48,34 @@ assumption.
 | [#30](https://github.com/fissible/verdict/issues/30) Record derivation edges between provenance entries | L | #29 | Open |
 | [#18](https://github.com/fissible/verdict/issues/18) Audit Laravel AI dependency surface and undocumented assumptions | M | none | Open |
 | [#11](https://github.com/fissible/verdict/issues/11) Tamper-evident evidence recorder via `fissible/attest` | M | `attest-laravel` `^1.0.0` ✅ | Open |
+| [#48](https://github.com/fissible/verdict/issues/48) `CaseStatus::Pending` for cases blocked on unlanded dependencies | M | none | Open — displaced from v0.3.0 |
+| [#38](https://github.com/fissible/verdict/issues/38) Document approval TTL sizing against worst-case latency | XS | none | Open |
+| [#39](https://github.com/fissible/verdict/issues/39) Document confirmation-fatigue guidance | XS | none | Open |
+| [#40](https://github.com/fissible/verdict/issues/40) Frame shared rate-limit buckets as a composition bound | XS | none | Open |
+| [#41](https://github.com/fissible/verdict/issues/41) Add evidence-verification cadence to operational responsibilities | XS | none | Open |
 
-**Why #29 and #30 next.** #50 answered the mechanism question and is closed; the correlation decision
-(key on `(invocationId, toolCallId)`, capture at `InvokingTool`, never at `ToolInvoked`) is recorded
-there while the reasoning is fresh. Deferring these past one more release means re-deriving it.
+**Why #48 belongs with this group.** #43 surfaced it, and the RAG pack shipped with a skipped case that
+is exactly what `CaseStatus::Pending` exists to express. That same skipped case is what #29 and #30
+unskip, so the three land naturally together.
+
+**The four XS docs** are the entire remaining operational-guidance backlog, no dependencies, under an
+hour each. Clearing them closes a category rather than leaving loose ends across future milestones.
+
+**Why #29 and #30 next.** #50 answered the mechanism question and is closed, with the reasoning recorded
+while it was fresh. Deferring past one more release means re-deriving it.
+
+**#29 correlates at invocation granularity, which is the safe one.** `correlationId` is populated from
+Laravel AI's per-generation `invocationId` (`VerdictProvenanceMiddleware.php:37`,
+`RecordAgentPromptProvenance.php:31`, `RecordToolResultProvenance.php:28`) — not the tool-invocation id.
+`$invocationId` is captured lexically in `listenForToolInvocations()` and stays correct under nesting, so
+the clobber that dominated the #50 spike does not touch #29. The `toolCallId` half of that spike's
+decision becomes load-bearing only if Verdict later wants *which tool call* produced a decision, which is
+#30 territory at the earliest. Do not over-engineer #29's key.
+
+Propagation has a precedent in-tree: `ApprovalExecutionContext` is a container singleton holding frames,
+pushed by `VerdictApprovalMiddleware` around `$next($prompt)`. A sibling context pushed by
+`VerdictProvenanceMiddleware` gives #29 automatic propagation with no application-side threading, and
+reads `null` outside an invocation — exactly the semantics the issue requires.
 
 Both issues carry an acceptance-criteria item to unskip the provenance case in
 `tests/Unit/RagBorneInjectionAttackPackTest.php`. That skipped test is the worked example of what this
