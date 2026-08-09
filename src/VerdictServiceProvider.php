@@ -28,6 +28,7 @@ use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
 use Fissible\Verdict\LaravelAi\RecordAgentPromptProvenance;
 use Fissible\Verdict\LaravelAi\RecordToolResultProvenance;
@@ -55,6 +56,7 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->singleton(CapabilityAuthorizer::class, LaravelPolicyAuthorizer::class);
         $this->app->singleton(Clock::class, SystemClock::class);
         $this->app->scoped(ApprovalExecutionContext::class);
+        $this->app->scoped(InvocationContext::class);
         $this->app->scoped(PromptProvenanceRegistry::class);
 
         $this->app->singleton(ApprovalReceiptStore::class, function (Container $app): ApprovalReceiptStore {
