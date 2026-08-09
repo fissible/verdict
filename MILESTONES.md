@@ -1,0 +1,158 @@
+# Milestones
+
+The release plan. [`RELEASES.md`](RELEASES.md) states the release *policy* — what a minor bump means
+and when a release may be cut. This document states the *plan* — what goes in which release, and why
+that ordering.
+
+Work is ordered leaves-to-roots over the dependency graph: nothing is scheduled before the things it
+depends on. Within a milestone, prefer the smallest effort first, then the most widely depended-on.
+
+Effort key: **XS** (<1h) · **S** (1–2h) · **M** (~half day) · **L** (~1 day) · **XL** (2–3 days).
+
+GitHub milestones mirror this document. When they disagree, this document is wrong and should be
+corrected — the issues are the source of truth for scope, this is the source of truth for ordering.
+
+---
+
+## v0.3.0 — Evaluation harness completeness
+
+**Theme.** Finish the evaluation story started in v0.2.0, and make the release metadata honest again.
+
+Two changes already landed on `main` unmilestoned and form this release's feature content.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| — | — | — | ✅ `RagBorneInjectionAttackPack` (#43, merged in #55) |
+| — | — | — | ✅ Reject non-executable capabilities at `BoundTool` construction (#35) |
+| [#48](https://github.com/fissible/verdict/issues/48) `CaseStatus::Pending` for cases blocked on unlanded dependencies | M | none | Open |
+| [#38](https://github.com/fissible/verdict/issues/38) Document approval TTL sizing against worst-case latency | XS | none | Open |
+| [#39](https://github.com/fissible/verdict/issues/39) Document confirmation-fatigue guidance | XS | none | Open |
+| [#40](https://github.com/fissible/verdict/issues/40) Frame shared rate-limit buckets as a composition bound | XS | none | Open |
+| [#41](https://github.com/fissible/verdict/issues/41) Add evidence-verification cadence to operational responsibilities | XS | none | Open |
+| — | S | none | `RELEASES.md`: refresh the supported platform matrix and public-surface section, both still written for `0.1.x` |
+
+**Why #48 here.** #43 surfaced it, and the RAG pack shipped with a skipped case that is exactly what
+`CaseStatus::Pending` exists to express. Shipping the pack without it leaves the subsystem stating a
+limitation it has no vocabulary for.
+
+**Why the four XS docs here.** They are the entire remaining operational-guidance backlog, they have no
+dependencies, and they cost under an hour each. Clearing them closes a category rather than leaving four
+loose ends across future milestones.
+
+---
+
+## v0.4.0 — Provenance chain and dependency honesty
+
+**Theme.** Make provenance a chain rather than a set, and stop depending on Laravel AI's surface by
+assumption.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#29](https://github.com/fissible/verdict/issues/29) Correlate provenance entries with decision evidence | M | #50 ✅ | Open |
+| [#30](https://github.com/fissible/verdict/issues/30) Record derivation edges between provenance entries | L | #29 | Open |
+| [#18](https://github.com/fissible/verdict/issues/18) Audit Laravel AI dependency surface and undocumented assumptions | M | none | Open |
+| [#11](https://github.com/fissible/verdict/issues/11) Tamper-evident evidence recorder via `fissible/attest` | M | `attest-laravel` `^1.0.0` ✅ | Open |
+
+**Why #29 and #30 next.** #50 answered the mechanism question and is closed; the correlation decision
+(key on `(invocationId, toolCallId)`, capture at `InvokingTool`, never at `ToolInvoked`) is recorded
+there while the reasoning is fresh. Deferring these past one more release means re-deriving it.
+
+Both issues carry an acceptance-criteria item to unskip the provenance case in
+`tests/Unit/RagBorneInjectionAttackPackTest.php`. That skipped test is the worked example of what this
+milestone delivers.
+
+**Why #18 was pulled forward.** It was backlog until the `toolInvocationId` work made it concrete:
+Verdict depended on an undocumented Laravel AI correlation assumption and found out by measuring
+(laravel/ai#855). laravel/ai#848 will change that surface again. The audit is worth doing while the
+findings are in hand, and it pairs with the `RELEASES.md` matrix refresh in v0.3.0.
+
+**#11 is unblocked.** `fissible/attest-laravel` reached `v1.0.0`, so the beta constraint that held this
+back is gone and the adapter can be built against a stable contract. Most of the complexity lives
+upstream in `attest`/`attest-laravel`; this is a thin adapter plus tests. #41 (v0.3.0) strengthens and is
+strengthened by it, but neither blocks the other.
+
+The issue body still reads `^1.0.0-beta for now` and refers to `v0.2.0` milestone scope — both stale, and
+worth correcting when the issue is picked up.
+
+---
+
+## v0.5.0 — Evidence identity and configuration
+
+**Theme.** Make a decision record say *who*, *against what configuration*, and *through which adapter* —
+the identity questions currently missing from `DecisionEvidence`.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#32](https://github.com/fissible/verdict/issues/32) Record a capability configuration fingerprint | S | none | Open |
+| [#34](https://github.com/fissible/verdict/issues/34) Expose a stable execution identity to executors | S | none | Open — `scope: design` |
+| [#31](https://github.com/fissible/verdict/issues/31) Record actor and subject identity in decision evidence | M | none | Open |
+| [#33](https://github.com/fissible/verdict/issues/33) Add a content-addressed capability configuration registry | M | #32 | Open |
+| [#15](https://github.com/fissible/verdict/issues/15) Make `GuardedTool` usage observable in evidence | — | none | Open — needs sizing |
+
+These share one surface and one ADR cluster (0013, 0015, 0017, 0008). Splitting them across releases
+means touching evidence serialization repeatedly; grouping them means one migration and one upgrade note.
+
+#34 is still `scope: design` — resolve that before this milestone opens, or drop it.
+
+---
+
+## v0.6.0 — Live evaluation and harness documentation
+
+**Theme.** Make the evaluation subsystem usable by someone who did not build it.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#51](https://github.com/fissible/verdict/issues/51) Provide a live agent runner and a command to run live evaluation | L | none | Open |
+| [#49](https://github.com/fissible/verdict/issues/49) Document the evaluation harness and attack packs | M/L | #51 (partial) | Open |
+
+Ordered, not parallel. #49's live-evaluation section cannot be written honestly before #51 lands, and its
+`CaseStatus` section changes once #48 ships in v0.3.0. Writing the docs first means writing them twice.
+
+---
+
+## 1.0 readiness — unversioned backlog
+
+Not scheduled. These gate a 1.0 tag rather than any particular minor, and several are `help wanted`.
+
+**Concurrency assurance.** Currently `grep -rli concurrent tests/` returns zero matches; the atomicity
+claims are untested against actual concurrency.
+
+| Issue | Effort | Deps |
+|---|---|---|
+| [#37](https://github.com/fissible/verdict/issues/37) Determine required isolation level for security-state connections | M | none — blocks a follow-on ADR |
+| [#20](https://github.com/fissible/verdict/issues/20) Add genuine concurrency tests for claims, rate limits, approvals | — | related #37 |
+| [#16](https://github.com/fissible/verdict/issues/16) Benchmark concurrency for claims, rate limits, approvals | — | related #37 |
+
+Take #37 first: it is a spike, and its answer shapes what #20 and #16 are even measuring.
+
+**Stability and traceability.**
+
+| Issue | Effort | Deps |
+|---|---|---|
+| [#17](https://github.com/fissible/verdict/issues/17) Audit and label public extension-contract stability | — | none |
+| [#42](https://github.com/fissible/verdict/issues/42) Trace each documented guarantee and non-guarantee to a test | M | none |
+| [#19](https://github.com/fissible/verdict/issues/19) Add consolidated ordering table and streaming/queued compatibility matrix | — | none |
+
+#17 and #42 are the two that genuinely gate 1.0: one states which interfaces are load-bearing, the other
+proves the documented guarantees are actually tested.
+
+**Unscheduled.**
+
+| Issue | Effort | Deps | Note |
+|---|---|---|---|
+| [#22](https://github.com/fissible/verdict/issues/22) Extend `ApprovalExecutionContext` scope across streamed responses | — | none | Overlaps the streaming path touched by laravel/ai#848 |
+| [#36](https://github.com/fissible/verdict/issues/36) Add a `verdict:validate` wiring audit command | S | #35 ✅ | Issue states priority **low** |
+
+---
+
+## Upstream dependency watch
+
+Verdict pins `laravel/ai: ^0.10.2`, which in Composer's pre-1.0 caret semantics is `>=0.10.2 <0.11.0`.
+
+- **laravel/ai#848** (open) fixes the nested `toolInvocationId` clobber. It is minor-bump shaped, so it
+  will likely ship in `0.11.0` and will not be picked up automatically.
+- `tests/Feature/ToolInvocationCorrelationTest.php` pins the *current, buggy* behaviour deliberately.
+  When the constraint widens past #848, that test goes red. **That failure is the designed alarm, not a
+  regression** — it means upstream correlation semantics changed and Verdict's evidence path needs review.
+- Dependabot watches Composer weekly and will open the widening PR. Whichever milestone is open when that
+  lands absorbs the compatibility review, per `RELEASES.md`.

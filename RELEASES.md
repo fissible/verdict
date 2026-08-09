@@ -20,13 +20,26 @@ minor lines may receive a fix when the change is low-risk, but are not guarantee
 
 | Verdict line | PHP | Laravel | Laravel AI | Status |
 |---|---|---|---|---|
-| `0.1.x` | `8.3`–`8.5` | `12.x`, `13.x` | `0.10.2`–`0.10.x` | Developer preview |
+| `0.3.x` | `8.3`–`8.5` | `12.x`, `13.x` | `0.10.2`–`0.10.x` | Developer preview — current |
+| `0.2.x` | `8.3`–`8.5` | `12.x`, `13.x` | `0.10.2`–`0.10.x` | Superseded |
+| `0.1.x` | `8.3`–`8.5` | `12.x`, `13.x` | `0.10.2`–`0.10.x` | Superseded |
+
+Only the current line receives fixes. Older `0.x` lines may receive a low-risk fix but are not
+guaranteed maintenance.
 
 Laravel AI is pre-1.0. Verdict intentionally constrains each supported Laravel AI minor line and
 tests released public contracts rather than allowing an unreviewed minor upgrade. Support for a
 new Laravel AI minor requires a compatibility review and a Verdict release.
 
-## Intended public surface in 0.1
+`composer.json` pins `laravel/ai: ^0.10.2`, which in Composer's pre-1.0 caret semantics means
+`>=0.10.2 <0.11.0`. A `0.11.0` release is therefore not picked up automatically; widening the
+constraint is a deliberate act that triggers the compatibility review above. See
+[MILESTONES.md](MILESTONES.md) for the current upstream dependency watch.
+
+## Intended public surface in 0.x
+
+This surface has held unchanged since `0.1` and is restated here for each developer-preview line. Any
+change to it is a minor release with upgrade notes, per the policy above.
 
 The supported integration surface is:
 
