@@ -44,7 +44,7 @@ Content and component fingerprints are deterministic. A hash of a predictable pr
 
 ### Tamper-evident evidence is opt-in, partial, and bounded by key custody
 
-`DatabaseEvidenceRecorder` (the default when `verdict.evidence.recorder` is configured at all) is an ordinary mutable audit store: not append-only, immutable, signed, or tamper-evident. A row can be edited or deleted without detection. It must not be described as cryptographic proof.
+`DatabaseEvidenceRecorder` (the usual choice when an application opts into evidence recording — `verdict.evidence.recorder` itself defaults to `NullEvidenceRecorder`, a no-op, so nothing is recorded unless explicitly configured) is an ordinary mutable audit store: not append-only, immutable, signed, or tamper-evident. A row can be edited or deleted without detection. It must not be described as cryptographic proof.
 
 `AttestEvidenceRecorder` (requires `composer require fissible/attest-laravel`) writes signed, hash-chained evidence via [`fissible/attest`](https://github.com/fissible/attest) instead. Even with it configured, several things remain true:
 
