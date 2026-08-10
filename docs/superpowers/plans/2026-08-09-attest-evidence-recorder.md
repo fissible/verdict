@@ -131,7 +131,7 @@ Expected: PASS. (This step is a smoke test the dependency and provider are wired
 - [ ] **Step 5: Commit**
 
 ```bash
-git add composer.json composer.lock tests/AttestTestCase.php tests/Pest.php tests/Integration/AttestPackageWiringTest.php
+git add composer.json tests/AttestTestCase.php tests/Pest.php tests/Integration/AttestPackageWiringTest.php
 git commit -m "test: wire fissible/attest-laravel into the test harness"
 ```
 
@@ -1297,7 +1297,7 @@ Expected: 0 failures, 100% type coverage, pint clean, phpstan clean.
 - [ ] **Step 2: Confirm the diff matches the plan's scope**
 
 Run: `git diff main --stat` (from the worktree, against the branch point)
-Expected files touched: `composer.json`, `composer.lock`, `config/verdict.php`, `src/VerdictServiceProvider.php`, `src/Evidence/AttestEvidenceRecorder.php`, `src/Evidence/Events/ChainWriteFailed.php`, `src/Exceptions/EvidenceChainWriteFailed.php`, `docs/limitations.md`, `README.md`, and the `tests/` files created above. Nothing else.
+Expected files touched: `composer.json` (NOT `composer.lock` — this repo's `.gitignore` excludes it; a library package lets consumers resolve their own versions), `config/verdict.php`, `src/VerdictServiceProvider.php`, `src/Evidence/AttestEvidenceRecorder.php`, `src/Evidence/Events/ChainWriteFailed.php`, `src/Exceptions/EvidenceChainWriteFailed.php`, `docs/limitations.md`, `README.md`, and the `tests/` files created above. Nothing else.
 
 - [ ] **Step 3: Push and open the PR**
 
