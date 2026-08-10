@@ -11,8 +11,10 @@ use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 
@@ -45,6 +47,29 @@ it('fingerprints scalar and structured content canonically', function (): void {
 it('rejects content that cannot be canonically represented', function (): void {
     expect(fn (): string => ContentFingerprint::make(new stdClass))
         ->toThrow(InvalidArgumentException::class);
+});
+
+it('records a typed content-addressed derivation edge', function (): void {
+    $derivation = new ProvenanceDerivation(
+        correlationId: 'invocation-123',
+        childContentFingerprint: str_repeat('a', 64),
+        parentContentFingerprint: str_repeat('b', 64),
+        kind: DerivationKind::Summarized,
+        recordedAt: new DateTimeImmutable('2026-08-03 12:00:00', new DateTimeZone('UTC')),
+    );
+
+    expect($derivation->kind)->toBe(DerivationKind::Summarized)
+        ->and($derivation->parentContentFingerprint)->toBe(str_repeat('b', 64));
+});
+
+it('rejects a derivation edge that loops directly to its own content', function (): void {
+    expect(fn (): ProvenanceDerivation => new ProvenanceDerivation(
+        correlationId: 'invocation-123',
+        childContentFingerprint: str_repeat('a', 64),
+        parentContentFingerprint: str_repeat('a', 64),
+        kind: DerivationKind::Transformed,
+        recordedAt: new DateTimeImmutable,
+    ))->toThrow(InvalidArgumentException::class);
 });
 
 it('records every context channel without retaining raw content', function (ContextChannel $channel): void {
@@ -115,6 +140,53 @@ it('retrieves only provenance for the requested correlation', function (): void 
         ->and(array_column($entries, 'correlationId'))->each->toBe('invocation-1');
 });
 
+it('records multiple typed derivation parents for one child', function (): void {
+    $recorder = new InMemoryEvidenceRecorder;
+    $child = str_repeat('c', 64);
+    $parents = [str_repeat('a', 64), str_repeat('b', 64)];
+
+    $derivations = provenanceLedger($recorder)->declareDerivation(
+        correlationId: 'invocation-123',
+        childContentFingerprint: $child,
+        parentContentFingerprints: $parents,
+        kind: DerivationKind::Summarized,
+    );
+
+    expect($derivations)->toHaveCount(2)
+        ->and(array_column($derivations, 'parentContentFingerprint'))->toBe($parents)
+        ->and($recorder->derivationsFor('invocation-123', $child))->toEqual($derivations);
+});
+
+it('rejects a transitive derivation cycle', function (): void {
+    $ledger = provenanceLedger(new InMemoryEvidenceRecorder);
+    $first = str_repeat('a', 64);
+    $second = str_repeat('b', 64);
+    $third = str_repeat('c', 64);
+
+    $ledger->declareDerivation('invocation-123', $second, [$first], DerivationKind::Transformed);
+    $ledger->declareDerivation('invocation-123', $third, [$second], DerivationKind::Summarized);
+
+    expect(fn (): array => $ledger->declareDerivation(
+        'invocation-123',
+        $first,
+        [$third],
+        DerivationKind::ToolResult,
+    ))->toThrow(LogicException::class, 'cannot create a cycle');
+});
+
+it('returns every transitively contributing content fingerprint', function (): void {
+    $ledger = provenanceLedger(new InMemoryEvidenceRecorder);
+    $first = str_repeat('a', 64);
+    $second = str_repeat('b', 64);
+    $third = str_repeat('c', 64);
+
+    $ledger->declareDerivation('invocation-123', $second, [$first], DerivationKind::Transformed);
+    $ledger->declareDerivation('invocation-123', $third, [$second], DerivationKind::Summarized);
+
+    expect($ledger->backwardReachableContentFingerprints('invocation-123', $third))
+        ->toBe([$second, $first]);
+});
+
 it('propagates recorder failures instead of reporting provenance success', function (): void {
     $recorder = new class implements EvidenceRecorder
     {
@@ -127,7 +199,14 @@ it('propagates recorder failures instead of reporting provenance success', funct
             throw new RuntimeException('Recorder unavailable.');
         }
 
+        public function recordDerivation(ProvenanceDerivation $derivation): void {}
+
         public function provenanceFor(string $correlationId): array
+        {
+            return [];
+        }
+
+        public function derivationsFor(string $correlationId, string $childContentFingerprint): array
         {
             return [];
         }

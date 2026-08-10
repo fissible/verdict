@@ -17,6 +17,7 @@ use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
@@ -437,7 +438,14 @@ it('propagates recorder failure and does not call the next middleware', function
                 throw new RuntimeException('Recorder unavailable.');
             }
 
+            public function recordDerivation(ProvenanceDerivation $derivation): void {}
+
             public function provenanceFor(string $correlationId): array
+            {
+                return [];
+            }
+
+            public function derivationsFor(string $correlationId, string $childContentFingerprint): array
             {
                 return [];
             }

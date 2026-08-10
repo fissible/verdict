@@ -25,6 +25,9 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
     /** @var list<ProvenanceEntry> */
     private array $provenanceRecords = [];
 
+    /** @var list<ProvenanceDerivation> */
+    private array $derivations = [];
+
     public function record(DecisionEvidence $evidence): void
     {
         $this->records[] = $evidence;
@@ -40,12 +43,27 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
         $this->provenanceRecords[] = $entry;
     }
 
+    public function recordDerivation(ProvenanceDerivation $derivation): void
+    {
+        $this->derivations[] = $derivation;
+    }
+
     /** @return list<ProvenanceEntry> */
     public function provenanceFor(string $correlationId): array
     {
         return array_values(array_filter(
             $this->provenanceRecords,
             fn (ProvenanceEntry $entry): bool => $entry->correlationId === $correlationId,
+        ));
+    }
+
+    /** @return list<ProvenanceDerivation> */
+    public function derivationsFor(string $correlationId, string $childContentFingerprint): array
+    {
+        return array_values(array_filter(
+            $this->derivations,
+            fn (ProvenanceDerivation $derivation): bool => $derivation->correlationId === $correlationId
+                && $derivation->childContentFingerprint === $childContentFingerprint,
         ));
     }
 

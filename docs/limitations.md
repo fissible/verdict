@@ -46,6 +46,10 @@ Content and component fingerprints are deterministic. A hash of a predictable pr
 
 The database evidence adapter is an ordinary mutable audit store. It is not append-only, immutable, signed, or tamper-evident, and it must not be described as cryptographic proof. A row recording a decision, approval, or provenance fact can be edited or deleted without detection. A tamper-evident adapter may be offered separately in the future; see [ADR 0007](adr/0007-evidence-layering.md).
 
+## Provenance derivation is deliberately incomplete
+
+Verdict records a derivation edge only when it observed a transformation directly, such as an application context release, or when an application explicitly declared one. It does not infer that retrieved content influenced a model output, tool request, or decision merely because the records share an invocation. Missing derivation edges mean "not observed or not declared," not "no influence occurred."
+
 The evidence store may also contain highly sensitive information. Configurable evidence levels, retention, tenant isolation, access authorization, pruning, and encryption remain application responsibilities.
 
 ### No content moderation or factual review

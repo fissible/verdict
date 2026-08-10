@@ -9,6 +9,8 @@ use Fissible\Verdict\Contracts\ContextTransformer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
+use Fissible\Verdict\Evidence\DerivationKind;
+use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Arr;
@@ -22,6 +24,7 @@ final readonly class ContextReleaseManager
         private EvidenceRecorder $evidence,
         private Clock $clock,
         private InvocationContext $invocations,
+        private ProvenanceLedger $provenance,
     ) {}
 
     public function policy(ReleasePolicy $policy): self
@@ -120,7 +123,53 @@ final readonly class ContextReleaseManager
             invocationId: $this->invocations->current(),
         );
         $this->evidence->recordRelease($evidence);
+        $this->recordObservedDerivation($payload, $released, $source, $trust, $dataClass);
 
         return ContextReleaseResult::permitted($released, $evidence);
+    }
+
+    /**
+     * @param  array<string, mixed>  $sourcePayload
+     * @param  array<string, mixed>  $releasedPayload
+     */
+    private function recordObservedDerivation(
+        array $sourcePayload,
+        array $releasedPayload,
+        Source $source,
+        Trust $trust,
+        DataClass $dataClass,
+    ): void {
+        $correlationId = $this->invocations->current();
+
+        if ($correlationId === null) {
+            return;
+        }
+
+        $parent = $this->provenance->record(
+            correlationId: $correlationId,
+            source: $source,
+            trust: $trust,
+            dataClass: $dataClass,
+            channel: ContextChannel::ApplicationContext,
+            content: $sourcePayload,
+        );
+        $child = $this->provenance->record(
+            correlationId: $correlationId,
+            source: $source,
+            trust: $trust,
+            dataClass: $dataClass,
+            channel: ContextChannel::ApplicationContext,
+            content: $releasedPayload,
+            componentLabel: 'context-release',
+        );
+
+        if ($child->contentFingerprint !== $parent->contentFingerprint) {
+            $this->provenance->declareDerivation(
+                correlationId: $correlationId,
+                childContentFingerprint: $child->contentFingerprint,
+                parentContentFingerprints: [$parent->contentFingerprint],
+                kind: DerivationKind::Transformed,
+            );
+        }
     }
 }
