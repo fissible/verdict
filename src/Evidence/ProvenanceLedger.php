@@ -111,6 +111,18 @@ final readonly class ProvenanceLedger
         return $derivations;
     }
 
+    /** @return list<string> */
+    public function backwardReachableContentFingerprints(string $correlationId, string $childContentFingerprint): array
+    {
+        ProvenanceEntry::assertIdentifier($correlationId, 'Provenance correlation');
+        ProvenanceEntry::assertFingerprint($childContentFingerprint, 'derived content');
+
+        $reachable = [];
+        $this->collectAncestors($correlationId, $childContentFingerprint, $reachable);
+
+        return $reachable;
+    }
+
     /** @param array<string, true> $visited */
     private function reaches(string $correlationId, string $from, string $target, array $visited): bool
     {
@@ -131,5 +143,20 @@ final readonly class ProvenanceLedger
         }
 
         return false;
+    }
+
+    /** @param list<string> $reachable */
+    private function collectAncestors(string $correlationId, string $childContentFingerprint, array &$reachable): void
+    {
+        foreach ($this->evidence->derivationsFor($correlationId, $childContentFingerprint) as $derivation) {
+            $parent = $derivation->parentContentFingerprint;
+
+            if (in_array($parent, $reachable, true)) {
+                continue;
+            }
+
+            $reachable[] = $parent;
+            $this->collectAncestors($correlationId, $parent, $reachable);
+        }
     }
 }

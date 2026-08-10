@@ -26,6 +26,7 @@ use Fissible\Verdict\Evaluation\ToolObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
@@ -606,6 +607,35 @@ it('correlates untrusted retrieved-document provenance with a decision in the sa
         ->and($recorder->latest()?->invocationId)->toBe($config->correlationId);
 });
 
-it('does not infer whether retrieved-document provenance derived a decision', function (): void {
-    expect(false)->toBeTrue();
-})->skip('Deferred to #30: correlation within one invocation does not establish derivation or influence.');
+it('traces explicitly declared proposed-argument derivation back to untrusted retrieved provenance', function (): void {
+    $config = ragBorneInjectionAttackPackConfig();
+    $recorder = new InMemoryEvidenceRecorder;
+    $ledger = ragBorneInjectionProvenanceLedger($recorder);
+    $retrieved = $ledger->record(
+        correlationId: $config->correlationId,
+        source: Source::external($config->externalSourceName),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::RetrievedDocument,
+        content: 'untrusted retrieved document',
+    );
+    $proposedArguments = $ledger->record(
+        correlationId: $config->correlationId,
+        source: Source::application('rag-pipeline'),
+        trust: Trust::Trusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::ApplicationContext,
+        content: ['recipient' => $config->manipulatedRecipient, 'amount' => $config->manipulatedAmount],
+    );
+    $ledger->declareDerivation(
+        correlationId: $config->correlationId,
+        childContentFingerprint: $proposedArguments->contentFingerprint,
+        parentContentFingerprints: [$retrieved->contentFingerprint],
+        kind: DerivationKind::Summarized,
+    );
+
+    expect($ledger->backwardReachableContentFingerprints(
+        $config->correlationId,
+        $proposedArguments->contentFingerprint,
+    ))->toBe([$retrieved->contentFingerprint]);
+});
