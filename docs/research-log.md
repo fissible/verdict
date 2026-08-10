@@ -1048,6 +1048,17 @@ than a library primitive, and one whose graph is built from syscalls Verdict nev
 Also surveyed: provenance bundles as signed units, and the distinction between provenance
 *capture* and provenance *analysis*.
 
+**Eval-driven development for agentic systems** (Airbnb Engineering, "Eval-Driven
+Development: Lessons from Evaluating GenAI at Scale," Medium, 2025): argues multi-step AI
+systems must be evaluated across intermediate tool calls and reasoning steps, not just final
+outputs, by reconstructing execution traces — a correct final result can hide a wrong path.
+That is an output-quality evaluation problem, not decision-audit provenance, and EDD's
+rubric/LLM-judge/golden-dataset machinery has no Verdict analogue. But the underlying claim
+is the same primitive `provenance-decision-correlation` is missing above: independent
+validation, from a different problem domain, that linking a decision to the invocation it
+occurred *within* — not just its own local fingerprint — is the right unit of analysis for
+auditing multi-step LLM systems.
+
 ## 7. Audit systems
 
 Attest already shares DNA with this ecosystem, and issue #11 already proposes an
