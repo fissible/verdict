@@ -23,7 +23,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(6)
+    expect($migrations)->toHaveCount(7)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -34,13 +34,15 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(3)
+    expect($migrations)->toHaveCount(4)
         ->and(array_keys($migrations)[0])->toEndWith('create_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php.stub')
+        ->and(array_keys($migrations)[3])->toEndWith('create_verdict_provenance_derivations_table.php.stub')
         ->and(array_values($migrations)[0])->toEndWith('create_verdict_evidence_table.php')
         ->and(array_values($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php')
-        ->and(array_values($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php');
+        ->and(array_values($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php')
+        ->and(array_values($migrations)[3])->toEndWith('create_verdict_provenance_derivations_table.php');
 });
 
 it('adds provenance columns without replacing existing evidence rows', function (): void {

@@ -11,6 +11,8 @@ use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\DerivationKind;
+use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
@@ -18,6 +20,7 @@ use Illuminate\Database\Schema\Blueprint;
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
     $schema->dropIfExists('verdict_evidence');
+    $schema->dropIfExists('verdict_provenance_derivations');
     $schema->create('verdict_evidence', function (Blueprint $table): void {
         $table->uuid('id')->primary();
         $table->string('record_type', 32);
@@ -64,10 +67,18 @@ beforeEach(function (): void {
         $table->char('content_fingerprint', 64)->nullable();
         $table->timestamp('recorded_at');
     });
+    $schema->create('verdict_provenance_derivations', function (Blueprint $table): void {
+        $table->string('correlation_id');
+        $table->char('child_content_fingerprint', 64);
+        $table->char('parent_content_fingerprint', 64);
+        $table->string('kind', 32);
+        $table->timestamp('recorded_at');
+    });
 });
 
 afterEach(function (): void {
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_evidence');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_provenance_derivations');
 });
 
 function databaseEvidenceRecorder(): DatabaseEvidenceRecorder
@@ -255,4 +266,22 @@ it('persists and retrieves redacted provenance without mixing correlations', fun
         ->and($serializedRows)->not->toContain($rawValues[1])
         ->and($serializedRows)->not->toContain($rawValues[2])
         ->and($serializedRows)->not->toContain('v2.1.0');
+});
+
+it('persists and retrieves derivation parents by child fingerprint', function (): void {
+    $recorder = databaseEvidenceRecorder();
+    $child = str_repeat('c', 64);
+    $parent = str_repeat('a', 64);
+
+    $recorder->recordDerivation(new ProvenanceDerivation(
+        correlationId: 'invocation-1',
+        childContentFingerprint: $child,
+        parentContentFingerprint: $parent,
+        kind: DerivationKind::Summarized,
+        recordedAt: new DateTimeImmutable('2026-08-03 12:00:00', new DateTimeZone('UTC')),
+    ));
+
+    expect($recorder->derivationsFor('invocation-1', $child))->toHaveCount(1)
+        ->and($recorder->derivationsFor('invocation-1', $child)[0]->parentContentFingerprint)->toBe($parent)
+        ->and($recorder->derivationsFor('invocation-1', $child)[0]->kind)->toBe(DerivationKind::Summarized);
 });

@@ -23,8 +23,19 @@ final class NullEvidenceRecorder implements EvidenceRecorder
         // Applications opt in to an evidence destination explicitly.
     }
 
+    public function recordDerivation(ProvenanceDerivation $derivation): void
+    {
+        // Applications opt in to an evidence destination explicitly.
+    }
+
     /** @return list<ProvenanceEntry> */
     public function provenanceFor(string $correlationId): array
+    {
+        return [];
+    }
+
+    /** @return list<ProvenanceDerivation> */
+    public function derivationsFor(string $correlationId, string $childContentFingerprint): array
     {
         return [];
     }

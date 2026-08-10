@@ -19,6 +19,7 @@ final readonly class DatabaseEvidenceRecorder implements EvidenceRecorder
     public function __construct(
         private ConnectionInterface $connection,
         private string $table = 'verdict_evidence',
+        private string $derivationsTable = 'verdict_provenance_derivations',
     ) {}
 
     public function record(DecisionEvidence $evidence): void
@@ -145,6 +146,17 @@ final readonly class DatabaseEvidenceRecorder implements EvidenceRecorder
         ]);
     }
 
+    public function recordDerivation(ProvenanceDerivation $derivation): void
+    {
+        $this->connection->table($this->derivationsTable)->insert([
+            'correlation_id' => $derivation->correlationId,
+            'child_content_fingerprint' => $derivation->childContentFingerprint,
+            'parent_content_fingerprint' => $derivation->parentContentFingerprint,
+            'kind' => $derivation->kind->value,
+            'recorded_at' => $derivation->recordedAt,
+        ]);
+    }
+
     /** @return list<ProvenanceEntry> */
     public function provenanceFor(string $correlationId): array
     {
@@ -171,6 +183,29 @@ final readonly class DatabaseEvidenceRecorder implements EvidenceRecorder
         }
 
         return $entries;
+    }
+
+    /** @return list<ProvenanceDerivation> */
+    public function derivationsFor(string $correlationId, string $childContentFingerprint): array
+    {
+        $rows = $this->connection->table($this->derivationsTable)
+            ->where('correlation_id', $correlationId)
+            ->where('child_content_fingerprint', $childContentFingerprint)
+            ->orderBy('recorded_at')
+            ->get();
+        $derivations = [];
+
+        foreach ($rows as $row) {
+            $derivations[] = new ProvenanceDerivation(
+                correlationId: (string) $row->correlation_id,
+                childContentFingerprint: (string) $row->child_content_fingerprint,
+                parentContentFingerprint: (string) $row->parent_content_fingerprint,
+                kind: DerivationKind::from((string) $row->kind),
+                recordedAt: new DateTimeImmutable((string) $row->recorded_at, new \DateTimeZone('UTC')),
+            );
+        }
+
+        return $derivations;
     }
 
     private function optionalFingerprint(?string $value): ?string

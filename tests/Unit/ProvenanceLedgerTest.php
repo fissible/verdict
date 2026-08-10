@@ -140,6 +140,40 @@ it('retrieves only provenance for the requested correlation', function (): void 
         ->and(array_column($entries, 'correlationId'))->each->toBe('invocation-1');
 });
 
+it('records multiple typed derivation parents for one child', function (): void {
+    $recorder = new InMemoryEvidenceRecorder;
+    $child = str_repeat('c', 64);
+    $parents = [str_repeat('a', 64), str_repeat('b', 64)];
+
+    $derivations = provenanceLedger($recorder)->declareDerivation(
+        correlationId: 'invocation-123',
+        childContentFingerprint: $child,
+        parentContentFingerprints: $parents,
+        kind: DerivationKind::Summarized,
+    );
+
+    expect($derivations)->toHaveCount(2)
+        ->and(array_column($derivations, 'parentContentFingerprint'))->toBe($parents)
+        ->and($recorder->derivationsFor('invocation-123', $child))->toEqual($derivations);
+});
+
+it('rejects a transitive derivation cycle', function (): void {
+    $ledger = provenanceLedger(new InMemoryEvidenceRecorder);
+    $first = str_repeat('a', 64);
+    $second = str_repeat('b', 64);
+    $third = str_repeat('c', 64);
+
+    $ledger->declareDerivation('invocation-123', $second, [$first], DerivationKind::Transformed);
+    $ledger->declareDerivation('invocation-123', $third, [$second], DerivationKind::Summarized);
+
+    expect(fn (): array => $ledger->declareDerivation(
+        'invocation-123',
+        $first,
+        [$third],
+        DerivationKind::ToolResult,
+    ))->toThrow(LogicException::class, 'cannot create a cycle');
+});
+
 it('propagates recorder failures instead of reporting provenance success', function (): void {
     $recorder = new class implements EvidenceRecorder
     {
@@ -152,7 +186,14 @@ it('propagates recorder failures instead of reporting provenance success', funct
             throw new RuntimeException('Recorder unavailable.');
         }
 
+        public function recordDerivation(ProvenanceDerivation $derivation): void {}
+
         public function provenanceFor(string $correlationId): array
+        {
+            return [];
+        }
+
+        public function derivationsFor(string $correlationId, string $childContentFingerprint): array
         {
             return [];
         }
