@@ -162,6 +162,48 @@ it('records a chain gap marker and dispatches an event when retries are exhauste
         && $e->attempts === 3);
 });
 
+it('does not throw when the gap-marker DB write itself fails in alert mode', function (): void {
+    Event::fake([ChainWriteFailed::class]);
+
+    // Drop the evidence table so the fallback insert() inside recordGap() genuinely
+    // throws a QueryException, simulating the correlated-failure case where whatever
+    // broke the chain write also broke the DB write.
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->drop('verdict_evidence');
+
+    $store = new FlakyChainStore(AttestFixture::store(), failures: 99);
+    $recorder = makeRecorder($store);
+
+    $recorder->record($this->decision);
+
+    Event::assertDispatched(ChainWriteFailed::class, fn (ChainWriteFailed $e): bool => $e->correlationId === 'env-1'
+        && $e->recordType === 'decision'
+        && $e->attempts === 3);
+});
+
+it('does not throw when the chain id resolver itself throws, even in alert mode', function (): void {
+    Event::fake([ChainWriteFailed::class]);
+
+    $store = AttestFixture::store();
+    $recorder = new AttestEvidenceRecorder(
+        attest: AttestFixture::registry($store),
+        fallback: new InMemoryEvidenceRecorder,
+        connection: app(DatabaseManager::class)->connection(),
+        events: app(Dispatcher::class),
+        chainIdUsing: function (): string {
+            throw new RuntimeException('tenant resolution failed');
+        },
+        baseDelayMs: 1,
+    );
+
+    $recorder->record($this->decision);
+
+    $rows = chainGapRows();
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]->correlation_id)->toBe('env-1');
+
+    Event::assertDispatched(ChainWriteFailed::class);
+});
+
 it('throws instead of swallowing when on_failure is throw', function (): void {
     $store = new FlakyChainStore(AttestFixture::store(), failures: 99);
     $recorder = makeRecorder($store, onFailure: 'throw');

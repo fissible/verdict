@@ -123,11 +123,22 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
     /** @param array<string, mixed> $payload */
     private function writeChained(?string $correlationId, string $recordType, string $type, array $payload): void
     {
-        $chainId = ($this->chainIdUsing)();
         $attempt = 0;
         $lastError = null;
+        $resolverFailed = false;
 
-        while ($attempt < $this->maxAttempts) {
+        try {
+            $chainId = ($this->chainIdUsing)();
+        } catch (Throwable $e) {
+            // Resolving the chain id itself failed. Treat this as an immediate
+            // exhaustion — there is nothing to retry — and fall straight through
+            // to gap-handling below with a placeholder chain id.
+            $chainId = 'unknown';
+            $lastError = $e;
+            $resolverFailed = true;
+        }
+
+        while (! $resolverFailed && $attempt < $this->maxAttempts) {
             $attempt++;
 
             try {
@@ -149,13 +160,17 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
 
         $this->recordGap($chainId, $correlationId, $recordType, $attempt, $lastError);
 
-        $this->events->dispatch(new ChainWriteFailed(
-            chainId: $chainId,
-            correlationId: $correlationId,
-            recordType: $recordType,
-            attempts: $attempt,
-            message: $lastError?->getMessage() ?? 'unknown error',
-        ));
+        try {
+            $this->events->dispatch(new ChainWriteFailed(
+                chainId: $chainId,
+                correlationId: $correlationId,
+                recordType: $recordType,
+                attempts: $attempt,
+                message: $lastError?->getMessage() ?? 'unknown error',
+            ));
+        } catch (Throwable) {
+            // An alert listener failing must not block the caller either.
+        }
 
         if ($this->onFailure === 'throw') {
             throw EvidenceChainWriteFailed::fromFailure($chainId, $recordType, $attempt, $lastError);
@@ -164,18 +179,22 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
 
     private function recordGap(string $chainId, ?string $correlationId, string $recordType, int $attempts, ?Throwable $error): void
     {
-        $this->connection->table($this->table)->insert([
-            'id' => Str::uuid()->toString(),
-            'record_type' => 'chain_gap',
-            'correlation_id' => $correlationId,
-            'stage' => $recordType,
-            'disposition' => 'gap',
-            'reason' => json_encode([
-                'chain' => $chainId,
-                'attempts' => $attempts,
-                'error' => $error?->getMessage(),
-            ], JSON_THROW_ON_ERROR),
-            'recorded_at' => new DateTimeImmutable,
-        ]);
+        try {
+            $this->connection->table($this->table)->insert([
+                'id' => Str::uuid()->toString(),
+                'record_type' => 'chain_gap',
+                'correlation_id' => $correlationId,
+                'stage' => $recordType,
+                'disposition' => 'gap',
+                'reason' => json_encode([
+                    'chain' => $chainId,
+                    'attempts' => $attempts,
+                    'error' => $error?->getMessage(),
+                ], JSON_THROW_ON_ERROR),
+                'recorded_at' => new DateTimeImmutable,
+            ]);
+        } catch (Throwable) {
+            // Best-effort fallback; do not let a broken fallback path itself block the caller.
+        }
     }
 }
