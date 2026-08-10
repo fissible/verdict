@@ -80,6 +80,29 @@ it('scores security containment separately from legitimate task utility', functi
         ->and($result->reproduction->components['policy'])->toBe('storefront-policy@1');
 });
 
+it('reports a blocked pending case without executing it', function (): void {
+    $executed = false;
+    $case = new EvaluationCase(
+        id: 'blocked-derivation-case',
+        version: '1',
+        purpose: CasePurpose::Security,
+        input: new CaseInput([], []),
+        runner: function () use (&$executed): never {
+            $executed = true;
+
+            throw new RuntimeException('Pending case executed.');
+        },
+        assertions: [],
+        blockedBy: '#30 derivation edges',
+    );
+
+    $result = (new SecuritySuite('pending-cases', '1', [$case]))->run();
+
+    expect($executed)->toBeFalse()
+        ->and($result->cases[0]->status)->toBe(CaseStatus::Pending)
+        ->and($result->cases[0]->blockedBy)->toBe('#30 derivation edges');
+});
+
 it('reports runner exceptions as errors rather than behavioral failures', function (): void {
     $suite = new SecuritySuite(
         name: 'provider-boundary',

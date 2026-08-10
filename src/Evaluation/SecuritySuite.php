@@ -76,6 +76,20 @@ final readonly class SecuritySuite
 
     private function runCase(EvaluationCase $case): CaseResult
     {
+        if ($case->blockedBy !== null) {
+            return new CaseResult(
+                id: $case->id,
+                version: $case->version,
+                purpose: $case->purpose,
+                status: CaseStatus::Pending,
+                trustedSetupFingerprint: $case->input->trustedSetupFingerprint(),
+                untrustedInputFingerprint: $case->input->untrustedInputFingerprint(),
+                assertions: [],
+                observation: null,
+                blockedBy: $case->blockedBy,
+            );
+        }
+
         try {
             $observation = $case->execute();
             $assertions = array_map(
