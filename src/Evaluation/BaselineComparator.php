@@ -8,6 +8,13 @@ use InvalidArgumentException;
 
 final class BaselineComparator
 {
+    /** @var array<string, BaselineChangeKind> */
+    private const array ADDED_STATUS_CHANGE_KINDS = [
+        'failed' => BaselineChangeKind::BehavioralFailure,
+        'error' => BaselineChangeKind::HarnessError,
+        'pending' => BaselineChangeKind::SuspendedCoverage,
+    ];
+
     public function compare(EvaluationBaseline $baseline, SuiteResult $current): BaselineComparison
     {
         if ($baseline->suite !== $current->suite) {
@@ -105,31 +112,13 @@ final class BaselineComparator
             $case->status,
         )];
 
-        if ($case->status === CaseStatus::Failed) {
-            $changes[] = new BaselineChange(
-                $case->id,
-                $case->purpose,
-                BaselineChangeKind::BehavioralFailure,
-                null,
-                $case->status,
-            );
-        }
+        $additionalKind = self::ADDED_STATUS_CHANGE_KINDS[$case->status->value] ?? null;
 
-        if ($case->status === CaseStatus::Error) {
+        if ($additionalKind !== null) {
             $changes[] = new BaselineChange(
                 $case->id,
                 $case->purpose,
-                BaselineChangeKind::HarnessError,
-                null,
-                $case->status,
-            );
-        }
-
-        if ($case->status === CaseStatus::Pending) {
-            $changes[] = new BaselineChange(
-                $case->id,
-                $case->purpose,
-                BaselineChangeKind::SuspendedCoverage,
+                $additionalKind,
                 null,
                 $case->status,
             );
