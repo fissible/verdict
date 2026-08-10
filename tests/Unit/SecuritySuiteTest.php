@@ -343,11 +343,13 @@ it('reports suspended coverage when a previously passing case becomes pending', 
     ]))->run();
 
     $report = EvaluationReport::fromJson($current->report()->toJson());
+    $pendingBaseline = EvaluationBaseline::fromJson($current->report()->toJson());
     $comparison = $current->compareTo($baseline);
 
     expect($report->result()->cases[0]->status)->toBe(CaseStatus::Pending)
         ->and($report->result()->cases[0]->blockedBy)->toBe('#30 derivation edges')
         ->and($report->result()->score(CasePurpose::Security)->pending)->toBe(1)
+        ->and($pendingBaseline->cases()['blocked-case']['status'])->toBe(CaseStatus::Pending)
         ->and($comparison->hasBlockingChanges())->toBeTrue()
         ->and($comparison->changes[0]->kind)->toBe(BaselineChangeKind::SuspendedCoverage);
 });
