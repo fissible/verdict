@@ -9,6 +9,7 @@ use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Decisions\ExecutionResult;
+use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -30,6 +31,10 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     private Approval|false|null $approvalRequirement = null;
 
+    private string $configuredDescriptionFingerprint;
+
+    private ?string $invocationDescriptionFingerprint = null;
+
     /**
      * @param  ActionContext|callable(Request): mixed  $context
      */
@@ -43,6 +48,7 @@ abstract class AbstractVerdictTool implements Approvable, Tool
         $this->contextResolver = $context instanceof ActionContext
             ? static fn (Request $request): ActionContext => $context
             : Closure::fromCallable($context);
+        $this->configuredDescriptionFingerprint = ContentFingerprint::make((string) $this->tool->description());
     }
 
     public function name(): string
@@ -52,7 +58,20 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     public function description(): Stringable|string
     {
-        return $this->tool->description();
+        $description = $this->tool->description();
+        $this->invocationDescriptionFingerprint = ContentFingerprint::make((string) $description);
+
+        return $description;
+    }
+
+    public function configuredDescriptionFingerprint(): string
+    {
+        return $this->configuredDescriptionFingerprint;
+    }
+
+    public function invocationDescriptionFingerprint(): ?string
+    {
+        return $this->invocationDescriptionFingerprint;
     }
 
     /**
