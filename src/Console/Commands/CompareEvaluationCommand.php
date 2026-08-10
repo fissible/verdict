@@ -19,6 +19,7 @@ final class CompareEvaluationCommand extends Command
         BaselineChangeKind::BehavioralFailure,
         BaselineChangeKind::HarnessError,
         BaselineChangeKind::RemovedCoverage,
+        BaselineChangeKind::SuspendedCoverage,
         BaselineChangeKind::Improvement,
         BaselineChangeKind::Recovered,
         BaselineChangeKind::AddedCoverage,
@@ -30,6 +31,7 @@ final class CompareEvaluationCommand extends Command
         'behavioral_failure' => 'New behavioral failures',
         'harness_error' => 'Harness errors',
         'removed_coverage' => 'Removed coverage',
+        'suspended_coverage' => 'Suspended coverage',
         'improvement' => 'Improvements',
         'recovered' => 'Recoveries',
         'added_coverage' => 'Added coverage',
@@ -134,6 +136,7 @@ final class CompareEvaluationCommand extends Command
             BaselineChangeKind::BehavioralFailure,
             BaselineChangeKind::HarnessError,
             BaselineChangeKind::RemovedCoverage,
+            BaselineChangeKind::SuspendedCoverage,
         ], true);
     }
 

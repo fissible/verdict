@@ -10,6 +10,7 @@ use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\CaseStatus;
 use Fissible\Verdict\Evaluation\EvaluationBaseline;
 use Fissible\Verdict\Evaluation\EvaluationCase;
+use Fissible\Verdict\Evaluation\EvaluationReport;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
@@ -318,4 +319,35 @@ it('compares a checked-in report baseline without conflating regressions errors 
             BaselineChangeKind::AddedCoverage,
             BaselineChangeKind::RemovedCoverage,
         ]);
+});
+
+it('reports suspended coverage when a previously passing case becomes pending', function (): void {
+    $input = new CaseInput([], ['case' => 'blocked-case']);
+    $baseline = EvaluationBaseline::fromJson((new SecuritySuite('pending-suite', '1', [
+        EvaluationCase::attack(
+            'blocked-case',
+            '1',
+            $input,
+            fn (): Observation => new Observation(Disposition::Deny, false),
+            [Assertions::notExecuted()],
+        ),
+    ]))->run()->report()->toJson());
+    $current = (new SecuritySuite('pending-suite', '2', [
+        EvaluationCase::pending(
+            'blocked-case',
+            '1',
+            CasePurpose::Security,
+            $input,
+            '#30 derivation edges',
+        ),
+    ]))->run();
+
+    $report = EvaluationReport::fromJson($current->report()->toJson());
+    $comparison = $current->compareTo($baseline);
+
+    expect($report->result()->cases[0]->status)->toBe(CaseStatus::Pending)
+        ->and($report->result()->cases[0]->blockedBy)->toBe('#30 derivation edges')
+        ->and($report->result()->score(CasePurpose::Security)->pending)->toBe(1)
+        ->and($comparison->hasBlockingChanges())->toBeTrue()
+        ->and($comparison->changes[0]->kind)->toBe(BaselineChangeKind::SuspendedCoverage);
 });

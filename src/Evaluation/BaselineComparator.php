@@ -71,15 +71,19 @@ final class BaselineComparator
 
     private function changeKind(CaseStatus $baseline, CaseStatus $current): BaselineChangeKind
     {
+        if ($current === CaseStatus::Pending) {
+            return BaselineChangeKind::SuspendedCoverage;
+        }
+
         if ($current === CaseStatus::Error) {
             return BaselineChangeKind::HarnessError;
         }
 
-        if ($baseline === CaseStatus::Error && $current === CaseStatus::Passed) {
+        if (in_array($baseline, [CaseStatus::Error, CaseStatus::Pending], true) && $current === CaseStatus::Passed) {
             return BaselineChangeKind::Recovered;
         }
 
-        if ($baseline === CaseStatus::Error) {
+        if (in_array($baseline, [CaseStatus::Error, CaseStatus::Pending], true)) {
             return BaselineChangeKind::BehavioralFailure;
         }
 

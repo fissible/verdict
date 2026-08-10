@@ -13,4 +13,5 @@ enum BaselineChangeKind: string
     case Recovered = 'recovered';
     case AddedCoverage = 'added_coverage';
     case RemovedCoverage = 'removed_coverage';
+    case SuspendedCoverage = 'suspended_coverage';
 }

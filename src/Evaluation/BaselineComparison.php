@@ -17,6 +17,7 @@ final readonly class BaselineComparison
                 BaselineChangeKind::BehavioralFailure,
                 BaselineChangeKind::HarnessError,
                 BaselineChangeKind::RemovedCoverage,
+                BaselineChangeKind::SuspendedCoverage,
             ], true)) {
                 return true;
             }
