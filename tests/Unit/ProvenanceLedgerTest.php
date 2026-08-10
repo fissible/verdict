@@ -11,8 +11,10 @@ use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 
@@ -45,6 +47,29 @@ it('fingerprints scalar and structured content canonically', function (): void {
 it('rejects content that cannot be canonically represented', function (): void {
     expect(fn (): string => ContentFingerprint::make(new stdClass))
         ->toThrow(InvalidArgumentException::class);
+});
+
+it('records a typed content-addressed derivation edge', function (): void {
+    $derivation = new ProvenanceDerivation(
+        correlationId: 'invocation-123',
+        childContentFingerprint: str_repeat('a', 64),
+        parentContentFingerprint: str_repeat('b', 64),
+        kind: DerivationKind::Summarized,
+        recordedAt: new DateTimeImmutable('2026-08-03 12:00:00', new DateTimeZone('UTC')),
+    );
+
+    expect($derivation->kind)->toBe(DerivationKind::Summarized)
+        ->and($derivation->parentContentFingerprint)->toBe(str_repeat('b', 64));
+});
+
+it('rejects a derivation edge that loops directly to its own content', function (): void {
+    expect(fn (): ProvenanceDerivation => new ProvenanceDerivation(
+        correlationId: 'invocation-123',
+        childContentFingerprint: str_repeat('a', 64),
+        parentContentFingerprint: str_repeat('a', 64),
+        kind: DerivationKind::Transformed,
+        recordedAt: new DateTimeImmutable,
+    ))->toThrow(InvalidArgumentException::class);
 });
 
 it('records every context channel without retaining raw content', function (ContextChannel $channel): void {

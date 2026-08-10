@@ -48,7 +48,7 @@ final readonly class ProvenanceEntry
         }
     }
 
-    private static function assertFingerprint(string $fingerprint, string $label): void
+    public static function assertFingerprint(string $fingerprint, string $label): void
     {
         if (preg_match('/^[a-f0-9]{64}$/', $fingerprint) !== 1) {
             throw new InvalidArgumentException("The provenance {$label} fingerprint must be a lowercase SHA-256 digest.");
