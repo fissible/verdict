@@ -4,6 +4,10 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add configured and invocation-time tool-description fingerprints to Laravel AI Verdict tools, so
+  applications can observe description drift without folding model-facing text into capability policy
+  configuration.
+
 - Add explicit pending evaluation cases with mandatory blocker metadata and suspended-coverage
   comparison findings. `Score` now has a required fourth `pending` constructor argument. Baselines
   containing `pending` require this release or newer; older Verdict versions reject that enum value.

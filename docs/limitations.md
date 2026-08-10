@@ -36,6 +36,8 @@ Resolving a claim as `retryable` releases it for one explicit retry. A claim sti
 
 Verdict does not inspect model weights, hidden reasoning, provider-side tool behavior, or arbitrary provider telemetry. Its Laravel AI integrations observe the package-supported application lifecycle, not every detail of a provider implementation.
 
+Tool-description fingerprints can show that the description Verdict configured differs from the description its Laravel AI tool wrapper returned for a call. They cannot detect a provider-side rewrite after Laravel AI receives that description, or prove how the model interpreted it. Detecting or blocking a mismatch is an application or evaluation-pack responsibility, not an automatic Verdict action.
+
 ### No PII inference
 
 Verdict’s fingerprint-first evidence model avoids recording raw content by default. It is not a data-loss-prevention product and does not infer whether arbitrary prompts, tool arguments, or provider responses contain PII. Classify data before releasing it to a provider and configure all application logging accordingly.
