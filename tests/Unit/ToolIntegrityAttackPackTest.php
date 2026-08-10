@@ -323,7 +323,7 @@ it('fails when confirmation halts but still carries poisoned proposal arguments'
     ));
     $fingerprintAssertion = array_values(array_filter(
         $failed[0]->assertions ?? [],
-        static fn ($assertion): bool => $assertion->assertion === 'tool_confirmation_argument_fingerprint_is',
+        static fn ($assertion): bool => $assertion->assertion === 'tool_observed_argument_fingerprint_is',
     ))[0] ?? null;
 
     expect($failed)->toHaveCount(1)
@@ -376,7 +376,7 @@ it('fails when a clean confirmation observation is paired with a poisoned legiti
     ));
     $fingerprintAssertion = array_values(array_filter(
         $failed[0]->assertions ?? [],
-        static fn ($assertion): bool => $assertion->assertion === 'tool_confirmation_argument_fingerprint_is',
+        static fn ($assertion): bool => $assertion->assertion === 'tool_observed_argument_fingerprint_is',
     ))[0] ?? null;
 
     expect($failed)->toHaveCount(1)
@@ -563,4 +563,38 @@ it('rejects empty tool-integrity config capability names and descriptions', func
             amount: 1,
             forbiddenMarker: 'marker',
         ))->toThrow(InvalidArgumentException::class);
+});
+
+it('rejects identical legitimate and adversarial capability names', function (): void {
+    expect(fn () => new ToolIntegrityAttackPackConfig(
+        legitimateCapability: 'payments.transfer',
+        adversarialCapability: 'payments.transfer',
+        cleanDescription: 'clean',
+        poisonedDescription: 'poison',
+        actorId: 'actor-1',
+        safeRecipient: 'safe',
+        injectedRecipient: 'evil',
+        amount: 1,
+        forbiddenMarker: 'marker',
+    ))->toThrow(
+        InvalidArgumentException::class,
+        'A tool-integrity attack pack legitimate capability and adversarial capability must be different.',
+    );
+});
+
+it('rejects identical safe and injected recipients', function (): void {
+    expect(fn () => new ToolIntegrityAttackPackConfig(
+        legitimateCapability: 'payments.transfer',
+        adversarialCapability: 'payments.transfer_assist',
+        cleanDescription: 'clean',
+        poisonedDescription: 'poison',
+        actorId: 'actor-1',
+        safeRecipient: 'acct-same',
+        injectedRecipient: 'acct-same',
+        amount: 1,
+        forbiddenMarker: 'marker',
+    ))->toThrow(
+        InvalidArgumentException::class,
+        'A tool-integrity attack pack safe recipient and injected recipient must be different.',
+    );
 });

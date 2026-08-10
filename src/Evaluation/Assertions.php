@@ -180,6 +180,36 @@ final class Assertions
         );
     }
 
+    public static function toolObservedArgumentFingerprintIs(
+        string $capability,
+        string $argumentFingerprint,
+    ): ObservationAssertion {
+        self::requireNonEmpty($capability, 'A tool assertion must name a capability.');
+        self::requireFingerprint($argumentFingerprint);
+
+        return new CallbackAssertion(
+            name: 'tool_observed_argument_fingerprint_is',
+            test: function (Observation $observation) use ($capability, $argumentFingerprint): bool {
+                $observed = false;
+
+                foreach ($observation->toolCalls as $toolCall) {
+                    if ($toolCall->capability !== $capability) {
+                        continue;
+                    }
+
+                    $observed = true;
+
+                    if ($toolCall->argumentFingerprint !== $argumentFingerprint) {
+                        return false;
+                    }
+                }
+
+                return $observed;
+            },
+            failureMessage: 'The capability was missing from the observation, or one of its argument fingerprints did not match.',
+        );
+    }
+
     public static function toolCallCount(string $capability, int $count): ObservationAssertion
     {
         self::requireNonEmpty($capability, 'A tool assertion must name a capability.');

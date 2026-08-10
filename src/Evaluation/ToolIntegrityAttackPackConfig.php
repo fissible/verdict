@@ -55,6 +55,18 @@ final readonly class ToolIntegrityAttackPackConfig
             $this->amount,
             'A tool-integrity attack pack amount must be a non-empty string or integer.',
         );
+
+        if ($this->legitimateCapability === $this->adversarialCapability) {
+            throw new InvalidArgumentException(
+                'A tool-integrity attack pack legitimate capability and adversarial capability must be different.',
+            );
+        }
+
+        if ($this->safeRecipient === $this->injectedRecipient) {
+            throw new InvalidArgumentException(
+                'A tool-integrity attack pack safe recipient and injected recipient must be different.',
+            );
+        }
     }
 
     private function requireNonEmptyString(string $value, string $message): void
