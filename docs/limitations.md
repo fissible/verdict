@@ -42,9 +42,19 @@ Verdict’s fingerprint-first evidence model avoids recording raw content by def
 
 Content and component fingerprints are deterministic. A hash of a predictable prompt, identifier, version, filename, URL, or personal value can be guessed and must be treated as correlation—not anonymization, encryption, or proof that the underlying input is safe.
 
-### No tamper-evident evidence
+### Tamper-evident evidence is opt-in, partial, and bounded by key custody
 
-The database evidence adapter is an ordinary mutable audit store. It is not append-only, immutable, signed, or tamper-evident, and it must not be described as cryptographic proof. A row recording a decision, approval, or provenance fact can be edited or deleted without detection. A tamper-evident adapter may be offered separately in the future; see [ADR 0007](adr/0007-evidence-layering.md).
+`DatabaseEvidenceRecorder` (the default when `verdict.evidence.recorder` is configured at all) is an ordinary mutable audit store: not append-only, immutable, signed, or tamper-evident. A row can be edited or deleted without detection. It must not be described as cryptographic proof.
+
+`AttestEvidenceRecorder` (requires `composer require fissible/attest-laravel`) writes signed, hash-chained evidence via [`fissible/attest`](https://github.com/fissible/attest) instead. Even with it configured, several things remain true:
+
+- **Only decisions and context releases are chained by default.** Provenance entries and derivations always go through the ordinary `DatabaseEvidenceRecorder` fallback (for read access — `provenanceFor()`/`derivationsFor()` have no chain-backed implementation) unless `verdict.evidence.attest.chain_provenance` is enabled, because provenance volume can be orders of magnitude larger than decision volume. An unchained provenance ledger is not covered by the chain's tamper-evidence guarantee — a team that assumes "Verdict has tamper-evident evidence" covers provenance will be wrong at exactly the wrong moment.
+- **Local integrity, not global integrity, by default.** A tamper-evident chain proves nothing was edited after the fact only once someone actually verifies it (`php artisan attest:verify`) — an unverified chain is tamper-evident only in retrospect. Verdict does not schedule this for you; see [#41](https://github.com/fissible/verdict/issues/41) for recommended cadence.
+- **Truncation is possible and locally undetectable.** An attacker who controls the evidence store can truncate a chain to a chosen point and re-link it; a truncated chain still verifies as internally consistent. Anchoring (`php artisan attest:anchor`, via `fissible/attest-laravel`) is the mitigation — it publishes a Merkle root a rewritten chain cannot reproduce — but anchoring is `@experimental` in `fissible/attest` 1.x and confirms with a lag equal to the anchor interval, not immediately.
+- **Tamper-evidence is bounded by key custody.** The chain is tamper-evident against anyone who can reach the evidence store but not the Ed25519 signing key (`ATTEST_SIGNING_KEY_SEED`). An attacker holding that key can rewrite the chain and re-sign it, and verification will pass. Application RCE implies the ability to forge history unless the key is held outside the application's own reach.
+- **A failed chain write does not block the protected action.** Per [ADR 0007](adr/0007-evidence-layering.md), evidence is not an authorization gate. `AttestEvidenceRecorder` retries a failed write with backoff, then records a `chain_gap` marker row in the ordinary evidence table (naming the chain and attempt count) and raises an event the application can route to an alert — it does not fail the request unless explicitly configured with `on_failure: 'throw'`.
+
+See the [`AttestEvidenceRecorder` source](../src/Evidence/AttestEvidenceRecorder.php) for the exact configuration surface.
 
 ## Provenance derivation is deliberately incomplete
 
