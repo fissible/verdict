@@ -21,11 +21,12 @@ boundary between them as a single design decision:
   decision, not the decision's authority. ADR 0004 explicitly excludes `DatabaseEvidenceRecorder`
   from its transaction guard: "evidence persistence and transaction ownership are application
   policy, and evidence is not itself an authorization gate."
-- **Attestation** — not yet implemented.
-  [Limitations: no tamper-evident evidence](../limitations.md#no-tamper-evident-evidence) states the
-  evidence store is "an ordinary mutable audit store... not append-only, immutable, signed, or
-  tamper-evident," with a tamper-evident adapter "offered separately in the future." Issue #11 proposes this adapter, backed
-  by `fissible/attest`.
+- **Attestation** — implemented as `AttestEvidenceRecorder`, an opt-in recorder delivered by issue #11
+  and backed by `fissible/attest`.
+  [Limitations: tamper-evident evidence is opt-in, partial, and bounded by key custody](../limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody)
+  states that `DatabaseEvidenceRecorder` remains "an ordinary mutable audit store... not append-only,
+  immutable, signed, or tamper-evident," and records what the attested alternative does and does not
+  cover.
 
 These layers already have different guarantees and different owners in the code, but a reader has to
 assemble that from ADR 0004's exclusion clause, the README's evidence caveats, and issue #11 rather
@@ -44,7 +45,7 @@ conflate them:
    persistence failures propagate as application faults (the recorder throws), but evidence writes
    are not wrapped in the same fail-closed transaction guard as operational state, and evidence
    recorder selection, retention, and encryption remain application policy
-   ([limitations: no tamper-evident evidence](../limitations.md#no-tamper-evident-evidence)).
+   ([limitations: tamper-evident evidence is opt-in, partial, and bounded by key custody](../limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody)).
 3. **Attestation is a property evidence can optionally gain, not a replacement for either layer
    above.** An attested evidence record is still evidence — it answers "was this evidence tampered
    with after the fact," not "was this operation authorized." Issue #11's `AttestEvidenceRecorder`

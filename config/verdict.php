@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
-use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
@@ -27,7 +26,8 @@ return [
 
         // Only consulted when 'recorder' is AttestEvidenceRecorder::class. Requires
         // fissible/attest-laravel (composer require fissible/attest-laravel) — see
-        // docs/limitations.md, "No tamper-evident evidence".
+        // docs/limitations.md, "Tamper-evident evidence is opt-in, partial, and bounded
+        // by key custody".
         'attest' => [
             // Fixed chain id used by this default binding. Every deployment writes every
             // decision and context release to this one chain. Multi-tenant applications

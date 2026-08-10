@@ -4,6 +4,12 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add an opt-in `AttestEvidenceRecorder` that writes signed, hash-chained decision and context-release
+  evidence through `fissible/attest-laravel`, with configurable chain id, optional provenance chaining,
+  bounded write retries, and a durable `chain_gap` marker plus `ChainWriteFailed` event on exhaustion.
+  See `docs/limitations.md`, "Tamper-evident evidence is opt-in, partial, and bounded by key custody",
+  for what the chain does and does not guarantee.
+
 ## [0.3.0] - 2026-08-08
 
 - Reject unregistered and non-executable capabilities when `Verdict::bound()` constructs a tool, so a
