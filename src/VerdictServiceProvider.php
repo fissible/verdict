@@ -190,6 +190,7 @@ final class VerdictServiceProvider extends ServiceProvider
             evidence: $app->make(EvidenceRecorder::class),
             clock: $app->make(Clock::class),
             invocations: $app->make(InvocationContext::class),
+            provenance: $app->make(ProvenanceLedger::class),
         ));
 
         $this->app->scoped(ProvenanceLedger::class, fn (Container $app): ProvenanceLedger => new ProvenanceLedger(

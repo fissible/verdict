@@ -12,6 +12,7 @@ use Fissible\Verdict\Contracts\ContextTransformer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Facades\Verdict;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 
 it('releases only allowlisted fields over an explicitly permitted route', function (): void {
     $source = Source::application('customer-profile');
@@ -95,6 +96,39 @@ it('fails closed when no release policy permits the exact destination route', fu
         ->and($result->evidence->disposition)->toBe('deny')
         ->and($result->evidence->releasedPathFingerprints)->toBe([])
         ->and($result->evidence->payloadFingerprint)->toBeNull();
+});
+
+it('records an observed source-to-release derivation within a Laravel AI invocation', function (): void {
+    $source = Source::application('customer-profile');
+    $destination = Destination::connection('ollama-local', 'local-machine');
+    Verdict::releasePolicy(
+        ReleasePolicy::between($source, $destination)
+            ->allow(DataClass::PII)
+            ->whenTrustIs(Trust::Trusted),
+    );
+
+    app(InvocationContext::class)->within('invocation-release', function () use ($source, $destination): void {
+        Verdict::release(['first_name' => 'Avery', 'ssn' => '111-22-3333'])
+            ->source($source)
+            ->trust(Trust::Trusted)
+            ->classify(DataClass::PII)
+            ->only(['first_name'])
+            ->to($destination);
+    });
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        return;
+    }
+
+    $entries = $recorder->provenanceFor('invocation-release');
+    expect($entries)->toHaveCount(2);
+
+    $derivations = $recorder->derivationsFor('invocation-release', $entries[1]->contentFingerprint);
+    expect($derivations)->toHaveCount(1)
+        ->and($derivations[0]->parentContentFingerprint)->toBe($entries[0]->contentFingerprint);
 });
 
 it('redacts only explicitly projected structured fields and records redacted transform evidence', function (): void {
