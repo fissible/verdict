@@ -113,4 +113,4 @@ Verdict is designed to make these failures less likely on its protected path:
 
 It does not assume a model is malicious or trustworthy. Instead, it treats model-proposed actions as requests that need ordinary application authorization and safety controls.
 
-For boundaries Verdict does not provide, see [limitations](limitations.md). For execution flow and extension points, see [architecture](architecture.md).
+For boundaries Verdict does not provide, see [limitations](limitations.md). For execution flow and extension points, see [architecture](architecture.md). For evaluation and executable threat models, see [evaluation harness](evaluation.md).

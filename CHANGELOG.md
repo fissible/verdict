@@ -4,6 +4,10 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add explicit pending evaluation cases with mandatory blocker metadata and suspended-coverage
+  comparison findings. `Score` now has a required fourth `pending` constructor argument. Baselines
+  containing `pending` require this release or newer; older Verdict versions reject that enum value.
+
 - Add an opt-in `AttestEvidenceRecorder` that writes signed, hash-chained decision and context-release
   evidence through `fissible/attest-laravel`, with configurable chain id, optional provenance chaining,
   bounded write retries, and a durable `chain_gap` marker plus `ChainWriteFailed` event on exhaustion.

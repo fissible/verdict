@@ -144,6 +144,7 @@ final readonly class EvaluationReport implements JsonSerializable
             'passed' => $score->passed,
             'failed' => $score->failed,
             'errors' => $score->errors,
+            'pending' => $score->pending,
             'evaluated' => $score->evaluated(),
             'total' => $score->total(),
             'pass_rate' => $score->passRate(),
@@ -161,6 +162,7 @@ final readonly class EvaluationReport implements JsonSerializable
             'trusted_setup_fingerprint' => $case->trustedSetupFingerprint,
             'untrusted_input_fingerprint' => $case->untrustedInputFingerprint,
             'error_class' => $case->errorClass,
+            'blocked_by' => $case->blockedBy,
             'assertions' => array_map(
                 static fn (AssertionResult $assertion): array => [
                     'assertion' => $assertion->assertion,
@@ -237,9 +239,14 @@ final readonly class EvaluationReport implements JsonSerializable
 
         $observation = $case['observation'] ?? null;
         $errorClass = $case['error_class'] ?? null;
+        $blockedBy = $case['blocked_by'] ?? null;
 
         if (! is_string($errorClass) && $errorClass !== null) {
             throw new InvalidArgumentException('An evaluation case error class must be a string or null.');
+        }
+
+        if (! is_string($blockedBy) && $blockedBy !== null) {
+            throw new InvalidArgumentException('An evaluation case blocker must be a string or null.');
         }
 
         return new CaseResult(
@@ -252,6 +259,7 @@ final readonly class EvaluationReport implements JsonSerializable
             assertions: $assertionResults,
             observation: self::observation($observation),
             errorClass: $errorClass,
+            blockedBy: $blockedBy,
         );
     }
 
@@ -423,6 +431,7 @@ final readonly class EvaluationReport implements JsonSerializable
             if (($summary['passed'] ?? null) !== $score->passed
                 || ($summary['failed'] ?? null) !== $score->failed
                 || ($summary['errors'] ?? null) !== $score->errors
+                || ($summary['pending'] ?? 0) !== $score->pending
                 || ($summary['evaluated'] ?? null) !== $score->evaluated()
                 || ($summary['total'] ?? null) !== $score->total()
                 || ! self::samePassRate($passRate, $score->passRate())) {

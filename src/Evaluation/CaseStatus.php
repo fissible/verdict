@@ -9,4 +9,5 @@ enum CaseStatus: string
     case Passed = 'passed';
     case Failed = 'failed';
     case Error = 'error';
+    case Pending = 'pending';
 }

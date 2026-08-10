@@ -10,6 +10,7 @@ final readonly class Score
         public int $passed,
         public int $failed,
         public int $errors,
+        public int $pending,
     ) {}
 
     public function evaluated(): int
@@ -19,7 +20,7 @@ final readonly class Score
 
     public function total(): int
     {
-        return $this->evaluated() + $this->errors;
+        return $this->evaluated() + $this->errors + $this->pending;
     }
 
     public function passRate(): ?float

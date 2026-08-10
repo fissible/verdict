@@ -90,6 +90,7 @@ final readonly class LiveEvaluationRunner
         $passed = 0;
         $failed = 0;
         $errors = 0;
+        $pending = 0;
 
         foreach ($cases as $case) {
             if ($case->purpose !== $purpose) {
@@ -99,8 +100,9 @@ final readonly class LiveEvaluationRunner
             $passed += $case->score->passed;
             $failed += $case->score->failed;
             $errors += $case->score->errors;
+            $pending += $case->score->pending;
         }
 
-        return new LiveEvaluationThreshold($purpose, $minimumPassRate, new Score($passed, $failed, $errors));
+        return new LiveEvaluationThreshold($purpose, $minimumPassRate, new Score($passed, $failed, $errors, $pending));
     }
 }

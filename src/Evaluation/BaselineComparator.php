@@ -8,6 +8,13 @@ use InvalidArgumentException;
 
 final class BaselineComparator
 {
+    /** @var array<string, BaselineChangeKind> */
+    private const array ADDED_STATUS_CHANGE_KINDS = [
+        'failed' => BaselineChangeKind::BehavioralFailure,
+        'error' => BaselineChangeKind::HarnessError,
+        'pending' => BaselineChangeKind::SuspendedCoverage,
+    ];
+
     public function compare(EvaluationBaseline $baseline, SuiteResult $current): BaselineComparison
     {
         if ($baseline->suite !== $current->suite) {
@@ -71,15 +78,21 @@ final class BaselineComparator
 
     private function changeKind(CaseStatus $baseline, CaseStatus $current): BaselineChangeKind
     {
+        if ($current === CaseStatus::Pending) {
+            return BaselineChangeKind::SuspendedCoverage;
+        }
+
         if ($current === CaseStatus::Error) {
             return BaselineChangeKind::HarnessError;
         }
 
-        if ($baseline === CaseStatus::Error && $current === CaseStatus::Passed) {
+        $baselineWasNotEvaluated = in_array($baseline, [CaseStatus::Error, CaseStatus::Pending], true);
+
+        if ($baselineWasNotEvaluated && $current === CaseStatus::Passed) {
             return BaselineChangeKind::Recovered;
         }
 
-        if ($baseline === CaseStatus::Error) {
+        if ($baselineWasNotEvaluated) {
             return BaselineChangeKind::BehavioralFailure;
         }
 
@@ -99,21 +112,13 @@ final class BaselineComparator
             $case->status,
         )];
 
-        if ($case->status === CaseStatus::Failed) {
-            $changes[] = new BaselineChange(
-                $case->id,
-                $case->purpose,
-                BaselineChangeKind::BehavioralFailure,
-                null,
-                $case->status,
-            );
-        }
+        $additionalKind = self::ADDED_STATUS_CHANGE_KINDS[$case->status->value] ?? null;
 
-        if ($case->status === CaseStatus::Error) {
+        if ($additionalKind !== null) {
             $changes[] = new BaselineChange(
                 $case->id,
                 $case->purpose,
-                BaselineChangeKind::HarnessError,
+                $additionalKind,
                 null,
                 $case->status,
             );

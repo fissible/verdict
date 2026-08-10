@@ -25,6 +25,7 @@ final readonly class SuiteResult
         $passed = 0;
         $failed = 0;
         $errors = 0;
+        $pending = 0;
 
         foreach ($this->cases as $case) {
             if ($case->purpose !== $purpose) {
@@ -35,10 +36,11 @@ final readonly class SuiteResult
                 CaseStatus::Passed => $passed++,
                 CaseStatus::Failed => $failed++,
                 CaseStatus::Error => $errors++,
+                CaseStatus::Pending => $pending++,
             };
         }
 
-        return new Score($passed, $failed, $errors);
+        return new Score($passed, $failed, $errors, $pending);
     }
 
     public function passed(): bool

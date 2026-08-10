@@ -76,6 +76,16 @@ final readonly class SecuritySuite
 
     private function runCase(EvaluationCase $case): CaseResult
     {
+        if ($case->blockedBy !== null) {
+            return $this->result(
+                $case,
+                status: CaseStatus::Pending,
+                assertions: [],
+                observation: null,
+                blockedBy: $case->blockedBy,
+            );
+        }
+
         try {
             $observation = $case->execute();
             $assertions = array_map(
@@ -91,28 +101,43 @@ final readonly class SecuritySuite
                 }
             }
 
-            return new CaseResult(
-                id: $case->id,
-                version: $case->version,
-                purpose: $case->purpose,
+            return $this->result(
+                $case,
                 status: $passed ? CaseStatus::Passed : CaseStatus::Failed,
-                trustedSetupFingerprint: $case->input->trustedSetupFingerprint(),
-                untrustedInputFingerprint: $case->input->untrustedInputFingerprint(),
                 assertions: $assertions,
                 observation: ObservationEvidence::fromObservation($observation),
             );
         } catch (Throwable $error) {
-            return new CaseResult(
-                id: $case->id,
-                version: $case->version,
-                purpose: $case->purpose,
+            return $this->result(
+                $case,
                 status: CaseStatus::Error,
-                trustedSetupFingerprint: $case->input->trustedSetupFingerprint(),
-                untrustedInputFingerprint: $case->input->untrustedInputFingerprint(),
                 assertions: [],
                 observation: null,
                 errorClass: $error::class,
             );
         }
+    }
+
+    /** @param list<AssertionResult> $assertions */
+    private function result(
+        EvaluationCase $case,
+        CaseStatus $status,
+        array $assertions,
+        ?ObservationEvidence $observation,
+        ?string $errorClass = null,
+        ?string $blockedBy = null,
+    ): CaseResult {
+        return new CaseResult(
+            id: $case->id,
+            version: $case->version,
+            purpose: $case->purpose,
+            status: $status,
+            trustedSetupFingerprint: $case->input->trustedSetupFingerprint(),
+            untrustedInputFingerprint: $case->input->untrustedInputFingerprint(),
+            assertions: $assertions,
+            observation: $observation,
+            errorClass: $errorClass,
+            blockedBy: $blockedBy,
+        );
     }
 }

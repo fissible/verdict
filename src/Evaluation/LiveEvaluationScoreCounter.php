@@ -12,6 +12,8 @@ final class LiveEvaluationScoreCounter
 
     private int $errors = 0;
 
+    private int $pending = 0;
+
     public function record(CaseStatus $status): void
     {
         switch ($status) {
@@ -25,11 +27,15 @@ final class LiveEvaluationScoreCounter
                 return;
             case CaseStatus::Error:
                 $this->errors++;
+
+                return;
+            case CaseStatus::Pending:
+                $this->pending++;
         }
     }
 
     public function score(): Score
     {
-        return new Score($this->passed, $this->failed, $this->errors);
+        return new Score($this->passed, $this->failed, $this->errors, $this->pending);
     }
 }

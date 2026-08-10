@@ -45,7 +45,8 @@ function evaluationCommandCase(
         'trusted_setup_fingerprint' => str_repeat('a', 64),
         'untrusted_input_fingerprint' => str_repeat('b', 64),
         'error_class' => $status === 'error' ? RuntimeException::class : null,
-        'assertions' => [[
+        'blocked_by' => $status === 'pending' ? '#30 derivation edges' : null,
+        'assertions' => $status === 'pending' ? [] : [[
             'assertion' => 'expected behavior',
             'passed' => $status === 'passed',
             'message' => null,
@@ -79,14 +80,19 @@ function evaluationCommandReport(array $cases, array $extra = []): string
             $purposeCases,
             static fn (array $case): bool => $case['status'] === 'error',
         ));
+        $pending = count(array_filter(
+            $purposeCases,
+            static fn (array $case): bool => $case['status'] === 'pending',
+        ));
         $evaluated = $passed + $failed;
 
         $scores[$purpose] = [
             'passed' => $passed,
             'failed' => $failed,
             'errors' => $errors,
+            'pending' => $pending,
             'evaluated' => $evaluated,
-            'total' => $evaluated + $errors,
+            'total' => $evaluated + $errors + $pending,
             'pass_rate' => $evaluated === 0 ? null : $passed / $evaluated,
         ];
     }
@@ -257,6 +263,21 @@ it('returns success when the comparison has only non-blocking changes', function
         'current' => $current,
         'baseline' => $baseline,
     ])->assertSuccessful();
+});
+
+it('fails when newly added coverage is pending', function (): void {
+    $baseline = writeEvaluationCommandReport('baseline.json', evaluationCommandReport([
+        evaluationCommandCase('existing-coverage', 'passed'),
+    ]));
+    $current = writeEvaluationCommandReport('current.json', evaluationCommandReport([
+        evaluationCommandCase('existing-coverage', 'passed'),
+        evaluationCommandCase('blocked-coverage', 'pending'),
+    ]));
+
+    $this->artisan('verdict:evaluation-compare', [
+        'current' => $current,
+        'baseline' => $baseline,
+    ])->expectsOutputToContain('Suspended coverage')->assertExitCode(1);
 });
 
 it('returns invalid for missing or malformed comparison inputs and formats', function (): void {

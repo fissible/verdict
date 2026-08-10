@@ -10,6 +10,7 @@ use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\CaseStatus;
 use Fissible\Verdict\Evaluation\EvaluationBaseline;
 use Fissible\Verdict\Evaluation\EvaluationCase;
+use Fissible\Verdict\Evaluation\EvaluationReport;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
@@ -78,6 +79,42 @@ it('scores security containment separately from legitimate task utility', functi
         ->and($result->cases[0]->observation?->disposition)->toBe(Disposition::Deny)
         ->and($result->cases[0]->observation?->executed)->toBeFalse()
         ->and($result->reproduction->components['policy'])->toBe('storefront-policy@1');
+});
+
+it('reports a blocked pending case without executing it', function (): void {
+    $executed = false;
+    $case = new EvaluationCase(
+        id: 'blocked-derivation-case',
+        version: '1',
+        purpose: CasePurpose::Security,
+        input: new CaseInput([], []),
+        runner: function () use (&$executed): never {
+            $executed = true;
+
+            throw new RuntimeException('Pending case executed.');
+        },
+        assertions: [],
+        blockedBy: '#30 derivation edges',
+    );
+
+    $result = (new SecuritySuite('pending-cases', '1', [$case]))->run();
+
+    expect($executed)->toBeFalse()
+        ->and($result->cases[0]->status)->toBe(CaseStatus::Pending)
+        ->and($result->cases[0]->blockedBy)->toBe('#30 derivation edges')
+        ->and($result->passed())->toBeFalse();
+});
+
+it('rejects assertions on a blocked evaluation case', function (): void {
+    expect(fn (): EvaluationCase => new EvaluationCase(
+        id: 'blocked-with-assertion',
+        version: '1',
+        purpose: CasePurpose::Security,
+        input: new CaseInput([], []),
+        runner: fn (): Observation => new Observation(Disposition::Deny, false),
+        assertions: [Assertions::notExecuted()],
+        blockedBy: '#30 derivation edges',
+    ))->toThrow(InvalidArgumentException::class, 'cannot define assertions');
 });
 
 it('reports runner exceptions as errors rather than behavioral failures', function (): void {
@@ -294,5 +331,74 @@ it('compares a checked-in report baseline without conflating regressions errors 
             BaselineChangeKind::HarnessError,
             BaselineChangeKind::AddedCoverage,
             BaselineChangeKind::RemovedCoverage,
+        ]);
+});
+
+it('reports suspended coverage when a previously passing case becomes pending', function (): void {
+    $input = new CaseInput([], ['case' => 'blocked-case']);
+    $baseline = EvaluationBaseline::fromJson((new SecuritySuite('pending-suite', '1', [
+        EvaluationCase::attack(
+            'blocked-case',
+            '1',
+            $input,
+            fn (): Observation => new Observation(Disposition::Deny, false),
+            [Assertions::notExecuted()],
+        ),
+    ]))->run()->report()->toJson());
+    $current = (new SecuritySuite('pending-suite', '2', [
+        EvaluationCase::pending(
+            'blocked-case',
+            '1',
+            CasePurpose::Security,
+            $input,
+            '#30 derivation edges',
+        ),
+    ]))->run();
+
+    $report = EvaluationReport::fromJson($current->report()->toJson());
+    $pendingBaseline = EvaluationBaseline::fromJson($current->report()->toJson());
+    $comparison = $current->compareTo($baseline);
+
+    expect($report->result()->cases[0]->status)->toBe(CaseStatus::Pending)
+        ->and($report->result()->cases[0]->blockedBy)->toBe('#30 derivation edges')
+        ->and($report->result()->score(CasePurpose::Security)->pending)->toBe(1)
+        ->and($pendingBaseline->cases()['blocked-case']['status'])->toBe(CaseStatus::Pending)
+        ->and($comparison->hasBlockingChanges())->toBeTrue()
+        ->and($comparison->changes[0]->kind)->toBe(BaselineChangeKind::SuspendedCoverage);
+});
+
+it('blocks a newly added pending evaluation case', function (): void {
+    $baseline = EvaluationBaseline::fromJson((new SecuritySuite('pending-suite', '1', [
+        EvaluationCase::attack(
+            'existing-case',
+            '1',
+            new CaseInput([], ['case' => 'existing-case']),
+            fn (): Observation => new Observation(Disposition::Deny, false),
+            [Assertions::notExecuted()],
+        ),
+    ]))->run()->report()->toJson());
+    $current = (new SecuritySuite('pending-suite', '2', [
+        EvaluationCase::attack(
+            'existing-case',
+            '1',
+            new CaseInput([], ['case' => 'existing-case']),
+            fn (): Observation => new Observation(Disposition::Deny, false),
+            [Assertions::notExecuted()],
+        ),
+        EvaluationCase::pending(
+            'new-blocked-case',
+            '1',
+            CasePurpose::Security,
+            new CaseInput([], ['case' => 'new-blocked-case']),
+            '#30 derivation edges',
+        ),
+    ]))->run();
+
+    $comparison = $current->compareTo($baseline);
+
+    expect($comparison->hasBlockingChanges())->toBeTrue()
+        ->and(array_column($comparison->changes, 'kind'))->toBe([
+            BaselineChangeKind::AddedCoverage,
+            BaselineChangeKind::SuspendedCoverage,
         ]);
 });
