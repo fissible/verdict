@@ -73,6 +73,34 @@ Decision rows retain their envelope identifier in `correlation_id`; it is delibe
 
 An `invocation_id` is a containment fact: Verdict observed that those records occurred during the same Laravel AI invocation. It does not establish that a particular provenance entry influenced, caused, or derived a decision. Derivation edges are deliberately separate work in #30; consumers must not infer causality from co-occurrence.
 
+### Tracing declared derivations backward
+
+`verdict_provenance_derivations` records only a declared or directly observed content transformation. Given an invocation and a child content fingerprint, a recursive query returns its transitive contributing provenance entries:
+
+```sql
+WITH RECURSIVE ancestors(content_fingerprint) AS (
+    SELECT parent_content_fingerprint
+    FROM verdict_provenance_derivations
+    WHERE correlation_id = :invocation_id
+      AND child_content_fingerprint = :child_content_fingerprint
+
+    UNION
+
+    SELECT edge.parent_content_fingerprint
+    FROM verdict_provenance_derivations AS edge
+    JOIN ancestors ON edge.child_content_fingerprint = ancestors.content_fingerprint
+    WHERE edge.correlation_id = :invocation_id
+)
+SELECT evidence.*
+FROM verdict_evidence AS evidence
+JOIN ancestors ON evidence.content_fingerprint = ancestors.content_fingerprint
+WHERE evidence.record_type = 'provenance'
+  AND evidence.invocation_id = :invocation_id
+ORDER BY evidence.recorded_at, evidence.id;
+```
+
+The derivation table has a `(correlation_id, child_content_fingerprint)` index for each backward traversal step.
+
 ## Threat model
 
 Verdict is designed to make these failures less likely on its protected path:
