@@ -33,6 +33,14 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
         if (! in_array($this->onFailure, ['alert', 'throw'], true)) {
             throw new InvalidArgumentException("Unknown on_failure mode [{$this->onFailure}]. Expected 'alert' or 'throw'.");
         }
+
+        if ($this->maxAttempts < 1) {
+            throw new InvalidArgumentException("The maximum attempts must be at least 1, got [{$this->maxAttempts}].");
+        }
+
+        if ($this->baseDelayMs < 0) {
+            throw new InvalidArgumentException("The base delay in milliseconds must not be negative, got [{$this->baseDelayMs}].");
+        }
     }
 
     public function record(DecisionEvidence $evidence): void
@@ -193,13 +201,16 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
             }
         }
 
-        $this->recordGap($chainId, $correlationId, $recordType, $attempt, $lastError);
+        $phase = $resolverFailed ? 'resolve_chain_id' : 'append';
+
+        $this->recordGap($chainId, $correlationId, $recordType, $phase, $attempt, $lastError);
 
         try {
             $this->events->dispatch(new ChainWriteFailed(
                 chainId: $chainId,
                 correlationId: $correlationId,
                 recordType: $recordType,
+                phase: $phase,
                 attempts: $attempt,
                 message: $lastError?->getMessage() ?? 'unknown error',
             ));
@@ -212,7 +223,7 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
         }
     }
 
-    private function recordGap(string $chainId, ?string $correlationId, string $recordType, int $attempts, ?Throwable $error): void
+    private function recordGap(string $chainId, ?string $correlationId, string $recordType, string $phase, int $attempts, ?Throwable $error): void
     {
         try {
             $this->connection->table($this->table)->insert([
@@ -223,6 +234,7 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
                 'disposition' => 'gap',
                 'reason' => json_encode([
                     'chain' => $chainId,
+                    'phase' => $phase,
                     'attempts' => $attempts,
                     'error' => $error?->getMessage(),
                 ], JSON_THROW_ON_ERROR),

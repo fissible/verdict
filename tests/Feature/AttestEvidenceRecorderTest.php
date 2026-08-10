@@ -209,10 +209,12 @@ it('records a chain gap marker and dispatches an event when retries are exhauste
 
     $reason = json_decode((string) $rows[0]->reason, true, flags: JSON_THROW_ON_ERROR);
     expect($reason['chain'])->toBe('verdict')
-        ->and($reason['attempts'])->toBe(3);
+        ->and($reason['attempts'])->toBe(3)
+        ->and($reason['phase'])->toBe('append');
 
     Event::assertDispatched(ChainWriteFailed::class, fn (ChainWriteFailed $e): bool => $e->correlationId === 'env-1'
         && $e->recordType === 'decision'
+        && $e->phase === 'append'
         && $e->attempts === 3);
 });
 
@@ -244,10 +246,12 @@ it('records a chain gap marker for an exhausted context release too, without thr
 
     $reason = json_decode((string) $rows[0]->reason, true, flags: JSON_THROW_ON_ERROR);
     expect($reason['chain'])->toBe('verdict')
-        ->and($reason['attempts'])->toBe(3);
+        ->and($reason['attempts'])->toBe(3)
+        ->and($reason['phase'])->toBe('append');
 
     Event::assertDispatched(ChainWriteFailed::class, fn (ChainWriteFailed $e): bool => $e->correlationId === 'inv-gap-1'
         && $e->recordType === 'context_release'
+        && $e->phase === 'append'
         && $e->attempts === 3);
 });
 
@@ -266,6 +270,7 @@ it('does not throw when the gap-marker DB write itself fails in alert mode', fun
 
     Event::assertDispatched(ChainWriteFailed::class, fn (ChainWriteFailed $e): bool => $e->correlationId === 'env-1'
         && $e->recordType === 'decision'
+        && $e->phase === 'append'
         && $e->attempts === 3);
 });
 
@@ -290,7 +295,12 @@ it('does not throw when the chain id resolver itself throws, even in alert mode'
     expect($rows)->toHaveCount(1)
         ->and($rows[0]->correlation_id)->toBe('env-1');
 
-    Event::assertDispatched(ChainWriteFailed::class);
+    $reason = json_decode((string) $rows[0]->reason, true, flags: JSON_THROW_ON_ERROR);
+    expect($reason['attempts'])->toBe(0)
+        ->and($reason['phase'])->toBe('resolve_chain_id');
+
+    Event::assertDispatched(ChainWriteFailed::class, fn (ChainWriteFailed $e): bool => $e->phase === 'resolve_chain_id'
+        && $e->attempts === 0);
 });
 
 it('throws instead of swallowing when on_failure is throw', function (): void {
@@ -303,6 +313,28 @@ it('throws instead of swallowing when on_failure is throw', function (): void {
     // The gap marker is still written even in throw mode — decision 5 in issue #11
     // separates "record the gap" from "how to react," and both apply together.
     expect(attestChainGapRows())->toHaveCount(1);
+});
+
+it('rejects a non-positive max attempts configuration', function (): void {
+    expect(fn () => new AttestEvidenceRecorder(
+        attest: AttestFixture::registry(AttestFixture::store()),
+        fallback: new InMemoryEvidenceRecorder,
+        connection: app(DatabaseManager::class)->connection(),
+        events: app(Dispatcher::class),
+        chainIdUsing: fn (): string => 'verdict',
+        maxAttempts: 0,
+    ))->toThrow(InvalidArgumentException::class, 'The maximum attempts must be at least 1, got [0].');
+});
+
+it('rejects a negative base delay configuration', function (): void {
+    expect(fn () => new AttestEvidenceRecorder(
+        attest: AttestFixture::registry(AttestFixture::store()),
+        fallback: new InMemoryEvidenceRecorder,
+        connection: app(DatabaseManager::class)->connection(),
+        events: app(Dispatcher::class),
+        chainIdUsing: fn (): string => 'verdict',
+        baseDelayMs: -1,
+    ))->toThrow(InvalidArgumentException::class, 'The base delay in milliseconds must not be negative, got [-1].');
 });
 
 it('always delegates provenance to the fallback recorder for reads', function (): void {
