@@ -12,16 +12,22 @@ final readonly class BaselineComparison
     public function hasBlockingChanges(): bool
     {
         foreach ($this->changes as $change) {
-            if (in_array($change->kind, [
-                BaselineChangeKind::BehavioralRegression,
-                BaselineChangeKind::BehavioralFailure,
-                BaselineChangeKind::HarnessError,
-                BaselineChangeKind::RemovedCoverage,
-            ], true)) {
+            if (self::isBlocking($change->kind)) {
                 return true;
             }
         }
 
         return false;
+    }
+
+    public static function isBlocking(BaselineChangeKind $kind): bool
+    {
+        return in_array($kind, [
+            BaselineChangeKind::BehavioralRegression,
+            BaselineChangeKind::BehavioralFailure,
+            BaselineChangeKind::HarnessError,
+            BaselineChangeKind::RemovedCoverage,
+            BaselineChangeKind::SuspendedCoverage,
+        ], true);
     }
 }

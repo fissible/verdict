@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\CaseInput;
+use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\EvaluationCase;
 use Fissible\Verdict\Evaluation\LiveEvaluationOptions;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
@@ -101,6 +102,41 @@ it('aggregates mixed passed failed and error live trials without retaining raw f
         ->and($report['thresholds']['utility']['disposition'])->toBe('met')
         ->and($report['cases'][0]['score'])->toMatchArray(['passed' => 1, 'failed' => 1, 'errors' => 1, 'pass_rate' => 0.5])
         ->and($json)->not->toContain($secret);
+});
+
+it('includes pending live trials in the report score', function (): void {
+    $suite = new SecuritySuite(
+        name: 'blocked-live-suite',
+        version: '1',
+        cases: [EvaluationCase::pending(
+            id: 'blocked-live-case',
+            version: '1',
+            purpose: CasePurpose::Security,
+            input: new CaseInput([], ['case' => 'blocked-live-case']),
+            blockedBy: '#30 derivation edges',
+        )],
+    );
+
+    $result = (new LiveEvaluationRunner(true, 25))->run(
+        $suite,
+        new LiveEvaluationOptions(2, 1, 1, enabled: true),
+    );
+    $report = $result->report()->toArray();
+
+    expect($result->securityThreshold->score->pending)->toBe(2)
+        ->and($report['thresholds']['security'])->toMatchArray([
+            'passed' => 0,
+            'failed' => 0,
+            'errors' => 0,
+            'pending' => 2,
+            'evaluated' => 0,
+            'total' => 2,
+            'pass_rate' => null,
+        ])
+        ->and($report['cases'][0]['score'])->toMatchArray([
+            'pending' => 2,
+            'total' => 2,
+        ]);
 });
 
 it('blocks live execution when either opt-in is absent', function (): void {

@@ -4,6 +4,10 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add explicit pending evaluation cases with mandatory blocker metadata and suspended-coverage
+  comparison findings. `Score` now has a required fourth `pending` constructor argument. Baselines
+  containing `pending` require this release or newer; older Verdict versions reject that enum value.
+
 ## [0.3.0] - 2026-08-08
 
 - Reject unregistered and non-executable capabilities when `Verdict::bound()` constructs a tool, so a

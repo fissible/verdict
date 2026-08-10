@@ -19,6 +19,7 @@ final class CompareEvaluationCommand extends Command
         BaselineChangeKind::BehavioralFailure,
         BaselineChangeKind::HarnessError,
         BaselineChangeKind::RemovedCoverage,
+        BaselineChangeKind::SuspendedCoverage,
         BaselineChangeKind::Improvement,
         BaselineChangeKind::Recovered,
         BaselineChangeKind::AddedCoverage,
@@ -30,6 +31,7 @@ final class CompareEvaluationCommand extends Command
         'behavioral_failure' => 'New behavioral failures',
         'harness_error' => 'Harness errors',
         'removed_coverage' => 'Removed coverage',
+        'suspended_coverage' => 'Suspended coverage',
         'improvement' => 'Improvements',
         'recovered' => 'Recoveries',
         'added_coverage' => 'Added coverage',
@@ -109,7 +111,7 @@ final class CompareEvaluationCommand extends Command
         }
 
         foreach ($comparison->changes as $change) {
-            $level = $this->isBlocking($change->kind) ? 'error' : 'notice';
+            $level = BaselineComparison::isBlocking($change->kind) ? 'error' : 'notice';
             $title = $this->escapeProperty('Verdict '.self::LABELS[$change->kind->value]);
             $message = $this->escapeMessage(
                 "case_id={$change->caseId} category={$change->kind->value} {$this->statusTransition($change)}",
@@ -125,16 +127,6 @@ final class CompareEvaluationCommand extends Command
         $current = $change->currentStatus === null ? 'missing' : $change->currentStatus->value;
 
         return "{$baseline} -> {$current}";
-    }
-
-    private function isBlocking(BaselineChangeKind $kind): bool
-    {
-        return in_array($kind, [
-            BaselineChangeKind::BehavioralRegression,
-            BaselineChangeKind::BehavioralFailure,
-            BaselineChangeKind::HarnessError,
-            BaselineChangeKind::RemovedCoverage,
-        ], true);
     }
 
     private function escapeMessage(string $value): string

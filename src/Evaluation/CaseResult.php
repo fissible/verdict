@@ -19,5 +19,10 @@ final readonly class CaseResult
         public array $assertions,
         public ?ObservationEvidence $observation,
         public ?string $errorClass = null,
-    ) {}
+        public ?string $blockedBy = null,
+    ) {
+        if ($this->status === CaseStatus::Pending && ($this->blockedBy === null || trim($this->blockedBy) === '')) {
+            throw new \InvalidArgumentException('A pending case result must name what blocks it.');
+        }
+    }
 }
