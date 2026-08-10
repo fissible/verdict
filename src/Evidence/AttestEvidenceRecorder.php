@@ -14,7 +14,6 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
-use LogicException;
 use Throwable;
 
 final class AttestEvidenceRecorder implements EvidenceRecorder
@@ -100,24 +99,60 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
 
     public function recordProvenance(ProvenanceEntry $entry): void
     {
-        throw new LogicException('Not yet implemented — see Task 5.');
+        $this->fallback->recordProvenance($entry);
+
+        if (! $this->chainProvenance) {
+            return;
+        }
+
+        $this->writeChained(
+            correlationId: $entry->correlationId,
+            recordType: 'provenance',
+            type: 'verdict.provenance',
+            payload: [
+                'source' => $entry->source->identity(),
+                'trust' => $entry->trust->value,
+                'data_class' => $entry->dataClass->value,
+                'channel' => $entry->channel->value,
+                'component_label' => $entry->componentLabel,
+                'component_fingerprint' => $entry->componentFingerprint,
+                'content_fingerprint' => $entry->contentFingerprint,
+                'recorded_at' => $entry->recordedAt->format(DATE_ATOM),
+            ],
+        );
     }
 
     public function recordDerivation(ProvenanceDerivation $derivation): void
     {
-        throw new LogicException('Not yet implemented — see Task 5.');
+        $this->fallback->recordDerivation($derivation);
+
+        if (! $this->chainProvenance) {
+            return;
+        }
+
+        $this->writeChained(
+            correlationId: $derivation->correlationId,
+            recordType: 'provenance_derivation',
+            type: 'verdict.provenance_derivation',
+            payload: [
+                'child_content_fingerprint' => $derivation->childContentFingerprint,
+                'parent_content_fingerprint' => $derivation->parentContentFingerprint,
+                'kind' => $derivation->kind->value,
+                'recorded_at' => $derivation->recordedAt->format(DATE_ATOM),
+            ],
+        );
     }
 
     /** @return list<ProvenanceEntry> */
     public function provenanceFor(string $correlationId): array
     {
-        throw new LogicException('Not yet implemented — see Task 5.');
+        return $this->fallback->provenanceFor($correlationId);
     }
 
     /** @return list<ProvenanceDerivation> */
     public function derivationsFor(string $correlationId, string $childContentFingerprint): array
     {
-        throw new LogicException('Not yet implemented — see Task 5.');
+        return $this->fallback->derivationsFor($correlationId, $childContentFingerprint);
     }
 
     /** @param array<string, mixed> $payload */

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Fissible\Attest\Chain\ChainStore;
+use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Destination;
 use Fissible\Verdict\Context\Source;
@@ -10,8 +11,11 @@ use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\Events\ChainWriteFailed;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\Evidence\ProvenanceDerivation;
+use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Exceptions\EvidenceChainWriteFailed;
 use Fissible\Verdict\Tests\Support\AttestFixture;
 use Fissible\Verdict\Tests\Support\FlakyChainStore;
@@ -214,4 +218,81 @@ it('throws instead of swallowing when on_failure is throw', function (): void {
     // The gap marker is still written even in throw mode — decision 5 in issue #11
     // separates "record the gap" from "how to react," and both apply together.
     expect(chainGapRows())->toHaveCount(1);
+});
+
+it('always delegates provenance to the fallback recorder for reads', function (): void {
+    $store = AttestFixture::store();
+    $fallback = new InMemoryEvidenceRecorder;
+    $recorder = new AttestEvidenceRecorder(
+        attest: AttestFixture::registry($store),
+        fallback: $fallback,
+        connection: app(DatabaseManager::class)->connection(),
+        events: app(Dispatcher::class),
+        chainIdUsing: fn (): string => 'verdict',
+        baseDelayMs: 1,
+    );
+
+    $entry = new ProvenanceEntry(
+        correlationId: 'inv-1',
+        source: Source::external('search-api'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::ToolResult,
+        contentFingerprint: hash('sha256', 'doc'),
+        componentLabel: null,
+        componentFingerprint: null,
+        recordedAt: new DateTimeImmutable('2026-08-09T00:00:00+00:00'),
+    );
+
+    $recorder->recordProvenance($entry);
+
+    expect($recorder->provenanceFor('inv-1'))->toEqual([$entry])
+        ->and($store->tail('verdict'))->toBeNull(); // chain_provenance defaults to false: not chained
+
+    $derivation = new ProvenanceDerivation(
+        correlationId: 'inv-1',
+        childContentFingerprint: hash('sha256', 'child'),
+        parentContentFingerprint: hash('sha256', 'doc'),
+        kind: DerivationKind::Retrieved,
+        recordedAt: new DateTimeImmutable('2026-08-09T00:00:00+00:00'),
+    );
+
+    $recorder->recordDerivation($derivation);
+
+    expect($recorder->derivationsFor('inv-1', hash('sha256', 'child')))->toEqual([$derivation]);
+});
+
+it('also chains provenance and derivations when chain_provenance is enabled, without losing reads', function (): void {
+    $store = AttestFixture::store();
+    $fallback = new InMemoryEvidenceRecorder;
+    $recorder = new AttestEvidenceRecorder(
+        attest: AttestFixture::registry($store),
+        fallback: $fallback,
+        connection: app(DatabaseManager::class)->connection(),
+        events: app(Dispatcher::class),
+        chainIdUsing: fn (): string => 'verdict',
+        chainProvenance: true,
+        baseDelayMs: 1,
+    );
+
+    $entry = new ProvenanceEntry(
+        correlationId: 'inv-1',
+        source: Source::external('search-api'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::ToolResult,
+        contentFingerprint: hash('sha256', 'doc'),
+        componentLabel: null,
+        componentFingerprint: null,
+        recordedAt: new DateTimeImmutable('2026-08-09T00:00:00+00:00'),
+    );
+
+    $recorder->recordProvenance($entry);
+
+    expect($recorder->provenanceFor('inv-1'))->toEqual([$entry]);
+
+    $tail = $store->tail('verdict');
+    expect($tail->envelope->type)->toBe('verdict.provenance')
+        ->and($tail->envelope->correlation)->toBe('inv-1')
+        ->and($tail->envelope->payload['content_fingerprint'])->toBe(hash('sha256', 'doc'));
 });
