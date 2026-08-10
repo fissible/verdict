@@ -68,7 +68,7 @@ A comparison yields changes of the `BaselineChangeKind` enum:
 | `RemovedCoverage` | A case present in the baseline is missing from the current run, or its purpose changed. | Confirm the removal/reclassification was intentional; this shrinks what's actually being tested. |
 | `Improvement` | A case moved from a non-Error failing/regressed state to `Passed`. | Good news; consider re-baselining. |
 | `Recovered` | A case moved from `Error` to `Passed`. | Confirm the underlying harness issue is actually fixed, not just intermittently green. |
-| `AddedCoverage` | A new case not in the baseline was added and passed. | Informational; re-baseline to lock it in. |
+| `AddedCoverage` | A new case not in the baseline was added, regardless of its status. A newly added case that fails or errors produces a `BehavioralFailure`/`HarnessError` entry alongside this one, not instead of it. | Informational only if the new case passed; re-baseline to lock it in. If it's paired with a `BehavioralFailure`/`HarnessError` entry, treat that entry as the actionable signal instead. |
 
 The command treats `BehavioralRegression`, `BehavioralFailure`, `HarnessError`, and `RemovedCoverage` as blocking in CI. The other three change kinds are not blocking.
 
