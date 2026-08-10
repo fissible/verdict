@@ -31,12 +31,16 @@ final readonly class EvaluationCase
             throw new InvalidArgumentException('An evaluation case must have a non-empty ID and version.');
         }
 
-        if ($this->assertions === [] && $this->blockedBy === null) {
-            throw new InvalidArgumentException('An evaluation case must define at least one assertion.');
-        }
+        if ($this->blockedBy !== null) {
+            if (trim($this->blockedBy) === '') {
+                throw new InvalidArgumentException('A pending evaluation case must name what blocks it.');
+            }
 
-        if ($this->blockedBy !== null && trim($this->blockedBy) === '') {
-            throw new InvalidArgumentException('A pending evaluation case must name what blocks it.');
+            if ($this->assertions !== []) {
+                throw new InvalidArgumentException('A pending evaluation case cannot define assertions.');
+            }
+        } elseif ($this->assertions === []) {
+            throw new InvalidArgumentException('An evaluation case must define at least one assertion.');
         }
 
         $this->assertAssertions($this->assertions);

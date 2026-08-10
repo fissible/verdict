@@ -46,7 +46,7 @@ final readonly class SuiteResult
     public function passed(): bool
     {
         foreach ($this->cases as $case) {
-            if (! in_array($case->status, [CaseStatus::Passed, CaseStatus::Pending], true)) {
+            if ($case->status !== CaseStatus::Passed) {
                 return false;
             }
         }

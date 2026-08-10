@@ -101,7 +101,20 @@ it('reports a blocked pending case without executing it', function (): void {
 
     expect($executed)->toBeFalse()
         ->and($result->cases[0]->status)->toBe(CaseStatus::Pending)
-        ->and($result->cases[0]->blockedBy)->toBe('#30 derivation edges');
+        ->and($result->cases[0]->blockedBy)->toBe('#30 derivation edges')
+        ->and($result->passed())->toBeFalse();
+});
+
+it('rejects assertions on a blocked evaluation case', function (): void {
+    expect(fn (): EvaluationCase => new EvaluationCase(
+        id: 'blocked-with-assertion',
+        version: '1',
+        purpose: CasePurpose::Security,
+        input: new CaseInput([], []),
+        runner: fn (): Observation => new Observation(Disposition::Deny, false),
+        assertions: [Assertions::notExecuted()],
+        blockedBy: '#30 derivation edges',
+    ))->toThrow(InvalidArgumentException::class, 'cannot define assertions');
 });
 
 it('reports runner exceptions as errors rather than behavioral failures', function (): void {
@@ -352,4 +365,40 @@ it('reports suspended coverage when a previously passing case becomes pending', 
         ->and($pendingBaseline->cases()['blocked-case']['status'])->toBe(CaseStatus::Pending)
         ->and($comparison->hasBlockingChanges())->toBeTrue()
         ->and($comparison->changes[0]->kind)->toBe(BaselineChangeKind::SuspendedCoverage);
+});
+
+it('blocks a newly added pending evaluation case', function (): void {
+    $baseline = EvaluationBaseline::fromJson((new SecuritySuite('pending-suite', '1', [
+        EvaluationCase::attack(
+            'existing-case',
+            '1',
+            new CaseInput([], ['case' => 'existing-case']),
+            fn (): Observation => new Observation(Disposition::Deny, false),
+            [Assertions::notExecuted()],
+        ),
+    ]))->run()->report()->toJson());
+    $current = (new SecuritySuite('pending-suite', '2', [
+        EvaluationCase::attack(
+            'existing-case',
+            '1',
+            new CaseInput([], ['case' => 'existing-case']),
+            fn (): Observation => new Observation(Disposition::Deny, false),
+            [Assertions::notExecuted()],
+        ),
+        EvaluationCase::pending(
+            'new-blocked-case',
+            '1',
+            CasePurpose::Security,
+            new CaseInput([], ['case' => 'new-blocked-case']),
+            '#30 derivation edges',
+        ),
+    ]))->run();
+
+    $comparison = $current->compareTo($baseline);
+
+    expect($comparison->hasBlockingChanges())->toBeTrue()
+        ->and(array_column($comparison->changes, 'kind'))->toBe([
+            BaselineChangeKind::AddedCoverage,
+            BaselineChangeKind::SuspendedCoverage,
+        ]);
 });

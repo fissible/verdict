@@ -61,6 +61,7 @@ final readonly class LiveEvaluationReport implements JsonSerializable
             'passed' => $score->passed,
             'failed' => $score->failed,
             'errors' => $score->errors,
+            'pending' => $score->pending,
             'evaluated' => $score->evaluated(),
             'total' => $score->total(),
             'pass_rate' => $score->passRate(),

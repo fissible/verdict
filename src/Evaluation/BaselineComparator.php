@@ -79,11 +79,13 @@ final class BaselineComparator
             return BaselineChangeKind::HarnessError;
         }
 
-        if (in_array($baseline, [CaseStatus::Error, CaseStatus::Pending], true) && $current === CaseStatus::Passed) {
+        $baselineWasNotEvaluated = in_array($baseline, [CaseStatus::Error, CaseStatus::Pending], true);
+
+        if ($baselineWasNotEvaluated && $current === CaseStatus::Passed) {
             return BaselineChangeKind::Recovered;
         }
 
-        if (in_array($baseline, [CaseStatus::Error, CaseStatus::Pending], true)) {
+        if ($baselineWasNotEvaluated) {
             return BaselineChangeKind::BehavioralFailure;
         }
 
@@ -118,6 +120,16 @@ final class BaselineComparator
                 $case->id,
                 $case->purpose,
                 BaselineChangeKind::HarnessError,
+                null,
+                $case->status,
+            );
+        }
+
+        if ($case->status === CaseStatus::Pending) {
+            $changes[] = new BaselineChange(
+                $case->id,
+                $case->purpose,
+                BaselineChangeKind::SuspendedCoverage,
                 null,
                 $case->status,
             );
