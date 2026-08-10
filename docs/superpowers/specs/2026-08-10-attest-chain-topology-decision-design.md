@@ -31,6 +31,15 @@ namespace Fissible\Verdict\Contracts;
 
 interface AttestChainResolver
 {
+    /**
+     * Return the chain id to write to for the write currently in progress.
+     *
+     * May throw. A thrown exception is not treated as a bug — it is handled the same
+     * way as an exhausted chain-store write: a chain_gap marker is recorded, a
+     * ChainWriteFailed event is dispatched with phase: 'resolve_chain_id' and
+     * attempts: 0, and the caller is not blocked unless on_failure is 'throw'. See
+     * AttestEvidenceRecorder::writeChained().
+     */
     public function resolve(): string;
 }
 ```
@@ -79,13 +88,17 @@ if ($resolverClass !== null) {
     }
 
     // Type-check eagerly so misconfiguration fails at boot, not on the first evidence
-    // write. This resolved instance is discarded immediately — it exists only to prove
-    // the class conforms. The real per-write resolution below re-resolves through $app
-    // on every call, deliberately never caching an instance, so a request-scoped or
+    // write — via class_implements(), not $app->make(). class_implements() returns
+    // false (never throws) for a class that doesn't exist or can't autoload, so a
+    // typo'd class name still produces the LogicException below instead of an uncaught
+    // framework exception. It also never constructs the resolver, so this check has no
+    // side effects, unlike $app->make(), which would run the class's constructor just
+    // to type-check it. The real per-write resolution below still goes through $app on
+    // every call, deliberately never caching an instance, so a request-scoped or
     // tenant-scoped binding inside resolve() is re-evaluated fresh each time. Caching a
     // resolved instance here would reintroduce the exact stale-state-across-requests bug
     // this design exists to avoid under Octane.
-    if (! ($app->make($resolverClass) instanceof AttestChainResolver)) {
+    if (! in_array(AttestChainResolver::class, class_implements($resolverClass) ?: [], true)) {
         throw new LogicException("The [{$resolverClass}] chain resolver must implement ".AttestChainResolver::class.'.');
     }
 
@@ -97,6 +110,8 @@ if ($resolverClass !== null) {
 
 `$chainIdUsing` then passes into `AttestEvidenceRecorder`'s constructor exactly as it does today — no change to `AttestEvidenceRecorder` itself. All the change is in `VerdictServiceProvider`, `config/verdict.php`, the new contract file, and docs.
 
+The existing generic-recorder validation a few lines below this block (`$instance = $app->make($recorder)`, for a fully custom `EvidenceRecorder` implementation) has this exact same fragility today — a typo'd class name there throws an uncaught framework exception rather than a clean message. That's a pre-existing gap, not something this design introduces, and fixing it is out of scope here — but it's the reason to use `class_implements()` in the new code rather than copy the existing pattern into a second location.
+
 ### Failure paths through the existing retry/gap machinery
 
 A `resolve()` that throws flows into `AttestEvidenceRecorder::writeChained()`'s existing `chainIdUsing`-throws handling (the `resolverFailed` branch, fixed in `5acacd3` earlier in this PR) exactly the same as a hand-written closure that throws — `phase: 'resolve_chain_id'`, `attempts: 0`, gap marker recorded, event dispatched, caller never blocked in `alert` mode. No new failure-handling code needed here; the design's job is to prove this existing path is actually exercised through the resolver-class wiring, not just through a raw closure (see Testing).
@@ -105,6 +120,7 @@ A `resolve()` that throws flows into `AttestEvidenceRecorder::writeChained()`'s 
 
 - `docs/limitations.md`: replace the "shipped default topology is a single global chain" paragraph (added in the earlier final-review fix wave) — it described a silent default that no longer exists. Explain the two explicit options and state plainly why the choice isn't safely reversible (the hash-chain-splitting argument above).
 - `config/verdict.php` comment block: rewritten per above.
+- Both locations must say explicitly that `chain_resolver` supersedes `$app->extend(EvidenceRecorder::class, ...)` as the recommended way to get per-tenant chain ids specifically. Today's docs point at `$app->extend()` as *the* answer for multi-tenancy; once `chain_resolver` exists, leaving both documented side by side without ranking them reads as two competing answers. `$app->extend()` remains the right tool for customization `chain_resolver` can't express — swapping the fallback recorder, varying `on_failure` per tenant, replacing the whole `EvidenceRecorder` — but for "I need the chain id to vary by tenant," `chain_resolver` is now the first-class path and the docs should say so, not just add it as a third option.
 
 ## Testing plan
 
@@ -118,6 +134,7 @@ New cases in `tests/Integration/AttestEvidenceRecorderServiceProviderTest.php` (
 1. Neither `chain` nor `chain_resolver` set → `LogicException` with the topology-decision message.
 2. Both set → `LogicException` with the ambiguous-configuration message.
 3. `chain_resolver` set to a class not implementing `AttestChainResolver` → `LogicException` naming the class and the contract.
+3a. `chain_resolver` set to a class name that doesn't exist (the typo case) → the same clean `LogicException`, not an uncaught framework exception — this is the specific regression `class_implements()` (over `$app->make()`) protects against, and needs its own test rather than relying on case 3 to imply it.
 4. `chain` set alone → still resolves and writes to that fixed chain (regression coverage for the existing single-tenant path, now that it's no longer the default).
 5. `chain_resolver` set to `StaticAttestChainResolver` → two `record()` calls produce entries on two distinct chain tails (`tenant:1`, `tenant:2`) — the freshness proof.
 6. `chain_resolver` set to `ThrowingAttestChainResolver` → `record()` through the **container-built** recorder does not throw in `alert` mode, writes exactly one gap-marker row, and the row's `reason` JSON plus the dispatched `ChainWriteFailed` event both show `phase === 'resolve_chain_id'` and `attempts === 0`. This is the case worth calling out explicitly: it proves the closure `VerdictServiceProvider` builds around a resolver class correctly propagates into the existing phase-tagged handling from `5acacd3` — not just that `AttestEvidenceRecorder`'s own closure-handling logic works with a hand-rolled closure in isolation, which is already covered by the existing `tests/Feature/AttestEvidenceRecorderTest.php` case.
