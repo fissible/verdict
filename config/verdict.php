@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
@@ -23,6 +24,40 @@ return [
         'recorder' => NullEvidenceRecorder::class,
         'connection' => null,
         'table' => 'verdict_evidence',
+
+        // Only consulted when 'recorder' is AttestEvidenceRecorder::class. Requires
+        // fissible/attest-laravel (composer require fissible/attest-laravel) — see
+        // docs/limitations.md, "No tamper-evident evidence".
+        'attest' => [
+            // Fixed chain id used by this default binding. Every deployment writes every
+            // decision and context release to this one chain. Multi-tenant applications
+            // should instead bind their own EvidenceRecorder — e.g. in a service provider:
+            //   $this->app->extend(EvidenceRecorder::class, fn ($default, $app) => new AttestEvidenceRecorder(
+            //       ..., chainIdUsing: fn (): string => 'tenant:'.CurrentTenant::id(), ...
+            //   ));
+            // See docs/limitations.md for the truncation-exposure and key-custody caveats
+            // that apply regardless of chain topology.
+            'chain' => env('VERDICT_ATTEST_CHAIN', 'verdict'),
+
+            // The non-chained fallback recorder's connection/table. Provenance entries and
+            // derivations are always readable through this table; decisions and context
+            // releases are not (they exist only in the attest chain, plus a "chain_gap"
+            // marker row here if a chained write ever exhausts its retries).
+            'fallback_connection' => null,
+            'fallback_table' => 'verdict_evidence',
+
+            // Off by default: provenance volume scales with retrieved context, which can be
+            // orders of magnitude larger than decisions, and chaining it by default would
+            // make throughput unrepresentative of what most deployments need.
+            'chain_provenance' => false,
+
+            // 'alert' (default) never blocks the protected action — ADR 0007 already
+            // decided evidence is not an authorization gate. 'throw' is for deployments
+            // whose compliance regime requires fail-closed on evidence-write failure.
+            'on_failure' => 'alert',
+            'max_attempts' => 3,
+            'base_delay_ms' => 50,
+        ],
     ],
 
     'rate_limits' => [

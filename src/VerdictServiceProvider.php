@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict;
 
+use Fissible\AttestLaravel\Support\AttestRegistry;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
@@ -23,6 +24,7 @@ use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
+use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
@@ -110,6 +112,35 @@ final class VerdictServiceProvider extends ServiceProvider
                 return new DatabaseEvidenceRecorder(
                     connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
                     table: is_string($table) ? $table : 'verdict_evidence',
+                );
+            }
+
+            if ($recorder === AttestEvidenceRecorder::class) {
+                $fallbackConnection = config('verdict.evidence.attest.fallback_connection');
+                $fallbackTable = config('verdict.evidence.attest.fallback_table', 'verdict_evidence');
+                $chain = config('verdict.evidence.attest.chain', 'verdict');
+                $onFailure = config('verdict.evidence.attest.on_failure', 'alert');
+                $chainProvenance = config('verdict.evidence.attest.chain_provenance', false);
+                $maxAttempts = config('verdict.evidence.attest.max_attempts', 3);
+                $baseDelayMs = config('verdict.evidence.attest.base_delay_ms', 50);
+                $connection = $app->make(DatabaseManager::class)->connection(
+                    is_string($fallbackConnection) ? $fallbackConnection : null,
+                );
+
+                return new AttestEvidenceRecorder(
+                    attest: $app->make(AttestRegistry::class),
+                    fallback: new DatabaseEvidenceRecorder(
+                        connection: $connection,
+                        table: is_string($fallbackTable) ? $fallbackTable : 'verdict_evidence',
+                    ),
+                    connection: $connection,
+                    events: $app->make(Dispatcher::class),
+                    chainIdUsing: static fn (): string => is_string($chain) ? $chain : 'verdict',
+                    table: is_string($fallbackTable) ? $fallbackTable : 'verdict_evidence',
+                    chainProvenance: (bool) $chainProvenance,
+                    onFailure: is_string($onFailure) ? $onFailure : 'alert',
+                    maxAttempts: is_int($maxAttempts) ? $maxAttempts : 3,
+                    baseDelayMs: is_int($baseDelayMs) ? $baseDelayMs : 50,
                 );
             }
 
