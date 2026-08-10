@@ -63,7 +63,7 @@ A comparison yields changes of the `BaselineChangeKind` enum:
 | Kind | Meaning | Reaction |
 | --- | --- | --- |
 | `BehavioralRegression` | A case that was passing now fails (and wasn't previously erroring). | Investigate — the protected behavior got worse. |
-| `BehavioralFailure` | A case is failing and was already failing (or is newly added and fails) — status didn't improve from a prior error/fail state. | Known/expected if intentional (e.g. a pending RAG-provenance case); otherwise investigate. |
+| `BehavioralFailure` | A newly added case fails on its first run, or a case that was erroring (`CaseStatus::Error`) in the baseline is now failing instead. A case that was already `Failed` in the baseline and stays `Failed` produces no entry at all. | Known/expected if intentional (e.g. a new pending RAG-provenance case); otherwise investigate. A persistently-`Failed` case won't reappear here each run — track it separately if you need confirmation it hasn't silently changed. |
 | `HarnessError` | The current run errored (`CaseStatus::Error`) regardless of baseline status. | Treat as broken harness/environment first, not a security signal — the case didn't execute meaningfully. |
 | `RemovedCoverage` | A case present in the baseline is missing from the current run, or its purpose changed. | Confirm the removal/reclassification was intentional; this shrinks what's actually being tested. |
 | `Improvement` | A case moved from a non-Error failing/regressed state to `Passed`. | Good news; consider re-baselining. |
