@@ -12,15 +12,16 @@ The harness is centered around `SecuritySuite`. It is constructed with a suite n
 
 ## The shipped packs
 
-Verdict ships with three attack packs that model specific threats:
+Verdict ships with four attack packs that model specific threats:
 
 - `StorefrontAttackPack`: Models a compromised storefront interacting with an order system. It includes 10 cases covering cross-principal lookup/cancellation denial, owned-order utility cases, argument-mutation-after-confirmation, confirmed mutation execution, duplicate-mutation admission, single-mutation admission, indirect-instruction-in-retrieved-document, and an owned-order-document utility.
 - `AccountRecoveryAttackPack`: Models a social-engineering attacker attempting to bypass verification in recovery flows. It tests urgency-pressure verification bypass versus verified operation, for both account-unlock and MFA-reset scenarios.
 - `RagBorneInjectionAttackPack`: Models untrusted data retrieved by RAG flows attacking the executor. It ensures unauthorized injected action is denied, authorized-but-confirmable action halts at confirmation, argument manipulation from a poisoned retrieved document halts at confirmation, and asserts untrusted-document provenance.
+- `ToolIntegrityAttackPack`: Models compromise through tool identity and tool-definition metadata rather than the user conversation. It covers poisoned tool descriptions that try to inject arguments, shadowing via a confusingly similar adversarial capability, clean legitimate-tool utility, and tool-description drift currently pending on [#65](https://github.com/fissible/verdict/issues/65).
 
 ## Writing a pack
 
-Implementing an attack pack means satisfying the `AttackPack` interface, which defines one method: `cases(Closure $runner): array`. A pack generates an array of `EvaluationCase` instances created via `EvaluationCase::attack()` or `EvaluationCase::utility()`. Each case requires a non-empty `id`, a `version`, and at least one assertion.
+Implementing an attack pack means satisfying the `AttackPack` interface, which defines one method: `cases(Closure $runner): array`. A pack generates an array of `EvaluationCase` instances created via `EvaluationCase::attack()`, `EvaluationCase::utility()`, or `EvaluationCase::pending()`. Runnable cases require a non-empty `id`, a `version`, and at least one assertion. Pending cases require a non-empty `blockedBy` string, carry no assertions, and are not executed by `SecuritySuite`.
 
 Cases use a `CaseInput` that holds `trustedSetup` and `untrustedInput` arrays. The framework computes SHA-256 fingerprints of each using `ArgumentFingerprint`.
 
@@ -40,7 +41,7 @@ You write assertions using the 12 static factory methods on `Assertions`:
 
 For custom assertions, use `CallbackAssertion`, which implements `ObservationAssertion` and wraps a `Closure(Observation): bool`. Assertions run against an `Observation` (or `ToolObservation`), which can be projected to `ObservationEvidence` for reporting.
 
-To keep packs deterministic and synthetic, use the `*AttackPackConfig` convention (e.g., `StorefrontAttackPackConfig`, `AccountRecoveryAttackPackConfig`, `RagBorneInjectionAttackPackConfig`). These immutable, validated config objects parameterize a pack's actor IDs, resource IDs, and forbidden markers.
+To keep packs deterministic and synthetic, use the `*AttackPackConfig` convention (e.g., `StorefrontAttackPackConfig`, `AccountRecoveryAttackPackConfig`, `RagBorneInjectionAttackPackConfig`, `ToolIntegrityAttackPackConfig`). These immutable, validated config objects parameterize a pack's actor IDs, resource IDs, and forbidden markers.
 
 ## Reports and baselines
 
