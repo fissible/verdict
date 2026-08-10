@@ -9,6 +9,7 @@ use Fissible\Verdict\Contracts\ContextTransformer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Arr;
 use LogicException;
@@ -20,6 +21,7 @@ final readonly class ContextReleaseManager
         private FieldProjector $projector,
         private EvidenceRecorder $evidence,
         private Clock $clock,
+        private InvocationContext $invocations,
     ) {}
 
     public function policy(ReleasePolicy $policy): self
@@ -74,6 +76,7 @@ final readonly class ContextReleaseManager
                 payloadFingerprint: null,
                 recordedAt: $this->clock->now(),
                 transformNames: $transformNames,
+                invocationId: $this->invocations->current(),
             );
             $this->evidence->recordRelease($evidence);
 
@@ -114,6 +117,7 @@ final readonly class ContextReleaseManager
             recordedAt: $this->clock->now(),
             transformNames: $transformNames,
             transformedPaths: array_values(array_unique($transformedPaths)),
+            invocationId: $this->invocations->current(),
         );
         $this->evidence->recordRelease($evidence);
 

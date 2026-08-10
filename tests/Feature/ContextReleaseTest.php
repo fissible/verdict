@@ -63,6 +63,7 @@ it('releases only allowlisted fields over an explicitly permitted route', functi
         ->and($evidence->destination)->toBe('local-machine:ollama-local')
         ->and($evidence->releasedPathFingerprints)->toHaveCount(3)
         ->and($evidence->payloadFingerprint)->not->toBeNull()
+        ->and($evidence->invocationId)->toBeNull()
         ->and($serializedEvidence)->not->toContain('Avery')
         ->and($serializedEvidence)->not->toContain('avery@example.com')
         ->and($serializedEvidence)->not->toContain('111-22-3333');

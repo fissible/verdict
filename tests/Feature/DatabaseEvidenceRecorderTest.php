@@ -22,6 +22,7 @@ beforeEach(function (): void {
         $table->uuid('id')->primary();
         $table->string('record_type', 32);
         $table->string('correlation_id')->nullable();
+        $table->string('invocation_id')->nullable();
         $table->string('capability')->nullable();
         $table->string('stage', 32);
         $table->string('disposition', 32);
@@ -103,6 +104,7 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         executionClaimStatus: 'completed',
         executionClaimAttempt: 1,
         recordedAt: $recordedAt,
+        invocationId: 'invocation-123',
     );
 
     databaseEvidenceRecorder()->record($evidence);
@@ -117,6 +119,7 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
 
     expect((string) $row->record_type)->toBe('decision')
         ->and((string) $row->correlation_id)->toBe('envelope-123')
+        ->and((string) $row->invocation_id)->toBe('invocation-123')
         ->and((string) $row->capability)->toBe('orders.view')
         ->and((string) $row->disposition)->toBe('deny')
         ->and((string) $row->argument_fingerprint)->toBe(str_repeat('a', 64))
@@ -148,6 +151,7 @@ it('persists context-release evidence without raw paths or payload values', func
         recordedAt: new DateTimeImmutable('2026-08-01 12:00:00', new DateTimeZone('UTC')),
         transformNames: ['structured_redaction'],
         transformedPaths: ['email'],
+        invocationId: 'invocation-123',
     );
 
     databaseEvidenceRecorder()->recordRelease($evidence);
@@ -167,6 +171,7 @@ it('persists context-release evidence without raw paths or payload values', func
     $transformedPaths = json_decode((string) $row->transformed_path_fingerprints, true, flags: JSON_THROW_ON_ERROR);
 
     expect((string) $row->record_type)->toBe('context_release')
+        ->and((string) $row->invocation_id)->toBe('invocation-123')
         ->and((string) $row->destination)->toBe('local-machine:ollama-local')
         ->and((string) $row->trust)->toBe('trusted')
         ->and((string) $row->data_class)->toBe('pii')
@@ -240,7 +245,8 @@ it('persists and retrieves redacted provenance without mixing correlations', fun
 
     expect($rows)->toHaveCount(3)
         ->and($correlated)->toHaveCount(2)
-        ->and(array_column($correlated, 'correlationId'))->each->toBe('invocation-1');
+        ->and(array_column($correlated, 'correlationId'))->each->toBe('invocation-1')
+        ->and($rows->where('invocation_id', 'invocation-1'))->toHaveCount(2);
 
     expect($correlated[1]->channel)->toBe(ContextChannel::RetrievedDocument)
         ->and($correlated[1]->componentLabel)->toBe('retriever')

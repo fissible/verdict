@@ -23,7 +23,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(5)
+    expect($migrations)->toHaveCount(6)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -34,11 +34,13 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(2)
+    expect($migrations)->toHaveCount(3)
         ->and(array_keys($migrations)[0])->toEndWith('create_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php.stub')
+        ->and(array_keys($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php.stub')
         ->and(array_values($migrations)[0])->toEndWith('create_verdict_evidence_table.php')
-        ->and(array_values($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php');
+        ->and(array_values($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php')
+        ->and(array_values($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php');
 });
 
 it('adds provenance columns without replacing existing evidence rows', function (): void {
@@ -47,6 +49,7 @@ it('adds provenance columns without replacing existing evidence rows', function 
     $schema->dropIfExists('verdict_evidence');
     $create = require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub';
     $addProvenance = require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub';
+    $addInvocationId = require __DIR__.'/../../database/migrations/add_invocation_id_to_verdict_evidence_table.php.stub';
 
     $create->up();
     $connection->table('verdict_evidence')->insert([
@@ -60,12 +63,14 @@ it('adds provenance columns without replacing existing evidence rows', function 
     ]);
 
     $addProvenance->up();
+    $addInvocationId->up();
 
     expect($schema->hasColumns('verdict_evidence', [
         'channel',
         'component_label',
         'component_fingerprint',
         'content_fingerprint',
+        'invocation_id',
     ]))->toBeTrue()
         ->and($connection->table('verdict_evidence')->count())->toBe(1)
         ->and($connection->table('verdict_evidence')->value('correlation_id'))

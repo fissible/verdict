@@ -57,6 +57,22 @@ Context-release controls govern what application data may be supplied to an AI. 
 
 That is not a PII detector and it does not classify arbitrary provider payloads. Applications remain responsible for their data classification, provider agreements, logging configuration, and retention obligations. See [ADR 0007](adr/0007-evidence-layering.md) and [ADR 0008](adr/0008-evidence-privacy-model.md).
 
+### Reviewing one Laravel AI invocation
+
+When database evidence is enabled, every provenance entry, Verdict decision, and context-release record made during a Laravel AI invocation has the same indexed `invocation_id`. Retrieve the complete observed record set with one indexed lookup:
+
+```php
+$records = DB::table('verdict_evidence')
+    ->where('invocation_id', $invocationId)
+    ->orderBy('recorded_at')
+    ->orderBy('id')
+    ->get();
+```
+
+Decision rows retain their envelope identifier in `correlation_id`; it is deliberately separate from `invocation_id`.
+
+An `invocation_id` is a containment fact: Verdict observed that those records occurred during the same Laravel AI invocation. It does not establish that a particular provenance entry influenced, caused, or derived a decision. Derivation edges are deliberately separate work in #30; consumers must not infer causality from co-occurrence.
+
 ## Threat model
 
 Verdict is designed to make these failures less likely on its protected path:

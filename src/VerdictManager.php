@@ -33,6 +33,7 @@ use Fissible\Verdict\ExecutionClaims\ExecutionClaimAdmission;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\RateLimits\RateLimitManager;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Illuminate\Contracts\Support\Arrayable;
@@ -51,6 +52,7 @@ final readonly class VerdictManager
         private RateLimitManager $rateLimits,
         private ExecutionClaimManager $executionClaims,
         private ProvenanceLedger $provenance,
+        private InvocationContext $invocations,
         private string $deniedMessage,
     ) {}
 
@@ -298,7 +300,10 @@ final readonly class VerdictManager
 
     private function record(Evaluation $evaluation): Evaluation
     {
-        $this->evidence->record(DecisionEvidence::fromEvaluation($evaluation));
+        $this->evidence->record(DecisionEvidence::fromEvaluation(
+            $evaluation,
+            $this->invocations->current(),
+        ));
 
         return $evaluation;
     }

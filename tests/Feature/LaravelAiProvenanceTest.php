@@ -2,8 +2,12 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Destination;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\ClassifiesToolResult;
@@ -17,6 +21,7 @@ use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
+use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Approvals\Decisions;
@@ -123,6 +128,36 @@ it('records a prompt before passing the unchanged prompt to the next middleware'
         ->and($entries[0]->source)->toEqual(Source::user('customer-message'))
         ->and($entries[0]->contentFingerprint)->toBe(ContentFingerprint::make('cancel order 123'))
         ->and(json_encode($entries[0], JSON_THROW_ON_ERROR))->not->toContain('cancel order 123');
+});
+
+it('correlates decision and context-release evidence with the Laravel AI invocation', function (): void {
+    laravelAiProvenanceMiddleware(source: Source::user('agent-prompt'))->handle(
+        laravelAiProvenancePrompt('inspect order', 'invocation-evidence'),
+        function (): void {
+            app(VerdictManager::class)->evaluate(ActionEnvelope::wrap(
+                new ActionProposal('orders.inspect', []),
+                new ActionContext('customer-72'),
+            ));
+
+            app(VerdictManager::class)->release(['email' => 'avery@example.com'])
+                ->source(Source::application('customer-profile'))
+                ->trust(Trust::Trusted)
+                ->classify(DataClass::PII)
+                ->only(['email'])
+                ->to(Destination::connection('local-model', 'local-machine'));
+        },
+    );
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        return;
+    }
+
+    expect($recorder->provenanceFor('invocation-evidence'))->toHaveCount(1)
+        ->and($recorder->all()[0]->invocationId)->toBe('invocation-evidence')
+        ->and($recorder->releases()[0]->invocationId)->toBe('invocation-evidence');
 });
 
 it('uses the PromptingAgent invocation ID without fingerprinting a revised combined prompt', function (): void {

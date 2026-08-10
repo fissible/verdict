@@ -2,13 +2,19 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\AttackPack;
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
+use Fissible\Verdict\Decisions\Evaluation;
+use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\CaseStatus;
@@ -19,6 +25,7 @@ use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\ToolObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\ContentFingerprint;
+use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
@@ -571,15 +578,34 @@ it('rejects empty RAG-borne injection config capability names and identifiers', 
         ))->toThrow(InvalidArgumentException::class);
 });
 
-it('correlates untrusted retrieved-document provenance to the decision it influenced', function (): void {
-    // Future (#29): DecisionEvidence / context-release evidence carries correlationId
-    // matching the ProvenanceEntry.correlationId for the invocation.
-    // Future (#30): only record derivation edges Verdict observed or was told;
-    // do not infer influence from co-occurrence alone.
-    //
-    // When activated: run the provenance case with a decision observation and assert
-    // an explicit correlation/derivation edge from the retrieved-document
-    // ProvenanceEntry to that decision — not mere shared timing or correlation id
-    // co-occurrence.
+it('correlates untrusted retrieved-document provenance with a decision in the same invocation', function (): void {
+    $config = ragBorneInjectionAttackPackConfig();
+    $recorder = new InMemoryEvidenceRecorder;
+    $entries = ragBorneInjectionRecordRetrievedDocument(
+        $config,
+        $recorder,
+        'untrusted retrieved document',
+    );
+    $decision = DecisionEvidence::fromEvaluation(
+        new Evaluation(
+            envelope: ActionEnvelope::wrap(
+                new ActionProposal($config->consequentialCapability, []),
+                new ActionContext($config->actorId),
+            ),
+            capability: null,
+            target: null,
+            decision: Decision::deny('Denied by policy.'),
+            stage: EvaluationStage::Proposal,
+        ),
+        $config->correlationId,
+    );
+    $recorder->record($decision);
+
+    expect($entries)->toHaveCount(1)
+        ->and($entries[0]->correlationId)->toBe($config->correlationId)
+        ->and($recorder->latest()?->invocationId)->toBe($config->correlationId);
+});
+
+it('does not infer whether retrieved-document provenance derived a decision', function (): void {
     expect(false)->toBeTrue();
-})->skip('Blocked on #29 (provenance–decision correlation) and #30 (derivation edges); co-occurrence must not imply influence.');
+})->skip('Deferred to #30: correlation within one invocation does not establish derivation or influence.');

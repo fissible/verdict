@@ -28,6 +28,7 @@ use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
 use Fissible\Verdict\LaravelAi\RecordAgentPromptProvenance;
 use Fissible\Verdict\LaravelAi\RecordToolResultProvenance;
@@ -55,6 +56,7 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->singleton(CapabilityAuthorizer::class, LaravelPolicyAuthorizer::class);
         $this->app->singleton(Clock::class, SystemClock::class);
         $this->app->scoped(ApprovalExecutionContext::class);
+        $this->app->scoped(InvocationContext::class);
         $this->app->scoped(PromptProvenanceRegistry::class);
 
         $this->app->singleton(ApprovalReceiptStore::class, function (Container $app): ApprovalReceiptStore {
@@ -187,6 +189,7 @@ final class VerdictServiceProvider extends ServiceProvider
             projector: $app->make(FieldProjector::class),
             evidence: $app->make(EvidenceRecorder::class),
             clock: $app->make(Clock::class),
+            invocations: $app->make(InvocationContext::class),
         ));
 
         $this->app->scoped(ProvenanceLedger::class, fn (Container $app): ProvenanceLedger => new ProvenanceLedger(
@@ -216,6 +219,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 rateLimits: $app->make(RateLimitManager::class),
                 executionClaims: $app->make(ExecutionClaimManager::class),
                 provenance: $app->make(ProvenanceLedger::class),
+                invocations: $app->make(InvocationContext::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
             );
         });
@@ -249,6 +253,7 @@ final class VerdictServiceProvider extends ServiceProvider
         $evidenceMigration = [
             __DIR__.'/../database/migrations/create_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000001_create_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/add_provenance_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000004_add_provenance_to_verdict_evidence_table.php'),
+            __DIR__.'/../database/migrations/add_invocation_id_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_09_000005_add_invocation_id_to_verdict_evidence_table.php'),
         ];
         $rateLimitMigration = [
             __DIR__.'/../database/migrations/create_verdict_rate_limit_buckets_table.php.stub' => database_path('migrations/2026_08_01_000002_create_verdict_rate_limit_buckets_table.php'),
