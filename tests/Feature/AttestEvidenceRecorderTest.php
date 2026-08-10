@@ -24,7 +24,7 @@ use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Event;
 
-function chainGapRows(): array
+function attestChainGapRows(): array
 {
     return app(DatabaseManager::class)->connection()
         ->table('verdict_evidence')
@@ -36,13 +36,58 @@ function chainGapRows(): array
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
     $schema->dropIfExists('verdict_evidence');
+    $schema->dropIfExists('verdict_provenance_derivations');
     $schema->create('verdict_evidence', function (Blueprint $table): void {
         $table->uuid('id')->primary();
         $table->string('record_type', 32);
         $table->string('correlation_id')->nullable();
+        $table->string('invocation_id')->nullable();
+        $table->string('capability')->nullable();
         $table->string('stage', 32);
         $table->string('disposition', 32);
         $table->text('reason')->nullable();
+        $table->string('source')->nullable();
+        $table->string('destination')->nullable();
+        $table->string('trust_zone')->nullable();
+        $table->string('trust', 32)->nullable();
+        $table->string('data_class', 32)->nullable();
+        $table->char('argument_fingerprint', 64)->nullable();
+        $table->char('idempotency_key_fingerprint', 64)->nullable();
+        $table->char('approval_receipt_fingerprint', 64)->nullable();
+        $table->string('approval_phase', 32)->nullable();
+        $table->string('approval_outcome', 32)->nullable();
+        $table->string('target_policy')->nullable();
+        $table->string('target_strategy', 32)->nullable();
+        $table->char('proposal_target_identity_fingerprint', 64)->nullable();
+        $table->char('execution_target_identity_fingerprint', 64)->nullable();
+        $table->boolean('target_identity_matched')->nullable();
+        $table->char('rate_limit_key_fingerprint', 64)->nullable();
+        $table->string('rate_limit_policy')->nullable();
+        $table->unsignedInteger('rate_limit_limit')->nullable();
+        $table->unsignedInteger('rate_limit_remaining')->nullable();
+        $table->timestamp('rate_limit_reset_at')->nullable();
+        $table->char('execution_claim_fingerprint', 64)->nullable();
+        $table->char('execution_claim_binding_fingerprint', 64)->nullable();
+        $table->string('execution_claim_policy')->nullable();
+        $table->string('execution_claim_status', 24)->nullable();
+        $table->unsignedInteger('execution_claim_attempt')->nullable();
+        $table->json('requested_path_fingerprints')->nullable();
+        $table->json('released_path_fingerprints')->nullable();
+        $table->json('transform_fingerprints')->nullable();
+        $table->json('transformed_path_fingerprints')->nullable();
+        $table->unsignedInteger('transformation_count')->default(0);
+        $table->char('payload_fingerprint', 64)->nullable();
+        $table->string('channel', 32)->nullable();
+        $table->string('component_label')->nullable();
+        $table->char('component_fingerprint', 64)->nullable();
+        $table->char('content_fingerprint', 64)->nullable();
+        $table->timestamp('recorded_at');
+    });
+    $schema->create('verdict_provenance_derivations', function (Blueprint $table): void {
+        $table->string('correlation_id');
+        $table->char('child_content_fingerprint', 64);
+        $table->char('parent_content_fingerprint', 64);
+        $table->string('kind', 32);
         $table->timestamp('recorded_at');
     });
 
@@ -76,7 +121,12 @@ beforeEach(function (): void {
     );
 });
 
-function makeRecorder(ChainStore $store, string $onFailure = 'alert'): AttestEvidenceRecorder
+afterEach(function (): void {
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_evidence');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_provenance_derivations');
+});
+
+function makeAttestEvidenceRecorder(ChainStore $store, string $onFailure = 'alert'): AttestEvidenceRecorder
 {
     return new AttestEvidenceRecorder(
         attest: AttestFixture::registry($store),
@@ -91,7 +141,7 @@ function makeRecorder(ChainStore $store, string $onFailure = 'alert'): AttestEvi
 
 it('writes a decision to the attest chain', function (): void {
     $store = AttestFixture::store();
-    $recorder = makeRecorder($store);
+    $recorder = makeAttestEvidenceRecorder($store);
 
     $recorder->record($this->decision);
 
@@ -103,12 +153,12 @@ it('writes a decision to the attest chain', function (): void {
         ->and($tail->envelope->payload['capability'])->toBe('orders.refund')
         ->and($tail->envelope->payload['disposition'])->toBe('permit');
 
-    expect(chainGapRows())->toBeEmpty();
+    expect(attestChainGapRows())->toBeEmpty();
 });
 
 it('writes a context release to the attest chain keyed by invocation id', function (): void {
     $store = AttestFixture::store();
-    $recorder = makeRecorder($store);
+    $recorder = makeAttestEvidenceRecorder($store);
 
     $release = ContextReleaseEvidence::make(
         source: Source::application('order-lookup'),
@@ -135,23 +185,23 @@ it('writes a context release to the attest chain keyed by invocation id', functi
 
 it('retries a transient chain lock failure and still writes the decision', function (): void {
     $store = new FlakyChainStore(AttestFixture::store(), failures: 2);
-    $recorder = makeRecorder($store);
+    $recorder = makeAttestEvidenceRecorder($store);
 
     $recorder->record($this->decision);
 
     expect($store->counter()->appends)->toBe(3)
-        ->and(chainGapRows())->toBeEmpty();
+        ->and(attestChainGapRows())->toBeEmpty();
 });
 
 it('records a chain gap marker and dispatches an event when retries are exhausted, but does not throw', function (): void {
     Event::fake([ChainWriteFailed::class]);
 
     $store = new FlakyChainStore(AttestFixture::store(), failures: 99);
-    $recorder = makeRecorder($store);
+    $recorder = makeAttestEvidenceRecorder($store);
 
     $recorder->record($this->decision);
 
-    $rows = chainGapRows();
+    $rows = attestChainGapRows();
     expect($rows)->toHaveCount(1)
         ->and($rows[0]->correlation_id)->toBe('env-1')
         ->and($rows[0]->stage)->toBe('decision')
@@ -166,6 +216,41 @@ it('records a chain gap marker and dispatches an event when retries are exhauste
         && $e->attempts === 3);
 });
 
+it('records a chain gap marker for an exhausted context release too, without throwing', function (): void {
+    Event::fake([ChainWriteFailed::class]);
+
+    $store = new FlakyChainStore(AttestFixture::store(), failures: 99);
+    $recorder = makeAttestEvidenceRecorder($store);
+
+    $recorder->recordRelease(ContextReleaseEvidence::make(
+        source: Source::application('order-lookup'),
+        destination: Destination::connection('gpt', 'model'),
+        trust: Trust::Trusted,
+        dataClass: DataClass::Internal,
+        permitted: true,
+        reason: 'allowed',
+        requestedPaths: ['order.id'],
+        releasedPaths: ['order.id'],
+        payloadFingerprint: null,
+        recordedAt: new DateTimeImmutable('2026-08-09T00:00:00+00:00'),
+        invocationId: 'inv-gap-1',
+    ));
+
+    $rows = attestChainGapRows();
+    expect($rows)->toHaveCount(1)
+        ->and($rows[0]->correlation_id)->toBe('inv-gap-1')
+        ->and($rows[0]->stage)->toBe('context_release')
+        ->and($rows[0]->disposition)->toBe('gap');
+
+    $reason = json_decode((string) $rows[0]->reason, true, flags: JSON_THROW_ON_ERROR);
+    expect($reason['chain'])->toBe('verdict')
+        ->and($reason['attempts'])->toBe(3);
+
+    Event::assertDispatched(ChainWriteFailed::class, fn (ChainWriteFailed $e): bool => $e->correlationId === 'inv-gap-1'
+        && $e->recordType === 'context_release'
+        && $e->attempts === 3);
+});
+
 it('does not throw when the gap-marker DB write itself fails in alert mode', function (): void {
     Event::fake([ChainWriteFailed::class]);
 
@@ -175,7 +260,7 @@ it('does not throw when the gap-marker DB write itself fails in alert mode', fun
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->drop('verdict_evidence');
 
     $store = new FlakyChainStore(AttestFixture::store(), failures: 99);
-    $recorder = makeRecorder($store);
+    $recorder = makeAttestEvidenceRecorder($store);
 
     $recorder->record($this->decision);
 
@@ -201,7 +286,7 @@ it('does not throw when the chain id resolver itself throws, even in alert mode'
 
     $recorder->record($this->decision);
 
-    $rows = chainGapRows();
+    $rows = attestChainGapRows();
     expect($rows)->toHaveCount(1)
         ->and($rows[0]->correlation_id)->toBe('env-1');
 
@@ -210,14 +295,14 @@ it('does not throw when the chain id resolver itself throws, even in alert mode'
 
 it('throws instead of swallowing when on_failure is throw', function (): void {
     $store = new FlakyChainStore(AttestFixture::store(), failures: 99);
-    $recorder = makeRecorder($store, onFailure: 'throw');
+    $recorder = makeAttestEvidenceRecorder($store, onFailure: 'throw');
 
     expect(fn () => $recorder->record($this->decision))
         ->toThrow(EvidenceChainWriteFailed::class, 'Failed to write [decision] evidence to attest chain [verdict] after 3 attempt(s).');
 
     // The gap marker is still written even in throw mode — decision 5 in issue #11
     // separates "record the gap" from "how to react," and both apply together.
-    expect(chainGapRows())->toHaveCount(1);
+    expect(attestChainGapRows())->toHaveCount(1);
 });
 
 it('always delegates provenance to the fallback recorder for reads', function (): void {
