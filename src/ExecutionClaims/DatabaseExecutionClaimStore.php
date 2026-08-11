@@ -51,7 +51,7 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
                 $this->connection->table($this->table)->insert($this->attributes($claim));
 
                 return ExecutionClaimTransition::to(ExecutionClaimOutcome::Claimed, $claim);
-            });
+            }, 2);
         } catch (UniqueConstraintViolationException) {
             return $this->connection->transaction(function () use ($claim): ExecutionClaimTransition {
                 $existing = $this->findLockedByBinding($claim->bindingFingerprint);
@@ -59,7 +59,7 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
                 return $existing === null
                     ? ExecutionClaimTransition::to(ExecutionClaimOutcome::NotFound)
                     : $this->claimExisting($existing, $claim->claimedAt);
-            });
+            }, 2);
         }
     }
 

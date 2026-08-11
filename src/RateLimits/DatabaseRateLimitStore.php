@@ -44,12 +44,14 @@ final readonly class DatabaseRateLimitStore implements DatabaseTableStore, Pruna
         try {
             return $this->connection->transaction(
                 fn (): RateLimitOutcome => $this->consumeLocked($consumption, $windowStartsAt, $resetAt, true),
+                2,
             );
         } catch (UniqueConstraintViolationException) {
             // Another transaction created the first bucket concurrently. Retry the actual
             // consume operation so this caller is counted rather than merely reading its row.
             return $this->connection->transaction(
                 fn (): RateLimitOutcome => $this->consumeLocked($consumption, $windowStartsAt, $resetAt, false),
+                2,
             );
         }
     }
