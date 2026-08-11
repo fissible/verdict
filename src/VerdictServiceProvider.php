@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict;
 
+use Fissible\AttestLaravel\Support\AttestRegistry;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
@@ -17,12 +18,14 @@ use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\AttestChainResolver;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
+use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
@@ -43,6 +46,7 @@ use Illuminate\Support\ServiceProvider;
 use Laravel\Ai\Events\PromptingAgent;
 use Laravel\Ai\Events\ToolInvoked;
 use LogicException;
+use ReflectionClass;
 
 final class VerdictServiceProvider extends ServiceProvider
 {
@@ -110,6 +114,102 @@ final class VerdictServiceProvider extends ServiceProvider
                 return new DatabaseEvidenceRecorder(
                     connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
                     table: is_string($table) ? $table : 'verdict_evidence',
+                );
+            }
+
+            if ($recorder === AttestEvidenceRecorder::class) {
+                $fallbackConnection = config('verdict.evidence.attest.fallback_connection');
+                $fallbackTable = config('verdict.evidence.attest.fallback_table', 'verdict_evidence');
+                $chain = config('verdict.evidence.attest.chain');
+                $resolverClass = config('verdict.evidence.attest.chain_resolver');
+                $onFailure = config('verdict.evidence.attest.on_failure', 'alert');
+                $chainProvenance = config('verdict.evidence.attest.chain_provenance', false);
+                $maxAttempts = config('verdict.evidence.attest.max_attempts', 3);
+                $baseDelayMs = config('verdict.evidence.attest.base_delay_ms', 50);
+
+                if ($chain !== null && (! is_string($chain) || $chain === '')) {
+                    throw new LogicException('The Verdict attest chain configuration must contain a chain id string.');
+                }
+
+                if ($resolverClass !== null && (! is_string($resolverClass) || $resolverClass === '')) {
+                    throw new LogicException('The Verdict attest chain resolver configuration must contain a class name.');
+                }
+
+                if ($chain === null && $resolverClass === null) {
+                    throw new LogicException(
+                        'AttestEvidenceRecorder requires an explicit chain-topology decision: set '
+                        .'verdict.evidence.attest.chain to a fixed chain id for a single shared chain, or '
+                        .'verdict.evidence.attest.chain_resolver to a class implementing '
+                        .AttestChainResolver::class.' for per-tenant chains. This choice is not safely '
+                        ."changeable later — a chain's hash-linked history cannot be retroactively split "
+                        .'by tenant. See docs/limitations.md.'
+                    );
+                }
+
+                if ($chain !== null && $resolverClass !== null) {
+                    throw new LogicException(
+                        'AttestEvidenceRecorder received both verdict.evidence.attest.chain and '
+                        .'verdict.evidence.attest.chain_resolver. Configure exactly one — they express '
+                        .'mutually exclusive chain topologies.'
+                    );
+                }
+
+                if ($resolverClass !== null) {
+                    // Validate eagerly, and without constructing the resolver, so misconfiguration
+                    // fails here rather than degrading silently on the first evidence write: a
+                    // resolver that only fails inside $app->make() would be caught by
+                    // AttestEvidenceRecorder::writeChained() and turned into a chain_gap marker,
+                    // leaving the deployment permanently unchained without ever throwing.
+                    if (! class_exists($resolverClass)) {
+                        throw new LogicException("The [{$resolverClass}] chain resolver class does not exist or could not be autoloaded.");
+                    }
+
+                    if (! in_array(AttestChainResolver::class, class_implements($resolverClass) ?: [], true)) {
+                        throw new LogicException("The [{$resolverClass}] chain resolver must implement ".AttestChainResolver::class.'.');
+                    }
+
+                    if (! (new ReflectionClass($resolverClass))->isInstantiable()) {
+                        throw new LogicException("The [{$resolverClass}] chain resolver must be an instantiable class.");
+                    }
+
+                    // Resolve through $app on every write, deliberately never caching an instance,
+                    // so a request-scoped or tenant-scoped binding inside resolve() is re-evaluated
+                    // fresh each time. Caching a resolved instance here would reintroduce the exact
+                    // stale-state-across-requests bug this design exists to avoid under Octane.
+                    $chainIdUsing = static fn (): string => $app->make($resolverClass)->resolve();
+                } elseif ($chain !== null) {
+                    $chainIdUsing = static fn (): string => $chain;
+                } else {
+                    // Unreachable: the two throws above guarantee exactly one of $chain/
+                    // $resolverClass is set, so this branch can never run. It exists only because
+                    // $chainIdUsing must be definitely assigned on every path. Branching on
+                    // `elseif ($chain !== null)` here — a direct, local, single-variable check —
+                    // rather than a bare `else` relying on the two throws above being deduced
+                    // through an arrow function's implicit capture keeps the narrowing of $chain
+                    // to non-empty-string version-independent: that cross-variable deduction is
+                    // not reliably supported across the PHPStan/Larastan versions this package's
+                    // dependency range spans (confirmed absent on the lowest supported version).
+                    throw new LogicException('Unreachable: attest chain topology validated above.');
+                }
+
+                $connection = $app->make(DatabaseManager::class)->connection(
+                    is_string($fallbackConnection) ? $fallbackConnection : null,
+                );
+
+                return new AttestEvidenceRecorder(
+                    attest: $app->make(AttestRegistry::class),
+                    fallback: new DatabaseEvidenceRecorder(
+                        connection: $connection,
+                        table: is_string($fallbackTable) ? $fallbackTable : 'verdict_evidence',
+                    ),
+                    connection: $connection,
+                    events: $app->make(Dispatcher::class),
+                    chainIdUsing: $chainIdUsing,
+                    table: is_string($fallbackTable) ? $fallbackTable : 'verdict_evidence',
+                    chainProvenance: (bool) $chainProvenance,
+                    onFailure: is_string($onFailure) ? $onFailure : 'alert',
+                    maxAttempts: is_int($maxAttempts) ? $maxAttempts : 3,
+                    baseDelayMs: is_int($baseDelayMs) ? $baseDelayMs : 50,
                 );
             }
 

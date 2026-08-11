@@ -5,3 +5,5 @@ parameters:
         - config
         - workbench/app
     tmpDir: build/phpstan
+    configDirectories:
+        - %currentWorkingDirectory%/config

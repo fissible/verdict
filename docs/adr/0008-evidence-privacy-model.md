@@ -26,7 +26,7 @@ scoped to the feature at hand rather than stated once as a general property:
   never the raw binding.
 - General evidence: "The evidence store may contain highly sensitive information... A hash of
   predictable personal information is not anonymization."
-  ([limitations: no tamper-evident evidence](../limitations.md#no-tamper-evident-evidence))
+  ([limitations: tamper-evident evidence is opt-in, partial, and bounded by key custody](../limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody))
 
 Each instance is correct and consistent with the others, but a contributor implementing a new
 evidence-producing feature (or reviewing issue #11's attest adapter, which inherits this same
@@ -60,7 +60,7 @@ Verdict's evidence privacy model is one property, applied uniformly:
    application's security posture**, not Verdict's. Verdict's obligation is to never store the raw
    value in the first place; what an application does with the resulting evidence store (encryption
    at rest, access control, retention) is unchanged by this ADR and remains explicitly out of scope
-   per [limitations: no tamper-evident evidence](../limitations.md#no-tamper-evident-evidence).
+   per [limitations: tamper-evident evidence is opt-in, partial, and bounded by key custody](../limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody).
 
 ## Consequences
 
