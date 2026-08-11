@@ -11,9 +11,13 @@ use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Generator;
 use Illuminate\Container\Container;
 use InvalidArgumentException;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\StreamableAgentResponse;
+use LogicException;
+use ReflectionProperty;
 
 final readonly class VerdictProvenanceMiddleware
 {
@@ -59,7 +63,13 @@ final readonly class VerdictProvenanceMiddleware
                         );
                     }
 
-                    return $next($prompt);
+                    $response = $next($prompt);
+
+                    if ($response instanceof StreamableAgentResponse) {
+                        $this->wrapWithDeferredInvocation($response, $prompt->invocationId);
+                    }
+
+                    return $response;
                 },
             );
         }
@@ -88,6 +98,34 @@ final readonly class VerdictProvenanceMiddleware
         } finally {
             $registry->forgetIfPending($prompt->agent, $registration);
         }
+    }
+
+    /**
+     * Keep the invocation frame alive for lazy stream iteration without replacing the response.
+     *
+     * StreamableAgentResponse does not expose its generator, so this follows the same guarded
+     * Reflection-based in-place wrapping used by VerdictApprovalMiddleware. Rebuilding the response
+     * would risk dropping framework-owned state and callbacks registered by another middleware.
+     */
+    private function wrapWithDeferredInvocation(StreamableAgentResponse $response, string $invocationId): void
+    {
+        $property = new ReflectionProperty(StreamableAgentResponse::class, 'generator');
+        $originalGenerator = $property->getValue($response);
+
+        if (! $originalGenerator instanceof Closure) {
+            throw new LogicException('Expected Laravel AI\'s StreamableAgentResponse to hold a Closure generator.');
+        }
+
+        $property->setValue($response, function () use ($originalGenerator, $invocationId): Generator {
+            $invocations = $this->invocations();
+            $invocations->push($invocationId);
+
+            try {
+                yield from call_user_func($originalGenerator);
+            } finally {
+                $invocations->pop();
+            }
+        });
     }
 
     public function recordRetrievedDocument(

@@ -20,6 +20,7 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Fissible\Verdict\VerdictManager;
@@ -32,6 +33,10 @@ use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Events\PromptingAgent;
 use Laravel\Ai\Events\ToolInvoked;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\StreamableAgentResponse;
+use Laravel\Ai\Streaming\Events\StreamEnd;
 use Laravel\Ai\Tools\Request;
 
 final class ClassifiedProvenanceTool implements ClassifiesToolResult, Tool
@@ -159,6 +164,49 @@ it('correlates decision and context-release evidence with the Laravel AI invocat
     expect($recorder->provenanceFor('invocation-evidence'))->toHaveCount(1)
         ->and($recorder->all()[0]->invocationId)->toBe('invocation-evidence')
         ->and($recorder->releases()[0]->invocationId)->toBe('invocation-evidence');
+});
+
+it('keeps invocation correlation through lazy streamed tool execution', function (): void {
+    $response = laravelAiProvenanceMiddleware(source: Source::user('agent-prompt'))->handle(
+        laravelAiProvenancePrompt('inspect order', 'invocation-streamed-evidence'),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'invocation-streamed-evidence',
+            generator: function (): Generator {
+                expect(app(InvocationContext::class)->current())->toBe('invocation-streamed-evidence');
+
+                app(VerdictManager::class)->evaluate(ActionEnvelope::wrap(
+                    new ActionProposal('orders.inspect', []),
+                    new ActionContext('customer-72'),
+                ));
+
+                app(VerdictManager::class)->release(['email' => 'avery@example.com'])
+                    ->source(Source::application('customer-profile'))
+                    ->trust(Trust::Trusted)
+                    ->classify(DataClass::PII)
+                    ->only(['email'])
+                    ->to(Destination::connection('local-model', 'local-machine'));
+
+                yield new StreamEnd('event-streamed-evidence', 'stop', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
+
+    expect($response)->toBeInstanceOf(StreamableAgentResponse::class)
+        ->and(app(InvocationContext::class)->current())->toBeNull();
+
+    iterator_to_array($response);
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        return;
+    }
+
+    expect($recorder->all()[0]->invocationId)->toBe('invocation-streamed-evidence')
+        ->and($recorder->releases()[0]->invocationId)->toBe('invocation-streamed-evidence')
+        ->and(app(InvocationContext::class)->current())->toBeNull();
 });
 
 it('uses the PromptingAgent invocation ID without fingerprinting a revised combined prompt', function (): void {
