@@ -9,14 +9,16 @@ use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\Clock;
-use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\EvidenceWriter;
+use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
 use InvalidArgumentException;
 use LogicException;
 
 final readonly class ProvenanceLedger
 {
     public function __construct(
-        private EvidenceRecorder $evidence,
+        private EvidenceWriter $writer,
+        private ProvenanceLedgerStore $store,
         private Clock $clock,
     ) {}
 
@@ -58,7 +60,7 @@ final readonly class ProvenanceLedger
             recordedAt: $this->clock->now(),
         );
 
-        $this->evidence->recordProvenance($entry);
+        $this->writer->recordProvenance($entry);
 
         return $entry;
     }
@@ -68,7 +70,7 @@ final readonly class ProvenanceLedger
     {
         ProvenanceEntry::assertIdentifier($correlationId, 'Provenance correlation');
 
-        return $this->evidence->provenanceFor($correlationId);
+        return $this->store->provenanceFor($correlationId);
     }
 
     /**
@@ -104,7 +106,7 @@ final readonly class ProvenanceLedger
                 kind: $kind,
                 recordedAt: $this->clock->now(),
             );
-            $this->evidence->recordDerivation($derivation);
+            $this->writer->recordDerivation($derivation);
             $derivations[] = $derivation;
         }
 
@@ -136,7 +138,7 @@ final readonly class ProvenanceLedger
 
         $visited[$from] = true;
 
-        foreach ($this->evidence->derivationsFor($correlationId, $from) as $derivation) {
+        foreach ($this->store->derivationsFor($correlationId, $from) as $derivation) {
             if ($this->reaches($correlationId, $derivation->parentContentFingerprint, $target, $visited)) {
                 return true;
             }
@@ -148,7 +150,7 @@ final readonly class ProvenanceLedger
     /** @param list<string> $reachable */
     private function collectAncestors(string $correlationId, string $childContentFingerprint, array &$reachable): void
     {
-        foreach ($this->evidence->derivationsFor($correlationId, $childContentFingerprint) as $derivation) {
+        foreach ($this->store->derivationsFor($correlationId, $childContentFingerprint) as $derivation) {
             $parent = $derivation->parentContentFingerprint;
 
             if (in_array($parent, $reachable, true)) {

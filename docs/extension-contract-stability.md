@@ -21,7 +21,9 @@ used by an implementation part of Verdict's public API.
 | `ClassifiesToolResult` | Stable | None | Add provenance classification to an application's Laravel AI tool result. |
 | `Clock` | Stable | `SystemClock` | Supply deterministic or deployment-specific time. |
 | `ContextTransformer` | Stable | `StructuredRedactor` | Transform data before a release or other context-sensitive operation. |
-| `EvidenceRecorder` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Send evidence to a project-specific durable, attestable, or external backend. See [#90](https://github.com/fissible/verdict/issues/90). |
+| `EvidenceWriter` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Send Verdict evidence to a project-specific durable, attestable, or external backend. |
+| `ProvenanceLedgerStore` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Query a provenance and derivation ledger without taking on evidence writes. |
+| `EvidenceRecorder` | Experimental, deprecated pre-1.0 | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Legacy mixed write/query compatibility bridge; use `EvidenceWriter` and/or `ProvenanceLedgerStore` for new adapters. |
 | `ExecutionClaimStore` | Stable | `DatabaseExecutionClaimStore`, `InMemoryExecutionClaimStore` | Store exactly-once execution claims in a durable or external backend. |
 | `ObservationAssertion` | Experimental | `CallbackAssertion` | Define an assertion for a capability evaluation observation. |
 | `PrunableRateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Opt a `RateLimitStore` into expired-bucket cleanup. |
@@ -29,8 +31,8 @@ used by an implementation part of Verdict's public API.
 
 ## Experimental contract follow-ups
 
-`EvidenceRecorder` combines append and query responsibilities; [#90](https://github.com/fissible/verdict/issues/90)
-tracks the pre-1.0 split into narrower write and ledger-query contracts.
+`EvidenceRecorder` was split by [#90](https://github.com/fissible/verdict/issues/90) into narrower
+`EvidenceWriter` and `ProvenanceLedgerStore` contracts. It remains only as a pre-1.0 compatibility bridge.
 
 `CapabilityConfigurationStore` currently receives a runtime `Capability`,
 although a registry only needs declared, materialized configuration. [#91](https://github.com/fissible/verdict/issues/91)

@@ -26,7 +26,9 @@ use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
+use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
@@ -261,6 +263,48 @@ final class VerdictServiceProvider extends ServiceProvider
             return $instance;
         });
 
+        // `recorder` remains the pre-1.0 compatibility configuration. New adapters can provide
+        // only the responsibility they own by configuring `writer` and/or `ledger` instead.
+        $this->app->singleton(EvidenceWriter::class, function (Container $app): EvidenceWriter {
+            $writer = config('verdict.evidence.writer');
+
+            if ($writer === null) {
+                return $app->make(EvidenceRecorder::class);
+            }
+
+            if (! is_string($writer)) {
+                throw new LogicException('The Verdict evidence writer configuration must contain a class name.');
+            }
+
+            $instance = $app->make($writer);
+
+            if (! $instance instanceof EvidenceWriter) {
+                throw new LogicException("The [{$writer}] evidence writer must implement ".EvidenceWriter::class.'.');
+            }
+
+            return $instance;
+        });
+
+        $this->app->singleton(ProvenanceLedgerStore::class, function (Container $app): ProvenanceLedgerStore {
+            $ledger = config('verdict.evidence.ledger');
+
+            if ($ledger === null) {
+                return $app->make(EvidenceRecorder::class);
+            }
+
+            if (! is_string($ledger)) {
+                throw new LogicException('The Verdict provenance ledger configuration must contain a class name.');
+            }
+
+            $instance = $app->make($ledger);
+
+            if (! $instance instanceof ProvenanceLedgerStore) {
+                throw new LogicException("The [{$ledger}] provenance ledger must implement ".ProvenanceLedgerStore::class.'.');
+            }
+
+            return $instance;
+        });
+
         $this->app->singleton(RateLimitStore::class, function (Container $app): RateLimitStore {
             $store = config('verdict.rate_limits.store', DatabaseRateLimitStore::class);
 
@@ -326,14 +370,15 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->scoped(ContextReleaseManager::class, fn (Container $app): ContextReleaseManager => new ContextReleaseManager(
             policies: $app->make(ReleasePolicyRegistry::class),
             projector: $app->make(FieldProjector::class),
-            evidence: $app->make(EvidenceRecorder::class),
+            evidence: $app->make(EvidenceWriter::class),
             clock: $app->make(Clock::class),
             invocations: $app->make(InvocationContext::class),
             provenance: $app->make(ProvenanceLedger::class),
         ));
 
         $this->app->scoped(ProvenanceLedger::class, fn (Container $app): ProvenanceLedger => new ProvenanceLedger(
-            evidence: $app->make(EvidenceRecorder::class),
+            writer: $app->make(EvidenceWriter::class),
+            store: $app->make(ProvenanceLedgerStore::class),
             clock: $app->make(Clock::class),
         ));
 
@@ -353,7 +398,7 @@ final class VerdictServiceProvider extends ServiceProvider
             return new VerdictManager(
                 capabilities: $app->make(CapabilityRegistry::class),
                 authorizer: $app->make(CapabilityAuthorizer::class),
-                evidence: $app->make(EvidenceRecorder::class),
+                evidence: $app->make(EvidenceWriter::class),
                 approvals: $app->make(ApprovalManager::class),
                 contextReleases: $app->make(ContextReleaseManager::class),
                 rateLimits: $app->make(RateLimitManager::class),

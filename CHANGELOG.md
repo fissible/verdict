@@ -4,6 +4,11 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Split the experimental mixed `EvidenceRecorder` extension contract into `EvidenceWriter` and
+  `ProvenanceLedgerStore`, so custom adapters implement only the write or ledger-read responsibility
+  they provide. `EvidenceRecorder` remains a deprecated pre-1.0 compatibility bridge, and existing
+  recorder configuration remains unchanged. See [#90](https://github.com/fissible/verdict/issues/90).
+
 - Fix streamed invocation-ID correlation: `VerdictProvenanceMiddleware` now keeps its invocation
   frame active while a `StreamableAgentResponse` is iterated, so lazily executed tool decisions and
   context releases retain their `invocation_id`. See [#80](https://github.com/fissible/verdict/issues/80).

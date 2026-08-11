@@ -28,7 +28,9 @@ final readonly class ProvenanceTestClock implements Clock
 
 function provenanceLedger(?EvidenceRecorder $recorder = null): ProvenanceLedger
 {
-    return new ProvenanceLedger($recorder ?? new InMemoryEvidenceRecorder, new ProvenanceTestClock);
+    $recorder ??= new InMemoryEvidenceRecorder;
+
+    return new ProvenanceLedger($recorder, $recorder, new ProvenanceTestClock);
 }
 
 it('fingerprints scalar and structured content canonically', function (): void {
