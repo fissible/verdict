@@ -1,0 +1,146 @@
+name: concurrency-matrix
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Monday 06:00 UTC
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    name: PostgreSQL
+
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_DB: verdict
+          POSTGRES_USER: verdict
+          POSTGRES_PASSWORD: verdict
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U verdict -d verdict"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+
+    env:
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: verdict
+      DB_USERNAME: verdict
+      DB_PASSWORD: verdict
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo, sqlite, pdo_sqlite, pdo_pgsql, bcmath, intl, sodium
+          tools: composer:v2
+          coverage: none
+
+      - run: |
+          composer require "laravel/framework:12.*" "orchestra/testbench:10.*" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction --no-progress --no-scripts
+          composer run prepare
+
+      - run: vendor/bin/pest
+
+  mysql-repeatable-read:
+    runs-on: ubuntu-latest
+    name: MySQL (REPEATABLE READ default)
+
+    services:
+      db:
+        image: mysql:8
+        env:
+          MYSQL_DATABASE: verdict
+          MYSQL_USER: verdict
+          MYSQL_PASSWORD: verdict
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -uroot -proot"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: verdict
+      DB_USERNAME: verdict
+      DB_PASSWORD: verdict
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo, sqlite, pdo_sqlite, pdo_mysql, bcmath, intl, sodium
+          tools: composer:v2
+          coverage: none
+
+      - run: |
+          composer require "laravel/framework:12.*" "orchestra/testbench:10.*" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction --no-progress --no-scripts
+          composer run prepare
+
+      - run: vendor/bin/pest
+
+  mariadb:
+    runs-on: ubuntu-latest
+    name: MariaDB
+
+    services:
+      db:
+        image: mariadb:11
+        env:
+          MARIADB_DATABASE: verdict
+          MARIADB_USER: verdict
+          MARIADB_PASSWORD: verdict
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "healthcheck.sh --connect --innodb_initialized"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: verdict
+      DB_USERNAME: verdict
+      DB_PASSWORD: verdict
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo, sqlite, pdo_sqlite, pdo_mysql, bcmath, intl, sodium
+          tools: composer:v2
+          coverage: none
+
+      - run: |
+          composer require "laravel/framework:12.*" "orchestra/testbench:10.*" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction --no-progress --no-scripts
+          composer run prepare
+
+      - run: vendor/bin/pest
