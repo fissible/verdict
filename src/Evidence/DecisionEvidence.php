@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Evidence;
 
 use DateTimeImmutable;
+use Fissible\Verdict\Contracts\ProvidesVerdictIdentity;
 use Fissible\Verdict\Decisions\Evaluation;
+use InvalidArgumentException;
 
 final readonly class DecisionEvidence
 {
@@ -39,6 +41,8 @@ final readonly class DecisionEvidence
         public ?string $invocationId = null,
         public ?string $toolKind = null,
         public ?string $configurationFingerprint = null,
+        public ?string $actorFingerprint = null,
+        public ?string $subjectFingerprint = null,
     ) {
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
@@ -121,6 +125,23 @@ final readonly class DecisionEvidence
             // Not every evaluation resolves a Capability (e.g. an unregistered-capability denial),
             // so this is null exactly when $evaluation->capability is null.
             configurationFingerprint: $evaluation->capability?->configurationFingerprint(),
+            actorFingerprint: self::identityFingerprint($evaluation->envelope->context->actor),
+            subjectFingerprint: self::identityFingerprint($evaluation->envelope->context->subject),
         );
+    }
+
+    private static function identityFingerprint(mixed $identity): ?string
+    {
+        if (! $identity instanceof ProvidesVerdictIdentity) {
+            return null;
+        }
+
+        $canonicalIdentity = $identity->verdictIdentity();
+
+        if ($canonicalIdentity === '') {
+            throw new InvalidArgumentException('Verdict identities must not be empty.');
+        }
+
+        return hash('sha256', $canonicalIdentity);
     }
 }

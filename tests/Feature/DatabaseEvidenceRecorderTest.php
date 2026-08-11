@@ -29,6 +29,8 @@ beforeEach(function (): void {
         $table->string('capability')->nullable();
         $table->string('tool_kind', 16)->nullable();
         $table->char('configuration_fingerprint', 64)->nullable();
+        $table->char('actor_fingerprint', 64)->nullable();
+        $table->char('subject_fingerprint', 64)->nullable();
         $table->string('stage', 32);
         $table->string('disposition', 32);
         $table->text('reason')->nullable();
@@ -120,6 +122,8 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         invocationId: 'invocation-123',
         toolKind: 'bound',
         configurationFingerprint: str_repeat('f', 64),
+        actorFingerprint: hash('sha256', 'support-agent:17'),
+        subjectFingerprint: hash('sha256', 'customer:72'),
     );
 
     databaseEvidenceRecorder()->record($evidence);
@@ -138,6 +142,10 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         ->and((string) $row->capability)->toBe('orders.view')
         ->and((string) $row->tool_kind)->toBe('bound')
         ->and((string) $row->configuration_fingerprint)->toBe(str_repeat('f', 64))
+        ->and((string) $row->actor_fingerprint)->toBe(hash('sha256', 'support-agent:17'))
+        ->and((string) $row->subject_fingerprint)->toBe(hash('sha256', 'customer:72'))
+        ->and((string) $row->actor_fingerprint)->not->toBe('support-agent:17')
+        ->and((string) $row->subject_fingerprint)->not->toBe('customer:72')
         ->and((string) $row->disposition)->toBe('deny')
         ->and((string) $row->argument_fingerprint)->toBe(str_repeat('a', 64))
         ->and((string) $row->rate_limit_key_fingerprint)->toBe(str_repeat('b', 64))

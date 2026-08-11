@@ -44,6 +44,8 @@ Verdict’s fingerprint-first evidence model avoids recording raw content by def
 
 Content and component fingerprints are deterministic. A hash of a predictable prompt, identifier, version, filename, URL, or personal value can be guessed and must be treated as correlation—not anonymization, encryption, or proof that the underlying input is safe.
 
+Actor and subject fingerprints have the same boundary. `ProvidesVerdictIdentity::verdictIdentity()` is an application-supplied correlation string, not an authentication assertion: Verdict does not verify that the string identifies the actor, subject, or any delegated authority. It records only the fingerprint, never the raw value, just as an approval's `approvedBy` is application-supplied rather than authenticated by Verdict.
+
 ### Tamper-evident evidence is opt-in, partial, and bounded by key custody
 
 `DatabaseEvidenceRecorder` (the usual choice when an application opts into evidence recording — `verdict.evidence.recorder` itself defaults to `NullEvidenceRecorder`, a no-op, so nothing is recorded unless explicitly configured) is an ordinary mutable audit store: not append-only, immutable, signed, or tamper-evident. A row recording a decision, context release, or provenance fact can be edited or deleted without detection. It must not be described as cryptographic proof.
