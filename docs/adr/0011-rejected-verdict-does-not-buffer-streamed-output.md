@@ -4,7 +4,7 @@ Status: Accepted (rejection)
 
 ## Related issues
 
-- [#19](https://github.com/fissible/verdict/issues/19) (open) documents which security features are verified in streamed and queued execution modes.
+- [#19](https://github.com/fissible/verdict/issues/19) (implemented) documents which security features are verified in streamed and queued execution modes.
 
 ## Context
 

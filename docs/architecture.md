@@ -53,6 +53,31 @@ The executor receives an `AuthorizedAction`, including the application-selected 
 
 Each step is application-configurable, but the model does not receive a direct path to the executor once the underlying tool has been replaced with `BoundTool`.
 
+### Security-state gate ordering
+
+The seven steps above are the orientation-level summary. Gate ordering is fully decided — across [ADR 0001](adr/0001-semantic-execution-rate-limits.md), [ADR 0002](adr/0002-strict-at-most-once-admission.md), [ADR 0003](adr/0003-execution-target-freshness.md), and [ADR 0004](adr/0004-independent-security-state-transactions.md) — and this table is a navigation aid over those decisions, not a restatement that could drift from them. For the exact order, read [ADR 0003 §"Required execution order"](adr/0003-execution-target-freshness.md#required-execution-order); this table exists so a reader does not have to assemble it from four documents.
+
+| # | Step | Owning ADR |
+| --- | --- | --- |
+| 1 | Resolve the proposal-stage target | [ADR 0003](adr/0003-execution-target-freshness.md) |
+| 2 | Inspect the proposal-stage Laravel Policy | [ADR 0003](adr/0003-execution-target-freshness.md) |
+| 3 | Require an executable capability and an explicit execution-target policy | [ADR 0003](adr/0003-execution-target-freshness.md) |
+| 4 | If confirmation is required, non-mutatingly validate the receipt against the proposal target — short-circuits a repeated proposal while approval is still pending | [ADR 0003](adr/0003-execution-target-freshness.md) |
+| 5 | Fingerprint the proposal target's canonical identity | [ADR 0003](adr/0003-execution-target-freshness.md) |
+| 6 | Refresh the target, or explicitly reuse the configured snapshot | [ADR 0003](adr/0003-execution-target-freshness.md) |
+| 7 | Fingerprint the execution target and deny an identity mismatch | [ADR 0003](adr/0003-execution-target-freshness.md) |
+| 8 | Inspect the Laravel Policy against the execution target | [ADR 0003](adr/0003-execution-target-freshness.md) |
+| 9 | Non-mutatingly validate confirmation again against the execution target, if required | [ADR 0003](adr/0003-execution-target-freshness.md) |
+| 10 | Consume the semantic rate-limit unit against the execution target, if configured | [ADR 0001](adr/0001-semantic-execution-rate-limits.md) (ordering amended by [ADR 0003](adr/0003-execution-target-freshness.md)); transaction independence per [ADR 0004](adr/0004-independent-security-state-transactions.md) |
+| 11 | Atomically consume confirmation against the execution target, if required | [ADR 0001](adr/0001-semantic-execution-rate-limits.md) origin, reordered to follow rate limiting by [ADR 0003](adr/0003-execution-target-freshness.md); transaction independence per [ADR 0004](adr/0004-independent-security-state-transactions.md) |
+| 12 | Atomically claim the logical operation against the execution target, if configured | [ADR 0002](adr/0002-strict-at-most-once-admission.md); transaction independence per [ADR 0004](adr/0004-independent-security-state-transactions.md) |
+| 13 | Pass the execution target to `AuthorizedAction` and enter the executor | — application code, not a Verdict gate |
+| 14 | Finalize the execution claim as completed or indeterminate | [ADR 0002](adr/0002-strict-at-most-once-admission.md) |
+
+Two things the table doesn't show on its own: gates are ordered from more recoverable to less recoverable — a rate-limit unit precedes a human approval receipt, and the strict execution claim remains the final gate — and every mutating step from 10–12 additionally requires its store's connection to commit independently of any outer application transaction ([ADR 0004](adr/0004-independent-security-state-transactions.md)), or the operation fails closed with `UnsafeOuterTransaction` before changing state.
+
+A numbered step list is also, by construction, a behavioral argument — correct only as long as nobody reorders the statements. [ADR 0013](adr/0013-authorization-binding-layers.md) states the property this ordering exists to produce as a state-based invariant instead (**Invariant B1**: no execution-stage decision, approval transition, rate-limit consumption, or execution-claim admission may be derived from a target snapshot older than the refresh performed for that envelope) — something a reviewer or a test can check directly, independent of step order. Read the table above for *what happens when*; read ADR 0013 for the property a refactor of this order must still preserve.
+
 ## Target strategies
 
 `ExecutionTargetPolicy::refresh()` records canonical identity and re-fetches the target at execution time. Prefer it for mutable records. `acceptStaleSnapshot()` deliberately uses the original resolved object and should be used only when stale-snapshot behavior is acceptable.
@@ -116,6 +141,25 @@ Approval scope is deliberately per-request: the endpoint authenticates the decis
 Streaming approval resumption is supported: `VerdictApprovalMiddleware` keeps the scoped approval context alive for the full duration of a streamed response's iteration, not just until the middleware call returns. See [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md) for why this was a Verdict-side context-lifetime fix rather than a missing Laravel AI capability.
 
 For evaluations, Verdict provides deterministic harness primitives and an opt-in live runner. The live runner is provider-neutral at the package boundary; the application supplies the closure that invokes its chosen provider.
+
+## Execution-mode compatibility
+
+Laravel AI's `Agent` contract exposes three ways to invoke a prompt: `prompt()` (synchronous), `stream()` (returns a lazy `StreamableAgentResponse`), and `queue()` (dispatches `Laravel\Ai\Jobs\InvokeAgent` to a queue worker). Each cell below is either a verified answer or an explicit "not yet verified" — this table does not fill a cell from what seems likely.
+
+| Feature | Synchronous | Streamed | Queued |
+| --- | --- | --- | --- |
+| Authorization (proposal/execution stages) | ✅ | Not yet verified¹ | Not yet verified² |
+| Confirmation / approval resumption | ✅ | ✅ — [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md), fixed in #22 | Not yet verified² |
+| Execution claims (at-most-once) | ✅ | Not yet verified¹ | Not yet verified² |
+| Semantic rate limits | ✅ | Not yet verified¹ | Not yet verified² |
+| Evidence recording | ✅ | Not yet verified³ | Not yet verified² |
+| Context release | ✅ | Not yet verified³ | Not yet verified² |
+
+Every "Synchronous" ✅ is exercised directly by the test suite. The other cells:
+
+1. **Authorization, execution claims, and semantic rate limits under streaming are not yet covered by an automated test**, but code tracing gives reasonable confidence they work: ADR 0006 itself establishes that a streamed tool call's execution — not just the approval check — happens later, during iteration, not at the point `$next($prompt)` returns; and none of these three gates read any per-request frame stack the way `ApprovalExecutionContext` did before #22. That reasoning is not the same as a passing test against real streamed Laravel AI execution, so the cells stay marked unverified rather than ✅.
+2. **Nothing under `Agent::queue()` is covered by an automated Verdict test.** `Laravel\Ai\Jobs\InvokeAgent::handle()` calls the synchronous `Agent::prompt()` internally, not `stream()`, so the lazy-generator timing this whole table is about should not apply to any queued execution — but that inference has not been confirmed by running a queued job through real Laravel AI execution.
+3. **Evidence recording and context release under streaming have a known, unfixed gap.** `VerdictProvenanceMiddleware` wraps `$next($prompt)` in `InvocationContext::within()` using the same pattern `VerdictApprovalMiddleware` had *before* #22 — the frame is popped when `$next($prompt)` returns, not when a streamed response finishes iterating. `#22`'s fix (rewriting the response's generator in place so the frame survives real iteration) was scoped only to the approval middleware; the provenance middleware still has the old shape. Tool execution during streaming is not blocked by this — evidence is still recorded — but `invocation_id` correlation on `DecisionEvidence`/`ContextReleaseEvidence` rows is very likely lost for that turn. Tracked in [#80](https://github.com/fissible/verdict/issues/80); not yet confirmed by a test, which is exactly what #80 asks for.
 
 ## Relationship to Laravel AI
 

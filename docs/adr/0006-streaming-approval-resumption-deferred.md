@@ -4,7 +4,7 @@ Status: Accepted (corrected — see "Correction" below)
 
 ## Related issues
 
-- [#19](https://github.com/fissible/verdict/issues/19) (open) documents streaming and queued compatibility explicitly.
+- [#19](https://github.com/fissible/verdict/issues/19) (implemented) documents streaming and queued compatibility explicitly.
 - [#22](https://github.com/fissible/verdict/issues/22) (open) tracks the Verdict-side approval-context lifetime fix.
 
 ## Correction
