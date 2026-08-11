@@ -4,6 +4,12 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Fix streaming approval resumption: `VerdictApprovalMiddleware` now keeps the scoped
+  approval context alive for a streamed response's full iteration instead of popping it
+  when the middleware call returns, which happens before a lazy stream is ever consumed.
+  An already-approved tool call inside a streamed agent response no longer fails closed
+  with `ApprovalOutcome::InvalidState`. See [ADR 0006](docs/adr/0006-streaming-approval-resumption-deferred.md).
+
 - Add configured and invocation-time tool-description fingerprints to Laravel AI Verdict tools, so
   applications can observe description drift without folding model-facing text into capability policy
   configuration.
