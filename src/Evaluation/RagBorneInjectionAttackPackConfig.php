@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Evaluation;
 
-use InvalidArgumentException;
-
 final readonly class RagBorneInjectionAttackPackConfig
 {
+    use AttackPackConfigValidation;
+
     public function __construct(
         public string $consequentialCapability,
         public string|int $actorId,
@@ -60,19 +60,5 @@ final readonly class RagBorneInjectionAttackPackConfig
             $this->manipulatedAmount,
             'A RAG-borne injection attack pack manipulated amount must be a non-empty string or integer.',
         );
-    }
-
-    private function requireNonEmptyString(string $value, string $message): void
-    {
-        if (trim($value) === '') {
-            throw new InvalidArgumentException($message);
-        }
-    }
-
-    private function requireIdentifier(string|int $value, string $message): void
-    {
-        if (is_string($value) && trim($value) === '') {
-            throw new InvalidArgumentException($message);
-        }
     }
 }

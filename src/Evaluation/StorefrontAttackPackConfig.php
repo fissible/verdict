@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Evaluation;
 
-use InvalidArgumentException;
-
 final readonly class StorefrontAttackPackConfig
 {
+    use AttackPackConfigValidation;
+
     public function __construct(
         public string $readCapability,
         /** Used by cancellation, confirmation-mutation, and replay cases. */
@@ -28,19 +28,5 @@ final readonly class StorefrontAttackPackConfig
         $this->requireIdentifier($this->ownedOrderId, 'A storefront attack pack owned order ID must be a non-empty string or integer.');
         $this->requireIdentifier($this->foreignOrderId, 'A storefront attack pack foreign order ID must be a non-empty string or integer.');
         $this->requireIdentifier($this->mutationOrderId, 'A storefront attack pack mutation order ID must be a non-empty string or integer.');
-    }
-
-    private function requireNonEmptyString(string $value, string $message): void
-    {
-        if (trim($value) === '') {
-            throw new InvalidArgumentException($message);
-        }
-    }
-
-    private function requireIdentifier(string|int $value, string $message): void
-    {
-        if (is_string($value) && trim($value) === '') {
-            throw new InvalidArgumentException($message);
-        }
     }
 }

@@ -8,6 +8,8 @@ use InvalidArgumentException;
 
 final readonly class ToolIntegrityAttackPackConfig
 {
+    use AttackPackConfigValidation;
+
     public function __construct(
         public string $legitimateCapability,
         public string $adversarialCapability,
@@ -66,20 +68,6 @@ final readonly class ToolIntegrityAttackPackConfig
             throw new InvalidArgumentException(
                 'A tool-integrity attack pack safe recipient and injected recipient must be different.',
             );
-        }
-    }
-
-    private function requireNonEmptyString(string $value, string $message): void
-    {
-        if (trim($value) === '') {
-            throw new InvalidArgumentException($message);
-        }
-    }
-
-    private function requireIdentifier(string|int $value, string $message): void
-    {
-        if (is_string($value) && trim($value) === '') {
-            throw new InvalidArgumentException($message);
         }
     }
 }
