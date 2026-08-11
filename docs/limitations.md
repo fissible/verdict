@@ -87,9 +87,18 @@ formatting changes and unrelated code movement, which is worse than the gap it w
 application that needs deploy-level precision over closure logic should pin its release identifier into
 `Capability::configurationVersion()`, which participates in the hash.
 
-The fingerprint alone also does not answer "what did the rule say" — only that it changed. Resolving a
-fingerprint back to readable configuration is [#33](https://github.com/fissible/verdict/issues/33)'s job,
-not this one's.
+The fingerprint alone does not contain the rule text — it only identifies it. The durable capability
+configuration registry resolves that digest to the declared configuration that produced it.
+
+### Retain capability configurations while retained evidence refers to them
+
+The durable `verdict_capability_configurations` registry expands a configuration fingerprint into the
+declared policy configuration that produced it. It is content-addressed and first-writer-wins: repeated
+registrations do not rewrite history. Do not prune this registry alongside evidence, or independently
+while retained evidence can still reference it; that would turn an auditable configuration change back
+into an unresolvable digest. The shipped database store is deliberate: Redis eviction can silently orphan
+evidence, and object storage adds an availability dependency to registration. Applications that replace
+the store must preserve those retention and durability properties.
 
 ## Provenance derivation is deliberately incomplete
 

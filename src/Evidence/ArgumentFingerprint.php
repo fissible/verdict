@@ -11,10 +11,15 @@ final class ArgumentFingerprint
      */
     public static function make(array $arguments): string
     {
-        return hash('sha256', json_encode(
-            self::normalize($arguments),
+        return hash('sha256', self::canonicalJson($arguments));
+    }
+
+    public static function canonicalJson(mixed $value): string
+    {
+        return json_encode(
+            self::normalize($value),
             JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION,
-        ));
+        );
     }
 
     private static function normalize(mixed $value): mixed

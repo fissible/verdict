@@ -8,6 +8,19 @@ use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 
 return [
+    'capability_configurations' => [
+        // This durable, content-addressed registry expands configuration_fingerprint values in
+        // evidence into readable declared policy configuration. Null selects the database store
+        // automatically for Verdict's DatabaseEvidenceRecorder and AttestEvidenceRecorder, and a
+        // no-op store otherwise. Do not use a cache as the only durable store: Redis eviction
+        // would orphan surviving evidence. Object storage is likewise not the default because
+        // registration is on the authorization setup path. ADR 0017 explains those trade-offs.
+        // This table is intentionally never pruned with evidence.
+        'store' => null,
+        'connection' => null,
+        'table' => 'verdict_capability_configurations',
+    ],
+
     'approvals' => [
         // Database security-state mutations fail if this connection is already inside an outer
         // transaction. Use a separately committed connection when wrapping Verdict itself.
