@@ -6,7 +6,7 @@ namespace Fissible\Verdict\Context;
 
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\ContextTransformer;
-use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DerivationKind;
@@ -21,7 +21,7 @@ final readonly class ContextReleaseManager
     public function __construct(
         private ReleasePolicyRegistry $policies,
         private FieldProjector $projector,
-        private EvidenceRecorder $evidence,
+        private EvidenceWriter $evidence,
         private Clock $clock,
         private InvocationContext $invocations,
         private ProvenanceLedger $provenance,

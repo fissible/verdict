@@ -17,7 +17,7 @@ use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\PendingContextRelease;
 use Fissible\Verdict\Context\ReleasePolicy;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
-use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
@@ -46,7 +46,7 @@ final readonly class VerdictManager
     public function __construct(
         private CapabilityRegistry $capabilities,
         private CapabilityAuthorizer $authorizer,
-        private EvidenceRecorder $evidence,
+        private EvidenceWriter $evidence,
         private ApprovalManager $approvals,
         private ContextReleaseManager $contextReleases,
         private RateLimitManager $rateLimits,

@@ -71,7 +71,7 @@ function ragBorneInjectionToolObservation(
 
 function ragBorneInjectionProvenanceLedger(InMemoryEvidenceRecorder $recorder): ProvenanceLedger
 {
-    return new ProvenanceLedger($recorder, new RagBorneInjectionTestClock);
+    return new ProvenanceLedger($recorder, $recorder, new RagBorneInjectionTestClock);
 }
 
 function ragBorneInjectionRecordRetrievedDocument(

@@ -570,6 +570,26 @@ it('propagates recorder failure and does not call the next middleware', function
                 return [];
             }
         },
+        new class implements EvidenceRecorder
+        {
+            public function record(DecisionEvidence $evidence): void {}
+
+            public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+            public function recordProvenance(ProvenanceEntry $entry): void {}
+
+            public function recordDerivation(ProvenanceDerivation $derivation): void {}
+
+            public function provenanceFor(string $correlationId): array
+            {
+                return [];
+            }
+
+            public function derivationsFor(string $correlationId, string $childContentFingerprint): array
+            {
+                return [];
+            }
+        },
         app(Clock::class),
     );
     $nextCalled = false;

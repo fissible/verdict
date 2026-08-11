@@ -183,6 +183,18 @@ Verdict builds on Laravel AI’s public extension points rather than replacing t
 
 ## Configuration and migrations
 
+### Evidence extension contracts
+
+Before 1.0, evidence extensions should implement only the capability they own:
+`EvidenceWriter` for decision, context-release, provenance, and derivation writes; and
+`ProvenanceLedgerStore` for provenance and derivation reads. An application may configure them
+independently as `verdict.evidence.writer` and `verdict.evidence.ledger`.
+
+`EvidenceRecorder` remains available as a deprecated pre-1.0 bridge. Existing implementations and
+the shipped database, in-memory, null, and Attest adapters continue to implement both narrow
+contracts, so unchanged applications retain their current behavior. New adapters must not invent
+unsupported reads or writes merely to satisfy the old mixed interface.
+
 Publish Verdict’s configuration, then run migrations before using database-backed approvals, execution claims, rate limits, or evidence:
 
 ```bash

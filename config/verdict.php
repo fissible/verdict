@@ -34,6 +34,12 @@ return [
         // InMemoryEvidenceRecorder is only for tests and local development. Its unbounded,
         // process-local state is unsafe for production, Octane, and queue workers.
         'recorder' => NullEvidenceRecorder::class,
+
+        // Pre-1.0 extension migration: `recorder` is the legacy mixed read/write contract.
+        // New adapters may configure either narrow contract independently. If either is null,
+        // Verdict uses the legacy recorder for that responsibility.
+        'writer' => null,
+        'ledger' => null,
         'connection' => null,
         'table' => 'verdict_evidence',
 
