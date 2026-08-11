@@ -687,6 +687,8 @@ In `spikes/0037-isolation-level-concurrency/lib/connections.php`, add to the arr
 Run: `php spikes/0037-isolation-level-concurrency/spike-b.php | tee spikes/0037-isolation-level-concurrency/results/spike-b-run1.txt`
 Expected: a full transcript showing, at each contention level, whether 40001 appears, and if so how the store currently handles it (uncaught `PDOException`/`QueryException` propagating out of `consume()`/`claim()`, versus something already handling it gracefully). This is the load-bearing evidence for Task 7 — re-run at least twice to confirm the pattern is consistent, not a one-off scheduling artifact of process startup order.
 
+**What actually happened across 2 runs:** 40001 appears at every contention level tested (2, 5, 20), for both `DatabaseRateLimitStore::consume()` and `DatabaseExecutionClaimStore::claim()`, completely uncaught (only `UniqueConstraintViolationException` is caught). The invariant holds *among the responses that don't throw* (never more than `RATE_LIMIT` admitted, never more than 1 claim winner) — SERIALIZABLE isn't producing wrong answers, it's producing exceptions instead of answers for a large share of callers. Rate-limit was strikingly consistent both runs: exactly 1/2, 1/5, and 5/20 succeeded at each level, identically. Execution claims varied a little more at the highest contention level (18/20 succeeded then 20/20) but never exceeded 1 winner. This confirms, rather than merely anticipates, ADR 0016 Decision §6's named risk: "an operator who configures a dedicated connection at SERIALIZABLE... would see contention as a 500 rather than as a correct denial."
+
 - [ ] **Step 5: Commit**
 
 ```bash
