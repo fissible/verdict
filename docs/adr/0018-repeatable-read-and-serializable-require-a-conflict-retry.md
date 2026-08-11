@@ -268,8 +268,8 @@ by its ordinal (10–50 ms, 20–100 ms, then 30–150 ms; 300 ms maximum total 
 under ADR 0004 because `IndependentTransactionGuard` runs before every store call, so no
 application-owned outer transaction is retried.
 
-Twenty repeated PostgreSQL 16.14 SERIALIZABLE races, each with 20 synchronized processes on one
-bucket (400 contenders total), returned no uncaught `40001`s. Every run admitted exactly five callers.
+Twenty-five repeated PostgreSQL 16.14 SERIALIZABLE races, each with 20 synchronized processes on one
+bucket (500 contenders total), returned no uncaught `40001`s. Every run admitted exactly five callers.
 The durable suite now asserts zero errors and the exact limit for that case, alongside the existing
 strict assertions for the other supported engine/isolation combinations. The former limitation is
 therefore removed from `docs/limitations.md`; the bounded latency cost remains documented there.
