@@ -68,6 +68,7 @@ Before protecting a consequential action, the application team should:
 
 - write and test the Laravel policy and trusted target resolver;
 - choose whether approval, replay prevention, and semantic limits are needed;
+- keep confirmation prompts consequence-weighted and measure approval-to-denial ratios; see [confirmation-fatigue guidance](security-model.md#avoiding-confirmation-fatigue);
 - include all material facts in approval and claim identities;
 - add domain-level concurrency and idempotency controls;
 - protect non-AI invocation paths consistently; and

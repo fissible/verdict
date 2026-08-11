@@ -39,6 +39,14 @@ Refreshing reduces the window between authorization and execution, but no in-pro
 
 The application decides which facts are material. Include every fact whose change would require a new human decision. Streaming approval resumption is intentionally deferred and fails closed; see [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md).
 
+### Avoiding confirmation fatigue
+
+Confirmation is a security control only while the approver reads it. Prompt rate is therefore a security parameter: a prompt at five times a week can be meaningful, while the same prompt at fifty times a day becomes a rubber stamp. Confirm irreversible or expensive actions, not routine ones; low-consequence prompts train an approver to dismiss the consequential prompt that follows.
+
+Do not batch requests. “Approve these 20 refunds” approves a category, not one concrete request, and defeats the argument binding that exists to bind a human decision to one request. Show the approver every material binding fact—such as amount, destination, and target—because an approver who cannot see an amount cannot meaningfully approve it.
+
+Prefer `rateLimit()` and `atMostOnce()` where they fit: both bound risk without consuming human attention. Instrument the flow as well. `approvalOutcome` is already recorded in decision evidence, so the approval-to-denial ratio is a useful check; an approval flow that has never produced a denial may not be read.
+
 ## Preventing duplicate actions
 
 `atMostOnce()` associates an execution-claim policy with a capability. Verdict atomically admits a given configured claim fingerprint at most once. This is useful for effects such as issuing a refund or sending a consequential command.
