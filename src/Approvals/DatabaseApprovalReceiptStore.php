@@ -7,17 +7,34 @@ namespace Fissible\Verdict\Approvals;
 use DateTimeImmutable;
 use DateTimeZone;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\DatabaseTableStore;
 use Fissible\Verdict\Support\IndependentTransactionGuard;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
+use LogicException;
 use stdClass;
 
-final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore
+final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore
 {
     public function __construct(
         private ConnectionInterface $connection,
         private string $table = 'verdict_approval_receipts',
     ) {}
+
+    public function hasTable(): bool
+    {
+        if (! $this->connection instanceof Connection) {
+            throw new LogicException('The approval receipt connection does not support schema inspection.');
+        }
+
+        return $this->connection->getSchemaBuilder()->hasTable($this->table);
+    }
+
+    public function table(): string
+    {
+        return $this->table;
+    }
 
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
     {

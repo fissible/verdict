@@ -5,7 +5,10 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
+use Fissible\Verdict\RateLimits\RateLimitConsumption;
+use Fissible\Verdict\RateLimits\RateLimitOutcome;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 
@@ -58,3 +61,28 @@ it('uses the runtime database store default when the store key is omitted', func
         ->expectsOutputToContain('Configured rate-limit store requires missing table [verdict_rate_limit_buckets]')
         ->assertExitCode(1);
 });
+
+it('fails CI when a configured custom store cannot be resolved', function (): void {
+    config()->set('verdict.rate_limits.store', UnresolvableRateLimitStore::class);
+
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.custom-limited', 'view', fn (ActionEnvelope $envelope): int => 1)
+            ->rateLimit(RateLimitPolicy::fixedWindow('orders-per-minute', 1, 60, fn (ActionEnvelope $envelope, int $target): array => ['actor' => 1])),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('Configured rate-limit store could not be resolved.')
+        ->assertExitCode(1);
+});
+
+interface UnresolvableRateLimitStoreDependency {}
+
+final class UnresolvableRateLimitStore implements RateLimitStore
+{
+    public function __construct(UnresolvableRateLimitStoreDependency $dependency) {}
+
+    public function consume(RateLimitConsumption $consumption): RateLimitOutcome
+    {
+        throw new RuntimeException('This store should never be consumed by the audit.');
+    }
+}

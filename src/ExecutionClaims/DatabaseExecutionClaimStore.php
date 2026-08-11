@@ -6,18 +6,35 @@ namespace Fissible\Verdict\ExecutionClaims;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Fissible\Verdict\Contracts\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Support\IndependentTransactionGuard;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
+use LogicException;
 use stdClass;
 
-final readonly class DatabaseExecutionClaimStore implements ExecutionClaimStore
+final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, ExecutionClaimStore
 {
     public function __construct(
         private ConnectionInterface $connection,
         private string $table = 'verdict_execution_claims',
     ) {}
+
+    public function hasTable(): bool
+    {
+        if (! $this->connection instanceof Connection) {
+            throw new LogicException('The execution-claim connection does not support schema inspection.');
+        }
+
+        return $this->connection->getSchemaBuilder()->hasTable($this->table);
+    }
+
+    public function table(): string
+    {
+        return $this->table;
+    }
 
     public function claim(ExecutionClaim $claim): ExecutionClaimTransition
     {
