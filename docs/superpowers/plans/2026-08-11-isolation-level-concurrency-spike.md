@@ -759,6 +759,13 @@ git add docs/adr/0018-*.md docs/adr/0016-one-contended-row-per-constraint.md doc
 git commit -m "docs: add ADR 0018 fixing isolation levels from the #37 spike"
 ```
 
+**What actually happened, beyond this task's original literal scope:** the real finding turned out to have live operational weight — MySQL/MariaDB's *default* isolation level (REPEATABLE READ, not an opt-in stricter setting) is what's unsafe, meaning any current production deployment on MySQL/MariaDB without explicit READ COMMITTED configuration is exposed today, not hypothetically. Two additions beyond this task's original file list, both consistent with the ADR's own "next required change" language and this repo's practice of naming known gaps rather than leaving them implicit (ADR 0006's precedent before #22 fixed it):
+
+- Added a `docs/limitations.md` entry ("Concurrent contention above READ COMMITTED can surface as an unhandled exception") stating the current risk to operators directly, rather than leaving it findable only by reading an ADR.
+- Filed [#86](https://github.com/fissible/verdict/issues/86) for the retry fix itself, explicitly at higher priority than #37's own "M, no urgency" framing, since #37 changed the finding from "unmeasured, assumed fine" to "measured, confirmed unsafe on the default most deployments run." ADR 0018's "Related issues" and Consequences sections were updated to cite it once filed.
+
+Also discovered while updating "Related issues": ADR 0004 did not already reference #37 (this plan's Task 7 Step 4 had assumed it might and said to verify current wording — the real answer was "add a new line," not "edit an existing one," since #37/ADR 0018 relate to ADR 0004's `IndependentTransactionGuard` in a way ADR 0004 didn't yet document).
+
 ---
 
 ### Task 8: CI strategy — Postgres on every PR, full matrix on tag/weekly
