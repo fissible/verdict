@@ -6,7 +6,7 @@ namespace Fissible\Verdict\ExecutionClaims;
 
 use DateTimeImmutable;
 use DateTimeZone;
-use Fissible\Verdict\Contracts\DatabaseTableStore;
+use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Support\IndependentTransactionGuard;
 use Illuminate\Database\Connection;

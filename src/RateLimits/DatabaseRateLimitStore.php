@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\RateLimits;
 
 use DateTimeImmutable;
-use Fissible\Verdict\Contracts\DatabaseTableStore;
+use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\PrunableRateLimitStore;
 use Fissible\Verdict\Support\IndependentTransactionGuard;
 use Illuminate\Database\Connection;
