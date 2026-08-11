@@ -21,6 +21,17 @@ final class ApprovalExecutionContext
 
     public function within(Decisions $decisions, Closure $callback): mixed
     {
+        $this->push($decisions);
+
+        try {
+            return $callback();
+        } finally {
+            $this->pop();
+        }
+    }
+
+    public function push(Decisions $decisions): void
+    {
         $approved = [];
 
         foreach ($decisions->all() as $toolCallId => $decision) {
@@ -30,11 +41,10 @@ final class ApprovalExecutionContext
         }
 
         $this->frames[] = $approved;
+    }
 
-        try {
-            return $callback();
-        } finally {
-            array_pop($this->frames);
-        }
+    public function pop(): void
+    {
+        array_pop($this->frames);
     }
 }

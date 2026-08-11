@@ -4,6 +4,12 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Fix streaming approval resumption: `VerdictApprovalMiddleware` now keeps the scoped
+  approval context alive for a streamed response's full iteration instead of popping it
+  when the middleware call returns, which happens before a lazy stream is ever consumed.
+  An already-approved tool call inside a streamed agent response no longer fails closed
+  with `ApprovalOutcome::InvalidState`. See [ADR 0006](docs/adr/0006-streaming-approval-resumption-deferred.md).
+
 - Add a durable, content-addressed capability configuration registry. It records the declared
   configuration once at capability registration and resolves each evidence
   `configuration_fingerprint` to readable policy configuration without retaining closures or raw

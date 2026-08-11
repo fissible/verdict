@@ -26,6 +26,8 @@ Laravel AI v0.10.2 (the vendored version) already provides everything this would
 The real blocker is Verdict-side, tracked in
 [issue #22](https://github.com/fissible/verdict/issues/22): see "Decision" below.
 
+**Update:** Issue #22 has landed. `VerdictApprovalMiddleware` now keeps `ApprovalExecutionContext`'s frame alive through a streamed response's full iteration, not just until the middleware call returns synchronously. Streaming approval resumption is supported as of this change.
+
 ## Context
 
 Verdict's confirmation flow resumes a Laravel AI agent after approval by calling

@@ -113,7 +113,7 @@ $response = $agent->prompt(Decisions::from([
 
 Approval scope is deliberately per-request: the endpoint authenticates the decision maker, approves one receipt bound to one tool call, and resumes the agent. Use an opaque application identifier such as `customer:72` for `approvedBy`, not an email address or other unnecessary PII — Verdict does not authenticate this string.
 
-This is an early synchronous integration. Streaming approval resumption is not yet supported, because agent middleware returns before a stream is consumed; protected execution fails closed without the scoped approval context. See [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md).
+Streaming approval resumption is supported: `VerdictApprovalMiddleware` keeps the scoped approval context alive for the full duration of a streamed response's iteration, not just until the middleware call returns. See [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md) for why this was a Verdict-side context-lifetime fix rather than a missing Laravel AI capability.
 
 For evaluations, Verdict provides deterministic harness primitives and an opt-in live runner. The live runner is provider-neutral at the package boundary; the application supplies the closure that invokes its chosen provider.
 

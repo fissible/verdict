@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
+use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
@@ -25,13 +26,21 @@ use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Collection;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Approvals\Decision;
 use Laravel\Ai\Approvals\Decisions;
+use Laravel\Ai\Approvals\PendingApproval;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\StreamableAgentResponse;
+use Laravel\Ai\Responses\StreamedAgentResponse;
+use Laravel\Ai\Streaming\Events\StreamEnd;
+use Laravel\Ai\Streaming\Events\ToolApprovalRequest;
 use Laravel\Ai\Tools\Request;
 
 final class ApprovalTestClock implements Clock
@@ -438,6 +447,217 @@ it('requires an exact durable approval before executing and consumes it once', f
         ->and($executions)->toBe(1)
         ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-cancel-1001')?->status)
         ->toBe(ApprovalReceiptStatus::Consumed);
+});
+
+it('keeps an approved tool call approved through a streamed response, not just the middleware\'s synchronous return', function (): void {
+    $executions = 0;
+    $tool = approvalTool([1001 => new ApprovalOrder(1001, 72)], $executions);
+    $request = new Request(['order_id' => 1001], 'call-streamed-cancel');
+
+    $tool->shouldRequestApproval($request);
+    $challenge = app(ApprovalManager::class)->challengeForToolCall('call-streamed-cancel');
+
+    expect($challenge)->not->toBeNull();
+
+    // First call: not yet approved, must still come back pending — proves this scenario
+    // starts from the same "requires confirmation" state the synchronous tests use.
+    $pending = json_decode((string) $tool->handle($request), true, flags: JSON_THROW_ON_ERROR);
+    expect($pending['decision'])->toBe('require_confirmation');
+
+    app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'customer:72');
+    $decisions = Decisions::from(['call-streamed-cancel' => Decision::approve()]);
+
+    $response = app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'inv-streamed-approval',
+            generator: function () use ($tool, $request): Generator {
+                $tool->handle($request);
+
+                yield new StreamEnd('evt-streamed-approval', 'stop', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
+
+    // The tool must not have run yet — nothing has iterated $response. If this fails, the
+    // test itself is broken (StreamableAgentResponse::getIterator() isn't actually lazy
+    // the way this test assumes), not the fix.
+    expect($executions)->toBe(0);
+
+    $events = iterator_to_array($response);
+
+    // With the pre-fix code, the approval frame is already popped by the time this
+    // iteration runs handle() inside the generator, so the tool sees InvalidState and
+    // never increments $executions. With the fix, the frame is still present.
+    expect($executions)->toBe(1)
+        ->and($events)->toHaveCount(1)
+        ->and($events[0])->toBeInstanceOf(StreamEnd::class);
+});
+
+it('produces pending approvals and replay blocks when the stream pauses again after resuming an approved call', function (): void {
+    $executions = 0;
+    $tool = approvalTool([1001 => new ApprovalOrder(1001, 72)], $executions);
+    $request = new Request(['order_id' => 1001], 'call-nested-resume');
+
+    $tool->shouldRequestApproval($request);
+    $challenge = app(ApprovalManager::class)->challengeForToolCall('call-nested-resume');
+
+    expect($challenge)->not->toBeNull();
+
+    app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'customer:72');
+    $decisions = Decisions::from(['call-nested-resume' => Decision::approve()]);
+
+    // Represents a second, unrelated tool call the model proposes mid-stream, requiring its
+    // own confirmation — the "nested pause" case issue #22 explicitly calls out.
+    $pendingApproval = new PendingApproval(
+        id: 'call-nested-followup',
+        tool: 'CancelOrder',
+        arguments: ['order_id' => 1002],
+        reason: 'Confirm cancellation of a second order.',
+    );
+    $providerContentBlocks = [['type' => 'tool_use', 'id' => 'call-nested-followup']];
+
+    $response = app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'inv-nested-pause',
+            generator: function () use ($tool, $request, $pendingApproval, $providerContentBlocks): Generator {
+                $tool->handle($request);
+
+                yield new ToolApprovalRequest(
+                    id: 'evt-nested-pause',
+                    pendingApprovals: new Collection([$pendingApproval]),
+                    timestamp: time(),
+                    providerContentBlocks: $providerContentBlocks,
+                );
+
+                yield new StreamEnd('evt-nested-pause-end', 'pause_for_approval', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
+
+    $captured = null;
+
+    $response->then(function (StreamedAgentResponse $streamed) use (&$captured): void {
+        $captured = $streamed;
+    });
+
+    iterator_to_array($response);
+
+    // The already-approved call from before the pause still executed — proving resumption
+    // and a subsequent nested pause compose correctly within the same stream, not just one
+    // or the other in isolation. ToolApprovalRequest events pass through this middleware's
+    // generator wrapper untouched (it only pushes/pops around iteration, never inspects or
+    // filters what's yielded), so Laravel AI's own StreamedAgentResponse construction
+    // — pendingApprovals and pausedProviderContentBlocks() — sees exactly what the
+    // underlying stream produced.
+    expect($executions)->toBe(1)
+        ->and($captured)->toBeInstanceOf(StreamedAgentResponse::class)
+        ->and($captured->pendingApprovals)->toHaveCount(1)
+        ->and($captured->pendingApprovals->first()->id)->toBe('call-nested-followup')
+        ->and($captured->pausedProviderContentBlocks())->toBe($providerContentBlocks);
+});
+
+it('does not leave the approval frame active if the streamed response is never iterated', function (): void {
+    $decisions = Decisions::from(['call-unconsumed-stream' => Decision::approve()]);
+
+    app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'inv-unconsumed',
+            generator: function (): Generator {
+                yield new StreamEnd('evt-unconsumed', 'stop', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
+
+    // Deliberately never iterate the returned response.
+
+    expect(app(ApprovalExecutionContext::class)->allows('call-unconsumed-stream'))->toBeFalse();
+});
+
+it('pops the approval frame even when the stream throws partway through iteration', function (): void {
+    $decisions = Decisions::from(['call-interrupted-stream' => Decision::approve()]);
+
+    $response = app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'inv-interrupted',
+            generator: function (): Generator {
+                yield new StreamEnd('evt-interrupted', 'stop', new Usage, time());
+
+                throw new RuntimeException('simulated provider failure mid-stream');
+            },
+            meta: new Meta,
+        ),
+    );
+
+    expect(fn () => iterator_to_array($response))
+        ->toThrow(RuntimeException::class, 'simulated provider failure mid-stream');
+
+    expect(app(ApprovalExecutionContext::class)->allows('call-interrupted-stream'))->toBeFalse();
+});
+
+it('pops the approval frame when the caller stops iterating before the stream completes', function (): void {
+    $decisions = Decisions::from(['call-abandoned-stream' => Decision::approve()]);
+
+    $response = app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'inv-abandoned',
+            generator: function (): Generator {
+                yield new StreamEnd('evt-abandoned-1', 'stop', new Usage, time());
+                yield new StreamEnd('evt-abandoned-2', 'stop', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
+
+    // A plain foreach + break, no unset() or gc_collect_cycles() needed: PHP drops the
+    // temporary generator foreach holds internally the moment the loop exits, and that
+    // refcount-zero destruction runs the pending finally block synchronously, in the same
+    // call frame as the break — confirmed empirically against PHP 8.3 before writing this
+    // test, not assumed from generator documentation alone.
+    foreach ($response as $event) {
+        break;
+    }
+
+    expect(app(ApprovalExecutionContext::class)->allows('call-abandoned-stream'))->toBeFalse();
+});
+
+it('returns the exact same response instance and preserves state registered before wrapping', function (): void {
+    $decisions = Decisions::from(['call-preserved-stream' => Decision::approve()]);
+
+    $originalResponse = new StreamableAgentResponse(
+        invocationId: 'inv-preserved',
+        generator: function (): Generator {
+            yield new StreamEnd('evt-preserved', 'stop', new Usage, time());
+        },
+        meta: new Meta,
+    );
+
+    $thenCallbackRan = false;
+
+    // Registered on the original object, before the middleware ever sees it — mirrors an
+    // inner middleware or the framework itself configuring the response before this one
+    // wraps it. A reconstruction-based fix would silently drop this.
+    $originalResponse->then(function () use (&$thenCallbackRan): void {
+        $thenCallbackRan = true;
+    });
+
+    $response = app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => $originalResponse,
+    );
+
+    expect($response)->toBe($originalResponse);
+
+    iterator_to_array($response);
+
+    expect($thenCallbackRan)->toBeTrue();
 });
 
 it('rejects changed arguments after approval', function (): void {
