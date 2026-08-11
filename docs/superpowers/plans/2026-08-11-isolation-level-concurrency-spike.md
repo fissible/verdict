@@ -88,7 +88,9 @@ services:
     ports:
       - "3309:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      # Not mysqladmin: the mariadb:11 image doesn't ship it at all (confirmed by exec — "executable
+      # file not found in $PATH"). Its own image-provided healthcheck.sh is the correct tool here.
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 2s
       timeout: 2s
       retries: 30
