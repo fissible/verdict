@@ -33,3 +33,13 @@ it('does not retry an unrelated transaction error', function (): void {
 
     TransactionRetry::run($connection, fn (): string => 'unreachable');
 })->throws(RuntimeException::class, 'Connection configuration is invalid');
+
+it('stops after three retries for a recognized concurrency error', function (): void {
+    $connection = $this->createMock(ConnectionInterface::class);
+
+    $connection->expects($this->exactly(4))
+        ->method('transaction')
+        ->willThrowException(new RuntimeException('Deadlock found when trying to get lock'));
+
+    TransactionRetry::run($connection, fn (): string => 'unreachable');
+})->throws(RuntimeException::class, 'Deadlock found when trying to get lock');

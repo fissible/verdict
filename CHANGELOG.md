@@ -4,6 +4,11 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Resolve PostgreSQL SERIALIZABLE rate-limit conflicts with up to three retries after increasing
+  randomized delays (10–50 ms, then 20–100 ms, then 30–150 ms). The retries remain confined to
+  Verdict-owned transactions; a synchronized 20-way PostgreSQL contention suite now requires every
+  caller to receive a policy-shaped outcome. See [#97](https://github.com/fissible/verdict/issues/97).
+
 - Narrow `CapabilityConfigurationStore` to a closure-free `CapabilityConfiguration` value object,
   so custom registry adapters receive only the content-addressed fingerprint and declared
   configuration they are permitted to retain. See [#91](https://github.com/fissible/verdict/issues/91).

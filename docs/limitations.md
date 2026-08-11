@@ -114,13 +114,11 @@ Verdict does not establish factual correctness or provide general content modera
 
 The package cannot decide which actions require approval, what makes two business actions equivalent, or what a safe rate limit should be. Those decisions are encoded in capability configuration and the surrounding application.
 
-### PostgreSQL SERIALIZABLE rate limits retain a concurrency availability gap
+### Security-state conflict retries are bounded and Verdict-owned
 
-`DatabaseRateLimitStore::consume()`, `DatabaseExecutionClaimStore::claim()`, and `DatabaseApprovalReceiptStore::issue()` retry once after a randomized 10–50 ms delay when a transaction raises `SQLSTATE 40001` (a deadlock or serialization failure), in addition to their existing unique-constraint-violation handling. The delay is measured with genuine, synchronized process-level concurrency: a ready/release handshake between child processes, not a fixed wall-clock guess.
+`DatabaseRateLimitStore::consume()`, `DatabaseExecutionClaimStore::claim()`, and `DatabaseApprovalReceiptStore::issue()` retry a deadlock or serialization failure (`SQLSTATE 40001`) up to three times after increasing randomized delays: 10–50 ms, then 20–100 ms, then 30–150 ms. The retry is only reached after the independent-transaction guard has established that Verdict owns the transaction; it never retries an application-owned outer transaction.
 
-The retry resolves the earlier MySQL 8 and MariaDB 11 REPEATABLE READ residual across all three stores: five repeated isolated 20-way runs on each engine returned clean results under strict assertions. PostgreSQL remains clean under its default READ COMMITTED isolation level, and PostgreSQL SERIALIZABLE remains clean for execution claims and approval receipts.
-
-**PostgreSQL SERIALIZABLE rate limits remain an exception:** under sustained, fully simultaneous contention on one bucket, a caller can still receive an unhandled `Illuminate\Database\QueryException` (measured: roughly 15–18 of 20 concurrent attempts at high contention; clean at low contention). This is an availability problem, not a correctness one: no measurement has admitted more than the configured limit, more than one claim winner, or more than one receipt. Applications using PostgreSQL SERIALIZABLE for highly contended rate-limit buckets should account for that exception path. See [ADR 0018](adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md) for the measured evidence; [#97](https://github.com/fissible/verdict/issues/97) tracks the remaining investigation.
+The policy is intentionally bounded: a contender may wait up to 300 ms before its final attempt rather than retrying indefinitely under sustained conflict. The durable real-engine suite uses a ready/release handshake between separate child processes, not a fixed wall-clock guess. It strictly requires every contender to receive a clean policy outcome at 20-way contention on MySQL/MariaDB REPEATABLE READ, PostgreSQL READ COMMITTED, and PostgreSQL SERIALIZABLE; the rate-limit case admits exactly its configured limit. See [ADR 0018](adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md) and [#97](https://github.com/fissible/verdict/issues/97) for the measured evidence.
 
 ## Operational responsibilities
 
