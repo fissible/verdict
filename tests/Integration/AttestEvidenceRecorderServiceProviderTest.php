@@ -10,15 +10,20 @@ use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\Events\ChainWriteFailed;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
+use Fissible\Verdict\Tests\Support\StaticAttestChainResolver;
+use Fissible\Verdict\Tests\Support\ThrowingAttestChainResolver;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Support\Facades\Event;
 
 uses(DatabaseMigrations::class);
 
 beforeEach(function (): void {
     config()->set('verdict.evidence.recorder', AttestEvidenceRecorder::class);
+    config()->set('verdict.evidence.attest.chain', 'verdict');
 
     // Verdict has no loadMigrationsFrom(), so its migrations do not run here. Build the
     // full composed verdict_evidence schema by hand, exactly as tests/Feature does, so
@@ -86,13 +91,10 @@ afterEach(function (): void {
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_provenance_derivations');
 });
 
-it('resolves an AttestEvidenceRecorder from config and records a real decision', function (): void {
-    $recorder = app(EvidenceRecorder::class);
-
-    expect($recorder)->toBeInstanceOf(AttestEvidenceRecorder::class);
-
-    $recorder->record(new DecisionEvidence(
-        envelopeId: 'env-int-1',
+function attestDecisionEvidence(string $envelopeId): DecisionEvidence
+{
+    return new DecisionEvidence(
+        envelopeId: $envelopeId,
         capability: 'orders.refund',
         stage: 'authorization',
         disposition: 'permit',
@@ -118,7 +120,15 @@ it('resolves an AttestEvidenceRecorder from config and records a real decision',
         executionClaimStatus: null,
         executionClaimAttempt: null,
         recordedAt: new DateTimeImmutable,
-    ));
+    );
+}
+
+it('resolves an AttestEvidenceRecorder from config and records a real decision', function (): void {
+    $recorder = app(EvidenceRecorder::class);
+
+    expect($recorder)->toBeInstanceOf(AttestEvidenceRecorder::class);
+
+    $recorder->record(attestDecisionEvidence('env-int-1'));
 
     $envelope = AttestEnvelope::query()
         ->forCorrelation('env-int-1')
@@ -160,4 +170,79 @@ it('routes provenance through the real DatabaseEvidenceRecorder fallback the con
     expect($row)->not->toBeNull()
         ->and($row->record_type)->toBe('provenance')
         ->and($row->content_fingerprint)->toBe(hash('sha256', 'doc'));
+});
+
+it('throws when neither chain nor chain_resolver is configured', function (): void {
+    config()->set('verdict.evidence.attest.chain', null);
+
+    expect(fn () => app(EvidenceRecorder::class))
+        ->toThrow(LogicException::class, 'AttestEvidenceRecorder requires an explicit chain-topology decision');
+});
+
+it('throws when both chain and chain_resolver are configured', function (): void {
+    config()->set('verdict.evidence.attest.chain_resolver', StaticAttestChainResolver::class);
+
+    expect(fn () => app(EvidenceRecorder::class))
+        ->toThrow(LogicException::class, 'AttestEvidenceRecorder received both');
+});
+
+it('throws when chain_resolver does not implement AttestChainResolver', function (): void {
+    config()->set('verdict.evidence.attest.chain', null);
+    config()->set('verdict.evidence.attest.chain_resolver', stdClass::class);
+
+    expect(fn () => app(EvidenceRecorder::class))
+        ->toThrow(LogicException::class, 'The ['.stdClass::class.'] chain resolver must implement');
+});
+
+it('throws a clean LogicException, not an uncaught framework exception, when chain_resolver names a class that does not exist', function (): void {
+    config()->set('verdict.evidence.attest.chain', null);
+    config()->set('verdict.evidence.attest.chain_resolver', 'Fissible\\Verdict\\Tests\\Support\\ThisClassDoesNotExist');
+
+    expect(fn () => app(EvidenceRecorder::class))
+        ->toThrow(LogicException::class, 'chain resolver must implement');
+});
+
+it('resolves the chain id through the configured resolver class fresh on every write', function (): void {
+    config()->set('verdict.evidence.attest.chain', null);
+    config()->set('verdict.evidence.attest.chain_resolver', StaticAttestChainResolver::class);
+    StaticAttestChainResolver::$calls = 0;
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(AttestEvidenceRecorder::class);
+
+    $recorder->record(attestDecisionEvidence('env-tenant-1'));
+    $recorder->record(attestDecisionEvidence('env-tenant-2'));
+
+    $first = AttestEnvelope::query()->forCorrelation('env-tenant-1')->first();
+    $second = AttestEnvelope::query()->forCorrelation('env-tenant-2')->first();
+
+    expect($first)->not->toBeNull()
+        ->and($second)->not->toBeNull()
+        ->and($first->chain_id)->toBe('tenant:1')
+        ->and($second->chain_id)->toBe('tenant:2');
+});
+
+it('propagates a throwing chain_resolver into the existing resolverFailed/phase-tagged gap handling', function (): void {
+    Event::fake([ChainWriteFailed::class]);
+
+    config()->set('verdict.evidence.attest.chain', null);
+    config()->set('verdict.evidence.attest.chain_resolver', ThrowingAttestChainResolver::class);
+
+    $recorder = app(EvidenceRecorder::class);
+    $recorder->record(attestDecisionEvidence('env-resolver-fail'));
+
+    $row = app(DatabaseManager::class)->connection()
+        ->table('verdict_evidence')
+        ->where('correlation_id', 'env-resolver-fail')
+        ->where('record_type', 'chain_gap')
+        ->first();
+
+    expect($row)->not->toBeNull();
+
+    $reason = json_decode((string) $row->reason, true, flags: JSON_THROW_ON_ERROR);
+    expect($reason['phase'])->toBe('resolve_chain_id')
+        ->and($reason['attempts'])->toBe(0);
+
+    Event::assertDispatched(ChainWriteFailed::class, fn (ChainWriteFailed $e): bool => $e->phase === 'resolve_chain_id'
+        && $e->attempts === 0);
 });

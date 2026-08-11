@@ -29,15 +29,38 @@ return [
         // docs/limitations.md, "Tamper-evident evidence is opt-in, partial, and bounded
         // by key custody".
         'attest' => [
-            // Fixed chain id used by this default binding. Every deployment writes every
-            // decision and context release to this one chain. Multi-tenant applications
-            // should instead bind their own EvidenceRecorder — e.g. in a service provider:
-            //   $this->app->extend(EvidenceRecorder::class, fn ($default, $app) => new AttestEvidenceRecorder(
-            //       ..., chainIdUsing: fn (): string => 'tenant:'.CurrentTenant::id(), ...
-            //   ));
-            // See docs/limitations.md for the truncation-exposure and key-custody caveats
-            // that apply regardless of chain topology.
-            'chain' => env('VERDICT_ATTEST_CHAIN', 'verdict'),
+            // Exactly one of 'chain' or 'chain_resolver' must be set — there is no default.
+            // This choice is not safely changeable later: a chain's hash-linked history
+            // cannot be retroactively split by tenant. See docs/limitations.md,
+            // "Tamper-evident evidence is opt-in, partial, and bounded by key custody".
+            //
+            // 'chain': a fixed chain id. Every deployment writes every decision and context
+            // release to this one chain. Only correct for genuinely single-tenant
+            // deployments — every chained write serializes behind this one chain's append
+            // lock.
+            'chain' => env('VERDICT_ATTEST_CHAIN'),
+
+            // 'chain_resolver': a class implementing
+            // Fissible\Verdict\Contracts\AttestChainResolver, resolved through the
+            // container fresh on every write (never cached), so a request-scoped or
+            // tenant-scoped binding inside resolve() is re-evaluated each time. This is
+            // the recommended path for per-tenant chains — it supersedes binding a custom
+            // EvidenceRecorder via $app->extend() for this specific need.
+            // $app->extend(EvidenceRecorder::class, ...) remains the right tool for
+            // customization this can't express: swapping the fallback recorder, varying
+            // on_failure per tenant, or replacing the whole EvidenceRecorder.
+            //
+            // Example:
+            //   final class TenantChainResolver implements \Fissible\Verdict\Contracts\AttestChainResolver
+            //   {
+            //       public function resolve(): string
+            //       {
+            //           return 'tenant:'.CurrentTenant::id();
+            //       }
+            //   }
+            //   // config/verdict.php:
+            //   'chain_resolver' => \App\Support\TenantChainResolver::class,
+            'chain_resolver' => env('VERDICT_ATTEST_CHAIN_RESOLVER'),
 
             // The non-chained fallback recorder's connection/table. Provenance entries and
             // derivations are always readable through this table; decisions and context

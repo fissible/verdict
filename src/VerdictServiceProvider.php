@@ -18,6 +18,7 @@ use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\AttestChainResolver;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
@@ -118,11 +119,50 @@ final class VerdictServiceProvider extends ServiceProvider
             if ($recorder === AttestEvidenceRecorder::class) {
                 $fallbackConnection = config('verdict.evidence.attest.fallback_connection');
                 $fallbackTable = config('verdict.evidence.attest.fallback_table', 'verdict_evidence');
-                $chain = config('verdict.evidence.attest.chain', 'verdict');
+                $chain = config('verdict.evidence.attest.chain');
+                $resolverClass = config('verdict.evidence.attest.chain_resolver');
                 $onFailure = config('verdict.evidence.attest.on_failure', 'alert');
                 $chainProvenance = config('verdict.evidence.attest.chain_provenance', false);
                 $maxAttempts = config('verdict.evidence.attest.max_attempts', 3);
                 $baseDelayMs = config('verdict.evidence.attest.base_delay_ms', 50);
+
+                if ($chain !== null && ! is_string($chain)) {
+                    throw new LogicException('The Verdict attest chain configuration must contain a chain id string.');
+                }
+
+                if ($resolverClass !== null && ! is_string($resolverClass)) {
+                    throw new LogicException('The Verdict attest chain resolver configuration must contain a class name.');
+                }
+
+                if ($chain === null && $resolverClass === null) {
+                    throw new LogicException(
+                        'AttestEvidenceRecorder requires an explicit chain-topology decision: set '
+                        .'verdict.evidence.attest.chain to a fixed chain id for a single shared chain, or '
+                        .'verdict.evidence.attest.chain_resolver to a class implementing '
+                        .AttestChainResolver::class.' for per-tenant chains. This choice is not safely '
+                        ."changeable later — a chain's hash-linked history cannot be retroactively split "
+                        .'by tenant. See docs/limitations.md.'
+                    );
+                }
+
+                if ($chain !== null && $resolverClass !== null) {
+                    throw new LogicException(
+                        'AttestEvidenceRecorder received both verdict.evidence.attest.chain and '
+                        .'verdict.evidence.attest.chain_resolver. Configure exactly one — they express '
+                        .'mutually exclusive chain topologies.'
+                    );
+                }
+
+                if ($resolverClass !== null) {
+                    if (! class_exists($resolverClass) || ! in_array(AttestChainResolver::class, class_implements($resolverClass) ?: [], true)) {
+                        throw new LogicException("The [{$resolverClass}] chain resolver must implement ".AttestChainResolver::class.'.');
+                    }
+
+                    $chainIdUsing = static fn (): string => $app->make($resolverClass)->resolve();
+                } else {
+                    $chainIdUsing = static fn (): string => $chain;
+                }
+
                 $connection = $app->make(DatabaseManager::class)->connection(
                     is_string($fallbackConnection) ? $fallbackConnection : null,
                 );
@@ -135,7 +175,7 @@ final class VerdictServiceProvider extends ServiceProvider
                     ),
                     connection: $connection,
                     events: $app->make(Dispatcher::class),
-                    chainIdUsing: static fn (): string => is_string($chain) ? $chain : 'verdict',
+                    chainIdUsing: $chainIdUsing,
                     table: is_string($fallbackTable) ? $fallbackTable : 'verdict_evidence',
                     chainProvenance: (bool) $chainProvenance,
                     onFailure: is_string($onFailure) ? $onFailure : 'alert',
