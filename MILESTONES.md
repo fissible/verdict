@@ -107,10 +107,11 @@ the identity questions currently missing from `DecisionEvidence`.
 | [#34](https://github.com/fissible/verdict/issues/34) Expose a stable execution identity to executors | S | none | Open — `scope: design` |
 | [#31](https://github.com/fissible/verdict/issues/31) Record actor and subject identity in decision evidence | M | none | Open |
 | [#33](https://github.com/fissible/verdict/issues/33) Add a content-addressed capability configuration registry | M | #32 | Open |
-| [#15](https://github.com/fissible/verdict/issues/15) Make `GuardedTool` usage observable in evidence | — | none | Open — needs sizing |
+| [#15](https://github.com/fissible/verdict/issues/15) Make `GuardedTool` usage observable in evidence | — | none | Implemented by [#73](https://github.com/fissible/verdict/pull/73) |
 
-These share one surface and one ADR cluster (0013, 0015, 0017, 0008). Splitting them across releases
-means touching evidence serialization repeatedly; grouping them means one migration and one upgrade note.
+The remaining work shares one evidence surface and ADR cluster (0013, 0015, 0017, 0008). #15 establishes
+the adapter dimension; coordinate the remaining actor and configuration work to avoid repeated evidence
+serialization and upgrade changes.
 
 #34 is still `scope: design` — resolve that before this milestone opens, or drop it.
 

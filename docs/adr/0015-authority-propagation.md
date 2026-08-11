@@ -8,9 +8,9 @@ Status: Accepted
   `ActionContext` and records actor identity in `DecisionEvidence`. It is the only implementation work
   this ADR implies, and it is the prerequisite for either mechanism below being *demonstrable* after the
   fact.
-- [#15](https://github.com/fissible/verdict/issues/15) (open) makes `GuardedTool` usage observable in
-  evidence; the same gap — Verdict knows something at decision time that evidence cannot show — recurs
-  here.
+- [#15](https://github.com/fissible/verdict/issues/15) (implemented by [#73](https://github.com/fissible/verdict/pull/73))
+  makes `GuardedTool` usage observable in evidence. It closes the adapter-primitive part of the
+  evidence-visibility gap; #31 remains necessary to make actor identity demonstrable after the fact.
 
 ## Context
 
