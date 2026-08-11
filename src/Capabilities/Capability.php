@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Capabilities;
 use Closure;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
+use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
@@ -32,6 +33,17 @@ final readonly class Capability
     private ?Closure $approvalBindingResolver;
 
     /**
+     * SHA-256 over the canonical form of the security-material declared configuration (ADR 0017
+     * Decision §1) — capability name/ability, confirmation requirement/TTL, execution-target
+     * policy name/strategy, rate-limit policy name/limit/window, execution-claim policy name, and
+     * the optional configurationVersion. Deliberately excludes closures (not meaningfully
+     * serializable — ADR 0017 "Alternatives rejected") and non-material operator-facing strings
+     * (confirmation/rate-limit reason). Computed once here, from the fully composed constructor
+     * call, rather than recomputed on every configurationFingerprint() call.
+     */
+    private string $configurationFingerprint;
+
+    /**
      * @param  callable(ActionEnvelope): mixed  $resolveTarget
      */
     private function __construct(
@@ -45,6 +57,7 @@ final readonly class Capability
         private ?RateLimitPolicy $rateLimitPolicy = null,
         private ?ExecutionClaimPolicy $executionClaimPolicy = null,
         private ?ExecutionTargetPolicy $executionTargetPolicy = null,
+        private ?string $configurationVersion = null,
     ) {
         if (trim($this->name) === '') {
             throw new InvalidArgumentException('A capability must have a name.');
@@ -59,6 +72,26 @@ final readonly class Capability
         $this->approvalBindingResolver = $approvalBindingResolver === null
             ? null
             : Closure::fromCallable($approvalBindingResolver);
+
+        $this->configurationFingerprint = ArgumentFingerprint::make([
+            'name' => $this->name,
+            'ability' => $this->ability,
+            'confirmation_required' => $this->approvalBindingResolver !== null,
+            'confirmation_ttl_seconds' => $this->confirmationTtlSeconds,
+            'execution_target_policy' => $this->executionTargetPolicy === null ? null : [
+                'name' => $this->executionTargetPolicy->name,
+                'strategy' => $this->executionTargetPolicy->strategy->value,
+            ],
+            'rate_limit_policy' => $this->rateLimitPolicy === null ? null : [
+                'name' => $this->rateLimitPolicy->name,
+                'limit' => $this->rateLimitPolicy->limit,
+                'window_seconds' => $this->rateLimitPolicy->windowSeconds,
+            ],
+            'execution_claim_policy' => $this->executionClaimPolicy === null ? null : [
+                'name' => $this->executionClaimPolicy->name,
+            ],
+            'configuration_version' => $this->configurationVersion,
+        ]);
     }
 
     /**
@@ -90,6 +123,7 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            configurationVersion: $this->configurationVersion,
         );
     }
 
@@ -118,6 +152,7 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            configurationVersion: $this->configurationVersion,
         );
     }
 
@@ -134,6 +169,7 @@ final readonly class Capability
             rateLimitPolicy: $policy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            configurationVersion: $this->configurationVersion,
         );
     }
 
@@ -155,6 +191,7 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $policy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            configurationVersion: $this->configurationVersion,
         );
     }
 
@@ -176,12 +213,40 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $policy,
+            configurationVersion: $this->configurationVersion,
         );
     }
 
     public function executionTargetPolicy(): ?ExecutionTargetPolicy
     {
         return $this->executionTargetPolicy;
+    }
+
+    /**
+     * Pin an application-owned granularity marker (e.g. a deploy SHA) into the configuration
+     * fingerprint, for changes to resolver/executor closure logic the fingerprint cannot see by
+     * itself (ADR 0017 Decision §1's stated residual gap).
+     */
+    public function configurationVersion(string $version): self
+    {
+        return new self(
+            name: $this->name,
+            ability: $this->ability,
+            resolveTarget: $this->targetResolver,
+            executor: $this->executor,
+            approvalBindingResolver: $this->approvalBindingResolver,
+            confirmationReason: $this->confirmationReason,
+            confirmationTtlSeconds: $this->confirmationTtlSeconds,
+            rateLimitPolicy: $this->rateLimitPolicy,
+            executionClaimPolicy: $this->executionClaimPolicy,
+            executionTargetPolicy: $this->executionTargetPolicy,
+            configurationVersion: $version,
+        );
+    }
+
+    public function configurationFingerprint(): string
+    {
+        return $this->configurationFingerprint;
     }
 
     public function confirmationRequired(): bool

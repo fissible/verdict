@@ -52,6 +52,7 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
             payload: [
                 'capability' => $evidence->capability,
                 'tool_kind' => $evidence->toolKind,
+                'configuration_fingerprint' => $evidence->configurationFingerprint,
                 'stage' => $evidence->stage,
                 'disposition' => $evidence->disposition,
                 'reason' => $evidence->reason,
@@ -101,6 +102,7 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
                 'transformed_path_fingerprints' => $evidence->transformedPathFingerprints,
                 'payload_fingerprint' => $evidence->payloadFingerprint,
                 'invocation_id' => $evidence->invocationId,
+                'configuration_fingerprint' => $evidence->configurationFingerprint,
                 'recorded_at' => $evidence->recordedAt->format(DATE_ATOM),
             ],
         );

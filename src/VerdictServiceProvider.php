@@ -357,6 +357,7 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations/add_invocation_id_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_09_000005_add_invocation_id_to_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/create_verdict_provenance_derivations_table.php.stub' => database_path('migrations/2026_08_09_000006_create_verdict_provenance_derivations_table.php'),
             __DIR__.'/../database/migrations/add_tool_kind_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_10_000007_add_tool_kind_to_verdict_evidence_table.php'),
+            __DIR__.'/../database/migrations/add_configuration_fingerprint_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_10_000008_add_configuration_fingerprint_to_verdict_evidence_table.php'),
         ];
         $rateLimitMigration = [
             __DIR__.'/../database/migrations/create_verdict_rate_limit_buckets_table.php.stub' => database_path('migrations/2026_08_01_000002_create_verdict_rate_limit_buckets_table.php'),

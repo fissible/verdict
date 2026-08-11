@@ -28,6 +28,7 @@ beforeEach(function (): void {
         $table->string('invocation_id')->nullable();
         $table->string('capability')->nullable();
         $table->string('tool_kind', 16)->nullable();
+        $table->char('configuration_fingerprint', 64)->nullable();
         $table->string('stage', 32);
         $table->string('disposition', 32);
         $table->text('reason')->nullable();
@@ -118,6 +119,7 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         recordedAt: $recordedAt,
         invocationId: 'invocation-123',
         toolKind: 'bound',
+        configurationFingerprint: str_repeat('f', 64),
     );
 
     databaseEvidenceRecorder()->record($evidence);
@@ -135,6 +137,7 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
         ->and((string) $row->invocation_id)->toBe('invocation-123')
         ->and((string) $row->capability)->toBe('orders.view')
         ->and((string) $row->tool_kind)->toBe('bound')
+        ->and((string) $row->configuration_fingerprint)->toBe(str_repeat('f', 64))
         ->and((string) $row->disposition)->toBe('deny')
         ->and((string) $row->argument_fingerprint)->toBe(str_repeat('a', 64))
         ->and((string) $row->rate_limit_key_fingerprint)->toBe(str_repeat('b', 64))

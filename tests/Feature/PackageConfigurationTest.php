@@ -23,7 +23,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(8)
+    expect($migrations)->toHaveCount(9)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -34,17 +34,19 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(5)
+    expect($migrations)->toHaveCount(6)
         ->and(array_keys($migrations)[0])->toEndWith('create_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[3])->toEndWith('create_verdict_provenance_derivations_table.php.stub')
         ->and(array_keys($migrations)[4])->toEndWith('add_tool_kind_to_verdict_evidence_table.php.stub')
+        ->and(array_keys($migrations)[5])->toEndWith('add_configuration_fingerprint_to_verdict_evidence_table.php.stub')
         ->and(array_values($migrations)[0])->toEndWith('create_verdict_evidence_table.php')
         ->and(array_values($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php')
         ->and(array_values($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php')
         ->and(array_values($migrations)[3])->toEndWith('create_verdict_provenance_derivations_table.php')
-        ->and(array_values($migrations)[4])->toEndWith('add_tool_kind_to_verdict_evidence_table.php');
+        ->and(array_values($migrations)[4])->toEndWith('add_tool_kind_to_verdict_evidence_table.php')
+        ->and(array_values($migrations)[5])->toEndWith('add_configuration_fingerprint_to_verdict_evidence_table.php');
 });
 
 it('adds provenance columns without replacing existing evidence rows', function (): void {
@@ -55,6 +57,7 @@ it('adds provenance columns without replacing existing evidence rows', function 
     $addProvenance = require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub';
     $addInvocationId = require __DIR__.'/../../database/migrations/add_invocation_id_to_verdict_evidence_table.php.stub';
     $addToolKind = require __DIR__.'/../../database/migrations/add_tool_kind_to_verdict_evidence_table.php.stub';
+    $addConfigurationFingerprint = require __DIR__.'/../../database/migrations/add_configuration_fingerprint_to_verdict_evidence_table.php.stub';
 
     $create->up();
     $connection->table('verdict_evidence')->insert([
@@ -70,6 +73,7 @@ it('adds provenance columns without replacing existing evidence rows', function 
     $addProvenance->up();
     $addInvocationId->up();
     $addToolKind->up();
+    $addConfigurationFingerprint->up();
 
     expect($schema->hasColumns('verdict_evidence', [
         'channel',
@@ -78,6 +82,7 @@ it('adds provenance columns without replacing existing evidence rows', function 
         'content_fingerprint',
         'invocation_id',
         'tool_kind',
+        'configuration_fingerprint',
     ]))->toBeTrue()
         ->and($connection->table('verdict_evidence')->count())->toBe(1)
         ->and($connection->table('verdict_evidence')->value('correlation_id'))
