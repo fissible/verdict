@@ -29,7 +29,7 @@ requests must pass the complete PHP/Laravel/operating-system matrix in GitHub Ac
 
 When adding or changing a documented limitation, add its `@verdict-claim` annotation in
 `docs/limitations.md` and either annotate the proving Pest test, give an untestable reason, or link
-the required follow-up issue. `composer test` verifies this mapping.
+the required open follow-up issue. `composer test` verifies this mapping.
 
 The Testbench storefront workbench can be started with:
 

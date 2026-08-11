@@ -23,15 +23,31 @@ function documentedClaims(string $path, bool $limitations = false): array
     }
 
     if ($limitations) {
-        preg_match_all('/^### /m', $contents, $headings);
-        preg_match_all('/^## Provenance derivation is deliberately incomplete$/m', $contents, $provenance);
+        if (preg_match('/^## What Verdict does not guarantee\R(?<claims>.*?)(?=^## Operational responsibilities$)/ms', $contents, $section) !== 1) {
+            throw new RuntimeException('Cannot find the limitations claim section.');
+        }
 
-        if (count($headings[0]) + count($provenance[0]) !== count($claims)) {
+        preg_match_all('/^#{2,3} /m', $section['claims'], $headings);
+
+        if (count($headings[0]) !== count($claims)) {
             throw new RuntimeException('Every limitations heading must carry exactly one @verdict-claim annotation.');
         }
     }
 
     return $claims;
+}
+
+function followUpIssueIsOpen(string $outcome): bool
+{
+    preg_match('/^follow-up:#(\d+)$/', $outcome, $match);
+
+    $command = sprintf(
+        'gh issue view %d --repo fissible/verdict --json state --jq .state 2>/dev/null',
+        (int) $match[1],
+    );
+    exec($command, $output, $exitCode);
+
+    return $exitCode === 0 && trim(implode("\n", $output)) === 'OPEN';
 }
 
 $root = dirname(__DIR__);
@@ -67,6 +83,10 @@ foreach ($claims as $id => $claim) {
 
     if ($claim['outcome'] === 'untestable' && $claim['reason'] === null) {
         throw new RuntimeException("Untestable claim [{$id}] needs an in-document reason.");
+    }
+
+    if (str_starts_with($claim['outcome'], 'follow-up:') && ! followUpIssueIsOpen($claim['outcome'])) {
+        throw new RuntimeException("Follow-up for claim [{$id}] must reference an open fissible/verdict issue.");
     }
 }
 
