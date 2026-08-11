@@ -550,13 +550,21 @@ require __DIR__.'/lib/harness.php';
 const CONCURRENCY = 20;
 const RATE_LIMIT = 5;
 
+// Excludes postgres_serializable deliberately: SERIALIZABLE may legitimately raise 40001 under
+// contention, which would register as a false FAIL against this loop's normal-contention invariant.
+// That's Spike B's job specifically (Task 5).
+const DRIVERS_UNDER_TEST = ['postgres', 'mysql_repeatable_read', 'mysql_read_committed', 'mariadb'];
+
 $overallPass = true;
 
-foreach (array_keys(spike_connections()) as $connectionName) {
+foreach (DRIVERS_UNDER_TEST as $connectionName) {
     echo "\n########## {$connectionName} ##########\n";
 
     // --- Rate limit race ---
-    $bucketFingerprint = bin2hex(random_bytes(16));
+    // CHAR(64) column — use a real sha256 hex digest (64 chars), matching how production actually
+    // generates fingerprints, so fixed-length CHAR padding behavior can't differ across drivers and
+    // contaminate the comparison this spike exists to make.
+    $bucketFingerprint = hash('sha256', random_bytes(16));
     $at = (new DateTimeImmutable)->format(DATE_ATOM);
 
     $payloads = array_fill(0, CONCURRENCY, [
@@ -589,7 +597,7 @@ foreach (array_keys(spike_connections()) as $connectionName) {
     }
 
     // --- Execution claim race ---
-    $bindingFingerprint = bin2hex(random_bytes(16));
+    $bindingFingerprint = hash('sha256', random_bytes(16));
 
     $claimPayloads = array_fill(0, CONCURRENCY, [
         'connection' => $connectionName,
@@ -625,7 +633,9 @@ echo "\n========== SPIKE A: ".($overallPass ? 'ALL DRIVERS PASS' : 'AT LEAST ONE
 - [ ] **Step 4: Run against the real fixture and record output**
 
 Run: `php spikes/0037-isolation-level-concurrency/spike-a.php | tee spikes/0037-isolation-level-concurrency/results/spike-a-run1.txt`
-Expected: PASS on all four drivers, matching ADR 0016's stated intent. **If any driver FAILs, that is itself the finding** — do not treat it as a bug in the spike script without first checking the child processes' raw `error:` output for a real exception (a genuine cross-driver behavioral difference is exactly what this issue exists to surface). Re-run once to rule out an environment fluke before concluding a driver genuinely fails.
+Expected, going in: PASS on all four drivers, matching ADR 0016's stated intent. **If any driver FAILs, that is itself the finding** — do not treat it as a bug in the spike script without first checking the child processes' raw `error:` output for a real exception. Re-run at least twice more (deadlocks under InnoDB gap-locking are inherently probabilistic, not deterministic per-run) before concluding a driver genuinely fails.
+
+**What actually happened across 3 runs:** `postgres` and `mysql_read_committed` passed cleanly all three times (0 errors, every race, every run). `mysql_repeatable_read` and `mariadb` — both InnoDB REPEATABLE READ, MySQL/MariaDB's default — failed on 2 of 3 runs each, always with the same signature: `SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock`, raised from the plain `insert into verdict_execution_claims (...)` / `insert into verdict_rate_limit_buckets (...)` statement inside `consume()`/`claim()`'s transaction, uncaught (only `UniqueConstraintViolationException` is caught today). This directly falsifies ADR 0016 Decision §6's stated intent ("correct at READ COMMITTED and... remains correct at stricter levels") — REPEATABLE READ is a **stricter** level than READ COMMITTED, and it is not, in fact, safe as currently implemented. This is the load-bearing finding for Task 7's ADR.
 
 - [ ] **Step 5: Commit**
 
