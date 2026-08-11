@@ -118,6 +118,8 @@ beforeEach(function (): void {
         executionClaimStatus: null,
         executionClaimAttempt: null,
         recordedAt: new DateTimeImmutable('2026-08-09T00:00:00+00:00'),
+        actorFingerprint: hash('sha256', 'support-agent:17'),
+        subjectFingerprint: hash('sha256', 'customer:72'),
     );
 });
 
@@ -151,6 +153,8 @@ it('writes a decision to the attest chain', function (): void {
         ->and($tail->envelope->type)->toBe('verdict.decision')
         ->and($tail->envelope->correlation)->toBe('env-1')
         ->and($tail->envelope->payload['capability'])->toBe('orders.refund')
+        ->and($tail->envelope->payload['actor_fingerprint'])->toBe(hash('sha256', 'support-agent:17'))
+        ->and($tail->envelope->payload['subject_fingerprint'])->toBe(hash('sha256', 'customer:72'))
         ->and($tail->envelope->payload['disposition'])->toBe('permit');
 
     expect(attestChainGapRows())->toBeEmpty();

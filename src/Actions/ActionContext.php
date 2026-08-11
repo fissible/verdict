@@ -12,5 +12,6 @@ final readonly class ActionContext
     public function __construct(
         public mixed $actor,
         public array $metadata = [],
+        public mixed $subject = null,
     ) {}
 }

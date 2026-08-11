@@ -27,6 +27,26 @@ Authorization and target binding are the foundation of a protected capability. C
 
 The model may supply arguments, but it is not the authority that decides whether an actor can act on a record. Target resolvers should load records from trusted storage and enforce tenant or ownership boundaries explicitly where the application needs them.
 
+### Actor and subject evidence
+
+`ActionContext::$actor` is the principal acting and is the value Verdict passes to Laravel's Gate. Its optional `$subject` is the principal on whose behalf that actor acts; when it is `null`, the actor acts for itself. A subject is not a delegator: delegation attenuates an existing authority, while an actor acting for a subject may instead reflect a separately authorized escalation. See [ADR 0015](adr/0015-authority-propagation.md).
+
+To record either principal in decision evidence, the application opts in by implementing `ProvidesVerdictIdentity` on its principal object:
+
+```php
+use Fissible\Verdict\Contracts\ProvidesVerdictIdentity;
+
+final class SupportAgent implements ProvidesVerdictIdentity
+{
+    public function verdictIdentity(): string
+    {
+        return "support-agent:{$this->id}";
+    }
+}
+```
+
+Verdict stores only the SHA-256 fingerprint of this application-supplied string in `actor_fingerprint` and `subject_fingerprint`; it never guesses an identity from an object hash, serialization, or raw value. Values that do not implement the contract produce nullable identity evidence, and an empty supplied identity is rejected.
+
 ## Target freshness and TOCTOU
 
 For `BoundTool`, an `ExecutionTargetPolicy` supplies canonical target identity and an execution strategy. `refresh()` re-loads the target immediately before execution; `acceptStaleSnapshot()` makes accepting the original snapshot an explicit choice.
