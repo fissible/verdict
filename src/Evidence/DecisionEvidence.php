@@ -37,6 +37,7 @@ final readonly class DecisionEvidence
         public ?int $executionClaimAttempt,
         public DateTimeImmutable $recordedAt,
         public ?string $invocationId = null,
+        public ?string $toolKind = null,
     ) {
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
@@ -109,6 +110,13 @@ final readonly class DecisionEvidence
                 : null,
             recordedAt: new DateTimeImmutable,
             invocationId: $invocationId,
+            // Read from the envelope's proposal metadata, not $evaluation->decision->metadata like
+            // the fields above: tool_kind identifies which Verdict Laravel AI tool primitive
+            // (GuardedTool/BoundTool) produced the whole envelope, so it's true for every stage of
+            // that envelope's evaluation, not scoped to one decision the way approval_phase is.
+            toolKind: is_string($evaluation->envelope->proposal->metadata['tool_kind'] ?? null)
+                ? $evaluation->envelope->proposal->metadata['tool_kind']
+                : null,
         );
     }
 }

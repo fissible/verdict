@@ -51,6 +51,7 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
             type: 'verdict.decision',
             payload: [
                 'capability' => $evidence->capability,
+                'tool_kind' => $evidence->toolKind,
                 'stage' => $evidence->stage,
                 'disposition' => $evidence->disposition,
                 'reason' => $evidence->reason,

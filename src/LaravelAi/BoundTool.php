@@ -10,6 +10,11 @@ use Laravel\Ai\Tools\Request;
 
 final class BoundTool extends AbstractVerdictTool
 {
+    protected function toolKind(): string
+    {
+        return 'bound';
+    }
+
     protected function supportsVerifiedConfirmation(): bool
     {
         return true;

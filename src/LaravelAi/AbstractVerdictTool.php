@@ -172,11 +172,18 @@ abstract class AbstractVerdictTool implements Approvable, Tool
                 capability: $this->capability,
                 arguments: $request->all(),
                 idempotencyKey: $request->toolCallId(),
-                metadata: ['transport' => 'laravel-ai'],
+                metadata: ['transport' => 'laravel-ai', 'tool_kind' => $this->toolKind()],
             ),
             context: $context,
         );
     }
+
+    /**
+     * Identifies which concrete Verdict Laravel AI tool primitive produced an evaluation, per
+     * ADR 0005 and issue #15 — not settable by application input, so `GuardedTool` migration debt
+     * stays auditable in evidence without a caller being able to spoof it.
+     */
+    abstract protected function toolKind(): string;
 
     abstract protected function executeAction(ActionEnvelope $envelope, Request $request): ExecutionResult;
 }
