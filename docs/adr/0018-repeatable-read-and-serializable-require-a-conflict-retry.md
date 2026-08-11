@@ -7,11 +7,13 @@ Status: Accepted
 - [#37](https://github.com/fissible/verdict/issues/37) (implemented) measured this. Raw transcripts are
   in that issue's comments and in `spikes/0037-isolation-level-concurrency/results/` on the branch that
   landed this ADR.
-- [#86](https://github.com/fissible/verdict/issues/86) implements the required retry fix this ADR states
-  but deliberately does not carry out (see ADR 0016's precedent for stating the invariant separately
-  from the `src/` change).
-- [#20](https://github.com/fissible/verdict/issues/20) adds the durable concurrency test suite; the
-  driver-specific assertions it can now write are stated in this ADR's Decision.
+- [#86](https://github.com/fissible/verdict/issues/86) (implemented) carried out the retry fix this ADR
+  originally deferred, and measured its actual effect — see the Update below.
+- [#92](https://github.com/fissible/verdict/issues/92) tracks a real gap #86 found: MariaDB 11 does not
+  resolve as reliably as MySQL 8 under the same fix, for reasons not yet understood.
+- [#20](https://github.com/fissible/verdict/issues/20) adds the durable concurrency test suite; a first
+  version of it landed directly in #86 (`tests/Feature/SecurityStateConcurrencyRetryTest.php`), since #86
+  needed real evidence its own fix worked, not just a plan for one.
 - [#16](https://github.com/fissible/verdict/issues/16) benchmarks the same three stores; the retry this
   ADR requires adds a latency cost under contention that #16 should measure.
 
@@ -97,37 +99,36 @@ policy-shaped answer (admitted, denied, or duplicate) instead receives an unhand
 - **READ COMMITTED (PostgreSQL or MySQL/MariaDB explicit) is supported today.** No further change is
   required for this level; the existing unique-violation catch is sufficient because the only race this
   level admits is the one that catch was written for.
-- **REPEATABLE READ (MySQL/MariaDB default) and SERIALIZABLE (any driver, opt-in) are not supported by
-  the current implementation.** An application running Verdict against MySQL or MariaDB with no explicit
-  isolation-level configuration — which is to say, most deployments, since REPEATABLE READ is what those
-  engines ship with — is exposed to this today: a legitimate concurrent rate-limit consumption or
-  execution-claim attempt can surface as an unhandled exception instead of a denial, under real
-  contention, right now. See `docs/limitations.md` for the operator-facing statement of this.
+- **REPEATABLE READ and SERIALIZABLE were not supported by the implementation at the time this ADR was
+  first written.** #86 has since implemented and measured the fix — see the Update section below for
+  current, per-engine status. That Update supersedes this bullet; it is left here as the historical
+  starting point, not edited to read as if it were always true. See `docs/limitations.md` for the
+  current, operator-facing statement of what remains unresolved.
 
-### The required fix (next issue, not this ADR)
+### The required fix
 
-Per ADR 0016's own precedent (state the invariant, defer the `src/` change to a separate issue) and this
-plan's Global Constraints, this ADR does not implement the fix. The fix, confirmed by #37's evidence
-rather than merely proposed:
+The fix, confirmed by #37's evidence rather than merely proposed (and, as of #86, actually implemented
+and measured — see the Update below):
 
-1. **Catch `40001` narrowly, at the store boundary, alongside the existing
-   `UniqueConstraintViolationException` catch** — not by widening that catch's type, since the two
-   exceptions mean different things and the existing catch's *insert already succeeded, read what's
-   there* recovery is specific to a unique-key collision, not a deadlock/serialization abort where the
-   caller's insert did not happen at all and the same `mayInsert: true` attempt should simply be retried.
+1. **Retry on `40001`, scoped to Verdict's own transaction, not the application's, and kept separate
+   from the existing `UniqueConstraintViolationException` catch** — not by widening that catch's type,
+   since the two exceptions mean different things and the existing catch's *insert already succeeded,
+   read what's there* recovery is specific to a unique-key collision, not a deadlock/serialization abort
+   where the caller's insert did not happen at all and the same `mayInsert: true` attempt should simply
+   be retried.
 2. **Bound to one retry**, matching the existing unique-violation precedent (ADR 0016 Corollary 3) and
    the reasoning in #37's own proposal: a serialization failure means "your transaction would have
    produced a non-serializable outcome; re-execute against the now-committed state," which converts the
    infrastructure exception into the correct policy outcome exactly the way the existing retry already
    does for the insert race. An unbounded loop under contention trades a bounded wait for a livelock.
-3. **The catch must be scoped to Verdict's own transaction, not the application's.** ADR 0004's
+3. **The retry must be scoped to Verdict's own transaction, not the application's.** ADR 0004's
    independent-transaction guard (`IndependentTransactionGuard::assertNoOuterTransaction`) already
    ensures every mutating store call runs in a transaction Verdict opened itself
    (`$this->connection->transaction(...)`), never nested inside an application transaction — so a 40001
    caught inside that `transaction()` closure is, by construction, a conflict *within Verdict's own
    write*, not an application-level serialization failure that must be allowed to propagate. This is
-   what makes the narrow catch safe: it is not swallowing an exception that belongs to code outside
-   Verdict's boundary.
+   what makes retrying safe: it is not swallowing an exception that belongs to code outside Verdict's
+   boundary.
 
 This applies to all three stores sharing the pattern (rate limits, execution claims, approval receipts —
 ADR 0016's table). #37 raced all three directly, not just two: `DatabaseApprovalReceiptStore` is
@@ -135,25 +136,72 @@ confirmed equally exposed under REPEATABLE READ (19/20 failures, matching the ot
 should get the identical fix regardless of SERIALIZABLE's non-reproduction there — that observation
 bears on SERIALIZABLE specifically, not on REPEATABLE READ, and not on whether the fix is warranted.
 
-### What #20 can now assert
+**Implementation note (added by #86):** the fix does not need a hand-rolled `catch` block at all.
+`Illuminate\Database\Connection::transaction(Closure $callback, int $attempts = 1)` already retries the
+whole callback when `Illuminate\Database\ConcurrencyErrorDetector::causedByConcurrencyError()` matches —
+which explicitly checks `SQLSTATE 40001` — and it already refuses to retry (throwing `DeadlockException`
+instead) when called from inside a nested transaction, which independently reproduces requirement 3
+above without any code in these stores needing to know about it. The actual change in each store is
+passing `2` as the second argument to the existing `$this->connection->transaction(...)` calls (both the
+insert attempt and, where present, the unique-violation-triggered re-read), not a new `catch` clause.
+This was not obvious going in — the original plan for this ADR assumed a manual catch/retry, matching
+the shape of the *existing* unique-violation handling — and is recorded here because it materially
+simplifies both the change and its risk surface: no new exception-handling code path, reusing a
+mechanism Laravel's own framework tests already cover.
 
-#20's genuine-concurrency test suite can now write real per-driver assertions instead of guessing at
-what "correct" means under contention:
+### What the durable test suite asserts (superseded by measurement — see Update below)
 
-- At READ COMMITTED (any driver, all three stores): the race must complete cleanly, zero exceptions,
-  invariant exact.
-- At REPEATABLE READ (MySQL/MariaDB, all three stores) and SERIALIZABLE (rate limits and execution
-  claims specifically), **before** the retry fix lands: these are expected-red tests, pinning the
-  current defect the way `tests/Feature/ToolInvocationCorrelationTest.php` pins a known upstream bug —
-  a test that currently fails is not a broken test, it is the recorded proof the gap exists.
-- SERIALIZABLE against approval receipts did not reproduce a failure in #37's harness — #20 should
-  still write the test (same shape as the other two, same fix applied), but should not assume it will
-  fail before the fix lands the way the other five combinations will. If it doesn't fail, that is
-  consistent with this ADR's observation, not a sign the test is wrong.
-- At REPEATABLE READ and SERIALIZABLE, **after** the retry fix lands: the same invariant as READ
-  COMMITTED, zero uncaught exceptions, under the same real process-level concurrency (including the
-  start barrier — see `spikes/0037-isolation-level-concurrency/lib/harness.php` for the pattern) this
-  ADR's evidence used, not a same-connection simulation and not an unsynchronized process launch.
+At the time this ADR was first written, the expectation was: READ COMMITTED asserted strictly
+everywhere; REPEATABLE READ and SERIALIZABLE asserted strictly once the retry fix landed, uniformly
+across drivers. **That turned out to be wrong for MariaDB specifically** — see the Update section
+immediately below for what `tests/Feature/SecurityStateConcurrencyRetryTest.php` actually asserts today,
+and why.
+
+## Update (#86): the fix landed, and measurement found more than expected
+
+#86 implemented the retry described above and measured it with the same genuine, barrier-synchronized
+process-level concurrency #37 used — not assumed to work because the reasoning was sound, tested
+directly, per this repo's standing rule on IO/timing/concurrency claims.
+
+**MySQL 8 REPEATABLE READ: fully and reliably resolved.** Zero errors across every run tested (5+
+repeated runs, 20-way contention, all three stores). The 2-attempt retry is sufficient here.
+
+**PostgreSQL SERIALIZABLE: fully resolved for execution claims and approval receipts, still partially
+unresolved for rate limits.** Claims and approvals: zero errors at 20-way contention, confirmed
+reproducibly. Rate limits: errors dropped from 20/20 (unfixed) to a still-substantial residual (~17-18
+out of 20 across repeated runs at contention level 20; fully clean at contention level 2). Raising the
+retry count from 2 to 3 barely moved this (18→17 errors) — Laravel's built-in retry has no backoff or
+jitter, so simultaneous retriers tend to collide again immediately, and this is a case of genuinely
+diminishing returns, not an undersized bound. This residual gap is real, disclosed in
+`docs/limitations.md`, and pinned (not hidden) by the durable test suite's dedicated SERIALIZABLE test,
+which asserts the invariant holds among non-throwing responses and that every thrown exception is the
+expected, bounded SQLSTATE 40001 — deliberately not asserting zero errors, because that would not be
+true and would make the test flaky rather than honest.
+
+**MariaDB 11 REPEATABLE READ: a separate, more severe, and currently unexplained gap.** This is the
+biggest surprise in this Update. MariaDB reports as Laravel's `mysql` driver and nominally runs the same
+InnoDB REPEATABLE READ as MySQL 8 — but measured directly, it does **not** behave the same under this
+fix. Across repeated 20-way-contention runs, all three stores showed a substantial, inconsistent
+residual failure rate on MariaDB — commonly ~19 of 20 attempts still throwing `SQLSTATE 40001`,
+occasionally (not reliably) 0 of 20. Raising `DatabaseExecutionClaimStore::claim()`'s retry count from 2
+to 5 made **no measurable difference** — ruling out "just needs one more attempt" as the explanation.
+Something about MariaDB 11's InnoDB deadlock detection or victim selection for this exact insert-race
+pattern differs from MySQL 8's in a way a bounded, unstaggered retry does not resolve, and the root
+cause is not yet known. Tracked as [#92](https://github.com/fissible/verdict/issues/92) rather than
+guessed at further here.
+
+**The durable test suite (`tests/Feature/SecurityStateConcurrencyRetryTest.php`, added directly in #86
+rather than waiting for #20) reflects all of this precisely, not optimistically:** real MySQL and real
+PostgreSQL (at the levels each test exercises) are asserted strictly — zero errors, exact expected
+admission count. Real MariaDB (detected via `SELECT VERSION()`, since Laravel's driver name alone
+cannot distinguish it from MySQL) is asserted the way the SERIALIZABLE-rate-limit case above is: the
+invariant must hold among non-throwing responses, and every exception must be the expected, bounded
+SQLSTATE 40001 — never a hard zero-error assertion, because it would not reliably be true.
+
+**In every measured case, including MariaDB's, the invariant held among responses that didn't throw.**
+No test at any point observed a wrong answer — more than the configured limit admitted, more than one
+claim winner, more than one approval issued. Every residual gap found by #86 is an availability gap
+(an unhandled exception where a clean answer was expected), never a correctness one.
 
 ## Consequences
 
@@ -161,23 +209,25 @@ what "correct" means under contention:
   `docs/limitations.md` rather than left implicit, per this repo's practice of naming a known gap rather
   than letting a contributor discover it and mistake it for an oversight (the same reasoning ADR 0006
   used for the streaming approval gap before #22 fixed it).
-- [#86](https://github.com/fissible/verdict/issues/86) is filed for the retry fix, at higher priority
-  than #37's own "M, no urgency" framing, because #37 changed the finding from "unmeasured, assumed
-  fine" to "measured, confirmed unsafe on the isolation level most MySQL/MariaDB deployments run by
-  default."
-- CI (a separate, parallel piece of this same branch — see the PR) adds PostgreSQL to every PR alongside
-  SQLite. That does not, by itself, catch a REPEATABLE-READ regression, since PostgreSQL's default is
-  READ COMMITTED, not REPEATABLE READ — the engine that actually exercises this ADR's finding is MySQL
-  or MariaDB at their own defaults. This is noted directly in the CI task rather than assumed away: the
-  every-PR job catches the SERIALIZABLE-class risk once fixed-and-tested, but the REPEATABLE-READ-class
-  risk needs a MySQL or MariaDB job specifically, which the current plan defers to the tag/weekly full
-  matrix rather than every PR, matching #37's original Part 3 proposal's cost/benefit tradeoff — flagged
-  here as a real gap in coverage cadence, not hidden by it.
-- `DatabaseApprovalReceiptStore` is measured, not assumed: confirmed exposed under REPEATABLE READ at
-  the same severity as the other two stores. Its SERIALIZABLE non-reproduction is recorded as an
-  observation worth re-checking once #86's fix exists (a fix applied uniformly to all three stores
-  should not need SERIALIZABLE to reproduce a failure there first to justify applying it), not as a
-  reason to treat it differently.
+- [#86](https://github.com/fissible/verdict/issues/86) implemented and measured the retry fix (see
+  Update above), at higher priority than #37's own "M, no urgency" framing, because #37 changed the
+  finding from "unmeasured, assumed fine" to "measured, confirmed unsafe on the isolation level most
+  MySQL/MariaDB deployments run by default."
+- CI adds PostgreSQL to every PR alongside SQLite (`postgres` job in `tests.yml`), and a full driver
+  matrix — PostgreSQL, MySQL, MariaDB — on tag push and weekly schedule
+  (`concurrency-matrix.yml`). `tests/Feature/SecurityStateConcurrencyRetryTest.php` (added in #86)
+  self-skips against SQLite and runs for real whenever any of those jobs execute, so the every-PR
+  PostgreSQL job exercises the SERIALIZABLE-class findings on every PR, while the REPEATABLE-READ-class
+  findings (MySQL and, per #92, MariaDB's separate unresolved gap) are only exercised on tag/weekly —
+  matching #37's original Part 3 cost/benefit tradeoff, and flagged here as a real gap in coverage
+  cadence, not hidden by it.
+- `DatabaseApprovalReceiptStore` is measured, not assumed, across every combination tested: confirmed
+  exposed under REPEATABLE READ at the same severity as the other two stores (MySQL: fully fixed;
+  MariaDB: same unresolved residual gap as the others — see #92), and confirmed fully resolved under
+  PostgreSQL SERIALIZABLE, unlike rate limits' residual gap there.
+- [#92](https://github.com/fissible/verdict/issues/92) exists because #86 found a real, unexplained
+  MariaDB-specific gap while verifying the fix, not because it was anticipated — the honest outcome of
+  actually measuring instead of assuming a fix works once it's plausible.
 
 ## Alternatives rejected
 

@@ -55,7 +55,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                 $this->connection->table($this->table)->insert($this->attributes($receipt));
 
                 return ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
-            });
+            }, 2);
         } catch (UniqueConstraintViolationException) {
             $existing = $this->receiptForBinding(
                 $receipt->toolCallId,
