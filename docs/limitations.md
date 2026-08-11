@@ -68,6 +68,7 @@ Before protecting a consequential action, the application team should:
 
 - write and test the Laravel policy and trusted target resolver;
 - choose whether approval, replay prevention, and semantic limits are needed;
+- size approval TTLs from worst-case validate-to-execute latency; see [human approval guidance](security-model.md#sizing-approval-ttls);
 - include all material facts in approval and claim identities;
 - add domain-level concurrency and idempotency controls;
 - protect non-AI invocation paths consistently; and
