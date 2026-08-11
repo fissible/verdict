@@ -177,8 +177,19 @@ final class VerdictServiceProvider extends ServiceProvider
                     // fresh each time. Caching a resolved instance here would reintroduce the exact
                     // stale-state-across-requests bug this design exists to avoid under Octane.
                     $chainIdUsing = static fn (): string => $app->make($resolverClass)->resolve();
-                } else {
+                } elseif ($chain !== null) {
                     $chainIdUsing = static fn (): string => $chain;
+                } else {
+                    // Unreachable: the two throws above guarantee exactly one of $chain/
+                    // $resolverClass is set, so this branch can never run. It exists only because
+                    // $chainIdUsing must be definitely assigned on every path. Branching on
+                    // `elseif ($chain !== null)` here — a direct, local, single-variable check —
+                    // rather than a bare `else` relying on the two throws above being deduced
+                    // through an arrow function's implicit capture keeps the narrowing of $chain
+                    // to non-empty-string version-independent: that cross-variable deduction is
+                    // not reliably supported across the PHPStan/Larastan versions this package's
+                    // dependency range spans (confirmed absent on the lowest supported version).
+                    throw new LogicException('Unreachable: attest chain topology validated above.');
                 }
 
                 $connection = $app->make(DatabaseManager::class)->connection(
