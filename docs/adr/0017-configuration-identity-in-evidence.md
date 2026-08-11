@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Related issues
 
-- [#32](https://github.com/fissible/verdict/issues/32) (open) records a configuration fingerprint in
+- [#32](https://github.com/fissible/verdict/issues/32) (implemented) records a configuration fingerprint in
   `DecisionEvidence` (Decision §1).
 - [#33](https://github.com/fissible/verdict/issues/33) (open) adds the capability configuration registry
   that makes the fingerprint resolvable (Decision §2–4).

@@ -64,6 +64,33 @@ Content and component fingerprints are deterministic. A hash of a predictable pr
 
 See the [`AttestEvidenceRecorder` source](../src/Evidence/AttestEvidenceRecorder.php) for the exact configuration surface.
 
+### Verification is the control, not the chain alone
+
+When a deployment adopts a tamper-evident recorder (tracked by [#11](https://github.com/fissible/verdict/issues/11)), schedule verification daily as a starting point and verify again whenever it anchors evidence. Daily bounds the undetected-tampering window to one day; verify-on-anchor is a natural extra check. A chain does not prevent tampering or alert on its own—tampering becomes detectable only when verification runs.
+
+A passing verification establishes that the retained chain verifies against its recorded head and signing key; it does not identify a change or actor, and it does not protect against someone who also controls the signing key. A verification failure is an incident to investigate, not a retry. The selected recorder's verifier can provide an event or non-zero exit status; the application owns routing that result to PagerDuty, Slack, email, or another operator channel. If automation is not yet possible, document a named person and recurring manual cadence: that is weaker than scheduling, but materially better than leaving verification implicit.
+
+### A configuration fingerprint does not cover resolver or executor logic
+
+Every `DecisionEvidence` row carries a `configurationFingerprint` — a SHA-256 over the capability's
+declared configuration (name, ability, confirmation requirement/TTL, execution-target policy
+name/strategy, rate-limit policy name/limit/window, execution-claim policy name, and an optional
+application-supplied `configurationVersion`), per [ADR 0017](adr/0017-configuration-identity-in-evidence.md).
+It changes whenever that declared configuration changes, without anyone needing to remember to rename a
+policy.
+
+It deliberately does not hash closures: target resolvers, approval bindings, policy binding functions,
+and executors. A change to what a resolver or executor *does* — its logic — while every declared,
+hashable field stays identical produces the same fingerprint. Hashing closure source text was
+considered and rejected (ADR 0017, "Alternatives rejected") because it invalidates on cosmetic
+formatting changes and unrelated code movement, which is worse than the gap it would close. An
+application that needs deploy-level precision over closure logic should pin its release identifier into
+`Capability::configurationVersion()`, which participates in the hash.
+
+The fingerprint alone also does not answer "what did the rule say" — only that it changed. Resolving a
+fingerprint back to readable configuration is [#33](https://github.com/fissible/verdict/issues/33)'s job,
+not this one's.
+
 ## Provenance derivation is deliberately incomplete
 
 Verdict records a derivation edge only when it observed a transformation directly, such as an application context release, or when an application explicitly declared one. It does not infer that retrieved content influenced a model output, tool request, or decision merely because the records share an invocation. Missing derivation edges mean "not observed or not declared," not "no influence occurred."
@@ -84,10 +111,12 @@ Before protecting a consequential action, the application team should:
 
 - write and test the Laravel policy and trusted target resolver;
 - choose whether approval, replay prevention, and semantic limits are needed;
+- keep confirmation prompts consequence-weighted and measure approval-to-denial ratios; see [confirmation-fatigue guidance](security-model.md#avoiding-confirmation-fatigue);
 - size approval TTLs from worst-case validate-to-execute latency; see [human approval guidance](security-model.md#sizing-approval-ttls);
 - include all material facts in approval and claim identities;
 - add domain-level concurrency and idempotency controls;
 - protect non-AI invocation paths consistently; and
 - review data release, provider, logging, and retention practices.
+- when using tamper-evident evidence, schedule daily and verify-on-anchor checks; see [verification guidance](#verification-is-the-control-not-the-chain-alone).
 
 These constraints are intentional. They keep Verdict focused on governance and security at the AI-to-application action boundary rather than pretending to replace the rest of a secure Laravel system.

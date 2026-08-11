@@ -11,6 +11,11 @@ use Stringable;
 
 final class GuardedTool extends AbstractVerdictTool
 {
+    protected function toolKind(): string
+    {
+        return 'guarded';
+    }
+
     protected function executeAction(ActionEnvelope $envelope, Request $request): ExecutionResult
     {
         return $this->verdict()->run(

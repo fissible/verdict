@@ -80,6 +80,8 @@ You provide the target resolver, approval binding, policy objects, executor, and
 
 Do not use them for new security-sensitive capabilities. `GuardedTool` also does not support verified confirmation, because its independent handler cannot be bound to the authorized target. Use `BoundTool` for new capabilities and migrate security-sensitive actions to it. The rationale and boundary are documented in [ADR 0005](adr/0005-guardedtool-is-a-bounded-migration-bridge.md).
 
+Every `DecisionEvidence` row carries a `tool_kind` field (`guarded` or `bound`) identifying which primitive produced it, so an application can query its own migration debt without grepping source — see ADR 0005's evidence section.
+
 ## Laravel AI lifecycle integration
 
 Verdict also integrates with Laravel AI lifecycle events to record prompt and tool-result provenance using fingerprints rather than raw content. This supports audit evidence; it does not inspect provider internals or make raw provider output safe to store.

@@ -74,6 +74,8 @@ point the way ADR 0001 and ADR 0002 each state theirs precisely.
 
 ## Consequences
 
+For the current shared-bucket composition bound and its volume-not-selection limit, see [the security model](../security-model.md#shared-buckets-are-composition-bounds).
+
 - No code changes result from this ADR.
 - A future issue implementing any one meter category should reference this ADR's category split
   rather than re-deriving it, and should keep the categories in separate implementation slices the

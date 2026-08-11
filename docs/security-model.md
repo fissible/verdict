@@ -39,6 +39,14 @@ Refreshing reduces the window between authorization and execution, but no in-pro
 
 The application decides which facts are material. Include every fact whose change would require a new human decision. Streaming approval resumption is intentionally deferred and fails closed; see [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md).
 
+### Avoiding confirmation fatigue
+
+Confirmation is a security control only while the approver reads it. Prompt rate is therefore a security parameter: a prompt at five times a week can be meaningful, while the same prompt at fifty times a day becomes a rubber stamp. Confirm irreversible or expensive actions, not routine ones; low-consequence prompts train an approver to dismiss the consequential prompt that follows.
+
+Do not batch requests. “Approve these 20 refunds” approves a category, not one concrete request, and defeats the argument binding that exists to bind a human decision to one request. Show the approver every material binding fact—such as amount, destination, and target—because an approver who cannot see an amount cannot meaningfully approve it.
+
+Prefer `rateLimit()` and `atMostOnce()` where they fit: both bound risk without consuming human attention. Instrument the flow as well. `approvalOutcome` is already recorded in decision evidence, so the approval-to-denial ratio is a useful check; an approval flow that has never produced a denial may not be read.
+
 ### Sizing approval TTLs
 
 Separate the human **approve → execute** interval from the machine **validate → execute** interval. The first can be minutes or hours; expiry races only with the second, which begins when Verdict revalidates the approved receipt against the refreshed execution target and ends when it consumes that receipt. Set `ttlSeconds` well above the worst-case validate → execute latency—not the median or p99—including queue depth, a slow executor, claim retries, and paused-stream resumption. A practical starting point is the measured worst case with generous operational headroom, then review it whenever those paths change.
@@ -56,6 +64,12 @@ The guarantee concerns admission by Verdict, not universal exactly-once delivery
 `rateLimit()` applies a semantic rate-limit policy before execution. A semantic limit measures an application-defined action, such as refunds per actor per day, rather than a provider-specific proxy such as token count.
 
 Select scopes and windows that reflect the risk you are limiting. The current limit implementation and its future meters are described in [ADR 0001](adr/0001-semantic-execution-rate-limits.md) and [ADR 0010](adr/0010-future-semantic-limit-meters.md).
+
+### Shared buckets are composition bounds
+
+Verdict authorizes one action at a time; that per-resource, non-transitive decision is deliberate, but it has no native model of an attack composed from individually permitted actions. A shared bucket supplies the missing volume bound. Give several capabilities the same bucket identity so the limit applies to a category of effect rather than separately to each capability—for example, let several harmless-looking customer-read capabilities share one hourly bucket so an agent cannot walk the customer table by chaining them.
+
+Size that bucket for what an attacker can accomplish during its window, not expected legitimate traffic. It caps blast radius, not intent or selection: an agent can still spend its small allowance on the ten most sensitive records. Cumulative and value meters are the future path to stronger composition controls; see [ADR 0001](adr/0001-semantic-execution-rate-limits.md) and [ADR 0010](adr/0010-future-semantic-limit-meters.md).
 
 ## Context release and evidence
 
