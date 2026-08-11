@@ -152,6 +152,8 @@ Semantic rate limits count application-defined action semantics—such as refund
 
 Context-release policies and layered evidence help you decide what may be disclosed to a model and what audit evidence is retained. The package follows a fingerprint-first approach for its security evidence rather than recording raw prompts or tool arguments by default.
 
+`AttestEvidenceRecorder` (opt-in, requires `fissible/attest-laravel`) upgrades decisions and context releases from an ordinary mutable audit store to a signed, hash-chained one — see [limitations](docs/limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody) for exactly what it does and does not cover.
+
 ### Testing safeguards before production
 
 Verdict includes deterministic evaluation primitives and an opt-in repeated-trial live evaluation runner, so applications can test security and utility thresholds without making a specific model provider part of the package contract.

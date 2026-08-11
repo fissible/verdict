@@ -149,8 +149,8 @@ on it changes what gets denied, so it gets a migration path.
   distribution mechanism. Cedar and OPA are cited as prior art for the *identity* problem, not as a
   model to reimplement.
 - **The registry is not tamper-evident.** It is an ordinary table, exactly like the rest of the evidence
-  store (`docs/limitations.md`, "No tamper-evident evidence"). Issue #11 governs that for evidence
-  generally.
+  store (`docs/limitations.md`, "Tamper-evident evidence is opt-in, partial, and bounded by key
+  custody"). Issue #11 governs that for evidence generally.
 - **Closures are not hashed.** See Decision §1 and "Alternatives rejected."
 - **No `src/` change is made by this ADR.** It decides the shape; two issues implement it.
 

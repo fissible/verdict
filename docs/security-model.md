@@ -47,6 +47,12 @@ Do not batch requests. “Approve these 20 refunds” approves a category, not o
 
 Prefer `rateLimit()` and `atMostOnce()` where they fit: both bound risk without consuming human attention. Instrument the flow as well. `approvalOutcome` is already recorded in decision evidence, so the approval-to-denial ratio is a useful check; an approval flow that has never produced a denial may not be read.
 
+### Sizing approval TTLs
+
+Separate the human **approve → execute** interval from the machine **validate → execute** interval. The first can be minutes or hours; expiry races only with the second, which begins when Verdict revalidates the approved receipt against the refreshed execution target and ends when it consumes that receipt. Set `ttlSeconds` well above the worst-case validate → execute latency—not the median or p99—including queue depth, a slow executor, claim retries, and paused-stream resumption. A practical starting point is the measured worst case with generous operational headroom, then review it whenever those paths change.
+
+Do not raise a TTL merely because expiry errors appear: first identify the latency source. Treating expiry as flakiness turns a fail-closed control into a longer-lived one. Choose TTL and target strategy together: `refresh()` re-establishes the target immediately before execution, whereas `acceptStaleSnapshot()` leaves a longer-lived approval exposed to more stale state. Material binding facts already invalidate a receipt when they change between proposal and execution, so expiry is a backstop rather than the primary freshness control. See [ADR 0003](adr/0003-execution-target-freshness.md).
+
 ## Preventing duplicate actions
 
 `atMostOnce()` associates an execution-claim policy with a capability. Verdict atomically admits a given configured claim fingerprint at most once. This is useful for effects such as issuing a refund or sending a consequential command.
