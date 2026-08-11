@@ -41,14 +41,30 @@ final class InvocationContext
      */
     public function within(string $invocationId, Closure $callback): mixed
     {
-        ProvenanceEntry::assertIdentifier($invocationId, 'Provenance correlation');
-
-        $this->frames[] = $invocationId;
+        $this->push($invocationId);
 
         try {
             return $callback();
         } finally {
-            array_pop($this->frames);
+            $this->pop();
         }
+    }
+
+    /**
+     * Push an invocation frame for a lazy streamed response.
+     */
+    public function push(string $invocationId): void
+    {
+        ProvenanceEntry::assertIdentifier($invocationId, 'Provenance correlation');
+
+        $this->frames[] = $invocationId;
+    }
+
+    /**
+     * Pop the most recently pushed invocation frame.
+     */
+    public function pop(): void
+    {
+        array_pop($this->frames);
     }
 }

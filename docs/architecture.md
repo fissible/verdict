@@ -138,7 +138,7 @@ $response = $agent->prompt(Decisions::from([
 
 Approval scope is deliberately per-request: the endpoint authenticates the decision maker, approves one receipt bound to one tool call, and resumes the agent. Use an opaque application identifier such as `customer:72` for `approvedBy`, not an email address or other unnecessary PII — Verdict does not authenticate this string.
 
-Streaming approval resumption is supported: `VerdictApprovalMiddleware` keeps the scoped approval context alive for the full duration of a streamed response's iteration, not just until the middleware call returns. See [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md) for why this was a Verdict-side context-lifetime fix rather than a missing Laravel AI capability.
+Streaming approval resumption is supported: `VerdictApprovalMiddleware` keeps the scoped approval context alive for the full duration of a streamed response's iteration, not just until the middleware call returns. `VerdictProvenanceMiddleware` does the same for its invocation frame, so decision and context-release evidence emitted by lazy streamed tool execution retains the Laravel AI invocation ID. Synchronous and queued execution remain unchanged. See [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md) for why this was a Verdict-side context-lifetime fix rather than a missing Laravel AI capability.
 
 For evaluations, Verdict provides deterministic harness primitives and an opt-in live runner. The live runner is provider-neutral at the package boundary; the application supplies the closure that invokes its chosen provider.
 
@@ -152,14 +152,14 @@ Laravel AI's `Agent` contract exposes three ways to invoke a prompt: `prompt()` 
 | Confirmation / approval resumption | ✅ | ✅ — [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md), fixed in #22 | Not yet verified² |
 | Execution claims (at-most-once) | ✅ | Not yet verified¹ | Not yet verified² |
 | Semantic rate limits | ✅ | Not yet verified¹ | Not yet verified² |
-| Evidence recording | ✅ | Not yet verified³ | Not yet verified² |
-| Context release | ✅ | Not yet verified³ | Not yet verified² |
+| Evidence recording | ✅ | ✅ — invocation ID correlation retained | Not yet verified² |
+| Context release | ✅ | ✅ — invocation ID correlation retained | Not yet verified² |
 
 Every "Synchronous" ✅ is exercised directly by the test suite. The other cells:
 
 1. **Authorization, execution claims, and semantic rate limits under streaming are not yet covered by an automated test**, but code tracing gives reasonable confidence they work: ADR 0006 itself establishes that a streamed tool call's execution — not just the approval check — happens later, during iteration, not at the point `$next($prompt)` returns; and none of these three gates read any per-request frame stack the way `ApprovalExecutionContext` did before #22. That reasoning is not the same as a passing test against real streamed Laravel AI execution, so the cells stay marked unverified rather than ✅.
 2. **Nothing under `Agent::queue()` is covered by an automated Verdict test.** `Laravel\Ai\Jobs\InvokeAgent::handle()` calls the synchronous `Agent::prompt()` internally, not `stream()`, so the lazy-generator timing this whole table is about should not apply to any queued execution — but that inference has not been confirmed by running a queued job through real Laravel AI execution.
-3. **Evidence recording and context release under streaming have a known, unfixed gap.** `VerdictProvenanceMiddleware` wraps `$next($prompt)` in `InvocationContext::within()` using the same pattern `VerdictApprovalMiddleware` had *before* #22 — the frame is popped when `$next($prompt)` returns, not when a streamed response finishes iterating. `#22`'s fix (rewriting the response's generator in place so the frame survives real iteration) was scoped only to the approval middleware; the provenance middleware still has the old shape. Tool execution during streaming is not blocked by this — evidence is still recorded — but `invocation_id` correlation on `DecisionEvidence`/`ContextReleaseEvidence` rows is very likely lost for that turn. Tracked in [#80](https://github.com/fissible/verdict/issues/80); not yet confirmed by a test, which is exactly what #80 asks for.
+3. **Evidence recording and context release under streaming are verified for invocation-ID correlation.** `VerdictProvenanceMiddleware` rewrites a streamed response's generator in place so its `InvocationContext` frame remains active for lazy tool execution. The regression test covers both `DecisionEvidence` and `ContextReleaseEvidence`, including frame cleanup after iteration. This fixes [#80](https://github.com/fissible/verdict/issues/80).
 
 ## Relationship to Laravel AI
 
