@@ -48,6 +48,7 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Ai\Events\PromptingAgent;
+use Laravel\Ai\Events\StreamingAgent;
 use Laravel\Ai\Events\ToolInvoked;
 use LogicException;
 use ReflectionClass;
@@ -368,6 +369,7 @@ final class VerdictServiceProvider extends ServiceProvider
     {
         $events = $this->app->make(Dispatcher::class);
         $events->listen(PromptingAgent::class, RecordAgentPromptProvenance::class);
+        $events->listen(StreamingAgent::class, RecordAgentPromptProvenance::class);
         $events->listen(ToolInvoked::class, RecordToolResultProvenance::class);
 
         if (! $this->app->runningInConsole()) {

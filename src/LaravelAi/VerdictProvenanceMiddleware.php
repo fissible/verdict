@@ -16,8 +16,7 @@ use Illuminate\Container\Container;
 use InvalidArgumentException;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\StreamableAgentResponse;
-use LogicException;
-use ReflectionProperty;
+use Throwable;
 
 final readonly class VerdictProvenanceMiddleware
 {
@@ -66,7 +65,18 @@ final readonly class VerdictProvenanceMiddleware
                     $response = $next($prompt);
 
                     if ($response instanceof StreamableAgentResponse) {
-                        $this->wrapWithDeferredInvocation($response, $prompt->invocationId);
+                        StreamableAgentResponseGenerator::wrap($response, function (Closure $originalGenerator) use ($prompt): Closure {
+                            return function () use ($originalGenerator, $prompt): Generator {
+                                $invocations = $this->invocations();
+                                $invocations->push($prompt->invocationId);
+
+                                try {
+                                    yield from call_user_func($originalGenerator);
+                                } finally {
+                                    $invocations->pop();
+                                }
+                            };
+                        });
                     }
 
                     return $response;
@@ -94,37 +104,56 @@ final readonly class VerdictProvenanceMiddleware
         );
 
         try {
-            return $next($prompt);
-        } finally {
+            $response = $next($prompt);
+        } catch (Throwable $exception) {
             $registry->forgetIfPending($prompt->agent, $registration);
+
+            throw $exception;
         }
+
+        if (! $response instanceof StreamableAgentResponse) {
+            $registry->forgetIfPending($prompt->agent, $registration);
+
+            return $response;
+        }
+
+        // A response can be abandoned without ever being iterated. The first registration is
+        // only for the synchronous path above, so discard it before returning the lazy response
+        // and create a new one only if real stream iteration starts.
+        $registry->forgetIfPending($prompt->agent, $registration);
+
+        $this->deferPendingProvenanceRegistration($response, $prompt, $registry, $source);
+
+        return $response;
     }
 
     /**
-     * Keep the invocation frame alive for lazy stream iteration without replacing the response.
-     *
-     * StreamableAgentResponse does not expose its generator, so this follows the same guarded
-     * Reflection-based in-place wrapping used by VerdictApprovalMiddleware. Rebuilding the response
-     * would risk dropping framework-owned state and callbacks registered by another middleware.
+     * Create a pending registration only for actual lazy iteration, when Laravel AI will dispatch
+     * StreamingAgent. An unconsumed response therefore cannot pin a stale registration for the
+     * agent's remaining request scope.
      */
-    private function wrapWithDeferredInvocation(StreamableAgentResponse $response, string $invocationId): void
-    {
-        $property = new ReflectionProperty(StreamableAgentResponse::class, 'generator');
-        $originalGenerator = $property->getValue($response);
+    private function deferPendingProvenanceRegistration(
+        StreamableAgentResponse $response,
+        AgentPrompt $prompt,
+        PromptProvenanceRegistry $registry,
+        Source $source,
+    ): void {
+        StreamableAgentResponseGenerator::wrap($response, function (Closure $originalGenerator) use ($prompt, $registry, $source): Closure {
+            return function () use ($originalGenerator, $prompt, $registry, $source): Generator {
+                $registration = $registry->remember(
+                    agent: $prompt->agent,
+                    prompt: $prompt->prompt,
+                    source: $source,
+                    trust: $this->trust,
+                    dataClass: $this->dataClass,
+                );
 
-        if (! $originalGenerator instanceof Closure) {
-            throw new LogicException('Expected Laravel AI\'s StreamableAgentResponse to hold a Closure generator.');
-        }
-
-        $property->setValue($response, function () use ($originalGenerator, $invocationId): Generator {
-            $invocations = $this->invocations();
-            $invocations->push($invocationId);
-
-            try {
-                yield from call_user_func($originalGenerator);
-            } finally {
-                $invocations->pop();
-            }
+                try {
+                    yield from call_user_func($originalGenerator);
+                } finally {
+                    $registry->forgetIfPending($prompt->agent, $registration);
+                }
+            };
         });
     }
 
