@@ -799,6 +799,13 @@ git add .github/workflows/tests.yml .github/workflows/concurrency-matrix.yml
 git commit -m "ci: run Postgres on every PR, full driver matrix on tag and weekly"
 ```
 
+**What actually happened:** used three separate jobs in `concurrency-matrix.yml` (one per engine, each with its own explicit healthcheck command) rather than one matrix job with a shell conditional switching on `matrix.name` — the MariaDB image doesn't ship `mysqladmin` at all (same finding as Task 1's docker-compose fixture), and embedding that distinction into a single conditional healthcheck string was harder to verify correct than three small, explicit jobs. More importantly: **before committing, ran the full suite locally against fresh Postgres, MySQL, and MariaDB databases** (not just trusted the YAML), and found two real, previously-undiscovered cross-driver test bugs, both test-only:
+
+- `DatabaseRateLimitStoreTest.php`'s unnamed `unique()` index auto-generates a 72-character identifier, exceeding MySQL's 64-character limit (SQLSTATE 42000, error 1059) — silent on SQLite/PostgreSQL. Named it explicitly, matching the real migration stub.
+- `DatabaseCapabilityConfigurationStoreTest.php` asserted exact JSON key order via `toBe()`, but MySQL's native `JSON` column type does not guarantee preserving member order across the storage round-trip (documented MySQL behavior, not a Verdict bug — confirmed `configuration_fingerprint` is stored as its own column, not derived from this round-trip, so unaffected). Switched to `toEqualCanonicalizing()`.
+
+Without these fixes, the CI job this task exists to add would have been permanently red against MySQL from the moment it merged — exactly the kind of thing "trust but verify the YAML actually works" is meant to catch.
+
 ---
 
 ### Task 9: Final verification, cleanup, and PR
