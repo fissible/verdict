@@ -12,6 +12,7 @@ use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\Events\ChainWriteFailed;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
+use Fissible\Verdict\Tests\Support\AbstractAttestChainResolver;
 use Fissible\Verdict\Tests\Support\StaticAttestChainResolver;
 use Fissible\Verdict\Tests\Support\ThrowingAttestChainResolver;
 use Illuminate\Database\DatabaseManager;
@@ -135,7 +136,8 @@ it('resolves an AttestEvidenceRecorder from config and records a real decision',
         ->first();
 
     expect($envelope)->not->toBeNull()
-        ->and($envelope->type)->toBe('verdict.decision');
+        ->and($envelope->type)->toBe('verdict.decision')
+        ->and($envelope->chain_id)->toBe('verdict');
 });
 
 it('routes provenance through the real DatabaseEvidenceRecorder fallback the container built', function (): void {
@@ -179,6 +181,15 @@ it('throws when neither chain nor chain_resolver is configured', function (): vo
         ->toThrow(LogicException::class, 'AttestEvidenceRecorder requires an explicit chain-topology decision');
 });
 
+it('throws when chain is set to an empty string', function (): void {
+    // VERDICT_ATTEST_CHAIN= (blank) is "I have not decided" spelled differently, not a
+    // chain id — it must fail exactly like an unset chain rather than chaining to ''.
+    config()->set('verdict.evidence.attest.chain', '');
+
+    expect(fn () => app(EvidenceRecorder::class))
+        ->toThrow(LogicException::class, 'must contain a chain id string');
+});
+
 it('throws when both chain and chain_resolver are configured', function (): void {
     config()->set('verdict.evidence.attest.chain_resolver', StaticAttestChainResolver::class);
 
@@ -199,13 +210,22 @@ it('throws a clean LogicException, not an uncaught framework exception, when cha
     config()->set('verdict.evidence.attest.chain_resolver', 'Fissible\\Verdict\\Tests\\Support\\ThisClassDoesNotExist');
 
     expect(fn () => app(EvidenceRecorder::class))
-        ->toThrow(LogicException::class, 'chain resolver must implement');
+        ->toThrow(LogicException::class, 'does not exist or could not be autoloaded');
+});
+
+it('throws when chain_resolver names a class that exists but cannot be instantiated', function (): void {
+    config()->set('verdict.evidence.attest.chain', null);
+    config()->set('verdict.evidence.attest.chain_resolver', AbstractAttestChainResolver::class);
+
+    expect(fn () => app(EvidenceRecorder::class))
+        ->toThrow(LogicException::class, 'must be an instantiable class');
 });
 
 it('resolves the chain id through the configured resolver class fresh on every write', function (): void {
     config()->set('verdict.evidence.attest.chain', null);
     config()->set('verdict.evidence.attest.chain_resolver', StaticAttestChainResolver::class);
     StaticAttestChainResolver::$calls = 0;
+    StaticAttestChainResolver::$instanceIds = [];
 
     $recorder = app(EvidenceRecorder::class);
     expect($recorder)->toBeInstanceOf(AttestEvidenceRecorder::class);
@@ -219,7 +239,9 @@ it('resolves the chain id through the configured resolver class fresh on every w
     expect($first)->not->toBeNull()
         ->and($second)->not->toBeNull()
         ->and($first->chain_id)->toBe('tenant:1')
-        ->and($second->chain_id)->toBe('tenant:2');
+        ->and($second->chain_id)->toBe('tenant:2')
+        ->and(StaticAttestChainResolver::$instanceIds)->toHaveCount(2)
+        ->and(StaticAttestChainResolver::$instanceIds[0])->not->toBe(StaticAttestChainResolver::$instanceIds[1]);
 });
 
 it('propagates a throwing chain_resolver into the existing resolverFailed/phase-tagged gap handling', function (): void {

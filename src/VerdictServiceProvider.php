@@ -46,6 +46,7 @@ use Illuminate\Support\ServiceProvider;
 use Laravel\Ai\Events\PromptingAgent;
 use Laravel\Ai\Events\ToolInvoked;
 use LogicException;
+use ReflectionClass;
 
 final class VerdictServiceProvider extends ServiceProvider
 {
@@ -126,7 +127,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 $maxAttempts = config('verdict.evidence.attest.max_attempts', 3);
                 $baseDelayMs = config('verdict.evidence.attest.base_delay_ms', 50);
 
-                if ($chain !== null && ! is_string($chain)) {
+                if ($chain !== null && (! is_string($chain) || $chain === '')) {
                     throw new LogicException('The Verdict attest chain configuration must contain a chain id string.');
                 }
 
@@ -154,10 +155,27 @@ final class VerdictServiceProvider extends ServiceProvider
                 }
 
                 if ($resolverClass !== null) {
-                    if (! class_exists($resolverClass) || ! in_array(AttestChainResolver::class, class_implements($resolverClass) ?: [], true)) {
+                    // Validate eagerly, and without constructing the resolver, so misconfiguration
+                    // fails here rather than degrading silently on the first evidence write: a
+                    // resolver that only fails inside $app->make() would be caught by
+                    // AttestEvidenceRecorder::writeChained() and turned into a chain_gap marker,
+                    // leaving the deployment permanently unchained without ever throwing.
+                    if (! class_exists($resolverClass)) {
+                        throw new LogicException("The [{$resolverClass}] chain resolver class does not exist or could not be autoloaded.");
+                    }
+
+                    if (! in_array(AttestChainResolver::class, class_implements($resolverClass) ?: [], true)) {
                         throw new LogicException("The [{$resolverClass}] chain resolver must implement ".AttestChainResolver::class.'.');
                     }
 
+                    if (! (new ReflectionClass($resolverClass))->isInstantiable()) {
+                        throw new LogicException("The [{$resolverClass}] chain resolver must be an instantiable class.");
+                    }
+
+                    // Resolve through $app on every write, deliberately never caching an instance,
+                    // so a request-scoped or tenant-scoped binding inside resolve() is re-evaluated
+                    // fresh each time. Caching a resolved instance here would reintroduce the exact
+                    // stale-state-across-requests bug this design exists to avoid under Octane.
                     $chainIdUsing = static fn (): string => $app->make($resolverClass)->resolve();
                 } else {
                     $chainIdUsing = static fn (): string => $chain;
