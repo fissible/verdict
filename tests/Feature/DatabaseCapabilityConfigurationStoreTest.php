@@ -33,8 +33,8 @@ it('stores the declared configuration once without closures or application data'
     ));
 
     $store = new DatabaseCapabilityConfigurationStore(app(DatabaseManager::class)->connection());
-    $store->record($capability);
-    $store->record($capability);
+    $store->record($capability->configuration());
+    $store->record($capability->configuration());
 
     $row = app(DatabaseManager::class)->connection()
         ->table('verdict_capability_configurations')

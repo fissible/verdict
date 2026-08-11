@@ -266,6 +266,15 @@ final readonly class Capability
         return $this->configurationFingerprint;
     }
 
+    public function configuration(): CapabilityConfiguration
+    {
+        return new CapabilityConfiguration(
+            fingerprint: $this->configurationFingerprint,
+            capability: $this->name,
+            declared: $this->declaredConfiguration(),
+        );
+    }
+
     public function confirmationRequired(): bool
     {
         return $this->approvalBindingResolver !== null;

@@ -11,5 +11,5 @@ use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
  */
 final class NullCapabilityConfigurationStore implements CapabilityConfigurationStore
 {
-    public function record(Capability $capability): void {}
+    public function record(CapabilityConfiguration $configuration): void {}
 }

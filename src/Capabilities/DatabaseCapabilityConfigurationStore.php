@@ -16,15 +16,15 @@ final readonly class DatabaseCapabilityConfigurationStore implements CapabilityC
         private string $table = 'verdict_capability_configurations',
     ) {}
 
-    public function record(Capability $capability): void
+    public function record(CapabilityConfiguration $configuration): void
     {
         // The fingerprint is the primary key. insertOrIgnore intentionally makes concurrent
         // registrations of the same immutable configuration a no-op: the first writer wins and
         // no later writer can rewrite the historical configuration.
         $this->connection->table($this->table)->insertOrIgnore([
-            'configuration_fingerprint' => $capability->configurationFingerprint(),
-            'capability' => $capability->name,
-            'configuration' => ArgumentFingerprint::canonicalJson($capability->declaredConfiguration()),
+            'configuration_fingerprint' => $configuration->fingerprint,
+            'capability' => $configuration->capability,
+            'configuration' => ArgumentFingerprint::canonicalJson($configuration->declared),
             'first_seen_at' => new DateTimeImmutable,
         ]);
     }
