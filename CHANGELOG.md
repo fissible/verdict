@@ -9,10 +9,11 @@ All notable changes to Verdict will be documented in this file.
   containing `pending` require this release or newer; older Verdict versions reject that enum value.
 
 - Add an opt-in `AttestEvidenceRecorder` that writes signed, hash-chained decision and context-release
-  evidence through `fissible/attest-laravel`, with configurable chain id, optional provenance chaining,
-  bounded write retries, and a durable `chain_gap` marker plus `ChainWriteFailed` event on exhaustion.
-  See `docs/limitations.md`, "Tamper-evident evidence is opt-in, partial, and bounded by key custody",
-  for what the chain does and does not guarantee.
+  evidence through `fissible/attest-laravel`. Chain topology is a required, explicit choice — a fixed
+  chain id or a per-tenant `AttestChainResolver` class, with no default — plus optional provenance
+  chaining, bounded write retries, and a durable `chain_gap` marker plus `ChainWriteFailed` event on
+  exhaustion. See `docs/limitations.md`, "Tamper-evident evidence is opt-in, partial, and bounded by key
+  custody", for what the chain does and does not guarantee.
 
 ## [0.3.0] - 2026-08-08
 
