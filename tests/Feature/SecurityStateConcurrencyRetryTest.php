@@ -155,6 +155,7 @@ afterEach(function (): void {
     }
 });
 
+/** @verdict-claim limitation.security-state-retries */
 it('admits at most the configured limit when racing DatabaseRateLimitStore::consume() under the connection\'s natural isolation level', function (): void {
     $bucketFingerprint = hash('sha256', random_bytes(16));
     $at = (new DateTimeImmutable)->format(DATE_ATOM);

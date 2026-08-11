@@ -27,6 +27,10 @@ composer test
 `composer test` runs PHPStan, Pint in check mode, 100% type coverage, and the Pest suite. Pull
 requests must pass the complete PHP/Laravel/operating-system matrix in GitHub Actions.
 
+When adding or changing a documented limitation, add its `@verdict-claim` annotation in
+`docs/limitations.md` and either annotate the proving Pest test, give an untestable reason, or link
+the required follow-up issue. `composer test` verifies this mapping.
+
 The Testbench storefront workbench can be started with:
 
 ```bash

@@ -81,6 +81,7 @@ function freshnessEvidence(): InMemoryEvidenceRecorder
     return $evidence;
 }
 
+/** @verdict-claim security.target-freshness */
 it('uses one refreshed target for authorization, semantic bindings, claims, and execution', function (): void {
     $proposalTarget = new FreshnessTarget(1001, 72, 1);
     $executionTarget = new FreshnessTarget(1001, 72, 2);

@@ -21,6 +21,7 @@ Verdict does not combine every safeguard into a hidden score or a single, generi
 
 Authorization and target binding are the foundation of a protected capability. Confirmation, execution claims, rate limits, and context/evidence controls are independent additions. A capability should use the smallest set that adequately protects its real side effect.
 
+<!-- @verdict-claim security.authorization tested -->
 ## Authorization
 
 `Capability::usingPolicy()` names a Laravel authorization ability and receives a target resolved by your application. Verdict evaluates that policy before the executor runs.
@@ -47,12 +48,14 @@ final class SupportAgent implements ProvidesVerdictIdentity
 
 Verdict stores only the SHA-256 fingerprint of this application-supplied string in `actor_fingerprint` and `subject_fingerprint`; it never guesses an identity from an object hash, serialization, or raw value. Values that do not implement the contract produce nullable identity evidence, and an empty supplied identity is rejected.
 
+<!-- @verdict-claim security.target-freshness tested -->
 ## Target freshness and TOCTOU
 
 For `BoundTool`, an `ExecutionTargetPolicy` supplies canonical target identity and an execution strategy. `refresh()` re-loads the target immediately before execution; `acceptStaleSnapshot()` makes accepting the original snapshot an explicit choice.
 
 Refreshing reduces the window between authorization and execution, but no in-process package can eliminate every time-of-check/time-of-use race. If the operation depends on mutable state, the application still owns database transactions, row locks, optimistic concurrency, idempotency, and downstream outbox behavior. See [ADR 0003](adr/0003-execution-target-freshness.md).
 
+<!-- @verdict-claim security.approval-binding tested -->
 ## Human approval
 
 `requiresConfirmation()` creates a human-approval gate. Its binding resolver produces canonical, application-defined facts such as an account ID, amount, or destination. Approval is for that binding—not for a broad conversational intent—and it is consumed before execution.
@@ -73,12 +76,14 @@ Separate the human **approve → execute** interval from the machine **validate 
 
 Do not raise a TTL merely because expiry errors appear: first identify the latency source. Treating expiry as flakiness turns a fail-closed control into a longer-lived one. Choose TTL and target strategy together: `refresh()` re-establishes the target immediately before execution, whereas `acceptStaleSnapshot()` leaves a longer-lived approval exposed to more stale state. Material binding facts already invalidate a receipt when they change between proposal and execution, so expiry is a backstop rather than the primary freshness control. See [ADR 0003](adr/0003-execution-target-freshness.md).
 
+<!-- @verdict-claim security.execution-claims tested -->
 ## Preventing duplicate actions
 
 `atMostOnce()` associates an execution-claim policy with a capability. Verdict atomically admits a given configured claim fingerprint at most once. This is useful for effects such as issuing a refund or sending a consequential command.
 
 The guarantee concerns admission by Verdict, not universal exactly-once delivery across every database and external provider. Claim identity and retention are business decisions. Read [ADR 0002](adr/0002-strict-at-most-once-admission.md), [ADR 0004](adr/0004-independent-security-state-transactions.md), and [ADR 0009](adr/0009-execution-claim-retention.md).
 
+<!-- @verdict-claim security.rate-limits tested -->
 ## Limiting what AI can do
 
 `rateLimit()` applies a semantic rate-limit policy before execution. A semantic limit measures an application-defined action, such as refunds per actor per day, rather than a provider-specific proxy such as token count.
@@ -91,6 +96,7 @@ Verdict authorizes one action at a time; that per-resource, non-transitive decis
 
 Size that bucket for what an attacker can accomplish during its window, not expected legitimate traffic. It caps blast radius, not intent or selection: an agent can still spend its small allowance on the ten most sensitive records. Cumulative and value meters are the future path to stronger composition controls; see [ADR 0001](adr/0001-semantic-execution-rate-limits.md) and [ADR 0010](adr/0010-future-semantic-limit-meters.md).
 
+<!-- @verdict-claim security.context-release tested -->
 ## Context release and evidence
 
 Context-release controls govern what application data may be supplied to an AI. Evidence records security-relevant facts with a fingerprint-first privacy model: the package is designed not to persist raw prompt or tool content by default.

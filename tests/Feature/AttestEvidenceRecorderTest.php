@@ -341,6 +341,7 @@ it('rejects a negative base delay configuration', function (): void {
     ))->toThrow(InvalidArgumentException::class, 'The base delay in milliseconds must not be negative, got [-1].');
 });
 
+/** @verdict-claim limitation.tamper-evidence */
 it('always delegates provenance to the fallback recorder for reads', function (): void {
     $store = AttestFixture::store();
     $fallback = new InMemoryEvidenceRecorder;
