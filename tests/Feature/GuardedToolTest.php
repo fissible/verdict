@@ -100,6 +100,7 @@ function registerOrderLookupCapability(VerdictManager $verdict, array $orders): 
     ));
 }
 
+/** @verdict-claim security.authorization */
 it('denies an idor proposal before the underlying Laravel AI tool executes', function (): void {
     $orders = [
         1001 => new TestOrder(1001, 72),
@@ -151,6 +152,16 @@ it('executes the underlying tool after the policy permits the bound actor and re
     $result = json_decode((string) $guarded->handle(new Request(['order_id' => 1001])), true, flags: JSON_THROW_ON_ERROR);
 
     expect($result)->toBe(['id' => 1001, 'customer_id' => 72])
+        ->and($tool->invocations)->toBe(1);
+});
+
+/** @verdict-claim limitation.bypassed-paths */
+it('does not govern a direct call to an unwrapped tool', function (): void {
+    $tool = new LookupOrderTool([1002 => new TestOrder(1002, 91)]);
+
+    $result = json_decode((string) $tool->handle(new Request(['order_id' => 1002])), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($result)->toBe(['id' => 1002, 'customer_id' => 91])
         ->and($tool->invocations)->toBe(1);
 });
 

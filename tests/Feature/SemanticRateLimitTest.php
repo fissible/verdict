@@ -79,6 +79,7 @@ beforeEach(function (): void {
     });
 });
 
+/** @verdict-claim security.rate-limits */
 it('throttles an authorized execution attempt after the configured limit', function (): void {
     $executions = 0;
     $verdict = app(VerdictManager::class);

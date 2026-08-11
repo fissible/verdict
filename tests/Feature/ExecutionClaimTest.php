@@ -123,6 +123,8 @@ it('blocks a re-entrant duplicate while the first executor is active', function 
         ->and($executions)->toBe(1);
 });
 
+/** @verdict-claim limitation.downstream-effects */
+/** @verdict-claim security.execution-claims */
 it('marks a thrown execution indeterminate and blocks later admission', function (): void {
     $verdict = app(VerdictManager::class);
     $executions = 0;

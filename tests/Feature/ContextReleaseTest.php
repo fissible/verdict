@@ -14,6 +14,7 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Facades\Verdict;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 
+/** @verdict-claim security.context-release */
 it('releases only allowlisted fields over an explicitly permitted route', function (): void {
     $source = Source::application('customer-profile');
     $destination = Destination::connection('ollama-local', 'local-machine');

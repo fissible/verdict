@@ -88,7 +88,11 @@
     "test:unit": [
       "vendor/bin/pest"
     ],
+    "verify:claims": [
+      "@php scripts/verify-documentation-claims.php"
+    ],
     "test": [
+      "@verify:claims",
       "@analyse",
       "@lint:check",
       "@test:types",

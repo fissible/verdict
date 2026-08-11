@@ -660,6 +660,7 @@ it('returns the exact same response instance and preserves state registered befo
     expect($thenCallbackRan)->toBeTrue();
 });
 
+/** @verdict-claim security.approval-binding */
 it('rejects changed arguments after approval', function (): void {
     $executions = 0;
     $tool = approvalTool([1001 => new ApprovalOrder(1001, 72)], $executions);
