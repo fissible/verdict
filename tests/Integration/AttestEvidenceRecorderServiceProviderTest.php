@@ -190,6 +190,18 @@ it('throws when chain is set to an empty string', function (): void {
         ->toThrow(LogicException::class, 'must contain a chain id string');
 });
 
+it('throws when chain_resolver is set to an empty string', function (): void {
+    // Mirrors the chain case above: VERDICT_ATTEST_CHAIN_RESOLVER= (blank) is "I have not
+    // decided" spelled differently, not a class name. Without this, a deployment that sets
+    // chain=verdict and blanks chain_resolver would hit the misleading "received both"
+    // check instead of a message describing what's actually wrong.
+    config()->set('verdict.evidence.attest.chain', null);
+    config()->set('verdict.evidence.attest.chain_resolver', '');
+
+    expect(fn () => app(EvidenceRecorder::class))
+        ->toThrow(LogicException::class, 'must contain a class name');
+});
+
 it('throws when both chain and chain_resolver are configured', function (): void {
     config()->set('verdict.evidence.attest.chain_resolver', StaticAttestChainResolver::class);
 

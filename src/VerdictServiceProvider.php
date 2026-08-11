@@ -131,7 +131,7 @@ final class VerdictServiceProvider extends ServiceProvider
                     throw new LogicException('The Verdict attest chain configuration must contain a chain id string.');
                 }
 
-                if ($resolverClass !== null && ! is_string($resolverClass)) {
+                if ($resolverClass !== null && (! is_string($resolverClass) || $resolverClass === '')) {
                     throw new LogicException('The Verdict attest chain resolver configuration must contain a class name.');
                 }
 
