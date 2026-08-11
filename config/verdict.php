@@ -60,6 +60,10 @@ return [
             //   }
             //   // config/verdict.php:
             //   'chain_resolver' => \App\Support\TenantChainResolver::class,
+            //
+            //   // or, in .env — unquoted, so the backslashes are taken literally
+            //   // (if you quote it, double them: "App\\Support\\TenantChainResolver"):
+            //   VERDICT_ATTEST_CHAIN_RESOLVER=App\Support\TenantChainResolver
             'chain_resolver' => env('VERDICT_ATTEST_CHAIN_RESOLVER'),
 
             // The non-chained fallback recorder's connection/table. Provenance entries and
