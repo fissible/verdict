@@ -188,6 +188,7 @@ The complete, deliberately specific list is in [limitations](docs/limitations.md
 - [Security model and threat model](docs/security-model.md)
 - [Evaluation harness and attack packs](docs/evaluation.md)
 - [Architecture and Laravel AI integration](docs/architecture.md)
+- [Laravel AI dependency surface and compatibility](docs/laravel-ai-compatibility.md)
 - [Limitations and application responsibilities](docs/limitations.md)
 - [Glossary](docs/glossary.md)
 - [Architecture decision records](docs/adr/)
