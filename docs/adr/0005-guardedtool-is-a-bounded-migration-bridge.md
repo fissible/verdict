@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Related issues
 
-- [#15](https://github.com/fissible/verdict/issues/15) (open) makes `GuardedTool` use visible in evidence so applications can audit migration debt.
+- [#15](https://github.com/fissible/verdict/issues/15) (implemented) makes `GuardedTool` use visible in evidence so applications can audit migration debt.
 
 ## Context
 
@@ -40,12 +40,12 @@ defect to be engineered away:
   `[!WARNING]` block at its first mention; a longer or more alarming name does not add information
   a reader hasn't already been given at the point of use, and every existing README example already
   presents `BoundTool` first as the preferred primitive.
-- Misuse is not currently observable at runtime: `AbstractVerdictTool::handle()` (shared by both
-  `GuardedTool` and `BoundTool`) records ordinary `DecisionEvidence` through `VerdictManager::record()`
-  either way, with no signal distinguishing a `GuardedTool` execution from a `BoundTool` execution in
-  evidence. A follow-up issue should add that signal (see the linked issue below) so an application
-  can audit its own migration debt and flag `GuardedTool` usage that never got migrated, rather than
-  Verdict trying to prevent the pattern outright.
+- Misuse is observable at runtime (#15): `AbstractVerdictTool::envelope()` (shared by both
+  `GuardedTool` and `BoundTool`) tags the proposal's metadata with `tool_kind` — `'guarded'` or
+  `'bound'`, decided by the concrete subclass, not by application input — and every
+  `DecisionEvidence` row `VerdictManager::record()` produces for that envelope carries it, regardless
+  of stage. An application can audit its own migration debt and flag `GuardedTool` usage that never
+  got migrated, rather than Verdict trying to prevent the pattern outright.
 
 ## Consequences
 
@@ -54,8 +54,8 @@ defect to be engineered away:
   Verdict-unaware Laravel AI tool.
 - New capabilities should use `BoundTool`. Documentation, not runtime enforcement, is the mechanism
   that steers new work there.
-- A follow-up issue adds an evidence-visible signal (e.g. a metadata flag or log line) so
-  `GuardedTool` usage is auditable in aggregate without Verdict refusing to run it.
+- Every `DecisionEvidence` row's `tool_kind` field (#15) makes `GuardedTool` usage auditable in
+  aggregate without Verdict refusing to run it.
 
 ## Alternatives rejected
 

@@ -4,6 +4,12 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add a `tool_kind` field (`guarded` or `bound`) to `DecisionEvidence`, populated by
+  `AbstractVerdictTool` from the concrete subclass, so applications can audit their own
+  `GuardedTool` migration debt without grepping source. See
+  [ADR 0005](docs/adr/0005-guardedtool-is-a-bounded-migration-bridge.md). Adds a `tool_kind` column
+  to `verdict_evidence` via migration.
+
 - Add configured and invocation-time tool-description fingerprints to Laravel AI Verdict tools, so
   applications can observe description drift without folding model-facing text into capability policy
   configuration.
