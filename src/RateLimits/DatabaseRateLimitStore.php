@@ -5,19 +5,35 @@ declare(strict_types=1);
 namespace Fissible\Verdict\RateLimits;
 
 use DateTimeImmutable;
+use Fissible\Verdict\Contracts\DatabaseTableStore;
 use Fissible\Verdict\Contracts\PrunableRateLimitStore;
 use Fissible\Verdict\Support\IndependentTransactionGuard;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
 use LogicException;
 use stdClass;
 
-final readonly class DatabaseRateLimitStore implements PrunableRateLimitStore
+final readonly class DatabaseRateLimitStore implements DatabaseTableStore, PrunableRateLimitStore
 {
     public function __construct(
         private ConnectionInterface $connection,
         private string $table = 'verdict_rate_limit_buckets',
     ) {}
+
+    public function hasTable(): bool
+    {
+        if (! $this->connection instanceof Connection) {
+            throw new LogicException('The rate-limit connection does not support schema inspection.');
+        }
+
+        return $this->connection->getSchemaBuilder()->hasTable($this->table);
+    }
+
+    public function table(): string
+    {
+        return $this->table;
+    }
 
     public function consume(RateLimitConsumption $consumption): RateLimitOutcome
     {

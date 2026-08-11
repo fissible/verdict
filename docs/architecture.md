@@ -84,6 +84,10 @@ A numbered step list is also, by construction, a behavioral argument — correct
 
 Neither strategy establishes transaction isolation. Put database locking, version checks, and idempotency where the business operation requires them. See [ADR 0003](adr/0003-execution-target-freshness.md).
 
+## Wiring audit
+
+Run `php artisan verdict:validate` in CI after application capabilities have been registered. It never resolves targets, authorizes, or executes actions; it reports configuration errors with a non-zero exit code, while warnings (such as an executor-less `GuardedTool` migration capability) do not fail CI. `BoundTool` wiring is not audited here: it already fails immediately at construction for an unknown or non-executable capability.
+
 ## Extension points
 
 Capabilities compose their safeguards fluently:
