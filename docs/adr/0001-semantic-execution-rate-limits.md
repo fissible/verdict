@@ -54,6 +54,8 @@ deduplicating only the limiter.
 
 ## Consequences
 
+Shared bucket identities can also bound compositions of individually permitted actions; see [the security model](../security-model.md#shared-buckets-are-composition-bounds).
+
 - A consumed unit represents an execution attempt, not a guaranteed successful side effect. A
   process crash or ambiguous external-service failure does not refund the unit.
 - Changing a policy name or window duration starts a new bucket namespace. Changing only the limit

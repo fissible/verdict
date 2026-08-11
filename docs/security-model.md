@@ -57,6 +57,12 @@ The guarantee concerns admission by Verdict, not universal exactly-once delivery
 
 Select scopes and windows that reflect the risk you are limiting. The current limit implementation and its future meters are described in [ADR 0001](adr/0001-semantic-execution-rate-limits.md) and [ADR 0010](adr/0010-future-semantic-limit-meters.md).
 
+### Shared buckets are composition bounds
+
+Verdict authorizes one action at a time; that per-resource, non-transitive decision is deliberate, but it has no native model of an attack composed from individually permitted actions. A shared bucket supplies the missing volume bound. Give several capabilities the same bucket identity so the limit applies to a category of effect rather than separately to each capability—for example, let several harmless-looking customer-read capabilities share one hourly bucket so an agent cannot walk the customer table by chaining them.
+
+Size that bucket for what an attacker can accomplish during its window, not expected legitimate traffic. It caps blast radius, not intent or selection: an agent can still spend its small allowance on the ten most sensitive records. Cumulative and value meters are the future path to stronger composition controls; see [ADR 0001](adr/0001-semantic-execution-rate-limits.md) and [ADR 0010](adr/0010-future-semantic-limit-meters.md).
+
 ## Context release and evidence
 
 Context-release controls govern what application data may be supplied to an AI. Evidence records security-relevant facts with a fingerprint-first privacy model: the package is designed not to persist raw prompt or tool content by default.
