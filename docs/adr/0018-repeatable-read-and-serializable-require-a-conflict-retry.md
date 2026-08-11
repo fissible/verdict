@@ -12,6 +12,8 @@ Status: Accepted
 - [#92](https://github.com/fissible/verdict/issues/92) implements the jittered retry that resolved the
   MySQL 8 and MariaDB 11 residual found after #86; see the later Update for the original finding and
   its replacement.
+- [#97](https://github.com/fissible/verdict/issues/97) investigates the remaining PostgreSQL
+  SERIALIZABLE rate-limit availability gap.
 - [#20](https://github.com/fissible/verdict/issues/20) adds the durable concurrency test suite; a first
   version of it landed directly in #86 (`tests/Feature/SecurityStateConcurrencyRetryTest.php`), since #86
   needed real evidence its own fix worked, not just a plan for one.
@@ -249,7 +251,8 @@ Using the corrected ready/release harness and isolated databases, five repeated 
 of MySQL 8 and MariaDB 11 completed cleanly for rate limits, execution claims, and approval receipts.
 The durable test now asserts those natural-isolation results strictly. PostgreSQL READ COMMITTED and
 the PostgreSQL SERIALIZABLE claim/receipt results remain clean; the measured PostgreSQL SERIALIZABLE
-rate-limit availability gap remains, and is still disclosed in `docs/limitations.md`.
+rate-limit availability gap remains, is still disclosed in `docs/limitations.md`, and is tracked in
+[#97](https://github.com/fissible/verdict/issues/97).
 
 ## Consequences
 
