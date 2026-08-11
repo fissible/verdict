@@ -4,6 +4,10 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Narrow `CapabilityConfigurationStore` to a closure-free `CapabilityConfiguration` value object,
+  so custom registry adapters receive only the content-addressed fingerprint and declared
+  configuration they are permitted to retain. See [#91](https://github.com/fissible/verdict/issues/91).
+
 - Split the experimental mixed `EvidenceRecorder` extension contract into `EvidenceWriter` and
   `ProvenanceLedgerStore`, so custom adapters implement only the write or ledger-read responsibility
   they provide. `EvidenceRecorder` remains a deprecated pre-1.0 compatibility bridge, and existing

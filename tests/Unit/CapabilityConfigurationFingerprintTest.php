@@ -5,6 +5,10 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Capabilities\CapabilityConfiguration;
+use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
+use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
@@ -117,4 +121,31 @@ it('is not affected by the executor, target resolver, or approval binding closur
     $b = fingerprintFixtureCapability()->executeUsing(fn (AuthorizedAction $action): string => 'completely different behavior');
 
     expect($a->configurationFingerprint())->toBe($b->configurationFingerprint());
+});
+
+it('passes custom configuration stores only the materialized closure-free value object', function (): void {
+    $store = new class implements CapabilityConfigurationStore
+    {
+        public ?CapabilityConfiguration $recorded = null;
+
+        public function record(CapabilityConfiguration $configuration): void
+        {
+            $this->recorded = $configuration;
+        }
+    };
+    $capability = Capability::usingPolicy(
+        name: 'orders.cancel',
+        ability: 'cancel',
+        resolveTarget: fn (ActionEnvelope $envelope): mixed => new stdClass,
+    )->executeUsing(fn (AuthorizedAction $action): string => 'application behavior')
+        ->requiresConfirmation(fn (ActionEnvelope $envelope, mixed $target): array => ['order' => 1]);
+
+    (new CapabilityRegistry($store))->register($capability);
+
+    expect($store->recorded)->not->toBeNull()
+        ->and(array_keys(get_object_vars($store->recorded)))->toBe(['fingerprint', 'capability', 'declared'])
+        ->and($store->recorded?->fingerprint)->toBe($capability->configurationFingerprint())
+        ->and($store->recorded?->declared)->toBe($capability->declaredConfiguration())
+        ->and(ArgumentFingerprint::make($store->recorded?->declared))->toBe($store->recorded?->fingerprint)
+        ->and(json_encode($store->recorded, JSON_THROW_ON_ERROR))->not->toContain('application behavior');
 });

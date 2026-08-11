@@ -17,7 +17,7 @@ used by an implementation part of Verdict's public API.
 | `AttackPack` | Experimental | `AccountRecoveryAttackPack`, `RagBorneInjectionAttackPack`, `StorefrontAttackPack`, `ToolIntegrityAttackPack` | Define deterministic evaluation cases for a capability. |
 | `AttestChainResolver` | Stable | None; applications configure the resolver class | Resolve a tenant- or deployment-specific attestation chain at runtime. |
 | `CapabilityAuthorizer` | Stable | `LaravelPolicyAuthorizer` | Adapt a project's authorization system to capability decisions. |
-| `CapabilityConfigurationStore` | Experimental | `DatabaseCapabilityConfigurationStore`, `InMemoryCapabilityConfigurationStore`, `NullCapabilityConfigurationStore` | Record capability configuration in an application-specific registry. See [#91](https://github.com/fissible/verdict/issues/91). |
+| `CapabilityConfigurationStore` | Experimental | `DatabaseCapabilityConfigurationStore`, `InMemoryCapabilityConfigurationStore`, `NullCapabilityConfigurationStore` | Record a closure-free materialized capability configuration in an application-specific registry. |
 | `ClassifiesToolResult` | Stable | None | Add provenance classification to an application's Laravel AI tool result. |
 | `Clock` | Stable | `SystemClock` | Supply deterministic or deployment-specific time. |
 | `ContextTransformer` | Stable | `StructuredRedactor` | Transform data before a release or other context-sensitive operation. |
@@ -34,6 +34,6 @@ used by an implementation part of Verdict's public API.
 `EvidenceRecorder` was split by [#90](https://github.com/fissible/verdict/issues/90) into narrower
 `EvidenceWriter` and `ProvenanceLedgerStore` contracts. It remains only as a pre-1.0 compatibility bridge.
 
-`CapabilityConfigurationStore` currently receives a runtime `Capability`,
-although a registry only needs declared, materialized configuration. [#91](https://github.com/fissible/verdict/issues/91)
-tracks the closure-free value object for that boundary.
+`CapabilityConfigurationStore` receives `CapabilityConfiguration`, a closure-free value object
+containing only the fingerprint and declared configuration a registry may retain. [#91](https://github.com/fissible/verdict/issues/91)
+made this boundary explicit before 1.0.

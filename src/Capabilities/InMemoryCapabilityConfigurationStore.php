@@ -12,11 +12,11 @@ final class InMemoryCapabilityConfigurationStore implements CapabilityConfigurat
     /** @var array<string, array{capability: string, configuration: array<string, mixed>}> */
     private array $configurations = [];
 
-    public function record(Capability $capability): void
+    public function record(CapabilityConfiguration $configuration): void
     {
-        $this->configurations[$capability->configurationFingerprint()] ??= [
-            'capability' => $capability->name,
-            'configuration' => $capability->declaredConfiguration(),
+        $this->configurations[$configuration->fingerprint] ??= [
+            'capability' => $configuration->capability,
+            'configuration' => $configuration->declared,
         ];
     }
 

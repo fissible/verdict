@@ -31,7 +31,7 @@ final class CapabilityRegistry
         $fingerprint = $capability->configurationFingerprint();
 
         if (! isset($this->recordedFingerprints[$fingerprint])) {
-            $this->configurations->record($capability);
+            $this->configurations->record($capability->configuration());
             $this->recordedFingerprints[$fingerprint] = true;
         }
 
