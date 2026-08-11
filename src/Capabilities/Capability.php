@@ -38,8 +38,12 @@ final readonly class Capability
      * policy name/strategy, rate-limit policy name/limit/window, execution-claim policy name, and
      * the optional configurationVersion. Deliberately excludes closures (not meaningfully
      * serializable — ADR 0017 "Alternatives rejected") and non-material operator-facing strings
-     * (confirmation/rate-limit reason). Computed once here, from the fully composed constructor
-     * call, rather than recomputed on every configurationFingerprint() call.
+     * (confirmation/rate-limit reason). Computed once, on the fully composed immutable capability,
+     * during registration — not recomputed on every configurationFingerprint() call. Because
+     * Capability is immutable and every with-style method returns a new instance carrying the
+     * complete prior state, the constructor call reached by CapabilityRegistry::register() always
+     * receives the fully composed configuration, so computing it in the constructor is equivalent
+     * to computing it at registration.
      */
     private string $configurationFingerprint;
 
