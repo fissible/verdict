@@ -4,6 +4,13 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add a consolidated security-state gate ordering table and a streaming/queued execution-mode
+  compatibility matrix to `docs/architecture.md`, citing ADR 0001–0004 and ADR 0013 at each step.
+  Documentation only, no behavior change. Filed [#80](https://github.com/fissible/verdict/issues/80)
+  for a real, previously untracked gap found while verifying the matrix: `VerdictProvenanceMiddleware`
+  still has the pre-#22 frame-popping shape, so `invocation_id` correlation is likely lost on evidence
+  recorded during a streamed turn.
+
 - Fix streaming approval resumption: `VerdictApprovalMiddleware` now keeps the scoped
   approval context alive for a streamed response's full iteration instead of popping it
   when the middleware call returns, which happens before a lazy stream is ever consumed.

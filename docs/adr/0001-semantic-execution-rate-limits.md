@@ -9,7 +9,7 @@ Status: Accepted
 ## Related issues
 
 - [#16](https://github.com/fissible/verdict/issues/16) (open) benchmarks rate-limit contention and latency.
-- [#19](https://github.com/fissible/verdict/issues/19) (open) consolidates the accepted gate ordering for readers.
+- [#19](https://github.com/fissible/verdict/issues/19) (implemented) consolidates the accepted gate ordering for readers.
 - [#20](https://github.com/fissible/verdict/issues/20) (open) adds genuine concurrent-access coverage for rate limits.
 
 ## Context

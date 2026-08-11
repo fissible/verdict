@@ -4,7 +4,7 @@ Status: Accepted
 
 ## Related issues
 
-- [#19](https://github.com/fissible/verdict/issues/19) (open) documents the accepted security-state
+- [#19](https://github.com/fissible/verdict/issues/19) (implemented) documents the accepted security-state
   ordering; it is the natural home for the invariant stated below.
 - [#20](https://github.com/fissible/verdict/issues/20) (open) adds genuine concurrency tests, which is
   where the invariant becomes executable rather than documentary.
