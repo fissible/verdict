@@ -8,3 +8,4 @@ composer.lock
 .idea
 .vscode
 .superpowers
+/spikes/0037-isolation-level-concurrency/results/*.txt
