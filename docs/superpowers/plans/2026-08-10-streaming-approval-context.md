@@ -4,7 +4,9 @@
 
 **Goal:** Fix issue #22 — `ApprovalExecutionContext`'s "approved tool call IDs" frame is popped the instant `VerdictApprovalMiddleware::handle()`'s `$next($prompt)` call returns, which is correct for synchronous prompts but wrong for streamed ones: a streamed prompt returns a `Laravel\Ai\Responses\StreamableAgentResponse` immediately, wrapping a *lazy* generator that only actually runs (including tool execution) when the response is iterated, later, after the frame is already gone. An already-approved tool call inside a stream therefore fails closed with `ApprovalOutcome::InvalidState`. This is the concrete bug ADR 0006 names as the reason streaming approval resumption doesn't work today.
 
-**Architecture:** `ApprovalExecutionContext` gains `push()`/`pop()` as primitives alongside its existing `within()` (unchanged — `within()` still has real callers outside this fix, see Global Constraints). `VerdictApprovalMiddleware::handle()` uses `push()`/`pop()` directly instead of `within()`, and — only when `$next($prompt)` returns a `StreamableAgentResponse` — defers the `pop()` until the stream is actually consumed, by reconstructing the response with its generator wrapped in `try { ... } finally { pop() }`. The reconstruction reads `StreamableAgentResponse`'s two `protected` constructor properties (`generator`, `meta`) via Reflection, since there's no public accessor for either; both are type-checked after reading, so a future Laravel AI release that renames or restructures either property fails loudly (`ReflectionException` or a explicit `LogicException`) rather than silently misbehaving. No change to `AbstractVerdictTool`, `BoundTool`, `GuardedTool`, or anything downstream of the frame.
+**Architecture:** `ApprovalExecutionContext` gains `push()`/`pop()` as primitives alongside its existing `within()` (unchanged — `within()` still has real callers outside this fix, see Global Constraints). `VerdictApprovalMiddleware::handle()` still pushes eagerly before calling `$next($prompt)` — required for the synchronous case, where tool execution happens *during* that call — but as soon as the result is known to be a `StreamableAgentResponse`, it immediately undoes that push. The frame is then re-pushed only when the stream is actually iterated: the middleware mutates the *existing* response's `generator` property **in place**, via Reflection, wrapping it in a closure that pushes at the start of iteration and pops in a `finally` block, so the pop fires on normal completion, on an exception partway through, or (via PHP's generator-destruction semantics) if iteration is abandoned before finishing. Because the eager push around `$next()` is always balanced by the time the wrapping method runs, a failure inside that method (e.g. the reflected property isn't a `Closure`) leaves nothing further to clean up.
+
+Mutating `generator` in place, rather than constructing a replacement `StreamableAgentResponse`, is deliberate: the object also carries `conversationId`/`conversationUser`, `then()` callbacks, Vercel-protocol configuration, and cached `events` state, none of which this middleware has any way to faithfully reconstruct, and any of which an inner middleware may already have set before this one sees the response. `generator` is not `readonly` (confirmed against the installed `laravel/ai` source), so in-place mutation via `ReflectionProperty::setValue()` is valid. Only `generator` needs to be read and type-checked via Reflection — `meta` is never touched, since the object itself, not a copy of its state, is what gets returned. No change to `AbstractVerdictTool`, `BoundTool`, `GuardedTool`, or anything downstream of the frame.
 
 **Tech Stack:** PHP 8.3, Laravel 12/13, Pest 4, `laravel/ai` `^0.10.2` (installed `v0.10.3`) — same as the rest of this repo.
 
@@ -14,8 +16,10 @@
 - 100% type coverage enforced by `composer test` (`pest --type-coverage --min=100`).
 - `final`/`final readonly` classes, constructor property promotion, named arguments — match existing style exactly.
 - **`ApprovalExecutionContext::within(Decisions, Closure): mixed` must NOT be removed or have its behavior changed.** It has real callers today outside `VerdictApprovalMiddleware`: `workbench/app/Storefront/StorefrontScenarioRunner.php` calls it directly at 6 call sites (lines 161, 165, 170, 633, 684, 699), simulating synchronous approval scenarios without going through the Laravel AI middleware pipeline at all. `push()`/`pop()` are new, additive methods; `within()` may be refactored internally to call them (to avoid duplicating the approved-map-building logic) but its public signature and synchronous push-then-pop-in-finally behavior must be observably identical to today.
-- **The reflection reads exactly two properties and nothing else.** `StreamableAgentResponse`'s constructor is `(public string $invocationId, protected Closure $generator, protected ?Meta $meta = null)` — `invocationId` is already public, read it normally (`$response->invocationId`), not via reflection. Only `generator` and `meta` need Reflection.
-- **Every value read via Reflection must be type-checked before use**, throwing a `LogicException` with a clear message if the type doesn't match what's expected. This is the load-bearing property that makes this fix's fragility "loud break, not silent misbehavior" — do not skip it to save a few lines.
+- **The reflection touches exactly one property and nothing else.** `StreamableAgentResponse`'s constructor is `(public string $invocationId, protected Closure $generator, protected ?Meta $meta = null)` — only `generator` is read and rewritten via Reflection. `meta` is never touched, and `invocationId` is already public.
+- **The response object returned by the middleware must be the same object `$next($prompt)` produced** — `===` identical, not a reconstruction — so that any state an inner middleware already set on it (conversation binding, `then()` callbacks, Vercel protocol config) survives untouched.
+- **The value read via Reflection must be type-checked before use**, throwing a `LogicException` with a clear message if it isn't a `Closure`. This is the load-bearing property that makes this fix's fragility "loud break, not silent misbehavior" — do not skip it to save a few lines.
+- **The approval frame must never be pushed without a guaranteed matching pop**, including when stream setup itself fails (e.g. the reflected property isn't a `Closure`) and including when a streamed response is returned but never iterated at all.
 - No changes to `ApprovalManager`, `AbstractVerdictTool`, `BoundTool`, or `GuardedTool` — the fix is entirely contained to `ApprovalExecutionContext` and `VerdictApprovalMiddleware`.
 
 ---
@@ -209,49 +213,27 @@ git commit -m "feat: add push()/pop() primitives to ApprovalExecutionContext"
 - Modify: `tests/Feature/ApprovalFlowTest.php`
 
 **Interfaces:**
-- Consumes: `ApprovalExecutionContext::push()`/`pop()` (Task 1). `Laravel\Ai\Responses\StreamableAgentResponse` (new import — constructor `(string $invocationId, Closure $generator, ?Meta $meta = null)`, `protected Closure $generator`, `protected ?Meta $meta`). `Laravel\Ai\Responses\Data\Meta` (new import, for the type-check only).
-- Produces: `VerdictApprovalMiddleware::handle()`'s observable behavior is unchanged for every non-streamed case (identical to today, verified by the existing `ApprovalFlowTest.php` suite passing unmodified). For a streamed `$next($prompt)` result, the approval frame now stays pushed until the returned response is fully iterated, not until `handle()` returns.
+- Consumes: `ApprovalExecutionContext::push()`/`pop()` (Task 1). `Laravel\Ai\Responses\StreamableAgentResponse` (new import — constructor `(string $invocationId, Closure $generator, ?Meta $meta = null)`, `protected Closure $generator`, not `readonly`). `Laravel\Ai\Streaming\Events\StreamEnd`, `Laravel\Ai\Responses\Data\Usage`, `Laravel\Ai\Responses\Data\Meta` (test-only, to build a real terminal stream event and a real response).
+- Produces: `VerdictApprovalMiddleware::handle()`'s observable behavior is unchanged for every non-streamed case (identical to today, verified by the existing `ApprovalFlowTest.php` suite passing unmodified). For a streamed `$next($prompt)` result, the approval frame now stays pushed only while the returned response is actively being iterated — pushed right as iteration begins, popped when it ends (completion, exception, or abandonment) — and never leaks into the request scope beyond that. The exact same response object `$next($prompt)` returned is what `handle()` returns; nothing is reconstructed.
 
-This is the core of the fix. Follow strict red-green-commit.
+This is the core of the fix. Follow strict red-green-commit for the primary regression test (Step 1-4). The two additional tests in Step 5 codify properties the fix must hold that have no meaningful "red" state against the *original* bug (see the note in Step 5) — write them once the implementation exists and confirm they pass immediately; if either fails, that is a bug in the new implementation to fix before moving on, not an ordering mistake.
 
 - [ ] **Step 1: Write the failing test**
 
-`tests/Feature/ApprovalFlowTest.php` already has (read them before editing, to place your new code correctly and match exact conventions): `approvalTool()` (a helper building a real `BoundTool` with a capability that `requiresConfirmation`), `approvalPrompt(Decisions $decisions): AgentPrompt`, and `executeWithinApprovalMiddleware(Tool $tool, Request $request, Decisions $decisions): string` (calls `app(VerdictApprovalMiddleware::class)->handle($prompt, fn () => $tool->handle($request))` synchronously). Reuse `approvalTool()` and `approvalPrompt()` as-is.
+`tests/Feature/ApprovalFlowTest.php` already has (read them before editing, to place your new code correctly and match exact conventions): `approvalTool()` (a helper building a real `BoundTool` with a capability that `requiresConfirmation`), `approvalPrompt(Decisions $decisions): AgentPrompt`, and `executeWithinApprovalMiddleware(Tool $tool, Request $request, Decisions $decisions): string` (calls `app(VerdictApprovalMiddleware::class)->handle($prompt, fn () => $tool->handle($request))` synchronously). Reuse `approvalTool()` and `approvalPrompt()` as-is. Do not add a shared "as-stream" helper function — the three new tests below each need a differently-shaped generator (one tool call then a terminal event; one terminal event only, never iterated; one terminal event then a throw), so each constructs its own `StreamableAgentResponse` inline. This matches the file's existing style, which already calls `app(VerdictApprovalMiddleware::class)->handle(...)` directly in some tests rather than exclusively through a helper.
 
 Add the following imports at the top of the file, alongside the existing ones:
 
 ```php
+use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Generator;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Responses\StreamableAgentResponse;
+use Laravel\Ai\Streaming\Events\StreamEnd;
 ```
 
-Add a new helper function near `executeWithinApprovalMiddleware()` (same file, same conventions):
-
-```php
-/**
- * Mirrors executeWithinApprovalMiddleware(), but $next returns a real, lazy
- * StreamableAgentResponse instead of calling $tool->handle($request) synchronously — the
- * tool only actually runs once the returned response is iterated, exactly like a real
- * Laravel AI streamed prompt.
- */
-function executeWithinApprovalMiddlewareAsStream(
-    Tool $tool,
-    Request $request,
-    Decisions $decisions,
-): StreamableAgentResponse {
-    return app(VerdictApprovalMiddleware::class)->handle(
-        approvalPrompt($decisions),
-        function () use ($tool, $request): StreamableAgentResponse {
-            return new StreamableAgentResponse(
-                invocationId: 'inv-streamed-approval',
-                generator: function () use ($tool, $request): Generator {
-                    yield (string) $tool->handle($request);
-                },
-            );
-        },
-    );
-}
-```
+`Meta` and `Usage` both have fully-optional, zero-default constructors (`new Meta`, `new Usage` are both valid on their own — confirmed against the installed `laravel/ai` source), so the tests below construct them directly with no arguments. `StreamEnd`'s constructor is `(string $id, string $reason, Usage $usage, int $timestamp)` — all four required, none defaulted.
 
 Add the new test, placed after the existing `'requires an exact durable approval before executing and consumes it once'` test (same section — this is the streaming counterpart of that exact scenario):
 
@@ -274,7 +256,18 @@ it('keeps an approved tool call approved through a streamed response, not just t
     app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'customer:72');
     $decisions = Decisions::from(['call-streamed-cancel' => Decision::approve()]);
 
-    $response = executeWithinApprovalMiddlewareAsStream($tool, $request, $decisions);
+    $response = app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'inv-streamed-approval',
+            generator: function () use ($tool, $request): Generator {
+                $tool->handle($request);
+
+                yield new StreamEnd('evt-streamed-approval', 'stop', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
 
     // The tool must not have run yet — nothing has iterated $response. If this fails, the
     // test itself is broken (StreamableAgentResponse::getIterator() isn't actually lazy
@@ -285,16 +278,17 @@ it('keeps an approved tool call approved through a streamed response, not just t
 
     // With the pre-fix code, the approval frame is already popped by the time this
     // iteration runs handle() inside the generator, so the tool sees InvalidState and
-    // $executions stays 0. With the fix, the frame is still present.
+    // never increments $executions. With the fix, the frame is still present.
     expect($executions)->toBe(1)
-        ->and($events)->toBe(['cancelled']);
+        ->and($events)->toHaveCount(1)
+        ->and($events[0])->toBeInstanceOf(StreamEnd::class);
 });
 ```
 
 - [ ] **Step 2: Run to verify it fails, and confirm it fails for the right reason**
 
 Run: `vendor/bin/pest tests/Feature/ApprovalFlowTest.php --filter="keeps an approved tool call approved through a streamed response"`
-Expected: FAIL. Read the failure — it must be `Failed asserting that 0 matches expected 1` (i.e. `$executions` stayed `0`, meaning the tool saw `InvalidState` and returned pending JSON instead of `'cancelled'`, so `$events` is `['{"status":"not_executed",...}']` not `['cancelled']`), not an error from the test harness itself (e.g. a `TypeError` constructing `StreamableAgentResponse`, or an autoload failure). If it's erroring rather than failing on the assertion, fix the test setup before proceeding — you have not yet reproduced the bug.
+Expected: FAIL on `expect($executions)->toBe(1)` (it stays `0` — the tool saw `InvalidState` and did not execute), with the `$events` assertions still passing (the generator yields the `StreamEnd` unconditionally, so the event shape is identical whether or not the tool executed). If instead you get a `TypeError` or other harness error — not a clean assertion failure — the test itself is broken (e.g. `Meta`/`Usage` misconstructed); fix that before proceeding, since you have not yet reproduced the bug.
 
 - [ ] **Step 3: Implement the fix**
 
@@ -310,11 +304,11 @@ namespace Fissible\Verdict\LaravelAi;
 use Closure;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Generator;
+use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Prompts\AgentPrompt;
-use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use LogicException;
-use ReflectionClass;
+use ReflectionProperty;
 use Throwable;
 
 final readonly class VerdictApprovalMiddleware
@@ -323,11 +317,13 @@ final readonly class VerdictApprovalMiddleware
 
     public function handle(AgentPrompt $prompt, Closure $next): mixed
     {
-        if ($prompt->approvalDecisions === null) {
+        $decisions = $prompt->approvalDecisions;
+
+        if ($decisions === null) {
             return $next($prompt);
         }
 
-        $this->context->push($prompt->approvalDecisions);
+        $this->context->push($decisions);
 
         try {
             $response = $next($prompt);
@@ -343,51 +339,54 @@ final readonly class VerdictApprovalMiddleware
             return $response;
         }
 
-        return $this->keepApprovalAliveThroughStream($response);
+        // A streamed response is lazy: $next($prompt) has already returned, but the
+        // underlying generator — and any tool call inside it — has not run yet. The push
+        // above was necessary in case $next() executed a tool synchronously (the
+        // non-streamed path above), but it must not survive past this point for a streamed
+        // response: if the caller never iterates it, that eager push would otherwise sit on
+        // the stack for the rest of this request's scope, visible to unrelated later
+        // checks. Undo it here, then re-push only when — and if — real iteration begins.
+        $this->context->pop();
+
+        $this->wrapWithDeferredApproval($response, $decisions);
+
+        return $response;
     }
 
     /**
-     * A streamed response is lazy: $next($prompt) returns immediately, well before the
-     * underlying generator — and any tool call inside it — actually runs. Popping the
-     * approval frame here, the way the synchronous path does, would clear it before
-     * ApprovalExecutionContext::allows() is ever consulted, so an already-approved tool
-     * call fails closed with ApprovalOutcome::InvalidState. Reconstruct the response so
-     * the frame instead pops when the stream is fully consumed, however much later that is
-     * — the pop lives inside the generator itself, not in this method's own call stack.
+     * Mutates $response's generator in place so the approval frame is pushed only when the
+     * stream is actually iterated, and popped when that iteration ends — on normal
+     * completion, on an exception partway through, or (via PHP's generator cleanup) if
+     * iteration is abandoned before finishing. Mutating in place, rather than constructing
+     * a replacement StreamableAgentResponse, preserves every other piece of state the
+     * object may already carry (conversation binding, then() callbacks registered by an
+     * inner middleware, Vercel protocol configuration, and so on) — none of which this
+     * class has any way to faithfully reconstruct.
      *
-     * StreamableAgentResponse exposes no accessor for its generator or meta, so this reads
-     * both protected constructor properties via Reflection and type-checks each value
-     * before use. If a future Laravel AI release renames or restructures either property,
-     * this throws here — a ReflectionException or the LogicException below — rather than
-     * silently misbehaving.
+     * StreamableAgentResponse exposes no accessor or mutator for its generator, so this
+     * reads and rewrites the protected property via Reflection, type-checking the value
+     * read back before use. If a future Laravel AI release renames or restructures that
+     * property, this throws — a ReflectionException, or the LogicException below —
+     * rather than silently misbehaving.
      */
-    private function keepApprovalAliveThroughStream(StreamableAgentResponse $response): StreamableAgentResponse
+    private function wrapWithDeferredApproval(StreamableAgentResponse $response, Decisions $decisions): void
     {
-        $reflection = new ReflectionClass(StreamableAgentResponse::class);
-
-        $originalGenerator = $reflection->getProperty('generator')->getValue($response);
+        $property = new ReflectionProperty(StreamableAgentResponse::class, 'generator');
+        $originalGenerator = $property->getValue($response);
 
         if (! $originalGenerator instanceof Closure) {
             throw new LogicException('Expected Laravel AI\'s StreamableAgentResponse to hold a Closure generator.');
         }
 
-        $meta = $reflection->getProperty('meta')->getValue($response);
+        $property->setValue($response, function () use ($originalGenerator, $decisions): Generator {
+            $this->context->push($decisions);
 
-        if ($meta !== null && ! $meta instanceof Meta) {
-            throw new LogicException('Expected Laravel AI\'s StreamableAgentResponse meta property to be null or a Meta instance.');
-        }
-
-        return new StreamableAgentResponse(
-            invocationId: $response->invocationId,
-            generator: function () use ($originalGenerator): Generator {
-                try {
-                    yield from call_user_func($originalGenerator);
-                } finally {
-                    $this->context->pop();
-                }
-            },
-            meta: $meta,
-        );
+            try {
+                yield from call_user_func($originalGenerator);
+            } finally {
+                $this->context->pop();
+            }
+        });
     }
 }
 ```
@@ -397,17 +396,69 @@ final readonly class VerdictApprovalMiddleware
 Run: `vendor/bin/pest tests/Feature/ApprovalFlowTest.php --filter="keeps an approved tool call approved through a streamed response"`
 Expected: PASS.
 
-- [ ] **Step 5: Run the full existing approval suite to confirm no regression on the synchronous path**
+- [ ] **Step 5: Add tests for an unconsumed stream and an interrupted iteration**
+
+These codify two properties the fix must hold beyond the primary regression. Add both after the test from Step 1:
+
+```php
+it('does not leave the approval frame active if the streamed response is never iterated', function (): void {
+    $decisions = Decisions::from(['call-unconsumed-stream' => Decision::approve()]);
+
+    app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'inv-unconsumed',
+            generator: function (): Generator {
+                yield new StreamEnd('evt-unconsumed', 'stop', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
+
+    // Deliberately never iterate the returned response.
+
+    expect(app(ApprovalExecutionContext::class)->allows('call-unconsumed-stream'))->toBeFalse();
+});
+
+it('pops the approval frame even when the stream throws partway through iteration', function (): void {
+    $decisions = Decisions::from(['call-interrupted-stream' => Decision::approve()]);
+
+    $response = app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'inv-interrupted',
+            generator: function (): Generator {
+                yield new StreamEnd('evt-interrupted', 'stop', new Usage, time());
+
+                throw new RuntimeException('simulated provider failure mid-stream');
+            },
+            meta: new Meta,
+        ),
+    );
+
+    expect(fn () => iterator_to_array($response))
+        ->toThrow(RuntimeException::class, 'simulated provider failure mid-stream');
+
+    expect(app(ApprovalExecutionContext::class)->allows('call-interrupted-stream'))->toBeFalse();
+});
+```
+
+Note on these two tests' relationship to "red-green": under the pre-fix code (`within()` popping in its `finally` immediately after `$next($prompt)` returns), both would already pass, because the old code pops before iteration in every case — it never leaks *and* never survives to see an exception either, since it isn't present during iteration at all. These two tests aren't regression tests against the original bug; they're safety-net tests for the *new* implementation's own correctness (no leak on non-consumption, exception-safety of the wrapper's own `try`/`finally`). Run them now and confirm both PASS immediately:
+
+Run: `vendor/bin/pest tests/Feature/ApprovalFlowTest.php --filter="does not leave the approval frame active|pops the approval frame even when the stream throws"`
+Expected: PASS (2 tests). If either fails, the implementation has a bug — fix it before proceeding; do not adjust the test to match broken behavior.
+
+- [ ] **Step 6: Run the full existing approval suite to confirm no regression on the synchronous path**
 
 Run: `vendor/bin/pest tests/Feature/ApprovalFlowTest.php`
-Expected: PASS, same count as before plus 1 (the new test). Pay particular attention to `'requires an exact durable approval before executing and consumes it once'` and `'does not accept wildcard or edited Laravel approval decisions'` — these are the tests most likely to reveal a subtle behavioral change if `push()`/`pop()` don't compute the approved-map identically to what `within()` used to do inline.
+Expected: PASS, same count as before plus 3 (the three new tests). Pay particular attention to `'requires an exact durable approval before executing and consumes it once'` and `'does not accept wildcard or edited Laravel approval decisions'` — these are the tests most likely to reveal a subtle behavioral change if `push()`/`pop()` don't compute the approved-map identically to what `within()` used to do inline.
 
-- [ ] **Step 6: Run static analysis specifically**
+- [ ] **Step 7: Run static analysis specifically**
 
 Run: `vendor/bin/phpstan analyse src/LaravelAi/VerdictApprovalMiddleware.php --memory-limit=1G`
-Expected: `[OK] No errors`. If PHPStan complains about `ReflectionProperty::getValue()`'s `mixed` return type flowing into the `instanceof` checks, that's expected to resolve automatically post-narrowing — but confirm with a real run rather than assuming.
+Expected: `[OK] No errors`. If PHPStan complains about `ReflectionProperty::getValue()`'s `mixed` return type flowing into the `instanceof` check, that's expected to resolve automatically post-narrowing — but confirm with a real run rather than assuming.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/LaravelAi/VerdictApprovalMiddleware.php tests/Feature/ApprovalFlowTest.php
@@ -503,3 +554,5 @@ Fill in the PR body using `.github/PULL_REQUEST_TEMPLATE.md`'s sections. "Trust 
 **Placeholder scan:** no "TBD"/"handle appropriately" strings. Every code block is complete, runnable code, not a sketch.
 
 **Type consistency:** `ApprovalExecutionContext::push(Decisions): void` / `pop(): void` are defined once (Task 1) and consumed identically in Task 2's `VerdictApprovalMiddleware`. `within()`'s signature is verified unchanged and its only caller outside this fix (`StorefrontScenarioRunner.php`) is explicitly called out as a Global Constraint, not discovered mid-task.
+
+**Revision note (2026-08-10):** this plan was revised before implementation began, in response to review of an earlier draft. That draft pushed the approval frame eagerly and popped it only inside the replacement generator's `finally`, which leaked the frame for the lifetime of the request if a streamed response was constructed but never iterated, and left no guaranteed pop if the reflection-based wrapping step itself failed after the eager push. It also reconstructed `StreamableAgentResponse` from scratch (`invocationId`, `generator`, `meta` only), silently discarding any `conversationId`/`conversationUser`, `then()` callbacks, or Vercel-protocol configuration an inner middleware had already set. And its planned regression test constructed `StreamableAgentResponse` without a `meta` argument, which would `TypeError` inside `getIterator()`'s `new StreamedAgentResponse(...)` call (non-nullable `Meta` there) rather than reaching the test's intended assertion. Task 2 as written here fixes all three: push is deferred to the moment iteration actually begins (Step 3's `wrapWithDeferredApproval()`), the frame is provably balanced at every exit point including the eager-push-then-immediate-undo for a streamed result, the response object is mutated in place rather than rebuilt, and the tests (Step 1 and Step 5) construct real `Meta`/`Usage`/`StreamEnd` instances and cover the unconsumed-stream and interrupted-iteration cases explicitly.
