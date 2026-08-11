@@ -44,7 +44,12 @@ it('stores the declared configuration once without closures or application data'
     expect($row)->not->toBeNull()
         ->and(app(DatabaseManager::class)->connection()->table('verdict_capability_configurations')->count())->toBe(1)
         ->and($row->capability)->toBe('orders.refund')
-        ->and(json_decode((string) $row->configuration, true, flags: JSON_THROW_ON_ERROR))->toBe([
+        // toEqualCanonicalizing, not toBe: MySQL's native JSON column type does not guarantee
+        // preserving object member order on the storage/retrieval round-trip (documented MySQL
+        // behavior), unlike SQLite's plain-text storage or PostgreSQL's `json` type. This is a
+        // database-engine serialization detail, not a Verdict correctness issue — configuration_fingerprint
+        // is computed and stored as its own column before this round-trip, so it is unaffected.
+        ->and(json_decode((string) $row->configuration, true, flags: JSON_THROW_ON_ERROR))->toEqualCanonicalizing([
             'ability' => 'refund',
             'configuration_version' => null,
             'confirmation_required' => false,

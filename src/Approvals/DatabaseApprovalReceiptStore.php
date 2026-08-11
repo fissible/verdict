@@ -6,8 +6,8 @@ namespace Fissible\Verdict\Approvals;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
-use Fissible\Verdict\Contracts\DatabaseTableStore;
 use Fissible\Verdict\Support\IndependentTransactionGuard;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;

@@ -103,6 +103,9 @@ Capability::usingPolicy($name, $ability, $resolveTarget)
 
 You provide the target resolver, approval binding, policy objects, executor, and the actor-bearing `ActionContext`. Those are deliberate application boundaries; Verdict cannot infer your tenancy rules, business identity, or material approval facts.
 
+For the public interfaces intended for application adapters and their current
+stability commitments, see [extension-contract stability](extension-contract-stability.md).
+
 ## GuardedTool migration bridge
 
 `GuardedTool` and `Verdict::guard(...)` exist as a bounded migration bridge, to move an application’s existing pre-Verdict Laravel AI tools onto Verdict’s authorization boundary without rewriting them. They authorize a resolved target and then delegate to an independent handler, so Verdict cannot establish that the handler acts on the same target.

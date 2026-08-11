@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Console\Commands;
 
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
-use Fissible\Verdict\Contracts\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Targets\ExecutionTargetStrategy;

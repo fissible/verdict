@@ -6,6 +6,9 @@ namespace Fissible\Verdict\Contracts;
 
 use Fissible\Verdict\Capabilities\Capability;
 
+/**
+ * @experimental The configuration-registry storage contract may change before Verdict 1.0.
+ */
 interface CapabilityConfigurationStore
 {
     /**
