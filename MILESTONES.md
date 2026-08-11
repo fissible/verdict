@@ -167,6 +167,10 @@ proves the documented guarantees are actually tested.
 
 ## Upstream dependency watch
 
+See [`docs/laravel-ai-compatibility.md`](docs/laravel-ai-compatibility.md) for the full inventory of what
+Verdict's `src/` actually depends on in Laravel AI's surface, classified by how likely each dependency is
+to change without warning, and which tests would catch it (#18).
+
 Verdict pins `laravel/ai: ^0.10.2`, which in Composer's pre-1.0 caret semantics is `>=0.10.2 <0.11.0`.
 
 - **laravel/ai#848** (open) fixes the nested `toolInvocationId` clobber. It is minor-bump shaped, so it
