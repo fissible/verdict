@@ -216,7 +216,7 @@ git commit -m "feat: add push()/pop() primitives to ApprovalExecutionContext"
 - Consumes: `ApprovalExecutionContext::push()`/`pop()` (Task 1). `Laravel\Ai\Responses\StreamableAgentResponse` (new import — constructor `(string $invocationId, Closure $generator, ?Meta $meta = null)`, `protected Closure $generator`, not `readonly`). `Laravel\Ai\Streaming\Events\StreamEnd`, `Laravel\Ai\Responses\Data\Usage`, `Laravel\Ai\Responses\Data\Meta` (test-only, to build a real terminal stream event and a real response).
 - Produces: `VerdictApprovalMiddleware::handle()`'s observable behavior is unchanged for every non-streamed case (identical to today, verified by the existing `ApprovalFlowTest.php` suite passing unmodified). For a streamed `$next($prompt)` result, the approval frame now stays pushed only while the returned response is actively being iterated — pushed right as iteration begins, popped when it ends (completion, exception, or abandonment) — and never leaks into the request scope beyond that. The exact same response object `$next($prompt)` returned is what `handle()` returns; nothing is reconstructed.
 
-This is the core of the fix. Follow strict red-green-commit for the primary regression test (Step 1-4). The two additional tests in Step 5 codify properties the fix must hold that have no meaningful "red" state against the *original* bug (see the note in Step 5) — write them once the implementation exists and confirm they pass immediately; if either fails, that is a bug in the new implementation to fix before moving on, not an ordering mistake.
+This is the core of the fix. Follow strict red-green-commit for the primary regression test (Step 1-4). The four additional tests in Step 5 (unconsumed stream, mid-stream exception, abandoned iteration, object/state preservation) codify properties the fix must hold — most have no meaningful "red" state against the *original* bug, one is a direct regression test against this plan's own earlier draft (see the note in Step 5) — write them once the implementation exists and confirm they pass immediately; if any fails, that is a bug in the new implementation to fix before moving on, not an ordering mistake.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -396,9 +396,9 @@ final readonly class VerdictApprovalMiddleware
 Run: `vendor/bin/pest tests/Feature/ApprovalFlowTest.php --filter="keeps an approved tool call approved through a streamed response"`
 Expected: PASS.
 
-- [ ] **Step 5: Add tests for an unconsumed stream and an interrupted iteration**
+- [ ] **Step 5: Add tests for an unconsumed stream, an interrupted iteration, an abandoned iteration, and object/state preservation**
 
-These codify two properties the fix must hold beyond the primary regression. Add both after the test from Step 1:
+These codify four properties the fix must hold beyond the primary regression. Add all four after the test from Step 1:
 
 ```php
 it('does not leave the approval frame active if the streamed response is never iterated', function (): void {
@@ -441,17 +441,76 @@ it('pops the approval frame even when the stream throws partway through iteratio
 
     expect(app(ApprovalExecutionContext::class)->allows('call-interrupted-stream'))->toBeFalse();
 });
+
+it('pops the approval frame when the caller stops iterating before the stream completes', function (): void {
+    $decisions = Decisions::from(['call-abandoned-stream' => Decision::approve()]);
+
+    $response = app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'inv-abandoned',
+            generator: function (): Generator {
+                yield new StreamEnd('evt-abandoned-1', 'stop', new Usage, time());
+                yield new StreamEnd('evt-abandoned-2', 'stop', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
+
+    // A plain foreach + break, no unset() or gc_collect_cycles() needed: PHP drops the
+    // temporary generator foreach holds internally the moment the loop exits, and that
+    // refcount-zero destruction runs the pending finally block synchronously, in the same
+    // call frame as the break — confirmed empirically against PHP 8.3 before writing this
+    // test, not assumed from generator documentation alone.
+    foreach ($response as $event) {
+        break;
+    }
+
+    expect(app(ApprovalExecutionContext::class)->allows('call-abandoned-stream'))->toBeFalse();
+});
+
+it('returns the exact same response instance and preserves state registered before wrapping', function (): void {
+    $decisions = Decisions::from(['call-preserved-stream' => Decision::approve()]);
+
+    $originalResponse = new StreamableAgentResponse(
+        invocationId: 'inv-preserved',
+        generator: function (): Generator {
+            yield new StreamEnd('evt-preserved', 'stop', new Usage, time());
+        },
+        meta: new Meta,
+    );
+
+    $thenCallbackRan = false;
+
+    // Registered on the original object, before the middleware ever sees it — mirrors an
+    // inner middleware or the framework itself configuring the response before this one
+    // wraps it. A reconstruction-based fix would silently drop this.
+    $originalResponse->then(function () use (&$thenCallbackRan): void {
+        $thenCallbackRan = true;
+    });
+
+    $response = app(VerdictApprovalMiddleware::class)->handle(
+        approvalPrompt($decisions),
+        fn (): StreamableAgentResponse => $originalResponse,
+    );
+
+    expect($response)->toBe($originalResponse);
+
+    iterator_to_array($response);
+
+    expect($thenCallbackRan)->toBeTrue();
+});
 ```
 
-Note on these two tests' relationship to "red-green": under the pre-fix code (`within()` popping in its `finally` immediately after `$next($prompt)` returns), both would already pass, because the old code pops before iteration in every case — it never leaks *and* never survives to see an exception either, since it isn't present during iteration at all. These two tests aren't regression tests against the original bug; they're safety-net tests for the *new* implementation's own correctness (no leak on non-consumption, exception-safety of the wrapper's own `try`/`finally`). Run them now and confirm both PASS immediately:
+Note on how these four relate to "red-green": under the pre-fix code (`within()` popping in its `finally` immediately after `$next($prompt)` returns), the unconsumed, interrupted, and abandoned tests would all already pass — the old code pops before iteration in every case, so it never leaks and is simply absent by the time any of those scenarios plays out. They aren't regression tests against the *original* bug; they're safety-net tests for the *new* wrapper's own correctness (no leak on non-consumption, and the wrapper's `try`/`finally` correctly firing on exception and on generator destruction alike). The object/state-preservation test is different: it also passes trivially against the *current, unmodified* code (which does not wrap streamed responses at all), but it is the direct regression test against this plan's own earlier draft, which reconstructed a new `StreamableAgentResponse` from only `invocationId`/`generator`/`meta` — under that draft, both assertions here would have failed (`toBe($originalResponse)` on a different object, `$thenCallbackRan` staying `false` because `thenCallbacks` lives on the discarded original). Run all four now and confirm they PASS immediately:
 
-Run: `vendor/bin/pest tests/Feature/ApprovalFlowTest.php --filter="does not leave the approval frame active|pops the approval frame even when the stream throws"`
-Expected: PASS (2 tests). If either fails, the implementation has a bug — fix it before proceeding; do not adjust the test to match broken behavior.
+Run: `vendor/bin/pest tests/Feature/ApprovalFlowTest.php --filter="does not leave the approval frame active|pops the approval frame even when the stream throws|stops iterating before the stream completes|exact same response instance"`
+Expected: PASS (4 tests). If any fails, the implementation has a bug — fix it before proceeding; do not adjust the test to match broken behavior.
 
 - [ ] **Step 6: Run the full existing approval suite to confirm no regression on the synchronous path**
 
 Run: `vendor/bin/pest tests/Feature/ApprovalFlowTest.php`
-Expected: PASS, same count as before plus 3 (the three new tests). Pay particular attention to `'requires an exact durable approval before executing and consumes it once'` and `'does not accept wildcard or edited Laravel approval decisions'` — these are the tests most likely to reveal a subtle behavioral change if `push()`/`pop()` don't compute the approved-map identically to what `within()` used to do inline.
+Expected: PASS, same count as before plus 5 (the five new tests). Pay particular attention to `'requires an exact durable approval before executing and consumes it once'` and `'does not accept wildcard or edited Laravel approval decisions'` — these are the tests most likely to reveal a subtle behavioral change if `push()`/`pop()` don't compute the approved-map identically to what `within()` used to do inline.
 
 - [ ] **Step 7: Run static analysis specifically**
 
@@ -555,4 +614,6 @@ Fill in the PR body using `.github/PULL_REQUEST_TEMPLATE.md`'s sections. "Trust 
 
 **Type consistency:** `ApprovalExecutionContext::push(Decisions): void` / `pop(): void` are defined once (Task 1) and consumed identically in Task 2's `VerdictApprovalMiddleware`. `within()`'s signature is verified unchanged and its only caller outside this fix (`StorefrontScenarioRunner.php`) is explicitly called out as a Global Constraint, not discovered mid-task.
 
-**Revision note (2026-08-10):** this plan was revised before implementation began, in response to review of an earlier draft. That draft pushed the approval frame eagerly and popped it only inside the replacement generator's `finally`, which leaked the frame for the lifetime of the request if a streamed response was constructed but never iterated, and left no guaranteed pop if the reflection-based wrapping step itself failed after the eager push. It also reconstructed `StreamableAgentResponse` from scratch (`invocationId`, `generator`, `meta` only), silently discarding any `conversationId`/`conversationUser`, `then()` callbacks, or Vercel-protocol configuration an inner middleware had already set. And its planned regression test constructed `StreamableAgentResponse` without a `meta` argument, which would `TypeError` inside `getIterator()`'s `new StreamedAgentResponse(...)` call (non-nullable `Meta` there) rather than reaching the test's intended assertion. Task 2 as written here fixes all three: push is deferred to the moment iteration actually begins (Step 3's `wrapWithDeferredApproval()`), the frame is provably balanced at every exit point including the eager-push-then-immediate-undo for a streamed result, the response object is mutated in place rather than rebuilt, and the tests (Step 1 and Step 5) construct real `Meta`/`Usage`/`StreamEnd` instances and cover the unconsumed-stream and interrupted-iteration cases explicitly.
+**Revision note (2026-08-10):** this plan was revised before implementation began, in response to review of an earlier draft. That draft pushed the approval frame eagerly and popped it only inside the replacement generator's `finally`, which leaked the frame for the lifetime of the request if a streamed response was constructed but never iterated, and left no guaranteed pop if the reflection-based wrapping step itself failed after the eager push. It also reconstructed `StreamableAgentResponse` from scratch (`invocationId`, `generator`, `meta` only), silently discarding any `conversationId`/`conversationUser`, `then()` callbacks, or Vercel-protocol configuration an inner middleware had already set. And its planned regression test constructed `StreamableAgentResponse` without a `meta` argument, which would `TypeError` inside `getIterator()`'s `new StreamedAgentResponse(...)` call (non-nullable `Meta` there) rather than reaching the test's intended assertion. Task 2 as written here fixes all three: push is deferred to the moment iteration actually begins (Step 3's `wrapWithDeferredApproval()`), the frame is provably balanced at every exit point including the eager-push-then-immediate-undo for a streamed result, the response object is mutated in place rather than rebuilt, and the tests (Step 1 and Step 5) construct real `Meta`/`Usage`/`StreamEnd` instances and cover the unconsumed-stream, mid-stream-exception, abandoned-iteration, and object/state-preservation cases explicitly.
+
+A second round of review on this revision (also 2026-08-10) found two remaining P2 test-coverage gaps, both now folded into Step 5: "abandoned iteration" (a caller that starts consuming and stops normally, e.g. `foreach (...) { break; }`) was asserted in this plan's prose but never actually tested — added and empirically verified against PHP 8.3 that a plain `break` out of a `foreach` over an `IteratorAggregate` triggers the wrapped generator's `finally` synchronously, no `unset()`/`gc_collect_cycles()` needed (see Step 5's inline comment). And the same-object/state-preservation requirement (Global Constraints, this file's Architecture section) had no regression test asserting it — added, registering a `then()` callback on the original response before the middleware sees it and asserting both object identity (`toBe()`) and that the callback still runs after iteration.
