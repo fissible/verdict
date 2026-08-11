@@ -9,6 +9,7 @@ use DateTimeZone;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Support\IndependentTransactionGuard;
+use Fissible\Verdict\Support\TransactionRetry;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -41,7 +42,7 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
         IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'claim an execution');
 
         try {
-            return $this->connection->transaction(function () use ($claim): ExecutionClaimTransition {
+            return TransactionRetry::run($this->connection, function () use ($claim): ExecutionClaimTransition {
                 $existing = $this->findLockedByBinding($claim->bindingFingerprint);
 
                 if ($existing !== null) {
@@ -51,15 +52,15 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
                 $this->connection->table($this->table)->insert($this->attributes($claim));
 
                 return ExecutionClaimTransition::to(ExecutionClaimOutcome::Claimed, $claim);
-            }, 2);
+            });
         } catch (UniqueConstraintViolationException) {
-            return $this->connection->transaction(function () use ($claim): ExecutionClaimTransition {
+            return TransactionRetry::run($this->connection, function () use ($claim): ExecutionClaimTransition {
                 $existing = $this->findLockedByBinding($claim->bindingFingerprint);
 
                 return $existing === null
                     ? ExecutionClaimTransition::to(ExecutionClaimOutcome::NotFound)
                     : $this->claimExisting($existing, $claim->claimedAt);
-            }, 2);
+            });
         }
     }
 

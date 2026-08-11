@@ -9,6 +9,7 @@ use DateTimeZone;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Support\IndependentTransactionGuard;
+use Fissible\Verdict\Support\TransactionRetry;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -41,7 +42,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'issue an approval receipt');
 
         try {
-            return $this->connection->transaction(function () use ($receipt): ApprovalTransition {
+            return TransactionRetry::run($this->connection, function () use ($receipt): ApprovalTransition {
                 $existing = $this->lockedReceiptForBinding(
                     $receipt->toolCallId,
                     $receipt->capability,
@@ -55,7 +56,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                 $this->connection->table($this->table)->insert($this->attributes($receipt));
 
                 return ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
-            }, 2);
+            });
         } catch (UniqueConstraintViolationException) {
             $existing = $this->receiptForBinding(
                 $receipt->toolCallId,
