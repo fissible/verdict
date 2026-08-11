@@ -19,44 +19,76 @@ Status: Accepted
 
 ADR 0016 Decision §6 stated an intent — the lock-then-insert-then-retry pattern shared by
 `DatabaseRateLimitStore::consume()`, `DatabaseExecutionClaimStore::claim()`, and
-`DatabaseApprovalReceiptStore` is *intended* to be correct at READ COMMITTED and to remain correct at
-stricter levels without depending on them — and marked it unmeasured. #37 measured it: genuine
+`DatabaseApprovalReceiptStore::issue()` is *intended* to be correct at READ COMMITTED and to remain
+correct at stricter levels without depending on them — and marked it unmeasured. #37 measured it: genuine
 process-level concurrency (separate OS processes via `proc_open`, separate connections — not sequential
-calls or transactions sharing one connection), racing 2–20 concurrent callers against one contended row,
-across PostgreSQL READ COMMITTED, PostgreSQL SERIALIZABLE, MySQL/InnoDB REPEATABLE READ, MySQL/InnoDB
-READ COMMITTED, and MariaDB (which defaults to REPEATABLE READ, same as MySQL).
+calls or transactions sharing one connection), racing 2–20 concurrent callers against one contended row
+in **all three** stores, across PostgreSQL READ COMMITTED, PostgreSQL SERIALIZABLE, MySQL/InnoDB
+REPEATABLE READ, MySQL/InnoDB READ COMMITTED, and MariaDB (which defaults to REPEATABLE READ, same as
+MySQL).
 
-**READ COMMITTED is confirmed safe on both PostgreSQL and MySQL.** Three runs, 20 concurrent processes
-per race, zero errors, the invariant held exactly every time: rate-limit admitted exactly the configured
-limit, execution-claim admitted exactly one winner.
+**A first pass without a synchronized start understated the problem, and was corrected before this
+ADR was finalized.** `proc_open` alone launches separate processes but does not make them reach the
+store call at the same instant — process boot, autoload, and the initial DB handshake are the dominant
+source of latency variance (empirically ~52–175ms per process under 20-way parallel startup), not the
+query itself, so without forcing genuine overlap, "zero errors" from a batch that never actually
+collided proves nothing about the safe cases, and even the failure counts for the unsafe cases were an
+undercount. The harness was corrected to hold every child at a shared wall-clock start barrier — a
+`start_at` deadline computed once per batch with a 1-second buffer (~6× the measured p95 startup
+latency) and passed identically to every child, which then busy-waits until that instant before calling
+the store — so the batch reaches the contended operation as close to simultaneously as process
+scheduling allows. All results below are from the barrier-corrected harness; see
+`spikes/0037-isolation-level-concurrency/results/` for both the earlier, weaker transcripts and the
+corrected ones, kept side by side rather than overwritten, so the correction itself is part of the
+record.
 
-**REPEATABLE READ is not.** MySQL and MariaDB under InnoDB REPEATABLE READ — which is InnoDB's *default*,
-not an opt-in stricter setting an operator has to choose — failed on 2 of 3 runs each, always with the
-same signature:
+**READ COMMITTED is confirmed safe on both PostgreSQL and MySQL, under genuine forced overlap.** Three
+runs, 20 concurrent processes per race, all three stores, zero errors every time: rate-limit admitted
+exactly the configured limit, execution-claim admitted exactly one winner, approval-receipt issued
+exactly one receipt.
+
+**REPEATABLE READ is not, and the corrected numbers are far worse than the first pass suggested.**
+MySQL and MariaDB under InnoDB REPEATABLE READ — which is InnoDB's *default*, not an opt-in stricter
+setting an operator has to choose — failed **19 of 20 concurrent attempts** (rate-limit and
+approval-receipt) or all 20 (execution-claim, in one run), consistently across three runs, for **all
+three stores**, always with the same signature:
 
 ```
 SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock; try restarting
 transaction (... insert into `verdict_execution_claims` (...) values (...))
 ```
 
-raised from the plain `insert` inside `consume()`'s/`claim()`'s own transaction, and **uncaught** — the
-stores only catch `Illuminate\Database\UniqueConstraintViolationException`. This is InnoDB's documented
-gap-lock behavior under REPEATABLE READ: concurrent `INSERT`s that would land in the same index gap take
+raised from the plain `insert` inside the store's own transaction, and **uncaught** — the stores only
+catch `Illuminate\Database\UniqueConstraintViolationException`. This is InnoDB's documented gap-lock
+behavior under REPEATABLE READ: concurrent `INSERT`s that would land in the same index gap take
 conflicting gap locks, and one is chosen as the deadlock victim. It is not driven by seizing the same
 existing row (`lockForUpdate()` finding no row is exactly the case being raced), it is driven by the
 *insert* itself, which is why the existing unique-violation catch does not cover it — a genuinely
-different SQLSTATE, from a genuinely different cause, that the code was never written to expect.
+different SQLSTATE, from a genuinely different cause, that the code was never written to expect. Under
+genuine forced contention, this is not an edge case — it is closer to the common case.
 
-**SERIALIZABLE is not either**, and this part was anticipated correctly. Both stores, both raced
-patterns, every contention level tested (2, 5, 20 concurrent callers), every run: `SQLSTATE 40001`,
-uncaught. At contention level 5, exactly 1 of 5 callers got a clean response and the other 4 threw —
-identically across two independent runs.
+**SERIALIZABLE is unsafe for rate limits and execution claims, and this part was anticipated
+correctly.** Both stores, every contention level tested (2, 5, 20 concurrent callers), every run:
+`SQLSTATE 40001`, uncaught. At contention level 5, exactly 1 of 5 callers got a clean response and the
+other 4 threw — identically across two independent runs.
+
+**SERIALIZABLE did not raise 40001 for approval receipts, in this exact test shape, reproducibly
+across two runs.** All 20 concurrent `issue()` calls succeeded cleanly at every contention level (2, 5,
+20), with exactly one `Issued` and the rest correctly `Existing`. This is a genuine, reproduced
+observation, not a fluke — but it is not proof that `DatabaseApprovalReceiptStore` is safe under
+SERIALIZABLE in general. PostgreSQL's serializable snapshot isolation uses predicate-lock heuristics
+that can depend on the exact index shape and query pattern; the approval-receipt unique constraint is a
+three-column composite (`tool_call_id`, `capability`, `binding_fingerprint`) versus the other two
+stores' one- and two-column constraints, and a real approval flow reads and writes more state within
+the transaction (expiry checks, status transitions) than this spike's minimal race does. Absence of an
+observed conflict in one specific harness is not the same claim as REPEATABLE READ's confirmed
+vulnerability, and the Decision below does not treat it as such.
 
 **In every case, the invariant held among the responses that did not throw.** No test observed a wrong
-answer — more than the rate limit admitted, or more than one claim winner. The failure mode is
-availability, not correctness: a caller that should receive a clean, policy-shaped answer (admitted,
-denied, or duplicate) instead receives an unhandled `Illuminate\Database\QueryException`, which — absent
-handling at a higher layer — surfaces as a 500.
+answer — more than the rate limit admitted, more than one claim winner, or more than one approval
+issuer. The failure mode is availability, not correctness: a caller that should receive a clean,
+policy-shaped answer (admitted, denied, or duplicate) instead receives an unhandled
+`Illuminate\Database\QueryException`, which — absent handling at a higher layer — surfaces as a 500.
 
 ## Decision
 
@@ -98,23 +130,30 @@ rather than merely proposed:
    Verdict's boundary.
 
 This applies to all three stores sharing the pattern (rate limits, execution claims, approval receipts —
-ADR 0016's table), not only the two #37 exercised directly. `DatabaseApprovalReceiptStore` was not raced
-in #37 (out of this spike's time budget) but shares the identical lock-then-insert-then-retry shape and
-should be assumed equally exposed until it is measured or fixed alongside the other two.
+ADR 0016's table). #37 raced all three directly, not just two: `DatabaseApprovalReceiptStore` is
+confirmed equally exposed under REPEATABLE READ (19/20 failures, matching the other two stores) and
+should get the identical fix regardless of SERIALIZABLE's non-reproduction there — that observation
+bears on SERIALIZABLE specifically, not on REPEATABLE READ, and not on whether the fix is warranted.
 
 ### What #20 can now assert
 
 #20's genuine-concurrency test suite can now write real per-driver assertions instead of guessing at
 what "correct" means under contention:
 
-- At READ COMMITTED (any driver): the race must complete cleanly, zero exceptions, invariant exact.
-- At REPEATABLE READ (MySQL/MariaDB) and SERIALIZABLE (any driver), **before** the retry fix lands:
-  these are expected-red tests, pinning the current defect the way
-  `tests/Feature/ToolInvocationCorrelationTest.php` pins a known upstream bug — a test that currently
-  fails is not a broken test, it is the recorded proof the gap exists.
+- At READ COMMITTED (any driver, all three stores): the race must complete cleanly, zero exceptions,
+  invariant exact.
+- At REPEATABLE READ (MySQL/MariaDB, all three stores) and SERIALIZABLE (rate limits and execution
+  claims specifically), **before** the retry fix lands: these are expected-red tests, pinning the
+  current defect the way `tests/Feature/ToolInvocationCorrelationTest.php` pins a known upstream bug —
+  a test that currently fails is not a broken test, it is the recorded proof the gap exists.
+- SERIALIZABLE against approval receipts did not reproduce a failure in #37's harness — #20 should
+  still write the test (same shape as the other two, same fix applied), but should not assume it will
+  fail before the fix lands the way the other five combinations will. If it doesn't fail, that is
+  consistent with this ADR's observation, not a sign the test is wrong.
 - At REPEATABLE READ and SERIALIZABLE, **after** the retry fix lands: the same invariant as READ
-  COMMITTED, zero uncaught exceptions, under the same real process-level concurrency this ADR's evidence
-  used, not a same-connection simulation.
+  COMMITTED, zero uncaught exceptions, under the same real process-level concurrency (including the
+  start barrier — see `spikes/0037-isolation-level-concurrency/lib/harness.php` for the pattern) this
+  ADR's evidence used, not a same-connection simulation and not an unsynchronized process launch.
 
 ## Consequences
 
@@ -134,9 +173,11 @@ what "correct" means under contention:
   risk needs a MySQL or MariaDB job specifically, which the current plan defers to the tag/weekly full
   matrix rather than every PR, matching #37's original Part 3 proposal's cost/benefit tradeoff — flagged
   here as a real gap in coverage cadence, not hidden by it.
-- `DatabaseApprovalReceiptStore` remains unmeasured by #37 and should not be assumed safe merely because
-  it was not raced — the follow-up issue's acceptance criteria should require it be covered too, per
-  ADR 0016's Invariant C1 applying identically to all three stores.
+- `DatabaseApprovalReceiptStore` is measured, not assumed: confirmed exposed under REPEATABLE READ at
+  the same severity as the other two stores. Its SERIALIZABLE non-reproduction is recorded as an
+  observation worth re-checking once #86's fix exists (a fix applied uniformly to all three stores
+  should not need SERIALIZABLE to reproduce a failure there first to justify applying it), not as a
+  reason to treat it differently.
 
 ## Alternatives rejected
 

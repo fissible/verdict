@@ -19,6 +19,16 @@ $store = new DatabaseRateLimitStore(
 
 $at = new DateTimeImmutable($payload['at']);
 
+// Start barrier: every child in this batch is given the same wall-clock deadline, computed by the
+// orchestrator with a generous buffer (measured empirically — real boot-to-first-query latency
+// under 20-way parallel startup is ~52-175ms; the buffer is ~6x the observed p95). Without this,
+// children reach the store call at wildly different times (process boot, composer autoload, DB
+// handshake are the dominant variance, not the query itself), so "zero errors" would not actually
+// prove the invariant holds under real overlapping contention.
+while (microtime(true) < $payload['start_at']) {
+    usleep(200);
+}
+
 try {
     $outcome = $store->consume(new RateLimitConsumption(
         bucketFingerprint: $payload['bucket_fingerprint'],

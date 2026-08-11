@@ -1,9 +1,10 @@
 <?php
 
 declare(strict_types=1);
-use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
-use Fissible\Verdict\ExecutionClaims\ExecutionClaim;
-use Fissible\Verdict\ExecutionClaims\ExecutionClaimStatus;
+
+use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
+use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Illuminate\Database\Capsule\Manager;
 use Illuminate\Database\QueryException;
 
@@ -14,11 +15,12 @@ $payload = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR);
 
 spike_capsule(spike_connections()[$payload['connection']]);
 
-$store = new DatabaseExecutionClaimStore(
+$store = new DatabaseApprovalReceiptStore(
     Manager::connection(),
 );
 
 $at = new DateTimeImmutable($payload['at']);
+$expiresAt = $at->modify('+1 hour');
 
 // Start barrier — see spike-a-rate-limit-child.php for the rationale and measured buffer.
 while (microtime(true) < $payload['start_at']) {
@@ -26,26 +28,26 @@ while (microtime(true) < $payload['start_at']) {
 }
 
 try {
-    $transition = $store->claim(new ExecutionClaim(
+    $transition = $store->issue(new ApprovalReceipt(
         id: bin2hex(random_bytes(16)),
-        capability: 'spike.claim',
-        policy: 'spike-policy',
+        toolCallId: $payload['tool_call_id'],
+        capability: 'spike.approval',
         bindingFingerprint: $payload['binding_fingerprint'],
-        status: ExecutionClaimStatus::Claimed,
-        attemptCount: 1,
-        claimedAt: $at,
-        completedAt: null,
-        indeterminateAt: null,
-        releasedAt: null,
-        resolvedBy: null,
-        resolutionReason: null,
+        status: ApprovalReceiptStatus::Pending,
+        reason: null,
+        expiresAt: $expiresAt,
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        consumedAt: null,
         createdAt: $at,
         updatedAt: $at,
     ));
 
     fwrite(STDOUT, json_encode([
         'ok' => true,
-        'admitted' => $transition->admitted(),
+        'issued' => $transition->outcome->value === 'issued',
         'outcome' => $transition->outcome->value,
     ], JSON_THROW_ON_ERROR));
 } catch (Throwable $e) {

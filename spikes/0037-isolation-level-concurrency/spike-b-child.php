@@ -1,6 +1,10 @@
 <?php
 
 declare(strict_types=1);
+
+use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
+use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaim;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimStatus;
@@ -23,6 +27,11 @@ $connection->statement('SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEV
 
 $at = new DateTimeImmutable($payload['at']);
 
+// Start barrier — see spike-a-rate-limit-child.php for the rationale and measured buffer.
+while (microtime(true) < $payload['start_at']) {
+    usleep(200);
+}
+
 try {
     if ($payload['store'] === 'rate_limit') {
         $store = new DatabaseRateLimitStore($connection);
@@ -39,7 +48,7 @@ try {
             'allowed' => $outcome->allowed,
             'remaining' => $outcome->remaining,
         ], JSON_THROW_ON_ERROR));
-    } else {
+    } elseif ($payload['store'] === 'claim') {
         $store = new DatabaseExecutionClaimStore($connection);
 
         $transition = $store->claim(new ExecutionClaim(
@@ -62,6 +71,31 @@ try {
         fwrite(STDOUT, json_encode([
             'ok' => true,
             'admitted' => $transition->admitted(),
+            'outcome' => $transition->outcome->value,
+        ], JSON_THROW_ON_ERROR));
+    } else {
+        $store = new DatabaseApprovalReceiptStore($connection);
+
+        $transition = $store->issue(new ApprovalReceipt(
+            id: bin2hex(random_bytes(16)),
+            toolCallId: $payload['tool_call_id'],
+            capability: 'spike.approval',
+            bindingFingerprint: $payload['fingerprint'],
+            status: ApprovalReceiptStatus::Pending,
+            reason: null,
+            expiresAt: $at->modify('+1 hour'),
+            approvedBy: null,
+            approvedAt: null,
+            rejectedBy: null,
+            rejectedAt: null,
+            consumedAt: null,
+            createdAt: $at,
+            updatedAt: $at,
+        ));
+
+        fwrite(STDOUT, json_encode([
+            'ok' => true,
+            'issued' => $transition->outcome->value === 'issued',
             'outcome' => $transition->outcome->value,
         ], JSON_THROW_ON_ERROR));
     }
