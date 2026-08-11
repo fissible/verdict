@@ -73,7 +73,20 @@ final readonly class Capability
             ? null
             : Closure::fromCallable($approvalBindingResolver);
 
-        $this->configurationFingerprint = ArgumentFingerprint::make([
+        $this->configurationFingerprint = ArgumentFingerprint::make($this->declaredConfiguration());
+    }
+
+    /**
+     * The readable, security-material configuration identified by configurationFingerprint().
+     *
+     * Closures and operator-facing reason strings are deliberately absent: they are not part of
+     * the content-addressed configuration identity defined by ADR 0017.
+     *
+     * @return array<string, mixed>
+     */
+    public function declaredConfiguration(): array
+    {
+        return [
             'name' => $this->name,
             'ability' => $this->ability,
             'confirmation_required' => $this->approvalBindingResolver !== null,
@@ -91,7 +104,7 @@ final readonly class Capability
                 'name' => $this->executionClaimPolicy->name,
             ],
             'configuration_version' => $this->configurationVersion,
-        ]);
+        ];
     }
 
     /**

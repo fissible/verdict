@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Capabilities;
 
+use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Exceptions\CapabilityAlreadyRegistered;
 use Fissible\Verdict\Exceptions\UnknownCapability;
 
@@ -14,10 +15,24 @@ final class CapabilityRegistry
      */
     private array $capabilities = [];
 
+    /** @var array<string, true> */
+    private array $recordedFingerprints = [];
+
+    public function __construct(
+        private CapabilityConfigurationStore $configurations = new InMemoryCapabilityConfigurationStore,
+    ) {}
+
     public function register(Capability $capability): self
     {
         if ($this->has($capability->name)) {
             throw CapabilityAlreadyRegistered::named($capability->name);
+        }
+
+        $fingerprint = $capability->configurationFingerprint();
+
+        if (! isset($this->recordedFingerprints[$fingerprint])) {
+            $this->configurations->record($capability);
+            $this->recordedFingerprints[$fingerprint] = true;
         }
 
         $this->capabilities[$capability->name] = $capability;

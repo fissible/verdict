@@ -8,6 +8,7 @@ use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Destination;
 use Fissible\Verdict\Context\ReleasePolicy;
@@ -61,6 +62,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
         );
 
         config()->set('verdict.evidence.recorder', InMemoryEvidenceRecorder::class);
+        config()->set('verdict.capability_configurations.store', InMemoryCapabilityConfigurationStore::class);
         config()->set('verdict.approvals.store', InMemoryApprovalReceiptStore::class);
         config()->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
         config()->set('verdict.execution_claims.store', InMemoryExecutionClaimStore::class);
