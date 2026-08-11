@@ -272,6 +272,42 @@ it('records prompt provenance when a fresh streamed prompt begins iterating', fu
         ->and($entries[0]->contentFingerprint)->toBe(ContentFingerprint::make('streamed user request'));
 });
 
+it('does not leave a pending registration when a streamed response is never iterated', function (): void {
+    $agent = Mockery::mock(Agent::class);
+    $middleware = laravelAiProvenanceMiddleware(source: Source::user('agent-prompt'));
+
+    $middleware->handle(
+        laravelAiProvenancePrompt('abandoned streamed request', agent: $agent),
+        fn (): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'abandoned-streamed-invocation',
+            generator: function (): Generator {
+                yield new StreamEnd('abandoned-streamed-event', 'stop', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
+
+    $middleware->handle(
+        laravelAiProvenancePrompt('later request', agent: $agent),
+        function (AgentPrompt $received): string {
+            event(new PromptingAgent('later-invocation', $received));
+
+            return 'next result';
+        },
+    );
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        return;
+    }
+
+    expect($recorder->provenanceFor('abandoned-streamed-invocation'))->toBe([])
+        ->and($recorder->provenanceFor('later-invocation'))->toHaveCount(1)
+        ->and($recorder->provenanceFor('later-invocation')[0]->contentFingerprint)->toBe(ContentFingerprint::make('later request'));
+});
+
 it('discards deferred provenance when downstream middleware fails before the invocation event', function (): void {
     $agent = Mockery::mock(Agent::class);
     $middleware = laravelAiProvenanceMiddleware(source: Source::user('agent-prompt'));
