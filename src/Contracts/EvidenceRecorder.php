@@ -9,6 +9,9 @@ use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 
+/**
+ * @experimental This mixed write and query contract will be split before Verdict 1.0; see #90.
+ */
 interface EvidenceRecorder
 {
     public function record(DecisionEvidence $evidence): void;

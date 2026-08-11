@@ -9,6 +9,9 @@ use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\EvaluationCase;
 use Fissible\Verdict\Evaluation\Observation;
 
+/**
+ * @experimental The evaluation-pack shape may change before Verdict 1.0.
+ */
 interface AttackPack
 {
     /**
