@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Tests\Support;
 
 use RuntimeException;
+use Throwable;
 
 /**
  * Launches count($argvPerProcess) separate PHP CLI processes truly in parallel — proc_open forks a
@@ -23,6 +24,13 @@ use RuntimeException;
  * Adapted from spikes/0037-isolation-level-concurrency/lib/harness.php (#37) — kept as a permanent
  * fixture here per #86's acceptance criteria, since the throwaway spike is what first established
  * this needed to be a real synchronized race, not merely separate processes.
+ *
+ * **On any failure — a child that fails to start, or the readiness handshake timing out —
+ * `run()` forcibly terminates and reaps every child before propagating the error.** Without this,
+ * a child already blocked reading its release pipe would stay blocked forever, and exception
+ * unwinding would close descriptors in an unpredictable order, which could as easily release a
+ * blocked child to mutate tables the test has already torn down as leave it hanging. See
+ * `terminateAndReap()`.
  */
 final class ConcurrencyHarness
 {
@@ -42,65 +50,71 @@ final class ConcurrencyHarness
     {
         $processes = [];
 
-        foreach ($argvPerProcess as $index => $payload) {
-            $descriptorSpec = [
-                1 => ['pipe', 'w'],
-                2 => ['pipe', 'w'],
-                3 => ['pipe', 'w'], // child writes its readiness signal here
-                4 => ['pipe', 'r'], // child blocks reading its release signal here
-            ];
+        try {
+            foreach ($argvPerProcess as $index => $payload) {
+                $descriptorSpec = [
+                    1 => ['pipe', 'w'],
+                    2 => ['pipe', 'w'],
+                    3 => ['pipe', 'w'], // child writes its readiness signal here
+                    4 => ['pipe', 'r'], // child blocks reading its release signal here
+                ];
 
-            $cmd = ['php', $childScriptPath, json_encode($payload, JSON_THROW_ON_ERROR)];
+                $cmd = ['php', $childScriptPath, json_encode($payload, JSON_THROW_ON_ERROR)];
 
-            $process = proc_open($cmd, $descriptorSpec, $pipes);
+                $process = proc_open($cmd, $descriptorSpec, $pipes);
 
-            if ($process === false) {
-                throw new RuntimeException("Failed to start child process {$index}.");
+                if ($process === false) {
+                    throw new RuntimeException("Failed to start child process {$index}.");
+                }
+
+                stream_set_blocking($pipes[1], false);
+                stream_set_blocking($pipes[2], false);
+                stream_set_blocking($pipes[3], false);
+
+                $processes[$index] = ['process' => $process, 'pipes' => $pipes, 'stdout' => '', 'stderr' => ''];
             }
 
-            stream_set_blocking($pipes[1], false);
-            stream_set_blocking($pipes[2], false);
-            stream_set_blocking($pipes[3], false);
+            self::releaseWhenAllReady($processes);
 
-            $processes[$index] = ['process' => $process, 'pipes' => $pipes, 'stdout' => '', 'stderr' => ''];
-        }
+            $remaining = array_keys($processes);
 
-        self::releaseWhenAllReady($processes);
+            while ($remaining !== []) {
+                foreach ($remaining as $index) {
+                    $processes[$index]['stdout'] .= (string) stream_get_contents($processes[$index]['pipes'][1]);
+                    $processes[$index]['stderr'] .= (string) stream_get_contents($processes[$index]['pipes'][2]);
+                }
 
-        $remaining = array_keys($processes);
+                $remaining = array_filter(
+                    $remaining,
+                    fn (int $index): bool => proc_get_status($processes[$index]['process'])['running'],
+                );
 
-        while ($remaining !== []) {
-            foreach ($remaining as $index) {
-                $processes[$index]['stdout'] .= (string) stream_get_contents($processes[$index]['pipes'][1]);
-                $processes[$index]['stderr'] .= (string) stream_get_contents($processes[$index]['pipes'][2]);
+                if ($remaining !== []) {
+                    usleep(5_000);
+                }
             }
 
-            $remaining = array_filter(
-                $remaining,
-                fn (int $index): bool => proc_get_status($processes[$index]['process'])['running'],
-            );
+            $results = [];
 
-            if ($remaining !== []) {
-                usleep(5_000);
+            foreach ($processes as $index => $entry) {
+                $entry['stdout'] .= (string) stream_get_contents($entry['pipes'][1]);
+                $entry['stderr'] .= (string) stream_get_contents($entry['pipes'][2]);
+
+                fclose($entry['pipes'][1]);
+                fclose($entry['pipes'][2]);
+                fclose($entry['pipes'][3]);
+
+                $exitCode = proc_close($entry['process']);
+
+                $results[$index] = ['exit_code' => $exitCode, 'stdout' => $entry['stdout'], 'stderr' => $entry['stderr']];
             }
+
+            return $results;
+        } catch (Throwable $e) {
+            self::terminateAndReap($processes);
+
+            throw $e;
         }
-
-        $results = [];
-
-        foreach ($processes as $index => $entry) {
-            $entry['stdout'] .= (string) stream_get_contents($entry['pipes'][1]);
-            $entry['stderr'] .= (string) stream_get_contents($entry['pipes'][2]);
-
-            fclose($entry['pipes'][1]);
-            fclose($entry['pipes'][2]);
-            fclose($entry['pipes'][3]);
-
-            $exitCode = proc_close($entry['process']);
-
-            $results[$index] = ['exit_code' => $exitCode, 'stdout' => $entry['stdout'], 'stderr' => $entry['stderr']];
-        }
-
-        return $results;
     }
 
     /**
@@ -142,6 +156,37 @@ final class ConcurrencyHarness
 
         foreach ($processes as $entry) {
             fclose($entry['pipes'][4]);
+        }
+    }
+
+    /**
+     * Forcibly terminates and reaps every child process in the batch, then closes all of its
+     * pipes. Used only on the failure path of run() — a startup error, or
+     * releaseWhenAllReady()'s readiness timeout — never on the normal, all-ready path (which has
+     * its own release and cleanup already). Without this, a child already blocked reading its
+     * release pipe (fd 4) would stay blocked forever once run() throws, since nothing else closes
+     * that pipe; simply letting exception unwinding drop the resources would close descriptors in
+     * an unpredictable order, which could as easily release a blocked child to run its store call
+     * against tables the test has already torn down as leave it hanging — either way an orphaned,
+     * unreaped process. Sending SIGTERM first, before touching any pipe, guarantees a child is
+     * killed rather than accidentally released by an incidental fd 4 close.
+     *
+     * @param  array<int, array{process: resource, pipes: array<int, resource>, stdout: string, stderr: string}>  $processes
+     */
+    private static function terminateAndReap(array $processes): void
+    {
+        foreach ($processes as $entry) {
+            proc_terminate($entry['process']);
+        }
+
+        foreach ($processes as $entry) {
+            foreach ($entry['pipes'] as $pipe) {
+                if (is_resource($pipe)) {
+                    fclose($pipe);
+                }
+            }
+
+            proc_close($entry['process']);
         }
     }
 }
