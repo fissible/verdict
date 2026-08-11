@@ -1,6 +1,8 @@
 <?php
 
 declare(strict_types=1);
+use Illuminate\Container\Container;
+use Illuminate\Support\Facades\Facade;
 
 require __DIR__.'/../../vendor/autoload.php';
 require __DIR__.'/lib/connections.php';
@@ -16,10 +18,10 @@ foreach (spike_connections() as $name => $config) {
     // (Capsule::schema()), not the Facade base class's container-resolved accessors ('db',
     // 'db.schema') the stubs actually call. A real migration environment gets these from Laravel's
     // DatabaseServiceProvider; standalone here, bind them by hand so the stubs run unmodified.
-    $container = new \Illuminate\Container\Container;
+    $container = new Container;
     $container->instance('db', $capsule->getDatabaseManager());
     $container->bind('db.schema', fn ($app) => $app['db']->connection()->getSchemaBuilder());
-    \Illuminate\Support\Facades\Facade::setFacadeApplication($container);
+    Facade::setFacadeApplication($container);
 
     foreach (['verdict_rate_limit_buckets', 'verdict_execution_claims', 'verdict_approval_receipts'] as $table) {
         $schema->dropIfExists($table);

@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use Illuminate\Database\Capsule\Manager;
 
 /**
  * @return array<string, array{driver: string, host: string, port: int, database: string, username: string, password: string}>
@@ -54,9 +55,9 @@ function spike_connections(): array
 /**
  * @param  array{driver: string, host: string, port: int, database: string, username: string, password: string}  $config
  */
-function spike_capsule(array $config): \Illuminate\Database\Capsule\Manager
+function spike_capsule(array $config): Manager
 {
-    $capsule = new \Illuminate\Database\Capsule\Manager;
+    $capsule = new Manager;
 
     $capsule->addConnection([
         'driver' => $config['driver'],
