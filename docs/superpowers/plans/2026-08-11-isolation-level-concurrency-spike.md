@@ -161,7 +161,7 @@ git commit -m "chore: add docker-compose fixture for the #37 isolation-level spi
 **Interfaces:**
 - Produces: `connections(): array<string, array{driver: string, host: string, port: int, database: string, username: string, password: string, isolation_level: ?string}>` — the four (or five, once spike-b's SERIALIZABLE variant is added in Task 5) named connection configs every later script reads from, so the connection details exist in exactly one place.
 - Produces: `capsule(array $config): \Illuminate\Database\Capsule\Manager` — builds a standalone Capsule connection from one entry of `connections()`.
-- Consumes: nothing new — reads `database/migrations/create_verdict_rate_limit_buckets_table.php.stub`, `create_verdict_execution_claims_table.php.stub`, `create_verdict_approval_receipts_table.php.stub` directly (these are anonymous-class `Migration` subclasses; `require`-ing the stub file and calling `->up()` against a bound `Schema` facade works without a full Laravel app, matching the pattern of running raw Blueprint definitions Testbench itself uses).
+- Consumes: nothing new — reads `database/migrations/create_verdict_rate_limit_buckets_table.php.stub`, `create_verdict_execution_claims_table.php.stub`, `create_verdict_approval_receipts_table.php.stub` directly (these are anonymous-class `Migration` subclasses using the `Schema`/`DB` facades; `require`-ing the stub file and calling `->up()` works standalone, but needs a real `Illuminate\Container\Container` with `'db'` and `'db.schema'` bound and passed to `Facade::setFacadeApplication()` first — `Capsule::setAsGlobal()` alone does not satisfy this, confirmed by running it without that step first (`RuntimeException: A facade root has not been set.`); see Step 2's code.
 
 - [ ] **Step 1: Write the shared connection registry**
 
@@ -256,6 +256,17 @@ foreach (spike_connections() as $name => $config) {
     $capsule = spike_capsule($config);
     $schema = $capsule->schema();
 
+    // The migration stubs use Illuminate\Support\Facades\Schema/DB directly (`use Schema;` at the
+    // top of each stub) — Capsule::setAsGlobal() only wires up Capsule's OWN static accessors
+    // (Capsule::schema()), not the Facade base class's container-resolved accessors ('db',
+    // 'db.schema') the stubs actually call. Confirmed by running this without the block below:
+    // `RuntimeException: A facade root has not been set.` A real migration environment gets these
+    // from Laravel's DatabaseServiceProvider; standalone here, bind them by hand.
+    $container = new \Illuminate\Container\Container;
+    $container->instance('db', $capsule->getDatabaseManager());
+    $container->bind('db.schema', fn ($app) => $app['db']->connection()->getSchemaBuilder());
+    \Illuminate\Support\Facades\Facade::setFacadeApplication($container);
+
     foreach (['verdict_rate_limit_buckets', 'verdict_execution_claims', 'verdict_approval_receipts'] as $table) {
         $schema->dropIfExists($table);
     }
@@ -271,19 +282,15 @@ foreach (spike_connections() as $name => $config) {
         $migration->up();
         echo "  migrated: {$stub}\n";
     }
-
-    \Illuminate\Database\Capsule\Manager::setAsGlobal();
 }
 
 echo "Bootstrap complete.\n";
 ```
 
-Note: the migration stubs use the `Schema` and `DB` facades (`use Illuminate\Support\Facades\Schema;`), which resolve through the container `Capsule::setAsGlobal()` sets up — no full Laravel application is needed for `Schema::create()` to work standalone. Since each loop iteration calls `setAsGlobal()` on a new Capsule, the facade always points at the connection currently being bootstrapped.
-
-- [ ] **Step 3: Run it and confirm all three tables exist on all four connections**
+- [ ] **Step 3: Run it and confirm all three tables exist on all five connections**
 
 Run: `php spikes/0037-isolation-level-concurrency/bootstrap.php`
-Expected: `migrated:` lines for all three stubs under all four connection headers, ending in `Bootstrap complete.`, no exceptions. If a connection fails, re-check Task 1 Step 4's healthcheck output before assuming this script is wrong.
+Expected: `migrated:` lines for all three stubs under all five connection headers (`postgres`, `postgres_serializable`, `mysql_repeatable_read`, `mysql_read_committed`, `mariadb` — `postgres_serializable` was folded into `spike_connections()` here rather than deferred to Task 5, since it costs nothing to add now and avoids a later edit to this file), ending in `Bootstrap complete.`, no exceptions. If a connection fails, re-check Task 1 Step 4's healthcheck output before assuming this script is wrong. Spot-check the actual schema on at least one connection (`docker exec <postgres-container> psql -U verdict -d verdict_spike -c '\d verdict_execution_claims'`) — confirm the primary key is on `id` and the unique constraint is on `binding_fingerprint`, not the reverse, since Task 4's child scripts depend on that distinction.
 
 - [ ] **Step 4: Commit**
 
