@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Support;
 
 use Closure;
+use Illuminate\Container\Container;
+use Illuminate\Contracts\Database\ConcurrencyErrorDetector as ConcurrencyErrorDetectorContract;
 use Illuminate\Database\ConcurrencyErrorDetector;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\DeadlockException;
 use Throwable;
 
 final class TransactionRetry
@@ -28,12 +31,17 @@ final class TransactionRetry
      */
     public static function run(ConnectionInterface $connection, Closure $callback): mixed
     {
-        $detector = new ConcurrencyErrorDetector;
+        $container = Container::getInstance();
+        $detector = $container->bound(ConcurrencyErrorDetectorContract::class)
+            ? $container[ConcurrencyErrorDetectorContract::class]
+            : new ConcurrencyErrorDetector;
 
         try {
             return $connection->transaction($callback);
         } catch (Throwable $error) {
-            if (! $detector->causedByConcurrencyError($error)) {
+            // Laravel uses this exception to stop retrying a deadlock from a nested transaction.
+            // It may still match the detector by message, but belongs to the outer transaction.
+            if ($error instanceof DeadlockException || ! $detector->causedByConcurrencyError($error)) {
                 throw $error;
             }
         }
