@@ -11,11 +11,14 @@ use RuntimeException;
  * real OS process per entry, each opening its own database connection, so this is genuine
  * process-level concurrency, not sequential calls or transactions sharing one connection.
  *
- * Every batch is held at a shared wall-clock start barrier: each payload must carry a `start_at`
- * float (seconds since epoch), identical across the batch, computed with enough buffer that every
- * child has already connected and is parked waiting before it releases. Without this, process
- * boot/connect latency dominates over the query itself, and "zero errors" would not actually prove
- * anything about genuine overlapping contention.
+ * Every batch is held at a real ready/release handshake, not a fixed wall-clock buffer: each child
+ * writes a readiness signal on fd 3 once it has forced its own PDO connection (see the
+ * concurrency-children scripts), and blocks reading fd 4 until this class has received that signal
+ * from every child in the batch, then releases all of them together. A fixed-timestamp buffer
+ * (this class's original design) is only ever a statistical guess at worst-case boot/connect
+ * latency — any child slower than the guess starts its store call late, silently understating
+ * contention and producing a false-clean result. This class was corrected to a real handshake after
+ * review of #93 found exactly that gap.
  *
  * Adapted from spikes/0037-isolation-level-concurrency/lib/harness.php (#37) — kept as a permanent
  * fixture here per #86's acceptance criteria, since the throwaway spike is what first established
@@ -23,6 +26,14 @@ use RuntimeException;
  */
 final class ConcurrencyHarness
 {
+    /**
+     * Generous safety timeout for the readiness handshake: a child that never signals ready
+     * indicates a real bug (crash, hang, misconfigured connection), not normal boot/connect
+     * variance — unlike the old fixed-timestamp buffer, this is not load-bearing for correctness,
+     * only for failing fast instead of hanging the test suite forever.
+     */
+    private const READY_TIMEOUT_SECONDS = 10.0;
+
     /**
      * @param  array<int, array<string, mixed>>  $argvPerProcess  one JSON-encodable payload per child
      * @return array<int, array{exit_code: int, stdout: string, stderr: string}>
@@ -35,6 +46,8 @@ final class ConcurrencyHarness
             $descriptorSpec = [
                 1 => ['pipe', 'w'],
                 2 => ['pipe', 'w'],
+                3 => ['pipe', 'w'], // child writes its readiness signal here
+                4 => ['pipe', 'r'], // child blocks reading its release signal here
             ];
 
             $cmd = ['php', $childScriptPath, json_encode($payload, JSON_THROW_ON_ERROR)];
@@ -47,9 +60,12 @@ final class ConcurrencyHarness
 
             stream_set_blocking($pipes[1], false);
             stream_set_blocking($pipes[2], false);
+            stream_set_blocking($pipes[3], false);
 
             $processes[$index] = ['process' => $process, 'pipes' => $pipes, 'stdout' => '', 'stderr' => ''];
         }
+
+        self::releaseWhenAllReady($processes);
 
         $remaining = array_keys($processes);
 
@@ -77,6 +93,7 @@ final class ConcurrencyHarness
 
             fclose($entry['pipes'][1]);
             fclose($entry['pipes'][2]);
+            fclose($entry['pipes'][3]);
 
             $exitCode = proc_close($entry['process']);
 
@@ -87,13 +104,44 @@ final class ConcurrencyHarness
     }
 
     /**
-     * Buffer for the start barrier: real boot-to-first-query latency measured empirically under
-     * 20-way parallel process startup was 52-175ms (p95, see #37's spike results); 1 second is
-     * ~6x that p95, a generous margin so every child is already connected and parked at the
-     * barrier well before it releases.
+     * Blocks until every child in the batch has written a readiness signal to its pipe 3, then
+     * releases all of them at once by closing this end of each child's pipe 4 — each child is
+     * blocked on a read of its own pipe 4 that only returns (with EOF) once this happens. Nothing
+     * is released until every child has proven, not assumed, that it is actually ready.
+     *
+     * @param  array<int, array{process: resource, pipes: array<int, resource>, stdout: string, stderr: string}>  $processes
      */
-    public static function startAt(): float
+    private static function releaseWhenAllReady(array $processes): void
     {
-        return microtime(true) + 1.0;
+        $pending = array_keys($processes);
+        $deadline = microtime(true) + self::READY_TIMEOUT_SECONDS;
+
+        while ($pending !== []) {
+            foreach ($pending as $key => $index) {
+                $signal = stream_get_contents($processes[$index]['pipes'][3]);
+
+                if ($signal !== false && $signal !== '') {
+                    unset($pending[$key]);
+                }
+            }
+
+            if ($pending === []) {
+                break;
+            }
+
+            if (microtime(true) > $deadline) {
+                throw new RuntimeException(sprintf(
+                    'Timed out after %.1fs waiting for %d child process(es) to signal readiness — a child failed to boot or connect.',
+                    self::READY_TIMEOUT_SECONDS,
+                    count($pending),
+                ));
+            }
+
+            usleep(200);
+        }
+
+        foreach ($processes as $entry) {
+            fclose($entry['pipes'][4]);
+        }
     }
 }

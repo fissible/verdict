@@ -32,9 +32,21 @@ $store = new DatabaseRateLimitStore($connection);
 
 $at = new DateTimeImmutable($payload['at']);
 
-while (microtime(true) < $payload['start_at']) {
-    usleep(200);
-}
+// Ready/release handshake: signal readiness on fd 3 (written right after the PDO connection above
+// was forced), then block reading fd 4 until the parent has received a readiness signal from every
+// child in this batch and releases them all together (by closing its write end of fd 4, which
+// unblocks this read with EOF). This replaces a fixed wall-clock buffer — which could only ever be
+// a statistical guess at worst-case boot/connect latency, and would silently understate contention
+// (a false-clean result) for any child slower than the guess — with a real handshake: nothing here
+// proceeds until every child has proven, not assumed, that it is actually ready. See
+// ConcurrencyHarness::releaseWhenAllReady() for the parent side.
+$ready = fopen('php://fd/3', 'w');
+fwrite($ready, '1');
+fclose($ready);
+
+$release = fopen('php://fd/4', 'r');
+fread($release, 1);
+fclose($release);
 
 try {
     $outcome = $store->consume(new RateLimitConsumption(

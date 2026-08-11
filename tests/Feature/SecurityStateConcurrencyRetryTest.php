@@ -19,19 +19,27 @@ use Illuminate\Database\QueryException;
  * Adapted from spikes/0037-isolation-level-concurrency/ (#37) into a durable, permanent test, per
  * #86's acceptance criteria — the throwaway spike is not the last word on this; this is.
  *
- * **Every child process forces its lazy PDO connection before the start barrier.**
+ * **Every child process forces its lazy PDO connection before it signals readiness.**
  * `Connection::$pdo` starts as a Closure and is only resolved on first use; without an explicit
- * `getPdo()` call before the barrier wait loop, the barrier would release processes that then each
- * independently pay a TCP handshake right after, silently reintroducing the unsynchronized-startup
- * variance the barrier exists to eliminate. Found in review of this suite's first version — see
- * `tests/Support/concurrency-children/*.php`.
+ * `getPdo()` call, a "ready" child could still be mid-connect, reintroducing the unsynchronized-
+ * startup variance synchronization exists to eliminate. Found in review of this suite's first
+ * version — see `tests/Support/concurrency-children/*.php`.
  *
- * **Strictness varies by engine and store, based on direct measurement with the corrected
- * (connection-forced) barrier — not by assumption.** Some combinations are asserted strictly (zero
- * errors); others, proven to have a real residual failure rate even after the fix, are asserted
- * more loosely: the invariant must still hold among responses that don't throw, and every thrown
- * exception must be the expected, bounded SQLSTATE 40001 — never a hard zero-error assertion where
- * that would not reliably be true and would make the test flaky rather than honest. See
+ * **The batch is released by a real ready/release handshake, not a fixed wall-clock buffer.**
+ * The first version of this suite computed a fixed start-at timestamp before spawning any children,
+ * sized from measured p95 boot/connect latency — a statistical guess, not a guarantee, that a
+ * slower-than-usual child could silently miss, starting its store call late and understating
+ * contention without the test being able to tell. `ConcurrencyHarness` was corrected, in the same
+ * review round that found the connection-forcing gap above, to a handshake: every child signals
+ * readiness only after forcing its connection, and the harness releases the whole batch only once
+ * every child has signaled. See `ConcurrencyHarness::releaseWhenAllReady()`.
+ *
+ * **Strictness varies by engine and store, based on direct measurement with the corrected harness —
+ * not by assumption.** Some combinations are asserted strictly (zero errors); others, proven to
+ * have a real residual failure rate even after the fix, are asserted more loosely: the invariant
+ * must still hold among responses that don't throw, and every thrown exception must be the
+ * expected, bounded SQLSTATE 40001 — never a hard zero-error assertion where that would not
+ * reliably be true and would make the test flaky rather than honest. See
  * `concurrencyTestIsKnownFlaky()` below for exactly which combinations, and ADR 0018 /
  * `docs/limitations.md` for the measured rates behind each one.
  */
@@ -59,47 +67,37 @@ function concurrencyTestSkipReason(): string
     return 'Requires a real MySQL/MariaDB or PostgreSQL connection (DB_CONNECTION); SQLite has no REPEATABLE READ/SERIALIZABLE semantics and never raises SQLSTATE 40001.';
 }
 
-function concurrencyTestIsMariaDb(): bool
-{
-    if (concurrencyTestDriver() !== 'mysql') {
-        return false;
-    }
-
-    /** @var DatabaseManager $manager */
-    $manager = app(DatabaseManager::class);
-    $version = $manager->connection()->select('SELECT VERSION() as v')[0]->v ?? '';
-
-    return str_contains((string) $version, 'MariaDB');
-}
-
 /**
  * Which (engine, store) combinations are known, by direct measurement with the corrected
- * (connection-forced) barrier, to retain a real residual failure rate even after #86's fix:
+ * ready/release-synchronized harness, to retain a real residual failure rate even after #86's fix:
  *
- * - MariaDB 11: all three stores. Commonly ~19/20 failures under 20-way contention, occasionally
- *   0/20 — inconsistent, not explained by retry count (see #92).
- * - MySQL 8, rate limits only: rare but real (~1 in 14 runs observed at 19/20 failures; every
- *   other run clean). Execution claims and approval receipts on MySQL were clean across every run
- *   tested (14+) and are asserted strictly.
+ * - MySQL/MariaDB (Laravel's `mysql` driver), all three stores: a bimodal, inconsistent failure
+ *   pattern — most 20-way-contention runs are fully clean, but a substantial minority fail
+ *   severely (commonly ~15-19 of 20 attempts throwing SQLSTATE 40001 in the same run). This was
+ *   first found on MariaDB and, at the time, believed not to reproduce on real MySQL 8 at a
+ *   meaningful rate — that belief turned out to be a measurement artifact of an earlier,
+ *   probabilistic (fixed-timestamp) start barrier that could silently release a slow child late,
+ *   understating contention. Re-measured with a real ready/release handshake (see
+ *   `ConcurrencyHarness::releaseWhenAllReady()`), real MySQL 8 shows the exact same pattern on all
+ *   three stores, just less often than MariaDB (roughly 15-35% of runs on MySQL 8 vs. 60-70% on
+ *   MariaDB 11, at 20-way contention — see ADR 0018 for the full measured breakdown). Raising the
+ *   retry count made no measurable difference on either engine. The root cause is not yet
+ *   understood — tracked as [#92](https://github.com/fissible/verdict/issues/92).
  * - PostgreSQL SERIALIZABLE, rate limits only: see the dedicated SERIALIZABLE test below.
  */
-function concurrencyTestIsKnownFlaky(string $store): bool
+function concurrencyTestIsKnownFlaky(): bool
 {
-    if (concurrencyTestIsMariaDb()) {
-        return true;
-    }
-
-    return concurrencyTestDriver() === 'mysql' && $store === 'rate_limit';
+    return concurrencyTestDriver() === 'mysql';
 }
 
 /**
  * @param  array<int, mixed>  $decoded
  */
-function assertRaceOutcome(array $decoded, int $winners, int $expectedWinners, string $store): void
+function assertRaceOutcome(array $decoded, int $winners, int $expectedWinners): void
 {
     $errors = array_values(array_filter($decoded, fn ($d) => ! is_array($d) || ! ($d['ok'] ?? false)));
 
-    if (concurrencyTestIsKnownFlaky($store)) {
+    if (concurrencyTestIsKnownFlaky()) {
         expect($winners)->toBeLessThanOrEqual($expectedWinners);
 
         foreach ($errors as $error) {
@@ -155,7 +153,6 @@ afterEach(function (): void {
 it('admits at most the configured limit when racing DatabaseRateLimitStore::consume() under the connection\'s natural isolation level', function (): void {
     $bucketFingerprint = hash('sha256', random_bytes(16));
     $at = (new DateTimeImmutable)->format(DATE_ATOM);
-    $startAt = ConcurrencyHarness::startAt();
 
     $payloads = array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
         'connection' => concurrencyTestConnectionConfig(),
@@ -163,54 +160,49 @@ it('admits at most the configured limit when racing DatabaseRateLimitStore::cons
         'limit' => CONCURRENCY_TEST_RATE_LIMIT,
         'window_seconds' => 60,
         'at' => $at,
-        'start_at' => $startAt,
     ]);
 
     $results = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/rate-limit-consume.php', $payloads);
     $decoded = array_map(fn ($r) => json_decode($r['stdout'], true), $results);
     $admitted = count(array_filter($decoded, fn ($d) => is_array($d) && ($d['ok'] ?? false) && $d['allowed']));
 
-    assertRaceOutcome($decoded, $admitted, CONCURRENCY_TEST_RATE_LIMIT, 'rate_limit');
+    assertRaceOutcome($decoded, $admitted, CONCURRENCY_TEST_RATE_LIMIT);
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
 it('admits at most one winner when racing DatabaseExecutionClaimStore::claim() under the connection\'s natural isolation level', function (): void {
     $bindingFingerprint = hash('sha256', random_bytes(16));
     $at = (new DateTimeImmutable)->format(DATE_ATOM);
-    $startAt = ConcurrencyHarness::startAt();
 
     $payloads = array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
         'connection' => concurrencyTestConnectionConfig(),
         'binding_fingerprint' => $bindingFingerprint,
         'at' => $at,
-        'start_at' => $startAt,
     ]);
 
     $results = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/execution-claim-claim.php', $payloads);
     $decoded = array_map(fn ($r) => json_decode($r['stdout'], true), $results);
     $winners = count(array_filter($decoded, fn ($d) => is_array($d) && ($d['ok'] ?? false) && ($d['admitted'] ?? false)));
 
-    assertRaceOutcome($decoded, $winners, 1, 'claim');
+    assertRaceOutcome($decoded, $winners, 1);
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
 it('issues at most one receipt when racing DatabaseApprovalReceiptStore::issue() under the connection\'s natural isolation level', function (): void {
     $bindingFingerprint = hash('sha256', random_bytes(16));
     $toolCallId = bin2hex(random_bytes(16));
     $at = (new DateTimeImmutable)->format(DATE_ATOM);
-    $startAt = ConcurrencyHarness::startAt();
 
     $payloads = array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
         'connection' => concurrencyTestConnectionConfig(),
         'binding_fingerprint' => $bindingFingerprint,
         'tool_call_id' => $toolCallId,
         'at' => $at,
-        'start_at' => $startAt,
     ]);
 
     $results = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/approval-receipt-issue.php', $payloads);
     $decoded = array_map(fn ($r) => json_decode($r['stdout'], true), $results);
     $issuers = count(array_filter($decoded, fn ($d) => is_array($d) && ($d['ok'] ?? false) && ($d['issued'] ?? false)));
 
-    assertRaceOutcome($decoded, $issuers, 1, 'approval');
+    assertRaceOutcome($decoded, $issuers, 1);
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
 it('resolves PostgreSQL SERIALIZABLE cleanly for execution claims and approval receipts at high contention, but rate limits retain a known residual failure rate', function (): void {
@@ -223,12 +215,10 @@ it('resolves PostgreSQL SERIALIZABLE cleanly for execution claims and approval r
 
     // Execution claims and approval receipts: confirmed by #37/#86 to resolve cleanly under
     // SERIALIZABLE even at 20-way contention. These are enforced, not just observed.
-    $startAt = ConcurrencyHarness::startAt();
     $claimResults = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/execution-claim-claim.php', array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
         'connection' => $connectionConfig,
         'binding_fingerprint' => hash('sha256', random_bytes(16)),
         'at' => $at,
-        'start_at' => $startAt,
         'force_serializable' => true,
     ]));
     $claimDecoded = array_map(fn ($r) => json_decode($r['stdout'], true), $claimResults);
@@ -238,13 +228,11 @@ it('resolves PostgreSQL SERIALIZABLE cleanly for execution claims and approval r
     expect($claimErrors)->toBe([])
         ->and($claimWinners)->toBe(1);
 
-    $startAt = ConcurrencyHarness::startAt();
     $approvalResults = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/approval-receipt-issue.php', array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
         'connection' => $connectionConfig,
         'binding_fingerprint' => hash('sha256', random_bytes(16)),
         'tool_call_id' => bin2hex(random_bytes(16)),
         'at' => $at,
-        'start_at' => $startAt,
         'force_serializable' => true,
     ]));
     $approvalDecoded = array_map(fn ($r) => json_decode($r['stdout'], true), $approvalResults);
@@ -266,14 +254,12 @@ it('resolves PostgreSQL SERIALIZABLE cleanly for execution claims and approval r
     // SQLSTATE 40001 rather than something new and unexpected. It deliberately does not assert
     // zero errors, because that would not be true today and pretending otherwise would make this
     // a flaky test rather than an honest one.
-    $startAt = ConcurrencyHarness::startAt();
     $rateLimitResults = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/rate-limit-consume.php', array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
         'connection' => $connectionConfig,
         'bucket_fingerprint' => hash('sha256', random_bytes(16)),
         'limit' => CONCURRENCY_TEST_RATE_LIMIT,
         'window_seconds' => 60,
         'at' => $at,
-        'start_at' => $startAt,
         'force_serializable' => true,
     ]));
     $rateLimitDecoded = array_map(fn ($r) => json_decode($r['stdout'], true), $rateLimitResults);

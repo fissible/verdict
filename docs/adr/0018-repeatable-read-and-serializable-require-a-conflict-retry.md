@@ -9,8 +9,11 @@ Status: Accepted
   landed this ADR.
 - [#86](https://github.com/fissible/verdict/issues/86) (implemented) carried out the retry fix this ADR
   originally deferred, and measured its actual effect — see the Update below.
-- [#92](https://github.com/fissible/verdict/issues/92) tracks a real gap #86 found: MariaDB 11 does not
-  resolve as reliably as MySQL 8 under the same fix, for reasons not yet understood.
+- [#92](https://github.com/fissible/verdict/issues/92) tracks a real gap #86 found: MySQL 8 and MariaDB
+  11 both retain a bimodal, inconsistent residual failure rate under the same fix — MariaDB roughly
+  2x MySQL's frequency, for reasons not yet understood (see the Update below; this was originally
+  filed as "MariaDB doesn't resolve as reliably as MySQL," which turned out to be a measurement
+  artifact — both engines hit the same underlying race, just at different rates).
 - [#20](https://github.com/fissible/verdict/issues/20) adds the durable concurrency test suite; a first
   version of it landed directly in #86 (`tests/Feature/SecurityStateConcurrencyRetryTest.php`), since #86
   needed real evidence its own fix worked, not just a plan for one.
@@ -153,9 +156,9 @@ mechanism Laravel's own framework tests already cover.
 
 At the time this ADR was first written, the expectation was: READ COMMITTED asserted strictly
 everywhere; REPEATABLE READ and SERIALIZABLE asserted strictly once the retry fix landed, uniformly
-across drivers. **That turned out to be wrong for MariaDB specifically** — see the Update section
-immediately below for what `tests/Feature/SecurityStateConcurrencyRetryTest.php` actually asserts today,
-and why.
+across drivers. **That turned out to be wrong — first found on MariaDB, then, after a further harness
+correction, confirmed on MySQL 8 as well** — see the Update section immediately below for what
+`tests/Feature/SecurityStateConcurrencyRetryTest.php` actually asserts today, and why.
 
 ## Update (#86): the fix landed, and measurement found more than expected
 
@@ -163,62 +166,79 @@ and why.
 process-level concurrency #37 used — not assumed to work because the reasoning was sound, tested
 directly, per this repo's standing rule on IO/timing/concurrency claims.
 
-**MySQL 8 REPEATABLE READ: reliably resolved for execution claims and approval receipts; rate limits
-retain a rare but real residual gap.** This finding was corrected after a subsequent review of #93
+**This section was corrected twice during #93's review, in two separate rounds, after two separate
+measurement-methodology gaps were found in the harness itself — not in the retry fix. Both
+corrections are recorded here rather than silently overwritten, because the earlier, wrong numbers
+were already committed to this ADR and to `docs/limitations.md` once, and this repo's practice is to
+correct documentation honestly when a finding changes, not pretend it was always known.**
+
+**Round 1 finding — the connection wasn't forced before the barrier.** #86's original measurement
 found the durable test's child processes never actually forced their PDO connection before the
 shared start barrier (`Connection::$pdo` starts as a lazy `Closure`, resolved only on first real
 query) — so "concurrent" runs could still be serialized by each child independently paying its own
-connection-handshake cost after the barrier released them. The original "zero errors across every
-run" claim below was measured under that flawed harness. Re-measured with the connection genuinely
-forced before the barrier (`$connection->getPdo()`, applied to every child script including the #37
-spike's): execution claims and approval receipts remained clean across every run tested (14+ runs,
-20-way contention) and are asserted strictly. Rate limits, however, showed one severe failure (19 of
-20 attempts throwing `SQLSTATE 40001`) in 1 of 14 runs — every other run was clean. This is rare
-enough that most contributors will never see it locally, but real, and disclosed in
-`docs/limitations.md` and asserted loosely (not zero-error) by the durable test suite, the same
-treatment already given to PostgreSQL-SERIALIZABLE rate limits and to MariaDB below. The asymmetry is
-consistent with the same structural explanation used for the other engines: rate limits' winning path
-does an insert followed by potentially several sequential successful updates on the same row as
-multiple callers are admitted, creating more write-write conflict opportunities than claim/approval's
-single successful insert.
+connection-handshake cost after the barrier released them. Re-measured with the connection genuinely
+forced (`$connection->getPdo()`, applied to every child script including the #37 spike's), the initial
+correction concluded: MySQL 8 execution claims and approval receipts clean across 14+ runs; MySQL 8
+rate limits showing one severe failure in 14 runs; MariaDB severely and inconsistently affected across
+all three stores. That correction turned out to still be incomplete — see Round 2.
 
-**PostgreSQL SERIALIZABLE: fully resolved for execution claims and approval receipts, still partially
-unresolved for rate limits.** Claims and approvals: zero errors at 20-way contention, confirmed
-reproducibly. Rate limits: errors dropped from 20/20 (unfixed) to a still-substantial residual (~17-18
-out of 20 across repeated runs at contention level 20; fully clean at contention level 2). Raising the
-retry count from 2 to 3 barely moved this (18→17 errors) — Laravel's built-in retry has no backoff or
+**Round 2 finding — the start barrier itself was a probabilistic guess, not a synchronization
+guarantee.** The barrier was a fixed wall-clock timestamp, computed once before spawning any
+children and sized from measured p95 boot/connect latency. That is a statistical bound, not a
+guarantee: any child slower than the estimate would still miss the barrier, start its store call
+late, and silently reduce measured contention without the test being able to tell — a false-clean
+result, the exact class of problem Round 1 had already found once in a different place.
+`ConcurrencyHarness` was corrected to a real ready/release handshake instead: every child signals
+readiness (over a dedicated pipe) only after forcing its connection, and the harness releases the
+whole batch only once every child has signaled (see `ConcurrencyHarness::releaseWhenAllReady()`).
+Re-measuring with this guarantee — not an estimate — changed the picture substantially:
+
+**MySQL 8 and MariaDB 11 (both Laravel's `mysql` driver) show the same bimodal, inconsistent failure
+pattern, on all three stores, differing only in how often it triggers.** Most 20-way-contention runs
+are fully clean; a substantial minority fail severely (commonly 12-19 of 20 attempts throwing
+`SQLSTATE 40001` in the same run). Measured across repeated runs at 20-way contention:
+
+| Store | MySQL 8 (severe-failure rate) | MariaDB 11 (severe-failure rate) |
+|---|---|---|
+| Rate limits | 6 of 20 runs (30%) | 6 of 10 runs (60%) |
+| Execution claims | 3 of 20 runs (15%) | 7 of 10 runs (70%) |
+| Approval receipts | 7 of 20 runs (35%) | 6 of 10 runs (60%) |
+
+Raising the retry count made no measurable difference on either engine in earlier measurement rounds.
+**The Round 1 conclusion that MySQL 8 was "fully and reliably resolved" for claims/approvals, and
+that MariaDB's severity was a mysterious divergence from MySQL, was itself substantially a
+measurement artifact of the probabilistic barrier** — not eliminated by this correction, but
+reframed: MySQL 8 and MariaDB 11 appear to hit the *same* underlying race, just at different
+frequencies (MariaDB roughly 2x MySQL's rate here), not a different one. Why the frequency differs
+between the two engines is still not understood and remains tracked as
+[#92](https://github.com/fissible/verdict/issues/92), reframed to reflect this.
+
+**PostgreSQL: unaffected by either correction, numbers unchanged.** Natural READ COMMITTED: zero
+errors across every run tested (all three stores). SERIALIZABLE: execution claims and approval
+receipts fully resolved (zero errors at 20-way contention, confirmed reproducibly); rate limits
+retain a real, consistent (not bimodal — every run affected to some degree) residual: ~15-18 of 20
+across repeated runs at contention level 20, fully clean at contention level 2. Raising the retry
+count from 2 to 3 barely moved this (18→17 errors) — Laravel's built-in retry has no backoff or
 jitter, so simultaneous retriers tend to collide again immediately, and this is a case of genuinely
-diminishing returns, not an undersized bound. This residual gap is real, disclosed in
-`docs/limitations.md`, and pinned (not hidden) by the durable test suite's dedicated SERIALIZABLE test,
-which asserts the invariant holds among non-throwing responses and that every thrown exception is the
-expected, bounded SQLSTATE 40001 — deliberately not asserting zero errors, because that would not be
-true and would make the test flaky rather than honest.
-
-**MariaDB 11 REPEATABLE READ: a separate, more severe, and currently unexplained gap.** This is the
-biggest surprise in this Update. MariaDB reports as Laravel's `mysql` driver and nominally runs the same
-InnoDB REPEATABLE READ as MySQL 8 — but measured directly, it does **not** behave the same under this
-fix. Across repeated 20-way-contention runs, all three stores showed a substantial, inconsistent
-residual failure rate on MariaDB — commonly ~19 of 20 attempts still throwing `SQLSTATE 40001`,
-occasionally (not reliably) 0 of 20. Raising `DatabaseExecutionClaimStore::claim()`'s retry count from 2
-to 5 made **no measurable difference** — ruling out "just needs one more attempt" as the explanation.
-Something about MariaDB 11's InnoDB deadlock detection or victim selection for this exact insert-race
-pattern differs from MySQL 8's in a way a bounded, unstaggered retry does not resolve, and the root
-cause is not yet known. Tracked as [#92](https://github.com/fissible/verdict/issues/92) rather than
-guessed at further here.
+diminishing returns, not an undersized bound. Postgres's SERIALIZABLE `force_serializable` payload
+path already ran a real statement before the barrier in every prior version of this suite, which is
+why neither correction changed its numbers — it was never actually affected by the harness bugs Round
+1 and Round 2 found and fixed elsewhere.
 
 **The durable test suite (`tests/Feature/SecurityStateConcurrencyRetryTest.php`, added directly in #86
-rather than waiting for #20) reflects all of this precisely, not optimistically:** real MySQL execution
-claims and approval receipts, and real PostgreSQL at natural READ COMMITTED (all three stores), are
-asserted strictly — zero errors, exact expected admission count. Real MariaDB (detected via `SELECT
-VERSION()`, since Laravel's driver name alone cannot distinguish it from MySQL, any store) and real
-MySQL rate limits specifically are asserted the way the SERIALIZABLE-rate-limit case above is: the
-invariant must hold among non-throwing responses, and every exception must be the expected, bounded
-SQLSTATE 40001 — never a hard zero-error assertion, because it would not reliably be true.
+rather than waiting for #20) reflects the corrected picture, not the original optimistic one:** real
+PostgreSQL at natural READ COMMITTED (all three stores) and at SERIALIZABLE for execution claims and
+approval receipts is asserted strictly — zero errors, exact expected admission count. Real MySQL and
+MariaDB (both report as Laravel's `mysql` driver; no runtime distinction between them is drawn
+anymore, since both show the same pattern) and PostgreSQL SERIALIZABLE rate limits specifically are
+asserted the way `concurrencyTestIsKnownFlaky()` describes: the invariant must hold among non-throwing
+responses, and every exception must be the expected, bounded SQLSTATE 40001 — never a hard zero-error
+assertion, because it would not reliably be true.
 
-**In every measured case, including MariaDB's, the invariant held among responses that didn't throw.**
-No test at any point observed a wrong answer — more than the configured limit admitted, more than one
-claim winner, more than one approval issued. Every residual gap found by #86 is an availability gap
-(an unhandled exception where a clean answer was expected), never a correctness one.
+**In every measured case, across both correction rounds, the invariant held among responses that
+didn't throw.** No test at any point observed a wrong answer — more than the configured limit
+admitted, more than one claim winner, more than one approval issued. Every residual gap found is an
+availability gap (an unhandled exception where a clean answer was expected), never a correctness one.
 
 ## Consequences
 
@@ -235,16 +255,18 @@ claim winner, more than one approval issued. Every residual gap found by #86 is 
   (`concurrency-matrix.yml`). `tests/Feature/SecurityStateConcurrencyRetryTest.php` (added in #86)
   self-skips against SQLite and runs for real whenever any of those jobs execute, so the every-PR
   PostgreSQL job exercises the SERIALIZABLE-class findings on every PR, while the REPEATABLE-READ-class
-  findings (MySQL and, per #92, MariaDB's separate unresolved gap) are only exercised on tag/weekly —
-  matching #37's original Part 3 cost/benefit tradeoff, and flagged here as a real gap in coverage
-  cadence, not hidden by it.
+  findings (MySQL and MariaDB's shared, per-#92, residual gap — see the Update above) are only
+  exercised on tag/weekly — matching #37's original Part 3 cost/benefit tradeoff, and flagged here as a
+  real gap in coverage cadence, not hidden by it.
 - `DatabaseApprovalReceiptStore` is measured, not assumed, across every combination tested: confirmed
-  exposed under REPEATABLE READ at the same severity as the other two stores (MySQL: fully fixed;
-  MariaDB: same unresolved residual gap as the others — see #92), and confirmed fully resolved under
-  PostgreSQL SERIALIZABLE, unlike rate limits' residual gap there.
+  exposed under REPEATABLE READ at the same severity as the other two stores on both MySQL and MariaDB
+  (see #92), and confirmed fully resolved under PostgreSQL SERIALIZABLE, unlike rate limits' residual
+  gap there.
 - [#92](https://github.com/fissible/verdict/issues/92) exists because #86 found a real, unexplained
-  MariaDB-specific gap while verifying the fix, not because it was anticipated — the honest outcome of
-  actually measuring instead of assuming a fix works once it's plausible.
+  MySQL/MariaDB gap while verifying the fix, not because it was anticipated — the honest outcome of
+  actually measuring instead of assuming a fix works once it's plausible. It was originally scoped as
+  MariaDB-specific; the Update above corrected that scoping after a further harness fix showed MySQL 8
+  hits the same gap, just less often.
 
 ## Alternatives rejected
 

@@ -30,9 +30,14 @@ $store = new DatabaseApprovalReceiptStore($connection);
 
 $at = new DateTimeImmutable($payload['at']);
 
-while (microtime(true) < $payload['start_at']) {
-    usleep(200);
-}
+// Ready/release handshake — see rate-limit-consume.php for why this matters.
+$ready = fopen('php://fd/3', 'w');
+fwrite($ready, '1');
+fclose($ready);
+
+$release = fopen('php://fd/4', 'r');
+fread($release, 1);
+fclose($release);
 
 try {
     $transition = $store->issue(new ApprovalReceipt(
