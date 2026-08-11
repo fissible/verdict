@@ -4,6 +4,15 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add `Capability::configurationFingerprint()` — a SHA-256 over the capability's declared,
+  security-material configuration (name, ability, confirmation requirement/TTL, execution-target
+  policy, rate-limit policy, execution-claim policy, and an optional
+  `Capability::configurationVersion()`), computed once at construction and carried on every
+  `DecisionEvidence` row, so an audit can tell whether the rules governing a decision changed
+  without anyone needing to remember to rename a policy. See
+  [ADR 0017](docs/adr/0017-configuration-identity-in-evidence.md) Decision §1. Adds a
+  `configuration_fingerprint` column to `verdict_evidence` via migration.
+
 - Add a `tool_kind` field (`guarded` or `bound`) to `DecisionEvidence`, populated by
   `AbstractVerdictTool` from the concrete subclass, so applications can audit their own
   `GuardedTool` migration debt without grepping source. See

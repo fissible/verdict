@@ -33,6 +33,7 @@ final readonly class ContextReleaseEvidence
         public array $transformFingerprints = [],
         public array $transformedPathFingerprints = [],
         public ?string $invocationId = null,
+        public ?string $configurationFingerprint = null,
     ) {
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
@@ -59,6 +60,7 @@ final readonly class ContextReleaseEvidence
         array $transformNames = [],
         array $transformedPaths = [],
         ?string $invocationId = null,
+        ?string $configurationFingerprint = null,
     ): self {
         return new self(
             source: $source->identity(),
@@ -75,6 +77,11 @@ final readonly class ContextReleaseEvidence
             transformFingerprints: array_map(self::fingerprintPath(...), $transformNames),
             transformedPathFingerprints: array_map(self::fingerprintPath(...), $transformedPaths),
             invocationId: $invocationId,
+            // Context release has no Capability in scope today — ContextReleaseManager::release()
+            // is capability-independent (Source/Destination/Trust/DataClass only). This parameter
+            // exists so the field is structurally available if a capability-scoped release path is
+            // ever added, per issue #32's acceptance criteria; every current caller leaves it null.
+            configurationFingerprint: $configurationFingerprint,
         );
     }
 

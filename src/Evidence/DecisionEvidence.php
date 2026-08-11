@@ -38,6 +38,7 @@ final readonly class DecisionEvidence
         public DateTimeImmutable $recordedAt,
         public ?string $invocationId = null,
         public ?string $toolKind = null,
+        public ?string $configurationFingerprint = null,
     ) {
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
@@ -117,6 +118,9 @@ final readonly class DecisionEvidence
             toolKind: is_string($evaluation->envelope->proposal->metadata['tool_kind'] ?? null)
                 ? $evaluation->envelope->proposal->metadata['tool_kind']
                 : null,
+            // Not every evaluation resolves a Capability (e.g. an unregistered-capability denial),
+            // so this is null exactly when $evaluation->capability is null.
+            configurationFingerprint: $evaluation->capability?->configurationFingerprint(),
         );
     }
 }
