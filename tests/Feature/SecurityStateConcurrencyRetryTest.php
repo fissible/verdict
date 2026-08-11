@@ -34,14 +34,11 @@ use Illuminate\Database\QueryException;
  * readiness only after forcing its connection, and the harness releases the whole batch only once
  * every child has signaled. See `ConcurrencyHarness::releaseWhenAllReady()`.
  *
- * **Strictness varies by engine and store, based on direct measurement with the corrected harness —
- * not by assumption.** Some combinations are asserted strictly (zero errors); others, proven to
- * have a real residual failure rate even after the fix, are asserted more loosely: the invariant
- * must still hold among responses that don't throw, and every thrown exception must be the
- * expected, bounded SQLSTATE 40001 — never a hard zero-error assertion where that would not
- * reliably be true and would make the test flaky rather than honest. See
- * `concurrencyTestIsKnownFlaky()` below for exactly which combinations, and ADR 0018 /
- * `docs/limitations.md` for the measured rates behind each one.
+ * **Natural-isolation results are strict, based on direct measurement with the corrected harness —
+ * not by assumption.** MySQL, MariaDB, and PostgreSQL READ COMMITTED must return a clean response
+ * for every contender. The dedicated PostgreSQL SERIALIZABLE rate-limit case retains a measured
+ * availability gap and therefore asserts its safety invariant separately. See ADR 0018 and
+ * `docs/limitations.md` for the measured evidence.
  */
 const CONCURRENCY_TEST_CONCURRENCY = 20;
 
@@ -68,45 +65,11 @@ function concurrencyTestSkipReason(): string
 }
 
 /**
- * Which (engine, store) combinations are known, by direct measurement with the corrected
- * ready/release-synchronized harness, to retain a real residual failure rate even after #86's fix:
- *
- * - MySQL/MariaDB (Laravel's `mysql` driver), all three stores: a bimodal, inconsistent failure
- *   pattern — most 20-way-contention runs are fully clean, but a substantial minority fail
- *   severely (commonly ~15-19 of 20 attempts throwing SQLSTATE 40001 in the same run). This was
- *   first found on MariaDB and, at the time, believed not to reproduce on real MySQL 8 at a
- *   meaningful rate — that belief turned out to be a measurement artifact of an earlier,
- *   probabilistic (fixed-timestamp) start barrier that could silently release a slow child late,
- *   understating contention. Re-measured with a real ready/release handshake (see
- *   `ConcurrencyHarness::releaseWhenAllReady()`), real MySQL 8 shows the exact same pattern on all
- *   three stores, just less often than MariaDB (roughly 15-35% of runs on MySQL 8 vs. 60-70% on
- *   MariaDB 11, at 20-way contention — see ADR 0018 for the full measured breakdown). Raising the
- *   retry count made no measurable difference on either engine. The root cause is not yet
- *   understood — tracked as [#92](https://github.com/fissible/verdict/issues/92).
- * - PostgreSQL SERIALIZABLE, rate limits only: see the dedicated SERIALIZABLE test below.
- */
-function concurrencyTestIsKnownFlaky(): bool
-{
-    return concurrencyTestDriver() === 'mysql';
-}
-
-/**
  * @param  array<int, mixed>  $decoded
  */
 function assertRaceOutcome(array $decoded, int $winners, int $expectedWinners): void
 {
     $errors = array_values(array_filter($decoded, fn ($d) => ! is_array($d) || ! ($d['ok'] ?? false)));
-
-    if (concurrencyTestIsKnownFlaky()) {
-        expect($winners)->toBeLessThanOrEqual($expectedWinners);
-
-        foreach ($errors as $error) {
-            expect($error)->toBeArray()
-                ->and($error['sqlstate'] ?? null)->toBe('40001');
-        }
-
-        return;
-    }
 
     expect($errors)->toBe([])
         ->and($winners)->toBe($expectedWinners);

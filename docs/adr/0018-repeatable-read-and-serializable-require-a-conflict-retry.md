@@ -9,11 +9,11 @@ Status: Accepted
   landed this ADR.
 - [#86](https://github.com/fissible/verdict/issues/86) (implemented) carried out the retry fix this ADR
   originally deferred, and measured its actual effect — see the Update below.
-- [#92](https://github.com/fissible/verdict/issues/92) tracks a real gap #86 found: MySQL 8 and MariaDB
-  11 both retain a bimodal, inconsistent residual failure rate under the same fix — MariaDB roughly
-  2x MySQL's frequency, for reasons not yet understood (see the Update below; this was originally
-  filed as "MariaDB doesn't resolve as reliably as MySQL," which turned out to be a measurement
-  artifact — both engines hit the same underlying race, just at different rates).
+- [#92](https://github.com/fissible/verdict/issues/92) implements the jittered retry that resolved the
+  MySQL 8 and MariaDB 11 residual found after #86; see the later Update for the original finding and
+  its replacement.
+- [#97](https://github.com/fissible/verdict/issues/97) investigates the remaining PostgreSQL
+  SERIALIZABLE rate-limit availability gap.
 - [#20](https://github.com/fissible/verdict/issues/20) adds the durable concurrency test suite; a first
   version of it landed directly in #86 (`tests/Feature/SecurityStateConcurrencyRetryTest.php`), since #86
   needed real evidence its own fix worked, not just a plan for one.
@@ -240,6 +240,20 @@ didn't throw.** No test at any point observed a wrong answer — more than the c
 admitted, more than one claim winner, more than one approval issued. Every residual gap found is an
 availability gap (an unhandled exception where a clean answer was expected), never a correctness one.
 
+## Update (#92): jittered retry resolves the MySQL/MariaDB residual
+
+#86 delegated a second attempt to Laravel's `Connection::transaction($callback, 2)`, which retries
+immediately. #92 instead makes one bounded retry outside that transaction call after a randomized
+10–50 ms delay. The store methods retain their independent-transaction guard, so Verdict still never
+retries an application-owned outer transaction.
+
+Using the corrected ready/release harness and isolated databases, five repeated 20-way runs on each
+of MySQL 8 and MariaDB 11 completed cleanly for rate limits, execution claims, and approval receipts.
+The durable test now asserts those natural-isolation results strictly. PostgreSQL READ COMMITTED and
+the PostgreSQL SERIALIZABLE claim/receipt results remain clean; the measured PostgreSQL SERIALIZABLE
+rate-limit availability gap remains, is still disclosed in `docs/limitations.md`, and is tracked in
+[#97](https://github.com/fissible/verdict/issues/97).
+
 ## Consequences
 
 - The operational risk is real and current, not hypothetical: it is documented in
@@ -254,19 +268,12 @@ availability gap (an unhandled exception where a clean answer was expected), nev
   matrix — PostgreSQL, MySQL, MariaDB — on tag push and weekly schedule
   (`concurrency-matrix.yml`). `tests/Feature/SecurityStateConcurrencyRetryTest.php` (added in #86)
   self-skips against SQLite and runs for real whenever any of those jobs execute, so the every-PR
-  PostgreSQL job exercises the SERIALIZABLE-class findings on every PR, while the REPEATABLE-READ-class
-  findings (MySQL and MariaDB's shared, per-#92, residual gap — see the Update above) are only
-  exercised on tag/weekly — matching #37's original Part 3 cost/benefit tradeoff, and flagged here as a
-  real gap in coverage cadence, not hidden by it.
+  PostgreSQL job exercises the SERIALIZABLE-class findings on every PR, while MySQL and MariaDB
+  natural-isolation coverage runs on tag/weekly — matching #37's original Part 3 cost/benefit
+  tradeoff.
 - `DatabaseApprovalReceiptStore` is measured, not assumed, across every combination tested: confirmed
-  exposed under REPEATABLE READ at the same severity as the other two stores on both MySQL and MariaDB
-  (see #92), and confirmed fully resolved under PostgreSQL SERIALIZABLE, unlike rate limits' residual
-  gap there.
-- [#92](https://github.com/fissible/verdict/issues/92) exists because #86 found a real, unexplained
-  MySQL/MariaDB gap while verifying the fix, not because it was anticipated — the honest outcome of
-  actually measuring instead of assuming a fix works once it's plausible. It was originally scoped as
-  MariaDB-specific; the Update above corrected that scoping after a further harness fix showed MySQL 8
-  hits the same gap, just less often.
+  exposed under REPEATABLE READ during #86's initial measurements and resolved by #92's jittered retry;
+  it remains fully resolved under PostgreSQL SERIALIZABLE, unlike rate limits' residual gap there.
 
 ## Alternatives rejected
 
