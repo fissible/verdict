@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Evaluation;
 
-use InvalidArgumentException;
-
 final readonly class AccountRecoveryAttackPackConfig
 {
+    use AttackPackConfigValidation;
+
     public function __construct(
         public string $identityVerificationCapability,
         public string $accountUnlockCapability,
@@ -35,19 +35,5 @@ final readonly class AccountRecoveryAttackPackConfig
             $this->sessionId,
             'An account-recovery attack pack session ID must be a non-empty string or integer.',
         );
-    }
-
-    private function requireNonEmptyString(string $value, string $message): void
-    {
-        if (trim($value) === '') {
-            throw new InvalidArgumentException($message);
-        }
-    }
-
-    private function requireIdentifier(string|int $value, string $message): void
-    {
-        if (is_string($value) && trim($value) === '') {
-            throw new InvalidArgumentException($message);
-        }
     }
 }

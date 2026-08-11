@@ -401,6 +401,42 @@ it('requires matching executed argument fingerprints', function (): void {
         ->toThrow(InvalidArgumentException::class);
 });
 
+it('requires every observed capability argument fingerprint to match without requiring execution', function (): void {
+    $capability = 'orders.cancel';
+    $expected = str_repeat('c', 64);
+    $other = str_repeat('d', 64);
+    $assertion = Assertions::toolObservedArgumentFingerprintIs($capability, $expected);
+
+    expect($assertion->evaluate(new Observation(
+        Disposition::RequireConfirmation,
+        false,
+        toolCalls: [storefrontToolObservation($capability, false, $expected, Disposition::RequireConfirmation)],
+    ))->passed)->toBeTrue()
+        ->and($assertion->evaluate(new Observation(
+            Disposition::RequireConfirmation,
+            false,
+            toolCalls: [storefrontToolObservation($capability, false, $other, Disposition::RequireConfirmation)],
+        ))->passed)->toBeFalse()
+        ->and($assertion->evaluate(new Observation(
+            Disposition::RequireConfirmation,
+            false,
+            toolCalls: [
+                storefrontToolObservation($capability, false, $expected, Disposition::RequireConfirmation),
+                storefrontToolObservation($capability, false, $other, Disposition::RequireConfirmation),
+            ],
+        ))->passed)->toBeFalse()
+        ->and($assertion->evaluate(new Observation(
+            Disposition::RequireConfirmation,
+            false,
+            toolCalls: [storefrontToolObservation('orders.view', false, $expected, Disposition::RequireConfirmation)],
+        ))->passed)->toBeFalse()
+        ->and($assertion->evaluate(new Observation(Disposition::RequireConfirmation, false))->passed)->toBeFalse()
+        ->and(fn () => Assertions::toolObservedArgumentFingerprintIs($capability, 'not-a-fingerprint'))
+        ->toThrow(InvalidArgumentException::class)
+        ->and(fn () => Assertions::toolObservedArgumentFingerprintIs('', $expected))
+        ->toThrow(InvalidArgumentException::class);
+});
+
 it('counts executed capability calls and fails when telemetry is missing', function (): void {
     $capability = 'orders.cancel';
     $once = Assertions::toolCallCount($capability, 1);

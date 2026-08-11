@@ -8,6 +8,9 @@ All notable changes to Verdict will be documented in this file.
   applications can observe description drift without folding model-facing text into capability policy
   configuration.
 
+- Add a deterministic `ToolIntegrityAttackPack` covering poisoned tool-description argument
+  injection, capability shadowing, clean-tool utility, and tool-description drift pending on
+  [#65](https://github.com/fissible/verdict/issues/65).
 - Add explicit pending evaluation cases with mandatory blocker metadata and suspended-coverage
   comparison findings. `Score` now has a required fourth `pending` constructor argument. Baselines
   containing `pending` require this release or newer; older Verdict versions reject that enum value.
