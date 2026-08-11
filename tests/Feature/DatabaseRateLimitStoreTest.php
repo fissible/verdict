@@ -17,7 +17,11 @@ beforeEach(function (): void {
         $table->timestamp('reset_at');
         $table->unsignedInteger('attempts');
         $table->timestamps();
-        $table->unique(['bucket_fingerprint', 'window_starts_at']);
+        // Named explicitly, matching create_verdict_rate_limit_buckets_table.php.stub: Laravel's
+        // auto-generated name for this pair (verdict_rate_limit_buckets_bucket_fingerprint_window_starts_at_unique,
+        // 72 chars) exceeds MySQL's 64-character identifier limit (SQLSTATE 42000, error 1059) —
+        // silently fine on SQLite/PostgreSQL, which is why this only surfaced under real MySQL.
+        $table->unique(['bucket_fingerprint', 'window_starts_at'], 'verdict_rate_limit_bucket_window_unique');
         $table->index('reset_at');
     });
 });

@@ -114,6 +114,12 @@ Verdict does not establish factual correctness or provide general content modera
 
 The package cannot decide which actions require approval, what makes two business actions equivalent, or what a safe rate limit should be. Those decisions are encoded in capability configuration and the surrounding application.
 
+### Concurrent contention above READ COMMITTED can surface as an unhandled exception
+
+`DatabaseRateLimitStore::consume()`, `DatabaseExecutionClaimStore::claim()`, and `DatabaseApprovalReceiptStore::issue()` are confirmed correct under READ COMMITTED on PostgreSQL and MySQL — measured with genuine, synchronized process-level concurrency, not assumed. They are **not** yet correct under MySQL/MariaDB's default isolation level, REPEATABLE READ: real concurrent contention against all three stores fails the large majority of concurrent attempts (19 of 20 concurrent processes, in the measured case), raising `SQLSTATE 40001` from inside the store's own transaction, and the current code only catches a unique-constraint violation, not a serialization failure. The rate-limit and execution-claim stores show the same failure under PostgreSQL SERIALIZABLE; the approval-receipt store did not reproduce it there in testing, though it is not assumed safe on that basis alone. The practical effect: a legitimate concurrent rate-limit consumption, execution-claim, or approval-issuance attempt can return an unhandled `Illuminate\Database\QueryException` instead of a clean admit/deny/duplicate answer.
+
+This means an application running Verdict against MySQL or MariaDB **with no explicit isolation-level configuration** — the common case, since REPEATABLE READ is what those engines ship with — is exposed to this under real load today. Configuring the connection Verdict uses for READ COMMITTED avoids it until the fix lands. See [ADR 0018](adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md) for the measured evidence and the required fix.
+
 ## Operational responsibilities
 
 Before protecting a consequential action, the application team should:

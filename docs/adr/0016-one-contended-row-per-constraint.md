@@ -8,8 +8,8 @@ Status: Accepted
   C1 below is what those tests exist to assert; without it they are a collection of unrelated scenarios.
 - [#16](https://github.com/fissible/verdict/issues/16) (open) benchmarks concurrency for the same three
   stores.
-- [#37](https://github.com/fissible/verdict/issues/37) (open) measures the isolation-level question left
-  open in Decision §6, and is expected to produce the follow-on ADR referenced there.
+- [#37](https://github.com/fissible/verdict/issues/37) (implemented) measured the isolation-level
+  question left open in Decision §6. See [ADR 0018](0018-repeatable-read-and-serializable-require-a-conflict-retry.md).
 
 ## Context
 
@@ -89,6 +89,13 @@ Both claims are about real database behavior and must be measured rather than ar
 project's rule on IO and timing claims. That measurement is tracked as a separate issue and is expected
 to produce a follow-on ADR fixing the supported isolation levels and the required exception handling.
 Until then, this ADR states the intent and marks the question open rather than asserting a guarantee.
+
+**Update:** #37 measured this. READ COMMITTED is confirmed safe on PostgreSQL and MySQL. REPEATABLE
+READ (MySQL/MariaDB's *default*) and SERIALIZABLE are not — both raise SQLSTATE 40001 under genuine
+concurrent contention, uncaught by the current implementation. See
+[ADR 0018](0018-repeatable-read-and-serializable-require-a-conflict-retry.md) for the confirmed
+isolation-level guarantees, the required exception handling, and `docs/limitations.md` for the
+operator-facing statement of the current risk.
 
 ## Non-goals
 

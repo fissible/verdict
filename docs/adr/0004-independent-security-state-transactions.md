@@ -8,6 +8,7 @@
 - [#16](https://github.com/fissible/verdict/issues/16) (open) benchmarks the stores whose transactions must commit independently.
 - [#19](https://github.com/fissible/verdict/issues/19) (implemented) consolidates the accepted gate ordering for readers.
 - [#20](https://github.com/fissible/verdict/issues/20) (open) adds genuine concurrent-access coverage for the transaction guard and stores.
+- [#37](https://github.com/fissible/verdict/issues/37) (implemented) — [ADR 0018](0018-repeatable-read-and-serializable-require-a-conflict-retry.md)'s required SQLSTATE 40001 retry depends on this ADR's independent-transaction guarantee: a 40001 caught inside the store's own `IndependentTransactionGuard`-protected transaction is, by construction, Verdict's own conflict, not an application-level one that must propagate.
 
 ## Context
 
