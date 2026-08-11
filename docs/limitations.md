@@ -114,18 +114,19 @@ Verdict does not establish factual correctness or provide general content modera
 
 The package cannot decide which actions require approval, what makes two business actions equivalent, or what a safe rate limit should be. Those decisions are encoded in capability configuration and the surrounding application.
 
-### MariaDB retains a substantial, unresolved concurrency gap; PostgreSQL SERIALIZABLE retains a smaller one
+### MariaDB retains a substantial, unresolved concurrency gap; PostgreSQL SERIALIZABLE and MySQL rate limits retain smaller ones
 
-`DatabaseRateLimitStore::consume()`, `DatabaseExecutionClaimStore::claim()`, and `DatabaseApprovalReceiptStore::issue()` now retry once on `SQLSTATE 40001` (a deadlock or serialization failure), in addition to the existing unique-constraint-violation handling — measured with genuine, synchronized process-level concurrency, not assumed correct because the reasoning was sound. This fully and reliably resolves real MySQL 8 under its default isolation level, REPEATABLE READ (zero errors across every run tested, 20-way contention), and fully resolves PostgreSQL SERIALIZABLE for execution claims and approval receipts.
+`DatabaseRateLimitStore::consume()`, `DatabaseExecutionClaimStore::claim()`, and `DatabaseApprovalReceiptStore::issue()` now retry once on `SQLSTATE 40001` (a deadlock or serialization failure), in addition to the existing unique-constraint-violation handling — measured with genuine, synchronized process-level concurrency, not assumed correct because the reasoning was sound. This fully and reliably resolves real MySQL 8 under its default isolation level, REPEATABLE READ, for execution claims and approval receipts (zero errors across every run tested, 20-way contention), and fully resolves PostgreSQL SERIALIZABLE for the same two stores.
 
-Two gaps remain, both disclosed rather than hidden:
+Three gaps remain, all disclosed rather than hidden:
 
 - **PostgreSQL SERIALIZABLE, rate limits only:** a caller can still receive an unhandled `Illuminate\Database\QueryException` under sustained, fully-simultaneous contention on one bucket (measured: roughly 17–18 of 20 concurrent attempts at high contention; fully clean at low contention). Adding more retry attempts made negligible difference — Laravel's built-in retry has no backoff, so simultaneous retriers tend to collide again immediately.
+- **MySQL 8 REPEATABLE READ, rate limits only:** rare, but real — 1 severe failure (19 of 20 concurrent attempts) observed across 14 repeated 20-way-contention runs; every other run was clean. Execution claims and approval receipts on MySQL showed no failures across the same 14 runs.
 - **MariaDB, all three stores:** real MariaDB 11 does **not** behave the same as MySQL 8 under this fix, despite both reporting as Laravel's `mysql` driver and both nominally running InnoDB REPEATABLE READ. Measured directly: a substantial, inconsistent residual failure rate (commonly ~19 of 20 concurrent attempts, occasionally 0 of 20) persists across repeated runs, for all three stores. Raising the retry count made no measurable difference. The cause is not yet understood — tracked as [issue #92](https://github.com/fissible/verdict/issues/92).
 
-In every measured case — including the two gaps above — the underlying invariant held among responses that didn't throw: no test ever observed more than the configured limit admitted, more than one claim winner, or more than one receipt issued. Both remaining gaps are availability problems (an unhandled exception where a clean denial/duplicate answer was expected), not correctness problems.
+In every measured case — including the three gaps above — the underlying invariant held among responses that didn't throw: no test ever observed more than the configured limit admitted, more than one claim winner, or more than one receipt issued. All three remaining gaps are availability problems (an unhandled exception where a clean denial/duplicate answer was expected), not correctness problems.
 
-An application running Verdict against MariaDB, or against PostgreSQL configured for SERIALIZABLE under sustained high-contention rate limiting, remains exposed to this today. Configuring the connection Verdict uses for READ COMMITTED, or using real MySQL instead of MariaDB, avoids it until #92 lands. See [ADR 0018](adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md) for the full measured evidence.
+An application running Verdict against MariaDB, or against PostgreSQL configured for SERIALIZABLE or MySQL under sustained high-contention rate limiting, remains exposed to this today. Configuring the connection Verdict uses for READ COMMITTED avoids it until #92 lands. See [ADR 0018](adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md) for the full measured evidence.
 
 ## Operational responsibilities
 

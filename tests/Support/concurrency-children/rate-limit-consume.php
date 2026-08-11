@@ -17,6 +17,13 @@ $capsule->bootEloquent();
 
 $connection = Manager::connection();
 
+// Force the lazy PDO connection to actually establish now, before the barrier. Connection::$pdo
+// starts as a Closure and is only resolved on first use (Connection::getPdo()); without this, the
+// barrier below would release genuinely-simultaneous processes into a TCP handshake + auth
+// round-trip each pays for independently right after, silently reintroducing the same
+// unsynchronized-startup variance the barrier exists to eliminate.
+$connection->getPdo();
+
 if ($payload['force_serializable'] ?? false) {
     $connection->statement('SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE');
 }

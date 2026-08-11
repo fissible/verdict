@@ -23,6 +23,10 @@ spike_capsule(spike_connections()[$payload['connection']]);
 $connection = Manager::connection();
 
 // Every transaction this connection opens for the rest of the process now runs at SERIALIZABLE.
+// This statement also, as a side effect, forces the lazy PDO connection to actually establish
+// before the barrier below — Connection::$pdo starts as a Closure resolved on first use, and
+// running a real statement is what triggers that. Unlike the other three child scripts here,
+// nothing extra is needed in this one for that reason alone.
 $connection->statement('SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE');
 
 $at = new DateTimeImmutable($payload['at']);

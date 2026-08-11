@@ -13,9 +13,16 @@ $payload = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR);
 
 spike_capsule(spike_connections()[$payload['connection']]);
 
-$store = new DatabaseRateLimitStore(
-    Manager::connection(),
-);
+$connection = Manager::connection();
+
+// Force the lazy PDO connection to actually establish now, before the barrier below —
+// Connection::$pdo starts as a Closure and is only resolved on first use (getPdo()), so without
+// this, the barrier releases processes that then each independently pay a TCP handshake + auth
+// round-trip right after, silently reintroducing the unsynchronized-startup variance the barrier
+// exists to eliminate.
+$connection->getPdo();
+
+$store = new DatabaseRateLimitStore($connection);
 
 $at = new DateTimeImmutable($payload['at']);
 

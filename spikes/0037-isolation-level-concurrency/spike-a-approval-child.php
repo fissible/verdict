@@ -15,9 +15,13 @@ $payload = json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR);
 
 spike_capsule(spike_connections()[$payload['connection']]);
 
-$store = new DatabaseApprovalReceiptStore(
-    Manager::connection(),
-);
+$connection = Manager::connection();
+
+// Force the lazy PDO connection to actually establish now, before the barrier — see
+// spike-a-claim-child.php for why this matters.
+$connection->getPdo();
+
+$store = new DatabaseApprovalReceiptStore($connection);
 
 $at = new DateTimeImmutable($payload['at']);
 $expiresAt = $at->modify('+1 hour');

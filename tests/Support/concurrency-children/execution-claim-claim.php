@@ -18,6 +18,10 @@ $capsule->bootEloquent();
 
 $connection = Manager::connection();
 
+// Force the lazy PDO connection to actually establish now, before the barrier — see
+// rate-limit-consume.php for why this matters.
+$connection->getPdo();
+
 if ($payload['force_serializable'] ?? false) {
     $connection->statement('SET SESSION CHARACTERISTICS AS TRANSACTION ISOLATION LEVEL SERIALIZABLE');
 }

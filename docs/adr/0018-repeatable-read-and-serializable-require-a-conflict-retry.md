@@ -163,8 +163,24 @@ and why.
 process-level concurrency #37 used — not assumed to work because the reasoning was sound, tested
 directly, per this repo's standing rule on IO/timing/concurrency claims.
 
-**MySQL 8 REPEATABLE READ: fully and reliably resolved.** Zero errors across every run tested (5+
-repeated runs, 20-way contention, all three stores). The 2-attempt retry is sufficient here.
+**MySQL 8 REPEATABLE READ: reliably resolved for execution claims and approval receipts; rate limits
+retain a rare but real residual gap.** This finding was corrected after a subsequent review of #93
+found the durable test's child processes never actually forced their PDO connection before the
+shared start barrier (`Connection::$pdo` starts as a lazy `Closure`, resolved only on first real
+query) — so "concurrent" runs could still be serialized by each child independently paying its own
+connection-handshake cost after the barrier released them. The original "zero errors across every
+run" claim below was measured under that flawed harness. Re-measured with the connection genuinely
+forced before the barrier (`$connection->getPdo()`, applied to every child script including the #37
+spike's): execution claims and approval receipts remained clean across every run tested (14+ runs,
+20-way contention) and are asserted strictly. Rate limits, however, showed one severe failure (19 of
+20 attempts throwing `SQLSTATE 40001`) in 1 of 14 runs — every other run was clean. This is rare
+enough that most contributors will never see it locally, but real, and disclosed in
+`docs/limitations.md` and asserted loosely (not zero-error) by the durable test suite, the same
+treatment already given to PostgreSQL-SERIALIZABLE rate limits and to MariaDB below. The asymmetry is
+consistent with the same structural explanation used for the other engines: rate limits' winning path
+does an insert followed by potentially several sequential successful updates on the same row as
+multiple callers are admitted, creating more write-write conflict opportunities than claim/approval's
+single successful insert.
 
 **PostgreSQL SERIALIZABLE: fully resolved for execution claims and approval receipts, still partially
 unresolved for rate limits.** Claims and approvals: zero errors at 20-way contention, confirmed
@@ -191,10 +207,11 @@ cause is not yet known. Tracked as [#92](https://github.com/fissible/verdict/iss
 guessed at further here.
 
 **The durable test suite (`tests/Feature/SecurityStateConcurrencyRetryTest.php`, added directly in #86
-rather than waiting for #20) reflects all of this precisely, not optimistically:** real MySQL and real
-PostgreSQL (at the levels each test exercises) are asserted strictly — zero errors, exact expected
-admission count. Real MariaDB (detected via `SELECT VERSION()`, since Laravel's driver name alone
-cannot distinguish it from MySQL) is asserted the way the SERIALIZABLE-rate-limit case above is: the
+rather than waiting for #20) reflects all of this precisely, not optimistically:** real MySQL execution
+claims and approval receipts, and real PostgreSQL at natural READ COMMITTED (all three stores), are
+asserted strictly — zero errors, exact expected admission count. Real MariaDB (detected via `SELECT
+VERSION()`, since Laravel's driver name alone cannot distinguish it from MySQL, any store) and real
+MySQL rate limits specifically are asserted the way the SERIALIZABLE-rate-limit case above is: the
 invariant must hold among non-throwing responses, and every exception must be the expected, bounded
 SQLSTATE 40001 — never a hard zero-error assertion, because it would not reliably be true.
 
