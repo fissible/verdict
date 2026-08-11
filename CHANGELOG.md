@@ -10,6 +10,13 @@ All notable changes to Verdict will be documented in this file.
   An already-approved tool call inside a streamed agent response no longer fails closed
   with `ApprovalOutcome::InvalidState`. See [ADR 0006](docs/adr/0006-streaming-approval-resumption-deferred.md).
 
+- Add a durable, content-addressed capability configuration registry. It records the declared
+  configuration once at capability registration and resolves each evidence
+  `configuration_fingerprint` to readable policy configuration without retaining closures or raw
+  application data. The database-backed default is published with a dedicated migration; it is
+  deliberately not pruned with evidence. See [ADR 0017](docs/adr/0017-configuration-identity-in-evidence.md)
+  Decision §2–4.
+
 - Add `Capability::configurationFingerprint()` — a SHA-256 over the capability's declared,
   security-material configuration (name, ability, confirmation requirement/TTL, execution-target
   policy, rate-limit policy, execution-claim policy, and an optional

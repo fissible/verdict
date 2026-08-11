@@ -9,6 +9,8 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
+use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
 use Fissible\Verdict\Console\Commands\CompareEvaluationCommand;
 use Fissible\Verdict\Console\Commands\CreateEvaluationBaselineCommand;
 use Fissible\Verdict\Console\Commands\ListExecutionClaimsCommand;
@@ -20,6 +22,7 @@ use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\AttestChainResolver;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
+use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
@@ -54,7 +57,41 @@ final class VerdictServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/verdict.php', 'verdict');
 
-        $this->app->singleton(CapabilityRegistry::class);
+        $this->app->singleton(CapabilityConfigurationStore::class, function (Container $app): CapabilityConfigurationStore {
+            $store = config('verdict.capability_configurations.store');
+
+            if ($store === null) {
+                $recorder = config('verdict.evidence.recorder', NullEvidenceRecorder::class);
+                $store = in_array($recorder, [DatabaseEvidenceRecorder::class, AttestEvidenceRecorder::class], true)
+                    ? DatabaseCapabilityConfigurationStore::class
+                    : NullCapabilityConfigurationStore::class;
+            }
+
+            if (! is_string($store)) {
+                throw new LogicException('The Verdict capability configuration store configuration must contain a class name.');
+            }
+
+            if ($store === DatabaseCapabilityConfigurationStore::class) {
+                $connection = config('verdict.capability_configurations.connection');
+                $table = config('verdict.capability_configurations.table', 'verdict_capability_configurations');
+
+                return new DatabaseCapabilityConfigurationStore(
+                    connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                    table: is_string($table) ? $table : 'verdict_capability_configurations',
+                );
+            }
+
+            $instance = $app->make($store);
+
+            if (! $instance instanceof CapabilityConfigurationStore) {
+                throw new LogicException("The [{$store}] capability configuration store must implement ".CapabilityConfigurationStore::class.'.');
+            }
+
+            return $instance;
+        });
+        $this->app->singleton(CapabilityRegistry::class, fn (Container $app): CapabilityRegistry => new CapabilityRegistry(
+            $app->make(CapabilityConfigurationStore::class),
+        ));
         $this->app->singleton(ReleasePolicyRegistry::class);
         $this->app->singleton(FieldProjector::class);
         $this->app->singleton(CapabilityAuthorizer::class, LaravelPolicyAuthorizer::class);
@@ -365,14 +402,18 @@ final class VerdictServiceProvider extends ServiceProvider
         $executionClaimMigration = [
             __DIR__.'/../database/migrations/create_verdict_execution_claims_table.php.stub' => database_path('migrations/2026_08_01_000003_create_verdict_execution_claims_table.php'),
         ];
+        $capabilityConfigurationMigration = [
+            __DIR__.'/../database/migrations/create_verdict_capability_configurations_table.php.stub' => database_path('migrations/2026_08_10_000009_create_verdict_capability_configurations_table.php'),
+        ];
 
         $this->publishesMigrations(
-            [...$approvalMigration, ...$evidenceMigration, ...$rateLimitMigration, ...$executionClaimMigration],
+            [...$approvalMigration, ...$evidenceMigration, ...$rateLimitMigration, ...$executionClaimMigration, ...$capabilityConfigurationMigration],
             ['verdict', 'verdict-migrations'],
         );
         $this->publishesMigrations($approvalMigration, 'verdict-approval-migrations');
         $this->publishesMigrations($evidenceMigration, 'verdict-evidence-migrations');
         $this->publishesMigrations($rateLimitMigration, 'verdict-rate-limit-migrations');
         $this->publishesMigrations($executionClaimMigration, 'verdict-execution-claim-migrations');
+        $this->publishesMigrations($capabilityConfigurationMigration, 'verdict-capability-configuration-migrations');
     }
 }

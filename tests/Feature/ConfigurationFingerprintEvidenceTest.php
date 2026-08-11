@@ -6,6 +6,8 @@ use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
+use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
@@ -77,6 +79,13 @@ it('records the registered capability configuration fingerprint on every evaluat
     foreach ($recorded as $evidence) {
         expect($evidence->configurationFingerprint)->toBe($capability->configurationFingerprint());
     }
+
+    $configurations = app(CapabilityConfigurationStore::class);
+
+    expect($configurations)->toBeInstanceOf(InMemoryCapabilityConfigurationStore::class)
+        ->and($configurations->all())->toHaveKey($recorded[0]->configurationFingerprint)
+        ->and($configurations->all()[$recorded[0]->configurationFingerprint]['configuration'])
+        ->toBe($capability->declaredConfiguration());
 });
 
 it('records no configuration fingerprint when the capability is unregistered', function (): void {
