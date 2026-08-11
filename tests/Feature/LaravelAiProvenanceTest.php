@@ -31,6 +31,7 @@ use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Events\PromptingAgent;
+use Laravel\Ai\Events\StreamingAgent;
 use Laravel\Ai\Events\ToolInvoked;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\Data\Meta;
@@ -234,6 +235,41 @@ it('uses the PromptingAgent invocation ID without fingerprinting a revised combi
     expect($entries)->toHaveCount(1)
         ->and($entries[0]->contentFingerprint)->toBe(ContentFingerprint::make('original user request'))
         ->and($entries[0]->contentFingerprint)->not->toBe(ContentFingerprint::make('original user request'.PHP_EOL.PHP_EOL.'retrieved document content'));
+});
+
+it('records prompt provenance when a fresh streamed prompt begins iterating', function (): void {
+    $prompt = laravelAiProvenancePrompt('streamed user request');
+
+    $response = laravelAiProvenanceMiddleware(source: Source::user('agent-prompt'))->handle(
+        $prompt,
+        fn (AgentPrompt $received): StreamableAgentResponse => new StreamableAgentResponse(
+            invocationId: 'streamed-invocation',
+            generator: function () use ($received): Generator {
+                event(new StreamingAgent('streamed-invocation', $received));
+
+                yield new StreamEnd('streamed-event', 'stop', new Usage, time());
+            },
+            meta: new Meta,
+        ),
+    );
+
+    $recorder = app(EvidenceRecorder::class);
+    expect($recorder)->toBeInstanceOf(InMemoryEvidenceRecorder::class)
+        ->and($response)->toBeInstanceOf(StreamableAgentResponse::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder || ! $response instanceof StreamableAgentResponse) {
+        return;
+    }
+
+    expect($recorder->provenanceFor('streamed-invocation'))->toBe([]);
+
+    iterator_to_array($response);
+
+    $entries = $recorder->provenanceFor('streamed-invocation');
+
+    expect($entries)->toHaveCount(1)
+        ->and($entries[0]->channel)->toBe(ContextChannel::UserInput)
+        ->and($entries[0]->contentFingerprint)->toBe(ContentFingerprint::make('streamed user request'));
 });
 
 it('discards deferred provenance when downstream middleware fails before the invocation event', function (): void {

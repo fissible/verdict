@@ -18,6 +18,7 @@ use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use LogicException;
 use ReflectionProperty;
+use Throwable;
 
 final readonly class VerdictProvenanceMiddleware
 {
@@ -94,10 +95,49 @@ final readonly class VerdictProvenanceMiddleware
         );
 
         try {
-            return $next($prompt);
-        } finally {
+            $response = $next($prompt);
+        } catch (Throwable $exception) {
             $registry->forgetIfPending($prompt->agent, $registration);
+
+            throw $exception;
         }
+
+        if (! $response instanceof StreamableAgentResponse) {
+            $registry->forgetIfPending($prompt->agent, $registration);
+
+            return $response;
+        }
+
+        $this->deferPendingProvenanceCleanup($response, $prompt, $registry, $registration);
+
+        return $response;
+    }
+
+    /**
+     * Keep the pending registration alive until Laravel AI dispatches StreamingAgent inside a
+     * lazy response generator. Mutating the response in place preserves framework-owned state
+     * and callbacks, following the same guarded approach as VerdictApprovalMiddleware.
+     */
+    private function deferPendingProvenanceCleanup(
+        StreamableAgentResponse $response,
+        AgentPrompt $prompt,
+        PromptProvenanceRegistry $registry,
+        object $registration,
+    ): void {
+        $property = new ReflectionProperty(StreamableAgentResponse::class, 'generator');
+        $originalGenerator = $property->getValue($response);
+
+        if (! $originalGenerator instanceof Closure) {
+            throw new LogicException('Expected Laravel AI\'s StreamableAgentResponse to hold a Closure generator.');
+        }
+
+        $property->setValue($response, function () use ($originalGenerator, $prompt, $registry, $registration): Generator {
+            try {
+                yield from call_user_func($originalGenerator);
+            } finally {
+                $registry->forgetIfPending($prompt->agent, $registration);
+            }
+        });
     }
 
     /**

@@ -156,14 +156,14 @@ Laravel AI's `Agent` contract exposes three ways to invoke a prompt: `prompt()` 
 | Confirmation / approval resumption | ✅ | ✅ — [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md), fixed in #22 | Not yet verified² |
 | Execution claims (at-most-once) | ✅ | Not yet verified¹ | Not yet verified² |
 | Semantic rate limits | ✅ | Not yet verified¹ | Not yet verified² |
-| Evidence recording | ✅ | ✅ — invocation ID correlation retained | Not yet verified² |
-| Context release | ✅ | ✅ — invocation ID correlation retained | Not yet verified² |
+| Evidence recording | ✅ | ✅ — prompt provenance and invocation-ID correlation retained | Not yet verified² |
+| Context release | ✅ | ✅ — invocation-ID correlation retained | Not yet verified² |
 
 Every "Synchronous" ✅ is exercised directly by the test suite. The other cells:
 
 1. **Authorization, execution claims, and semantic rate limits under streaming are not yet covered by an automated test**, but code tracing gives reasonable confidence they work: ADR 0006 itself establishes that a streamed tool call's execution — not just the approval check — happens later, during iteration, not at the point `$next($prompt)` returns; and none of these three gates read any per-request frame stack the way `ApprovalExecutionContext` did before #22. That reasoning is not the same as a passing test against real streamed Laravel AI execution, so the cells stay marked unverified rather than ✅.
 2. **Nothing under `Agent::queue()` is covered by an automated Verdict test.** `Laravel\Ai\Jobs\InvokeAgent::handle()` calls the synchronous `Agent::prompt()` internally, not `stream()`, so the lazy-generator timing this whole table is about should not apply to any queued execution — but that inference has not been confirmed by running a queued job through real Laravel AI execution.
-3. **Evidence recording and context release under streaming are verified for invocation-ID correlation.** `VerdictProvenanceMiddleware` rewrites a streamed response's generator in place so its `InvocationContext` frame remains active for lazy tool execution. The regression test covers both `DecisionEvidence` and `ContextReleaseEvidence`, including frame cleanup after iteration. This fixes [#80](https://github.com/fissible/verdict/issues/80).
+3. **Evidence recording and context release under streaming are verified.** `VerdictProvenanceMiddleware` rewrites a streamed response's generator in place so its `InvocationContext` frame remains active for lazy tool execution, and retains prompt provenance until Laravel AI dispatches `StreamingAgent` during real iteration. The regression tests cover prompt provenance plus `DecisionEvidence` and `ContextReleaseEvidence` invocation-ID correlation, including frame cleanup after iteration. This fixes [#80](https://github.com/fissible/verdict/issues/80) and [#83](https://github.com/fissible/verdict/issues/83).
 
 ## Relationship to Laravel AI
 
