@@ -45,39 +45,44 @@ final class ValidateVerdictCommand extends Command
             }
         }
 
-        if ($needsApprovals) {
-            $this->auditStore(
-                errors: $errors,
-                database: $database,
-                configKey: 'verdict.approvals',
-                contract: ApprovalReceiptStore::class,
-                databaseStore: DatabaseApprovalReceiptStore::class,
-                label: 'approval receipt',
-                defaultTable: 'verdict_approval_receipts',
-            );
-        }
+        foreach ([
+            [
+                'needed' => $needsApprovals,
+                'configKey' => 'verdict.approvals',
+                'contract' => ApprovalReceiptStore::class,
+                'databaseStore' => DatabaseApprovalReceiptStore::class,
+                'label' => 'approval receipt',
+                'defaultTable' => 'verdict_approval_receipts',
+            ],
+            [
+                'needed' => $needsRateLimits,
+                'configKey' => 'verdict.rate_limits',
+                'contract' => RateLimitStore::class,
+                'databaseStore' => DatabaseRateLimitStore::class,
+                'label' => 'rate-limit',
+                'defaultTable' => 'verdict_rate_limit_buckets',
+            ],
+            [
+                'needed' => $needsExecutionClaims,
+                'configKey' => 'verdict.execution_claims',
+                'contract' => ExecutionClaimStore::class,
+                'databaseStore' => DatabaseExecutionClaimStore::class,
+                'label' => 'execution-claim',
+                'defaultTable' => 'verdict_execution_claims',
+            ],
+        ] as $store) {
+            if (! $store['needed']) {
+                continue;
+            }
 
-        if ($needsRateLimits) {
             $this->auditStore(
                 errors: $errors,
                 database: $database,
-                configKey: 'verdict.rate_limits',
-                contract: RateLimitStore::class,
-                databaseStore: DatabaseRateLimitStore::class,
-                label: 'rate-limit',
-                defaultTable: 'verdict_rate_limit_buckets',
-            );
-        }
-
-        if ($needsExecutionClaims) {
-            $this->auditStore(
-                errors: $errors,
-                database: $database,
-                configKey: 'verdict.execution_claims',
-                contract: ExecutionClaimStore::class,
-                databaseStore: DatabaseExecutionClaimStore::class,
-                label: 'execution-claim',
-                defaultTable: 'verdict_execution_claims',
+                configKey: $store['configKey'],
+                contract: $store['contract'],
+                databaseStore: $store['databaseStore'],
+                label: $store['label'],
+                defaultTable: $store['defaultTable'],
             );
         }
 
@@ -110,7 +115,7 @@ final class ValidateVerdictCommand extends Command
         string $label,
         string $defaultTable,
     ): void {
-        $store = config("{$configKey}.store");
+        $store = config("{$configKey}.store", $databaseStore);
 
         if (! is_string($store) || ! class_exists($store) || ! is_a($store, $contract, true)) {
             $errors[] = "Configured {$label} store must name a {$contract} implementation.";

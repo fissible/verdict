@@ -45,3 +45,16 @@ it('fails CI when a configured database backing table is missing', function (): 
         ->expectsOutputToContain('Configured rate-limit store requires missing table [missing_verdict_rate_limit_buckets]')
         ->assertExitCode(1);
 });
+
+it('uses the runtime database store default when the store key is omitted', function (): void {
+    config()->set('verdict.rate_limits', []);
+
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.default-limited', 'view', fn (ActionEnvelope $envelope): int => 1)
+            ->rateLimit(RateLimitPolicy::fixedWindow('orders-per-minute', 1, 60, fn (ActionEnvelope $envelope, int $target): array => ['actor' => 1])),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('Configured rate-limit store requires missing table [verdict_rate_limit_buckets]')
+        ->assertExitCode(1);
+});
