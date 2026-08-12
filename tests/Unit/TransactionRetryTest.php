@@ -2,7 +2,6 @@
 
 declare(strict_types=1);
 
-use Fissible\Verdict\Exceptions\UnsafeOuterTransaction;
 use Fissible\Verdict\Support\TransactionRetry;
 use Illuminate\Database\ConnectionInterface;
 
@@ -16,7 +15,7 @@ it('retries one recognized concurrency error after a randomized delay', function
             $attempt++;
 
             if ($attempt === 1) {
-                throw new PDOException('Deadlock found when trying to get lock', 40001);
+                throw new RuntimeException('Deadlock found when trying to get lock');
             }
 
             return $callback();
@@ -42,20 +41,10 @@ it('does not retry an unrelated transaction error', function (): void {
     TransactionRetry::run($connection, fn (): string => 'unreachable');
 })->throws(RuntimeException::class, 'Connection configuration is invalid');
 
-it('does not retry a MySQL lock-wait timeout', function (): void {
-    $connection = $this->createMock(ConnectionInterface::class);
-
-    $connection->expects($this->once())
-        ->method('transaction')
-        ->willThrowException(new PDOException('Lock wait timeout exceeded; try restarting transaction', 1205));
-
-    TransactionRetry::run($connection, fn (): string => 'unreachable');
-})->throws(PDOException::class, 'Lock wait timeout exceeded');
-
 it('leaves the second attempt\'s concurrency error explicit rather than the first', function (): void {
     $connection = $this->createMock(ConnectionInterface::class);
-    $first = new PDOException('Deadlock found when trying to get lock', 40001);
-    $second = new PDOException('deadlock detected', 40001);
+    $first = new RuntimeException('Deadlock found when trying to get lock');
+    $second = new RuntimeException('deadlock detected');
     $attempt = 0;
 
     $connection->expects($this->exactly(2))
@@ -78,16 +67,3 @@ it('leaves the second attempt\'s concurrency error explicit rather than the firs
     // the first attempt's error would describe the wrong attempt to whoever triages the incident.
     expect($caught)->toBe($second);
 });
-
-it('refuses to run a durable mutation inside an application-owned transaction', function (): void {
-    $connection = $this->createMock(ConnectionInterface::class);
-
-    $connection->method('transactionLevel')->willReturn(1);
-    $connection->expects($this->never())->method('transaction');
-
-    TransactionRetry::runIndependently(
-        $connection,
-        'consume an approval receipt',
-        fn (): string => 'unreachable',
-    );
-})->throws(UnsafeOuterTransaction::class, 'consume an approval receipt');

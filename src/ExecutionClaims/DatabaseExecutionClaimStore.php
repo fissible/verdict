@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
+use Fissible\Verdict\Support\IndependentTransactionGuard;
 use Fissible\Verdict\Support\TransactionRetry;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
@@ -38,8 +39,10 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
 
     public function claim(ExecutionClaim $claim): ExecutionClaimTransition
     {
+        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'claim an execution');
+
         try {
-            return TransactionRetry::runIndependently($this->connection, 'claim an execution', function () use ($claim): ExecutionClaimTransition {
+            return TransactionRetry::run($this->connection, function () use ($claim): ExecutionClaimTransition {
                 $existing = $this->findLockedByBinding($claim->bindingFingerprint);
 
                 if ($existing !== null) {
@@ -51,7 +54,7 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
                 return ExecutionClaimTransition::to(ExecutionClaimOutcome::Claimed, $claim);
             });
         } catch (UniqueConstraintViolationException) {
-            return TransactionRetry::runIndependently($this->connection, 'claim an execution', function () use ($claim): ExecutionClaimTransition {
+            return TransactionRetry::run($this->connection, function () use ($claim): ExecutionClaimTransition {
                 $existing = $this->findLockedByBinding($claim->bindingFingerprint);
 
                 return $existing === null
@@ -78,7 +81,9 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
         string $reason,
         DateTimeImmutable $at,
     ): ExecutionClaimTransition {
-        return TransactionRetry::runIndependently($this->connection, 'resolve an execution claim', function () use ($claimId, $resolution, $resolvedBy, $reason, $at): ExecutionClaimTransition {
+        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'resolve an execution claim');
+
+        return $this->connection->transaction(function () use ($claimId, $resolution, $resolvedBy, $reason, $at): ExecutionClaimTransition {
             $claim = $this->findLocked($claimId);
 
             if ($claim === null) {
@@ -163,7 +168,9 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
         ExecutionClaimStatus $status,
         DateTimeImmutable $at,
     ): ExecutionClaimTransition {
-        return TransactionRetry::runIndependently($this->connection, 'transition an execution claim', function () use ($claimId, $status, $at): ExecutionClaimTransition {
+        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'transition an execution claim');
+
+        return $this->connection->transaction(function () use ($claimId, $status, $at): ExecutionClaimTransition {
             $claim = $this->findLocked($claimId);
 
             if ($claim === null) {
