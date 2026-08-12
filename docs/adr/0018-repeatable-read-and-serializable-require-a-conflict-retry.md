@@ -145,11 +145,18 @@ confirmed equally exposed under REPEATABLE READ (19/20 failures, matching the ot
 should get the identical fix regardless of SERIALIZABLE's non-reproduction there — that observation
 bears on SERIALIZABLE specifically, not on REPEATABLE READ, and not on whether the fix is warranted.
 
-**Implementation note (superseded by #100):** Laravel's broad concurrency detector also treats a MySQL
-lock-wait timeout as retryable. `TransactionRetry` instead retries one Verdict-owned transaction only
-when its exception chain carries SQLSTATE `40001` (serialization failure) or `40P01` (deadlock), after a
-randomized delay; it deliberately surfaces 1205 rather than potentially doubling a long synchronous
-wait. The independent-transaction guard prevents that retry from re-running application-owned work.
+**Implementation note (added by #86):** the fix does not need a hand-rolled `catch` block at all.
+`Illuminate\Database\Connection::transaction(Closure $callback, int $attempts = 1)` already retries the
+whole callback when `Illuminate\Database\ConcurrencyErrorDetector::causedByConcurrencyError()` matches —
+which explicitly checks `SQLSTATE 40001` — and it already refuses to retry (throwing `DeadlockException`
+instead) when called from inside a nested transaction, which independently reproduces requirement 3
+above without any code in these stores needing to know about it. The actual change in each store is
+passing `2` as the second argument to the existing `$this->connection->transaction(...)` calls (both the
+insert attempt and, where present, the unique-violation-triggered re-read), not a new `catch` clause.
+This was not obvious going in — the original plan for this ADR assumed a manual catch/retry, matching
+the shape of the *existing* unique-violation handling — and is recorded here because it materially
+simplifies both the change and its risk surface: no new exception-handling code path, reusing a
+mechanism Laravel's own framework tests already cover.
 
 ### What the durable test suite asserts (superseded by measurement — see Update below)
 
@@ -312,8 +319,8 @@ measured against the one-retry policy; #97 replaced that with four attempts and 
 while this change was in review, so the numbers were taken again rather than carried over. Five
 repeated isolated 20-way runs on each of MySQL 8.4, MariaDB 11, and PostgreSQL 16 completed cleanly
 for every race in the suite, including the new `approve()`-against-`reject()` and `consume()`
-contests. PostgreSQL SERIALIZABLE now races
-`consume()` directly rather than inferring it from `issue()` — a different locking read
+contests. PostgreSQL SERIALIZABLE now races `consume()` directly rather than inferring it from
+`issue()` — a different locking read
 (`tool_call_id` + `binding_fingerprint`, not the three-column unique key) followed by a `status`
 mutation is a different predicate-lock shape under SSI, exactly the reasoning this ADR already
 applied to `issue()`'s non-reproduction — and resolves cleanly, on the four-attempt policy #97
