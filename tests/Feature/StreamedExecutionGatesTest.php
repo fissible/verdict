@@ -634,10 +634,16 @@ it('enforces a rate limit between two tool calls in one lazy streamed response',
 it('resolves a callable action context during iteration rather than when the stream is created', function (): void {
     $contextResolutions = 0;
     $executorActor = null;
-    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    $authorizationActors = [];
+    $this->app->instance(CapabilityAuthorizer::class, new class($authorizationActors) implements CapabilityAuthorizer
     {
+        /** @param list<string> $authorizationActors */
+        public function __construct(private array &$authorizationActors) {}
+
         public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
         {
+            $this->authorizationActors[] = $envelope->context->actor;
+
             return Decision::permit();
         }
     });
@@ -659,7 +665,7 @@ it('resolves a callable action context during iteration rather than when the str
             function (Request $request) use (&$contextResolutions): ActionContext {
                 $contextResolutions++;
 
-                return new ActionContext('customer-'.$request->all()['operation_id']);
+                return new ActionContext('customer-'.$contextResolutions);
             },
         ),
         [new ToolCall('stream-context', 'StreamedGateDefinition', ['operation_id' => 1001]), 'done'],
@@ -673,10 +679,11 @@ it('resolves a callable action context during iteration rather than when the str
 
     iterator_to_array($response);
 
-    // Twice, not once: Laravel AI calls shouldRequestApproval() before handle(), and each builds its
-    // own envelope. A resolver with side effects has to tolerate that.
-    expect($contextResolutions)->toBe(2);
-    expect($executorActor)->toBe('customer-1001');
+    // Laravel AI uses separate Request instances for preflight and execution. The prepared envelope
+    // makes them observe one callable context, while Verdict still authorizes at both stages.
+    expect($contextResolutions)->toBe(1)
+        ->and($authorizationActors)->toBe(['customer-1', 'customer-1'])
+        ->and($executorActor)->toBe('customer-1');
 
     assertStreamedGateEvidenceIsCorrelated($response->invocationId);
 });

@@ -402,6 +402,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 authorizer: $app->make(CapabilityAuthorizer::class),
                 evidence: $app->make(EvidenceWriter::class),
                 approvals: $app->make(ApprovalManager::class),
+                approvalExecutions: $app->make(ApprovalExecutionContext::class),
                 contextReleases: $app->make(ContextReleaseManager::class),
                 rateLimits: $app->make(RateLimitManager::class),
                 executionClaims: $app->make(ExecutionClaimManager::class),

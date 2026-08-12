@@ -14,6 +14,7 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\Exceptions\UnknownCapability;
 use Fissible\Verdict\LaravelAi\BoundTool;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Auth\Access\Response;
@@ -264,6 +265,142 @@ it('rejects a bound capability that is not registered', function (): void {
         UnknownCapability::class,
         'orders.missing',
     );
+});
+
+it('keeps callable context resolution fresh when Laravel AI preflight runs without an invocation frame', function (): void {
+    $orders = [1001 => new BoundOrder(1001, 72)];
+    $resolutions = 0;
+    $executions = 0;
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(boundOrderCapability(
+        $orders,
+        function (AuthorizedAction $action) use (&$executions): string {
+            $executions++;
+
+            return 'executed';
+        },
+    ));
+    $tool = $verdict->bound(
+        new DefinitionOnlyOrderTool,
+        'orders.bound-view',
+        function (Request $request) use (&$resolutions): ActionContext {
+            $resolutions++;
+
+            return new ActionContext(new BoundCustomer(72));
+        },
+    );
+    $request = new Request(['order_id' => 1001], 'call-without-invocation');
+
+    expect($tool->shouldRequestApproval($request))->toBeNull()
+        ->and($tool->handle($request))->toBe('executed')
+        ->and($resolutions)->toBe(2)
+        ->and($executions)->toBe(1);
+});
+
+it('discards a prepared envelope when the matching handle arguments change', function (): void {
+    $orders = [1001 => new BoundOrder(1001, 72), 1002 => new BoundOrder(1002, 72)];
+    $resolutions = 0;
+    $executedTarget = null;
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(boundOrderCapability(
+        $orders,
+        function (AuthorizedAction $action) use (&$executedTarget): string {
+            $executedTarget = $action->target;
+
+            return 'executed';
+        },
+    ));
+    $tool = $verdict->bound(
+        new DefinitionOnlyOrderTool,
+        'orders.bound-view',
+        function (Request $request) use (&$resolutions): ActionContext {
+            $resolutions++;
+
+            return new ActionContext(new BoundCustomer(72));
+        },
+    );
+
+    app(InvocationContext::class)->within('changed-arguments-invocation', function () use ($tool, &$resolutions, &$executedTarget): void {
+        expect($tool->shouldRequestApproval(new Request(['order_id' => 1001], 'call-changed-arguments')))->toBeNull()
+            ->and($tool->handle(new Request(['order_id' => 1002], 'call-changed-arguments')))->toBe('executed')
+            ->and($resolutions)->toBe(2)
+            ->and($executedTarget)->toBeInstanceOf(BoundOrder::class)
+            ->and($executedTarget?->id)->toBe(1002);
+    });
+});
+
+it('consumes prepared state before a denied execution and resolves fresh on a later handle', function (): void {
+    $authorizer = new class implements CapabilityAuthorizer
+    {
+        public int $calls = 0;
+
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            $this->calls++;
+
+            return $this->calls === 1 ? Decision::permit() : Decision::deny('Denied after preflight.');
+        }
+    };
+    $this->app->instance(CapabilityAuthorizer::class, $authorizer);
+    $resolutions = 0;
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(boundOrderCapability([1001 => new BoundOrder(1001, 72)], fn (AuthorizedAction $action): string => 'executed'));
+    $tool = $verdict->bound(
+        new DefinitionOnlyOrderTool,
+        'orders.bound-view',
+        function (Request $request) use (&$resolutions): ActionContext {
+            $resolutions++;
+
+            return new ActionContext(new BoundCustomer(72));
+        },
+    );
+    $request = new Request(['order_id' => 1001], 'call-denied-clears-prepared');
+
+    app(InvocationContext::class)->within('denied-clears-prepared', function () use ($tool, $request, &$resolutions): void {
+        $tool->shouldRequestApproval($request);
+        $first = json_decode((string) $tool->handle($request), true, flags: JSON_THROW_ON_ERROR);
+        $second = json_decode((string) $tool->handle($request), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($first['decision'])->toBe('deny')
+            ->and($second['decision'])->toBe('deny')
+            ->and($resolutions)->toBe(2);
+    });
+});
+
+it('consumes prepared state before an exceptional execution and resolves fresh on a later handle', function (): void {
+    $resolutions = 0;
+    $attempts = 0;
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(boundOrderCapability(
+        [1001 => new BoundOrder(1001, 72)],
+        function (AuthorizedAction $action) use (&$attempts): string {
+            $attempts++;
+
+            if ($attempts === 1) {
+                throw new RuntimeException('Executor failed.');
+            }
+
+            return 'executed';
+        },
+    ));
+    $tool = $verdict->bound(
+        new DefinitionOnlyOrderTool,
+        'orders.bound-view',
+        function (Request $request) use (&$resolutions): ActionContext {
+            $resolutions++;
+
+            return new ActionContext(new BoundCustomer(72));
+        },
+    );
+    $request = new Request(['order_id' => 1001], 'call-exception-clears-prepared');
+
+    app(InvocationContext::class)->within('exception-clears-prepared', function () use ($tool, $request, &$resolutions): void {
+        $tool->shouldRequestApproval($request);
+
+        expect(fn (): Stringable|string => $tool->handle($request))->toThrow(RuntimeException::class, 'Executor failed.');
+        expect($tool->handle($request))->toBe('executed')
+            ->and($resolutions)->toBe(2);
+    });
 });
 
 it('fingerprints identical configured tool descriptions identically', function (): void {

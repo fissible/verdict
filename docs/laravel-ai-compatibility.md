@@ -33,6 +33,35 @@ Every `Laravel\Ai\*` symbol referenced anywhere in `src/` (verified via `grep -r
 
 ## Category (c) deep dives
 
+### Bound-tool preflight and immediate execution
+
+Laravel AI invokes an `Approvable` tool's `shouldRequestApproval(Request)` before its immediate
+`handle(Request)` call, with distinct `Request` instances for the same provider tool call. For a
+`BoundTool` with a callable Verdict `ActionContext`, Verdict prepares one envelope during a
+non-approval preflight and consumes it at immediate execution. This prevents the two hooks from
+resolving different actors or subjects for one tool call while retaining proposal- and
+execution-stage authorization.
+
+The prepared envelope is held only in Verdict's scoped `InvocationContext`, keyed by its
+framework-provided current invocation ID and the non-empty provider tool-call ID. It is neither a
+tool-instance field nor an application cache: direct or middleware-less calls have no invocation
+frame and resolve fresh. A mismatched argument payload discards the entry, as do denied and
+exceptional handle paths. Popping the last frame for an invocation clears its entries, so a lazy
+stream that is abandoned cannot retain data for a later request.
+
+Approval resumes are deliberately excluded. The provenance middleware establishes the same
+invocation frame while handling approval decisions for correlation, but a verified decision causes
+`BoundTool::handle()` to discard any matching prepared entry and rebuild the envelope. This
+preserves fresh target, binding, context, and execution-stage authorization after a durable human
+approval wait. Nested agent generations use the innermost invocation frame, so an outer
+prepared envelope is invisible to a sub-agent call even when a provider reuses the tool-call ID.
+
+**Coverage:** `tests/Feature/StreamedExecutionGatesTest.php` proves one resolver result reaches
+both authorizations and the executor during real lazy streaming; `tests/Feature/ApprovalFlowTest.php`
+proves approval resume resolves fresh; `tests/Feature/BoundToolTest.php` covers no-frame,
+argument-mismatch, denied, and exceptional paths; `tests/Unit/InvocationContextTest.php` covers
+nested and unwound-frame isolation.
+
 ### Agent identity across the prompt lifecycle
 
 `PromptProvenanceRegistry` keys a `WeakMap<Agent, …>` by the `Agent` instance it receives from `VerdictProvenanceMiddleware::handle()`'s `$prompt->agent`, and later looks that same key up from `RecordAgentPromptProvenance::handle()`'s `$event->prompt->agent` — a *different* `AgentPrompt` instance, arriving later, via a `PromptingAgent` event. This only works if Laravel AI hands Verdict the identical `Agent` object at both points. Nothing in `Contracts\Agent` promises that; it's inferred from observed behavior.

@@ -8,6 +8,7 @@ use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\ApprovalEvidencePhase;
+use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalTransition;
@@ -48,6 +49,7 @@ final readonly class VerdictManager
         private CapabilityAuthorizer $authorizer,
         private EvidenceWriter $evidence,
         private ApprovalManager $approvals,
+        private ApprovalExecutionContext $approvalExecutions,
         private ContextReleaseManager $contextReleases,
         private RateLimitManager $rateLimits,
         private ExecutionClaimManager $executionClaims,
@@ -251,7 +253,7 @@ final readonly class VerdictManager
      */
     public function guard(Tool $tool, string $capability, ActionContext|callable $context): GuardedTool
     {
-        return new GuardedTool($tool, $capability, $context, $this, $this->deniedMessage);
+        return new GuardedTool($tool, $capability, $context, $this, $this->deniedMessage, $this->invocations, $this->approvalExecutions);
     }
 
     /**
@@ -265,7 +267,7 @@ final readonly class VerdictManager
             throw CapabilityNotExecutable::named($registered->name);
         }
 
-        return new BoundTool($definition, $capability, $context, $this, $this->deniedMessage);
+        return new BoundTool($definition, $capability, $context, $this, $this->deniedMessage, $this->invocations, $this->approvalExecutions);
     }
 
     public function requestConfirmation(ActionEnvelope $envelope): ?Decision

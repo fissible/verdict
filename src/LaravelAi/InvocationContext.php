@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\LaravelAi;
 
 use Closure;
+use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 
 /**
@@ -25,6 +26,9 @@ final class InvocationContext
 {
     /** @var list<string> */
     private array $frames = [];
+
+    /** @var array<string, array<string, array{arguments: array<string, mixed>, envelope: ActionEnvelope}>> */
+    private array $preparedEnvelopes = [];
 
     /**
      * The invocation currently in scope, or null when not inside one.
@@ -65,6 +69,43 @@ final class InvocationContext
      */
     public function pop(): void
     {
-        array_pop($this->frames);
+        $invocationId = array_pop($this->frames);
+
+        if ($invocationId !== null && ! in_array($invocationId, $this->frames, true)) {
+            unset($this->preparedEnvelopes[$invocationId]);
+        }
+    }
+
+    /** @param array<string, mixed> $arguments */
+    public function rememberPreparedEnvelope(string $toolCallId, array $arguments, ActionEnvelope $envelope): void
+    {
+        $invocationId = $this->current();
+
+        if ($invocationId === null || blank($toolCallId)) {
+            return;
+        }
+
+        $this->preparedEnvelopes[$invocationId][$toolCallId] = compact('arguments', 'envelope');
+    }
+
+    /** @param array<string, mixed> $arguments */
+    public function takePreparedEnvelope(string $toolCallId, array $arguments): ?ActionEnvelope
+    {
+        $invocationId = $this->current();
+
+        if ($invocationId === null || blank($toolCallId)) {
+            return null;
+        }
+
+        $prepared = $this->preparedEnvelopes[$invocationId][$toolCallId] ?? null;
+        unset($this->preparedEnvelopes[$invocationId][$toolCallId]);
+
+        if (($this->preparedEnvelopes[$invocationId] ?? []) === []) {
+            unset($this->preparedEnvelopes[$invocationId]);
+        }
+
+        return $prepared !== null && $prepared['arguments'] === $arguments
+            ? $prepared['envelope']
+            : null;
     }
 }
