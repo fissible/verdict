@@ -4,18 +4,22 @@ Verdict deliberately secures a narrow boundary: application actions that are reg
 
 ## What Verdict does not guarantee
 
+<!-- @verdict-claim limitation.toctou untestable reason="A package cannot exhaustively prove the absence of concurrent external changes." -->
 ### No complete TOCTOU protection
 
 Refreshing an execution target narrows the gap between authorization and execution, but it cannot make mutable databases immutable or eliminate concurrent changes. Use transactions, row locks, optimistic concurrency, idempotency, and domain checks where the operation needs them.
 
+<!-- @verdict-claim limitation.authorization-domain untestable reason="This is a boundary of package responsibility, not an observable runtime property." -->
 ### No replacement for Laravel authorization or domain rules
 
 Verdict calls Laravel authorization; it does not create your policies, tenancy model, ownership rules, validation, or business invariants. A poorly scoped target resolver or policy remains an application bug.
 
+<!-- @verdict-claim limitation.bypassed-paths tested -->
 ### No protection for bypassed paths
 
 Only tools and code paths that use Verdict are protected. An unwrapped Laravel AI tool, a controller, a queue job, a scheduled task, or another service can still invoke the underlying side effect unless your application applies its own controls there too.
 
+<!-- @verdict-claim limitation.downstream-effects tested -->
 ### No guarantee of downstream side effects
 
 An execution claim controls Verdict admission. It cannot guarantee exactly-once completion in a payment processor, email API, queue, or remote system after the executor begins. Design external integrations with idempotency keys, transactional outboxes, reconciliation, and compensating operations where appropriate.
@@ -32,12 +36,14 @@ php artisan verdict:resolve-execution-claim CLAIM_ID retryable \
 
 Resolving a claim as `retryable` releases it for one explicit retry. A claim still marked active requires `--force`, which should be used only after application-specific investigation. Claim rows are part of the guarantee horizon, so Verdict provides no automatic pruning command; see [ADR 0009](adr/0009-execution-claim-retention.md).
 
+<!-- @verdict-claim limitation.provider-inspection untestable reason="Verdict cannot observe provider internals it deliberately does not receive." -->
 ### No provider-internal inspection
 
 Verdict does not inspect model weights, hidden reasoning, provider-side tool behavior, or arbitrary provider telemetry. Its Laravel AI integrations observe the package-supported application lifecycle, not every detail of a provider implementation.
 
 Tool-description fingerprints can show that the description Verdict configured differs from the description its Laravel AI tool wrapper returned for a call. They cannot detect a provider-side rewrite after Laravel AI receives that description, or prove how the model interpreted it. Detecting or blocking a mismatch is an application or evaluation-pack responsibility, not an automatic Verdict action.
 
+<!-- @verdict-claim limitation.pii-inference untestable reason="The claim is an intentional absence of classification behavior." -->
 ### No PII inference
 
 Verdict’s fingerprint-first evidence model avoids recording raw content by default. It is not a data-loss-prevention product and does not infer whether arbitrary prompts, tool arguments, or provider responses contain PII. Classify data before releasing it to a provider and configure all application logging accordingly.
@@ -46,6 +52,7 @@ Content and component fingerprints are deterministic. A hash of a predictable pr
 
 Actor and subject fingerprints have the same boundary. `ProvidesVerdictIdentity::verdictIdentity()` is an application-supplied correlation string, not an authentication assertion: Verdict does not verify that the string identifies the actor, subject, or any delegated authority. It records only the fingerprint, never the raw value, just as an approval's `approvedBy` is application-supplied rather than authenticated by Verdict.
 
+<!-- @verdict-claim limitation.tamper-evidence tested -->
 ### Tamper-evident evidence is opt-in, partial, and bounded by key custody
 
 `DatabaseEvidenceRecorder` (the usual choice when an application opts into evidence recording — `verdict.evidence.recorder` itself defaults to `NullEvidenceRecorder`, a no-op, so nothing is recorded unless explicitly configured) is an ordinary mutable audit store: not append-only, immutable, signed, or tamper-evident. A row recording a decision, context release, or provenance fact can be edited or deleted without detection. It must not be described as cryptographic proof.
@@ -66,12 +73,14 @@ Actor and subject fingerprints have the same boundary. `ProvidesVerdictIdentity:
 
 See the [`AttestEvidenceRecorder` source](../src/Evidence/AttestEvidenceRecorder.php) for the exact configuration surface.
 
+<!-- @verdict-claim limitation.verification-cadence untestable reason="Scheduling and incident routing are deployment operations outside Verdict." -->
 ### Verification is the control, not the chain alone
 
 When a deployment adopts a tamper-evident recorder (tracked by [#11](https://github.com/fissible/verdict/issues/11)), schedule verification daily as a starting point and verify again whenever it anchors evidence. Daily bounds the undetected-tampering window to one day; verify-on-anchor is a natural extra check. A chain does not prevent tampering or alert on its own—tampering becomes detectable only when verification runs.
 
 A passing verification establishes that the retained chain verifies against its recorded head and signing key; it does not identify a change or actor, and it does not protect against someone who also controls the signing key. A verification failure is an incident to investigate, not a retry. The selected recorder's verifier can provide an event or non-zero exit status; the application owns routing that result to PagerDuty, Slack, email, or another operator channel. If automation is not yet possible, document a named person and recurring manual cadence: that is weaker than scheduling, but materially better than leaving verification implicit.
 
+<!-- @verdict-claim limitation.configuration-logic tested -->
 ### A configuration fingerprint does not cover resolver or executor logic
 
 Every `DecisionEvidence` row carries a `configurationFingerprint` — a SHA-256 over the capability's
@@ -92,6 +101,7 @@ application that needs deploy-level precision over closure logic should pin its 
 The fingerprint alone does not contain the rule text — it only identifies it. The durable capability
 configuration registry resolves that digest to the declared configuration that produced it.
 
+<!-- @verdict-claim limitation.configuration-retention untestable reason="Applications own retention of their deployed evidence and configuration stores." -->
 ### Retain capability configurations while retained evidence refers to them
 
 The durable `verdict_capability_configurations` registry expands a configuration fingerprint into the
@@ -102,29 +112,33 @@ into an unresolvable digest. The shipped database store is deliberate: Redis evi
 evidence, and object storage adds an availability dependency to registration. Applications that replace
 the store must preserve those retention and durability properties.
 
+<!-- @verdict-claim limitation.provenance-incomplete tested -->
 ## Provenance derivation is deliberately incomplete
 
 Verdict records a derivation edge only when it observed a transformation directly, such as an application context release, or when an application explicitly declared one. It does not infer that retrieved content influenced a model output, tool request, or decision merely because the records share an invocation. Missing derivation edges mean "not observed or not declared," not "no influence occurred."
 
 The evidence store may also contain highly sensitive information. Configurable evidence levels, retention, tenant isolation, access authorization, pruning, and encryption remain application responsibilities.
 
+<!-- @verdict-claim limitation.content-moderation untestable reason="This is an intentional absence of a moderation product surface." -->
 ### No content moderation or factual review
 
 Verdict does not establish factual correctness or provide general content moderation. It also does not buffer or inspect streamed model output: streaming output cannot be retracted after it has been sent, so sensitive response checks may need to happen before generation rather than after. See [ADR 0011](adr/0011-rejected-verdict-does-not-buffer-streamed-output.md).
 
+<!-- @verdict-claim limitation.universal-policy untestable reason="Applications choose the business-specific policy facts Verdict evaluates." -->
 ### No universal security policy
 
 The package cannot decide which actions require approval, what makes two business actions equivalent, or what a safe rate limit should be. Those decisions are encoded in capability configuration and the surrounding application.
 
-### PostgreSQL SERIALIZABLE rate limits retain a concurrency availability gap
+<!-- @verdict-claim limitation.security-state-retries tested -->
+### Security-state conflict retries are bounded and Verdict-owned
 
-`DatabaseRateLimitStore::consume()`, `DatabaseExecutionClaimStore::claim()`, and every `DatabaseApprovalReceiptStore` transition (`issue()`, `approve()`, `reject()`, `consume()`) retry once after a randomized 10–50 ms delay when a transaction raises `SQLSTATE 40001` (a deadlock or serialization failure), in addition to their existing unique-constraint-violation handling. The delay is measured with genuine, synchronized process-level concurrency: a ready/release handshake between child processes, not a fixed wall-clock guess.
+`DatabaseRateLimitStore::consume()`, `DatabaseExecutionClaimStore::claim()`, and every `DatabaseApprovalReceiptStore` transition (`issue()`, `approve()`, `reject()`, `consume()`) retry a recognized concurrency conflict up to three times after increasing randomized delays: 10–50 ms, then 20–100 ms, then 30–150 ms. The retry is only reached after the independent-transaction guard has established that Verdict owns the transaction; it never retries an application-owned outer transaction.
 
-The retry resolves the earlier MySQL 8 and MariaDB 11 REPEATABLE READ residual across all three stores: five repeated isolated 20-way runs on each of MySQL 8, MariaDB 11, and PostgreSQL 16 returned clean results under strict assertions, including the races that decide a receipt (`approve()` against `reject()`) and consume an approved one. PostgreSQL remains clean under its default READ COMMITTED isolation level, and PostgreSQL SERIALIZABLE remains clean for execution claims and for both issuing and consuming approval receipts.
+What counts as a conflict is Laravel's `Illuminate\Database\ConcurrencyErrorDetector`, resolved from the container rather than reimplemented, so the set is wider than `SQLSTATE 40001`: it also recognizes engine-specific signals that carry no 40001 at all, including SQLite's `database is locked` and MySQL's lock-wait timeout. An application that binds its own `Illuminate\Contracts\Database\ConcurrencyErrorDetector` changes that classification for Verdict's retries too.
 
-The execution-claim transitions that follow admission — `complete()`, `markIndeterminate()`, and `resolve()` — do **not** retry; they run in a guarded transaction without one. A conflict there still surfaces as an unhandled `Illuminate\Database\QueryException`. See [#112](https://github.com/fissible/verdict/issues/112).
+The execution-claim transitions that follow admission — `complete()`, `markIndeterminate()`, and `resolve()` — do **not** retry. They run in a guarded transaction without one, so a conflict there still reaches the caller as an unhandled `Illuminate\Database\QueryException`. See [#112](https://github.com/fissible/verdict/issues/112).
 
-**PostgreSQL SERIALIZABLE rate limits remain an exception:** under sustained, fully simultaneous contention on one bucket, a caller can still receive an unhandled `Illuminate\Database\QueryException` (measured: roughly 15–18 of 20 concurrent attempts at high contention; clean at low contention). This is an availability problem, not a correctness one: no measurement has admitted more than the configured limit, more than one claim winner, or more than one receipt. Applications using PostgreSQL SERIALIZABLE for highly contended rate-limit buckets should account for that exception path. See [ADR 0018](adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md) for the measured evidence; [#97](https://github.com/fissible/verdict/issues/97) tracks the remaining investigation.
+The policy is intentionally bounded: a contender may wait up to 300 ms before its final attempt rather than retrying indefinitely under sustained conflict. The durable real-engine suite uses a ready/release handshake between separate child processes, not a fixed wall-clock guess. It strictly requires every contender to receive a clean policy outcome at 20-way contention on MySQL/MariaDB REPEATABLE READ, PostgreSQL READ COMMITTED, and PostgreSQL SERIALIZABLE; the rate-limit case admits exactly its configured limit. It also races the receipt decisions (`approve()` against `reject()`) and the consume that spends an approved receipt on every supported engine. See [ADR 0018](adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md) and [#97](https://github.com/fissible/verdict/issues/97) for the measured evidence.
 
 ## Operational responsibilities
 

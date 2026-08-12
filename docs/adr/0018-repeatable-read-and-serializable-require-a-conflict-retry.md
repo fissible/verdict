@@ -253,6 +253,26 @@ the PostgreSQL SERIALIZABLE claim/receipt results remain clean; the measured Pos
 rate-limit availability gap remains, is still disclosed in `docs/limitations.md`, and is tracked in
 [#97](https://github.com/fissible/verdict/issues/97).
 
+## Update (#97): three bounded retries resolve the PostgreSQL SERIALIZABLE rate-limit gap
+
+#97 first re-measured the current one-retry implementation against PostgreSQL 16.14 with the
+ready/release-synchronized 20-way harness. Five runs retained 2, 2, 2, 6, and 7 unhandled
+`SQLSTATE 40001` responses respectively, while each run admitted exactly the configured five
+callers. This was an availability gap, not an over-admission bug, and it established that one retry
+was insufficient even though it improved substantially on #86's pre-jitter result.
+
+The adopted policy makes at most four total attempts: the initial transaction plus three retries.
+Each retry remains outside Laravel's transaction wrapper and waits a randomized 10–50 ms multiplied
+by its ordinal (10–50 ms, 20–100 ms, then 30–150 ms; 300 ms maximum total wait). It remains safe
+under ADR 0004 because `IndependentTransactionGuard` runs before every store call, so no
+application-owned outer transaction is retried.
+
+Twenty-five repeated PostgreSQL 16.14 SERIALIZABLE races, each with 20 synchronized processes on one
+bucket (500 contenders total), returned no uncaught `40001`s. Every run admitted exactly five callers.
+The durable suite now asserts zero errors and the exact limit for that case, alongside the existing
+strict assertions for the other supported engine/isolation combinations. The former limitation is
+therefore removed from `docs/limitations.md`; the bounded latency cost remains documented there.
+
 ## Update (#100): the retry covers the approval-receipt transitions, not just issuance
 
 #86 and #92 applied the retry to the three *admission* paths this ADR was written about — the
@@ -287,14 +307,17 @@ retrying, and gives the caller the original conflict if it cannot. Found by revi
 measurement, because no prior test raised a conflict at commit time; it is now covered directly by
 reproducing the state Laravel's commit handler leaves behind.
 
-**Measured, not assumed, on the same harness:** five repeated isolated 20-way runs on each of
-MySQL 8, MariaDB 11, and PostgreSQL 16 completed cleanly for every race in the suite, including the
-new `approve()`-against-`reject()` and `consume()` contests. PostgreSQL SERIALIZABLE now races
+**Measured, not assumed, on the same harness — and re-measured after #97 landed.** #100 was first
+measured against the one-retry policy; #97 replaced that with four attempts and escalating delays
+while this change was in review, so the numbers were taken again rather than carried over. Five
+repeated isolated 20-way runs on each of MySQL 8.4, MariaDB 11, and PostgreSQL 16 completed cleanly
+for every race in the suite, including the new `approve()`-against-`reject()` and `consume()`
+contests. PostgreSQL SERIALIZABLE now races
 `consume()` directly rather than inferring it from `issue()` — a different locking read
 (`tool_call_id` + `binding_fingerprint`, not the three-column unique key) followed by a `status`
 mutation is a different predicate-lock shape under SSI, exactly the reasoning this ADR already
-applied to `issue()`'s non-reproduction — and resolves cleanly. The PostgreSQL SERIALIZABLE
-rate-limit residual is unchanged.
+applied to `issue()`'s non-reproduction — and resolves cleanly, on the four-attempt policy #97
+adopted immediately before this change.
 
 **The consume race was also, briefly, MySQL-only, which made a PostgreSQL regression invisible.**
 Its first version skipped on any non-MySQL driver, and `consume()` is the only path whose lock is
@@ -320,10 +343,9 @@ and which propagates untouched.
 
 ## Consequences
 
-- The operational risk is real and current, not hypothetical: it is documented in
-  `docs/limitations.md` rather than left implicit, per this repo's practice of naming a known gap rather
-  than letting a contributor discover it and mistake it for an oversight (the same reasoning ADR 0006
-  used for the streaming approval gap before #22 fixed it).
+- The former PostgreSQL SERIALIZABLE rate-limit availability gap is resolved by a measured, bounded
+  retry policy. Its maximum added wait is documented in `docs/limitations.md`; it is not an unbounded
+  availability-for-correctness trade.
 - [#86](https://github.com/fissible/verdict/issues/86) implemented and measured the retry fix (see
   Update above), at higher priority than #37's own "M, no urgency" framing, because #37 changed the
   finding from "unmeasured, assumed fine" to "measured, confirmed unsafe on the isolation level most
@@ -336,8 +358,8 @@ and which propagates untouched.
   natural-isolation coverage runs on tag/weekly — matching #37's original Part 3 cost/benefit
   tradeoff.
 - `DatabaseApprovalReceiptStore` is measured, not assumed, across every combination tested: confirmed
-  exposed under REPEATABLE READ during #86's initial measurements and resolved by #92's jittered retry;
-  it remains fully resolved under PostgreSQL SERIALIZABLE, unlike rate limits' residual gap there.
+  exposed under REPEATABLE READ during #86's initial measurements and resolved by the bounded retry;
+  it remains fully resolved under PostgreSQL SERIALIZABLE.
 
 ## Alternatives rejected
 

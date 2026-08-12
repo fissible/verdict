@@ -607,6 +607,7 @@ it('correlates untrusted retrieved-document provenance with a decision in the sa
         ->and($recorder->latest()?->invocationId)->toBe($config->correlationId);
 });
 
+/** @verdict-claim limitation.provenance-incomplete */
 it('traces explicitly declared proposed-argument derivation back to untrusted retrieved provenance', function (): void {
     $config = ragBorneInjectionAttackPackConfig();
     $recorder = new InMemoryEvidenceRecorder;

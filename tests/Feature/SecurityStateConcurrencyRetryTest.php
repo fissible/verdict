@@ -8,7 +8,6 @@ use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Tests\Support\ConcurrencyHarness;
 use Illuminate\Database\DatabaseManager;
-use Illuminate\Database\QueryException;
 
 /**
  * Genuine process-level concurrency (separate proc_open OS processes, separate connections — not
@@ -38,11 +37,10 @@ use Illuminate\Database\QueryException;
  * readiness only after forcing its connection, and the harness releases the whole batch only once
  * every child has signaled. See `ConcurrencyHarness::releaseWhenAllReady()`.
  *
- * **Natural-isolation results are strict, based on direct measurement with the corrected harness —
- * not by assumption.** MySQL, MariaDB, and PostgreSQL READ COMMITTED must return a clean response
- * for every contender. The dedicated PostgreSQL SERIALIZABLE rate-limit case retains a measured
- * availability gap and therefore asserts its safety invariant separately. See ADR 0018 and
- * `docs/limitations.md` for the measured evidence.
+ * **Every supported engine/isolation result is strict, based on direct measurement with the
+ * corrected harness — not by assumption.** MySQL, MariaDB, PostgreSQL READ COMMITTED, and the
+ * dedicated PostgreSQL SERIALIZABLE case must return a clean response for every contender. See ADR
+ * 0018 for the measured evidence.
  */
 const CONCURRENCY_TEST_CONCURRENCY = 20;
 
@@ -66,6 +64,50 @@ function concurrencyTestConnectionConfig(): array
 function concurrencyTestSkipReason(): string
 {
     return 'Requires a real MySQL/MariaDB or PostgreSQL connection (DB_CONNECTION); SQLite has no REPEATABLE READ/SERIALIZABLE semantics and never raises SQLSTATE 40001.';
+}
+
+/**
+ * Writes one machine-readable observation for #97 when explicitly requested.
+ *
+ * The durable assertion remains quiet in normal local and CI runs. An investigator can set
+ * VERDICT_CONCURRENCY_REPORT_PATH to retain repeated real-engine measurements without copying a
+ * lossy test-runner transcript. The parent connection has PostgreSQL's configured default; the
+ * child payload separately records that every raced session forced SERIALIZABLE before the
+ * ready/release barrier.
+ *
+ * @param  array<int, mixed>  $decoded
+ */
+function recordPostgresSerializableRateLimitMeasurement(array $decoded, int $admitted): void
+{
+    $path = getenv('VERDICT_CONCURRENCY_REPORT_PATH');
+
+    if ($path === false || $path === '') {
+        return;
+    }
+
+    /** @var DatabaseManager $manager */
+    $manager = app(DatabaseManager::class);
+    $connection = $manager->connection();
+    $defaultIsolation = $connection->selectOne('show default_transaction_isolation');
+    $version = $connection->selectOne('show server_version');
+    $errors = array_values(array_filter($decoded, fn ($result) => ! is_array($result) || ! ($result['ok'] ?? false)));
+    $sqlstates = array_count_values(array_filter(array_map(
+        fn ($error) => is_array($error) ? $error['sqlstate'] ?? null : null,
+        $errors,
+    ), is_string(...)));
+
+    file_put_contents($path, json_encode([
+        'scenario' => 'postgresql-serializable-rate-limit',
+        'concurrency' => CONCURRENCY_TEST_CONCURRENCY,
+        'limit' => CONCURRENCY_TEST_RATE_LIMIT,
+        'attempts' => count($decoded),
+        'admitted' => $admitted,
+        'errors' => count($errors),
+        'sqlstates' => $sqlstates,
+        'parent_default_isolation' => $defaultIsolation->default_transaction_isolation,
+        'raced_session_isolation' => 'serializable',
+        'server_version' => $version->server_version,
+    ], JSON_THROW_ON_ERROR).PHP_EOL, FILE_APPEND | LOCK_EX);
 }
 
 /**
@@ -165,6 +207,7 @@ afterEach(function (): void {
     }
 });
 
+/** @verdict-claim limitation.security-state-retries */
 it('admits at most the configured limit when racing DatabaseRateLimitStore::consume() under the connection\'s natural isolation level', function (): void {
     $bucketFingerprint = hash('sha256', random_bytes(16));
     $at = (new DateTimeImmutable)->format(DATE_ATOM);
@@ -267,7 +310,7 @@ it('keeps one terminal decision when approve and reject race on separate real da
         ->toBeIn([ApprovalReceiptStatus::Approved, ApprovalReceiptStatus::Rejected]);
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
-it('resolves PostgreSQL SERIALIZABLE cleanly for execution claims and approval receipts at high contention, but rate limits retain a known residual failure rate', function (): void {
+it('resolves PostgreSQL SERIALIZABLE cleanly for all security-state stores at high contention', function (): void {
     if (concurrencyTestDriver() !== 'pgsql') {
         $this->markTestSkipped('This test is specific to PostgreSQL SERIALIZABLE; MySQL/MariaDB are covered by the tests above at their natural REPEATABLE READ default.');
     }
@@ -326,18 +369,10 @@ it('resolves PostgreSQL SERIALIZABLE cleanly for execution claims and approval r
     expect($consumeErrors)->toBe([])
         ->and($consumers)->toBe(1);
 
-    // Rate limits: NOT fully resolved at 20-way SERIALIZABLE contention by a bounded 2-attempt
-    // retry with no backoff — measured directly (#86): errors dropped from 20/20 (unfixed) to a
-    // still-substantial residual (~18/20 across repeated runs), not zero. This is a known,
-    // disclosed limitation (see ADR 0018 and docs/limitations.md), not an oversight — a caller
-    // may still receive an unhandled QueryException under sustained, fully-simultaneous
-    // contention on one bucket under SERIALIZABLE specifically. This test pins that reality:
-    // it asserts the invariant still holds among responses that DON'T throw (never more than the
-    // configured limit admitted — a wrong answer would be a correctness regression, worse than
-    // the known availability gap), and that every thrown exception is the expected, bounded
-    // SQLSTATE 40001 rather than something new and unexpected. It deliberately does not assert
-    // zero errors, because that would not be true today and pretending otherwise would make this
-    // a flaky test rather than an honest one.
+    // Rate limits: #97 measured that three bounded retries with increasing randomized delay resolve
+    // the last PostgreSQL SERIALIZABLE conflict path. This strict assertion retains the underlying
+    // policy invariant (exactly the configured limit admitted) and proves callers do not receive a
+    // leaked SQLSTATE 40001 under this deliberately synchronized 20-way race.
     $rateLimitResults = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/rate-limit-consume.php', array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
         'connection' => $connectionConfig,
         'bucket_fingerprint' => hash('sha256', random_bytes(16)),
@@ -350,11 +385,8 @@ it('resolves PostgreSQL SERIALIZABLE cleanly for execution claims and approval r
     $rateLimitAdmitted = count(array_filter($rateLimitDecoded, fn ($d) => is_array($d) && ($d['ok'] ?? false) && $d['allowed']));
     $rateLimitErrors = array_values(array_filter($rateLimitDecoded, fn ($d) => ! is_array($d) || ! ($d['ok'] ?? false)));
 
-    expect($rateLimitAdmitted)->toBeLessThanOrEqual(CONCURRENCY_TEST_RATE_LIMIT);
+    recordPostgresSerializableRateLimitMeasurement($rateLimitDecoded, $rateLimitAdmitted);
 
-    foreach ($rateLimitErrors as $error) {
-        expect($error)->toBeArray()
-            ->and($error['exception'] ?? null)->toBe(QueryException::class)
-            ->and($error['sqlstate'] ?? null)->toBe('40001');
-    }
+    expect($rateLimitErrors)->toBe([])
+        ->and($rateLimitAdmitted)->toBe(CONCURRENCY_TEST_RATE_LIMIT);
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());

@@ -5,14 +5,19 @@ All notable changes to Verdict will be documented in this file.
 ## [Unreleased]
 
 - Retry approval-receipt state transitions on a database concurrency conflict.
-  `DatabaseApprovalReceiptStore::approve()`, `reject()`, and `consume()` now take the same bounded,
-  jittered retry as `issue()`, so a deadlock while deciding or spending a human approval returns a
+  `DatabaseApprovalReceiptStore::approve()`, `reject()`, and `consume()` now take the same bounded
+  retry boundary as `issue()`, so a deadlock while deciding or spending a human approval returns a
   policy outcome instead of an unhandled `QueryException`. Retrying cannot turn two consumers into two
   successful consumptions: a recognized conflict aborts its transaction, so the retry re-executes
   against committed state. Also fixes a conflict raised at COMMIT leaving the driver handle open,
   which made the retry itself fail on PostgreSQL. See
   [#100](https://github.com/fissible/verdict/issues/100) and
   [ADR 0018](docs/adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md).
+
+- Resolve PostgreSQL SERIALIZABLE rate-limit conflicts with up to three retries after increasing
+  randomized delays (10–50 ms, then 20–100 ms, then 30–150 ms). The retries remain confined to
+  Verdict-owned transactions; a synchronized 20-way PostgreSQL contention suite now requires every
+  caller to receive a policy-shaped outcome. See [#97](https://github.com/fissible/verdict/issues/97).
 
 - Narrow `CapabilityConfigurationStore` to a closure-free `CapabilityConfiguration` value object,
   so custom registry adapters receive only the content-addressed fingerprint and declared

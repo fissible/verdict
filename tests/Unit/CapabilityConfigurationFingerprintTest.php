@@ -29,6 +29,7 @@ it('is stable across repeated calls', function (): void {
         ->and($capability->configurationFingerprint())->toHaveLength(64);
 });
 
+/** @verdict-claim limitation.configuration-logic */
 it('produces the same fingerprint for two independently built capabilities with identical declared configuration', function (): void {
     $a = fingerprintFixtureCapability()->rateLimit(
         RateLimitPolicy::fixedWindow('per-customer', 5, 86400, fn (): array => ['customer' => 1]),

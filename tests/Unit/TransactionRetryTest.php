@@ -41,18 +41,22 @@ it('does not retry an unrelated transaction error', function (): void {
     TransactionRetry::run($connection, fn (): string => 'unreachable');
 })->throws(RuntimeException::class, 'Connection configuration is invalid');
 
-it('leaves the second attempt\'s concurrency error explicit rather than the first', function (): void {
+it('stops after three retries and surfaces the last attempt\'s concurrency error', function (): void {
     $connection = $this->createMock(ConnectionInterface::class);
-    $first = new RuntimeException('Deadlock found when trying to get lock');
-    $second = new RuntimeException('deadlock detected');
+    // Four distinct instances, and deliberately four different detector matches — only the first
+    // two carry a 40001 SQLSTATE. `database is locked` is SQLite's, which the stores support.
+    $errors = [
+        new RuntimeException('Deadlock found when trying to get lock'),
+        new RuntimeException('deadlock detected'),
+        new RuntimeException('database is locked'),
+        new RuntimeException('has been chosen as the deadlock victim'),
+    ];
     $attempt = 0;
 
-    $connection->expects($this->exactly(2))
+    $connection->expects($this->exactly(4))
         ->method('transaction')
-        ->willReturnCallback(function () use (&$attempt, $first, $second): never {
-            $attempt++;
-
-            throw $attempt === 1 ? $first : $second;
+        ->willReturnCallback(function () use (&$attempt, $errors): never {
+            throw $errors[$attempt++];
         });
 
     $caught = null;
@@ -63,7 +67,8 @@ it('leaves the second attempt\'s concurrency error explicit rather than the firs
         $caught = $error;
     }
 
-    // Distinct instances, so this pins the surviving exception by identity: a stale re-throw of
-    // the first attempt's error would describe the wrong attempt to whoever triages the incident.
-    expect($caught)->toBe($second);
+    // Pinned by identity rather than by message: a stale re-throw of an earlier attempt's error
+    // would describe the wrong attempt to whoever triages the incident.
+    expect($caught)->toBe($errors[3])
+        ->and($attempt)->toBe(4);
 });
