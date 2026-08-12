@@ -14,6 +14,12 @@ All notable changes to Verdict will be documented in this file.
   [#100](https://github.com/fissible/verdict/issues/100) and
   [ADR 0018](docs/adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md).
 
+- Verify queued Laravel AI execution for Verdict authorization, execution claims, semantic rate
+  limits, durable evidence, and context release using an actual database-queue `InvokeAgent` payload
+  and `queue:work --once`. Queued approval resumption remains explicitly unverified because Laravel
+  AI does not persist the initial job's pending tool-call response for a later queued decision without
+  application-owned conversation state. See [#102](https://github.com/fissible/verdict/issues/102).
+
 - Verify Laravel AI streamed execution for Verdict authorization, execution claims, semantic rate
   limits, and callable action context resolution through lazy `Agent::stream()` integration
   coverage. The verification uses Laravel AI's `FakeTextGateway` and a stub `CapabilityAuthorizer`;
