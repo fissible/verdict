@@ -175,9 +175,19 @@ to change without warning, and which tests would catch it (#18).
 Verdict pins `laravel/ai: ^0.10.2`, which in Composer's pre-1.0 caret semantics is `>=0.10.2 <0.11.0`.
 
 - **laravel/ai#848** (open) fixes the nested `toolInvocationId` clobber. It is minor-bump shaped, so it
-  will likely ship in `0.11.0` and will not be picked up automatically.
+  will likely ship in `0.11.0` and will not be picked up automatically. It has since grown into a stack
+  (#870, #872, #873, #874, #875, #876) that adds `RunContext` and `ToolFailed` and makes `float $time` a
+  required argument to `ToolInvoked` — a declared breaking change. **#130** tracks the widening as one
+  reviewed pass, including the two hand-constructed `ToolInvoked` events in
+  `tests/Feature/LaravelAiProvenanceTest.php`.
 - `tests/Feature/ToolInvocationCorrelationTest.php` pins the *current, buggy* behaviour deliberately.
   When the constraint widens past #848, that test goes red. **That failure is the designed alarm, not a
   regression** — it means upstream correlation semantics changed and Verdict's evidence path needs review.
 - Dependabot watches Composer weekly and will open the widening PR. Whichever milestone is open when that
   lands absorbs the compatibility review, per `RELEASES.md`.
+- `.github/workflows/laravel-ai-canary.yml` runs PHPStan and the suite against `laravel/ai:0.x-dev` weekly,
+  non-blocking. Dependabot's PR arrives when upstream *publishes*; the canary reports when upstream
+  *merges*. That lead time is the point — it is what lets an issue blocked on an in-flight upstream stack
+  be scoped against what actually landed rather than against an open draft. A red canary means upstream
+  changed: work **#130**'s checklist, do not widen `composer.json` to make it green. The constraint is
+  `0.x-dev`, not `dev-0.x`; Composer normalizes a branch name that already looks like a version.
