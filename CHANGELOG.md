@@ -14,6 +14,11 @@ All notable changes to Verdict will be documented in this file.
   idempotency key. The identity is `null` without `atMostOnce()` and remains stable for an
   operator-authorized retry. See [#34](https://github.com/fissible/verdict/issues/34).
 
+- Add `verdict:make-capability`, an interactive or flag-driven generator for fail-closed capability
+  and selected-control test skeletons. It writes no policy, route, or provider changes; target
+  lookup, refresh, executor, and semantic bindings remain explicit application TODOs. See
+  [#107](https://github.com/fissible/verdict/issues/107).
+
 - Add a framework-agnostic `CapabilitySecurityTestKit` for driving application capabilities through
   Verdict's real protected execution path. It covers policy denial, refreshed targets, approval
   binding invalidation, duplicate claims, rate limits, and indeterminate claims after executor

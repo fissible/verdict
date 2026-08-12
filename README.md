@@ -166,6 +166,63 @@ For capability integration tests, the framework-agnostic [capability security te
 drives a hand-written capability through Verdict's protected execution path and checks the common
 authorization, freshness, approval, claim, rate-limit, and failure invariants.
 
+### Generate a fail-closed capability skeleton
+
+`verdict:make-capability` creates a capability module and test skeleton, but never edits a policy,
+route, or service provider. Every target lookup, execution target, executor, and selected-control
+binding is an explicit throwing TODO until the application supplies its own security facts.
+
+```bash
+php artisan verdict:make-capability orders.refund \
+  --model=Order \
+  --ability=refund \
+  --target-argument=order_id \
+  --confirmation \
+  --claim \
+  --rate-limit
+```
+
+The interactive prompts have these exact flag equivalents. Review the printed policy fragment and
+registration snippet, replace all TODOs, register the capability yourself, then run
+`php artisan verdict:validate`.
+
+The generated test is intentionally incomplete until your application supplies the fixtures and
+observations. It already calls the [capability security test kit](docs/testing.md) through the
+same registered capability and protected path Verdict uses at runtime:
+
+```php
+namespace Tests\Feature\Capabilities\Orders;
+
+use Fissible\Verdict\Testing\CapabilitySecurityTestKit;
+use Fissible\Verdict\VerdictManager;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
+
+final class RefundCapabilityTest extends TestCase
+{
+    #[Test]
+    public function denies_capability_without_executing(): void
+    {
+        $this->markTestIncomplete('TODO: register RefundCapability::make(), provide a denied envelope, and assert policy observation plus no side effects.');
+
+        CapabilitySecurityTestKit::for(app(VerdictManager::class), 'orders.refund')
+            ->assertPolicyDenial($deniedEnvelope, $assertPolicyWasApplied, $assertNoSideEffects);
+    }
+
+    #[Test]
+    public function uses_a_refreshed_capability_target(): void
+    {
+        $this->markTestIncomplete('TODO: provide proposal and refreshed target fixtures plus an executor side-effect assertion.');
+
+        CapabilitySecurityTestKit::for(app(VerdictManager::class), 'orders.refund')
+            ->assertRefreshedTargetSubstitution($permittedEnvelope, $assertRefreshedSideEffects);
+    }
+}
+```
+
+When selected, `--confirmation`, `--claim`, and `--rate-limit` add the corresponding approval,
+duplicate-admission, and rate-limit kit assertions to that skeleton.
+
 ## Guarantees
 
 For actions that are registered as capabilities and executed through Verdict’s protected path, Verdict provides these package-level guarantees:
