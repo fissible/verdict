@@ -90,7 +90,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
     ): ApprovalTransition {
         IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'approve an approval receipt');
 
-        return $this->connection->transaction(function () use ($receiptId, $toolCallId, $approvedBy, $at): ApprovalTransition {
+        return TransactionRetry::run($this->connection, function () use ($receiptId, $toolCallId, $approvedBy, $at): ApprovalTransition {
             $receipt = $this->findLocked($receiptId);
             $failure = $this->decisionFailure($receipt, $toolCallId, $at);
 
@@ -120,7 +120,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
     ): ApprovalTransition {
         IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'reject an approval receipt');
 
-        return $this->connection->transaction(function () use ($receiptId, $toolCallId, $rejectedBy, $at): ApprovalTransition {
+        return TransactionRetry::run($this->connection, function () use ($receiptId, $toolCallId, $rejectedBy, $at): ApprovalTransition {
             $receipt = $this->findLocked($receiptId);
             $failure = $this->decisionFailure($receipt, $toolCallId, $at);
 
@@ -149,7 +149,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
     ): ApprovalTransition {
         IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'consume an approval receipt');
 
-        return $this->connection->transaction(function () use ($toolCallId, $bindingFingerprint, $at): ApprovalTransition {
+        return TransactionRetry::run($this->connection, function () use ($toolCallId, $bindingFingerprint, $at): ApprovalTransition {
             $receipt = $this->lockedReceiptForBindingFingerprint($toolCallId, $bindingFingerprint);
             $validation = $this->validateReceipt($receipt, $bindingFingerprint, $at);
 

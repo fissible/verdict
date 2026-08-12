@@ -14,6 +14,12 @@ Status: Accepted
   its replacement.
 - [#97](https://github.com/fissible/verdict/issues/97) investigates the remaining PostgreSQL
   SERIALIZABLE rate-limit availability gap.
+- [#100](https://github.com/fissible/verdict/issues/100) extends the retry to the approval-receipt
+  state transitions (`approve()`, `reject()`, `consume()`); see the last Update below for what that
+  measurement found.
+- [#112](https://github.com/fissible/verdict/issues/112) tracks the same gap in the execution-claim
+  transitions, and whether the retry should classify conflicts by SQLSTATE rather than through
+  Laravel's detector.
 - [#20](https://github.com/fissible/verdict/issues/20) adds the durable concurrency test suite; a first
   version of it landed directly in #86 (`tests/Feature/SecurityStateConcurrencyRetryTest.php`), since #86
   needed real evidence its own fix worked, not just a plan for one.
@@ -273,6 +279,74 @@ bucket (500 contenders total), returned no uncaught `40001`s. Every run admitted
 The durable suite now asserts zero errors and the exact limit for that case, alongside the existing
 strict assertions for the other supported engine/isolation combinations. The former limitation is
 therefore removed from `docs/limitations.md`; the bounded latency cost remains documented there.
+
+## Update (#100): the retry covers the approval-receipt transitions, not just issuance
+
+#86 and #92 applied the retry to the three *admission* paths this ADR was written about — the
+lock-then-insert race in `DatabaseRateLimitStore::consume()`, `DatabaseExecutionClaimStore::claim()`,
+and `DatabaseApprovalReceiptStore::issue()`. The approval-receipt mutations that follow admission
+were left on a bare `$this->connection->transaction(...)`: the decisions (`approve()`, `reject()`)
+and the consume that spends an approval. Those are not a lesser case. A deadlock while spending a
+human approval surfaces as an unhandled `QueryException` where the caller expected a policy outcome,
+and unlike an admission race there is no second chance: the receipt is single-use. #100 extends the
+retry to all three.
+
+**Deliberately not extended here:** the execution-claim transitions (`complete()`,
+`markIndeterminate()`, `resolve()`) have the same gap and still carry ADR 0004's guard without a
+retry. Widening the shared mechanism and expanding a second store in the same change would put a
+behavior change to rate limits and execution claims inside an approvals fix; it is tracked
+separately in [#112](https://github.com/fissible/verdict/issues/112) so it can land with its own
+measurement and acceptance tests. The same reasoning defers any narrowing of what counts as a
+retryable conflict: `TransactionRetry` continues to classify through Laravel's
+container-configurable `ConcurrencyErrorDetector`, which an application may rebind, and which
+recognizes concurrency errors that carry no `40001` SQLSTATE at all — SQLite's `database is locked`
+among them.
+
+**A commit-time conflict was leaving the driver handle open, and would have broken the retry it was
+supposed to trigger.** `Connection::handleCommitTransactionException()` rolls the PDO handle back
+only when it has another attempt left, and Verdict calls `transaction()` with Laravel's default
+single attempt. A conflict raised at COMMIT — how PostgreSQL normally reports a read-write
+serialization failure, as opposed to the statement-time failures every prior measurement here
+produced — therefore left the connection's transaction counter at zero with the handle still open,
+and the retry's `beginTransaction()` failed with "There is already an active transaction" instead of
+either retrying or surfacing the conflict. `TransactionRetry` now releases that handle before
+retrying, and gives the caller the original conflict if it cannot. Found by review rather than by
+measurement, because no prior test raised a conflict at commit time; it is now covered directly by
+reproducing the state Laravel's commit handler leaves behind.
+
+**Measured, not assumed, on the same harness — and re-measured after #97 landed.** #100 was first
+measured against the one-retry policy; #97 replaced that with four attempts and escalating delays
+while this change was in review, so the numbers were taken again rather than carried over. Five
+repeated isolated 20-way runs on each of MySQL 8.4, MariaDB 11, and PostgreSQL 16 completed cleanly
+for every race in the suite, including the new `approve()`-against-`reject()` and `consume()`
+contests. PostgreSQL SERIALIZABLE now races `consume()` directly rather than inferring it from
+`issue()` — a different locking read
+(`tool_call_id` + `binding_fingerprint`, not the three-column unique key) followed by a `status`
+mutation is a different predicate-lock shape under SSI, exactly the reasoning this ADR already
+applied to `issue()`'s non-reproduction — and resolves cleanly, on the four-attempt policy #97
+adopted immediately before this change.
+
+**The consume race was also, briefly, MySQL-only, which made a PostgreSQL regression invisible.**
+Its first version skipped on any non-MySQL driver, and `consume()` is the only path whose lock is
+`lockForUpdate()` on a secondary-index read: deleting that lock left the entire PostgreSQL job green
+while 17-20 of 20 contenders each consumed the same single human approval. The race now runs on
+every supported engine, and the deleted-lock mutation fails it on PostgreSQL as it already did on
+MySQL. Driver-gating a race is gating the only evidence that its lock exists.
+
+### Rejected: reconcile a retried transition against state the first attempt may have written
+
+Considered and rejected during #100's review. `issue()` reconciles after a failure
+(`existingIssue()` on a unique-constraint violation) because its first attempt's insert *did* land;
+the argument was that `approve()`/`reject()`/`consume()` should gain something equivalent, since a
+retry that finds the receipt already in its terminal state returns `InvalidState` for work that
+appeared to succeed. It does not follow: a recognized concurrency error means the transaction was
+aborted and nothing it wrote is durable — the same distinction this ADR already draws in
+*Alternatives rejected* to explain why 40001 must not be folded into the unique-violation catch. A
+retry therefore re-executes against the now-committed state, and an `InvalidState` it returns means
+another caller genuinely won the race, which is the honest answer rather than a lost one. Adding
+reconciliation would convert a correct refusal into a fabricated success. The ambiguous case —
+a commit whose result was never observed — is a lost connection, which the detector does not match
+and which propagates untouched.
 
 ## Consequences
 

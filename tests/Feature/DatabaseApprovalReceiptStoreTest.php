@@ -141,19 +141,52 @@ it('hydrates receipt timestamps as UTC regardless of the application timezone', 
     }
 });
 
-it('rejects receipt mutations inside an outer transaction on the store connection', function (): void {
+it('rejects every receipt mutation inside an outer transaction on the store connection', function (): void {
     $connection = app(DatabaseManager::class)->connection();
     $store = new DatabaseApprovalReceiptStore($connection);
+    $receipt = databaseReceipt();
+    $at = new DateTimeImmutable('2026-08-01 12:01:00');
+
+    $store->issue($receipt);
+
+    $mutations = [
+        'issue an approval receipt' => fn () => $store->issue(databaseReceipt()),
+        'approve an approval receipt' => fn () => $store->approve($receipt->id, $receipt->toolCallId, 'customer:72', $at),
+        'reject an approval receipt' => fn () => $store->reject($receipt->id, $receipt->toolCallId, 'customer:72', $at),
+        'consume an approval receipt' => fn () => $store->consume($receipt->toolCallId, $receipt->bindingFingerprint, $at),
+    ];
+    $outcomes = [];
 
     $connection->beginTransaction();
 
     try {
-        expect(fn () => $store->issue(databaseReceipt()))
-            ->toThrow(UnsafeOuterTransaction::class, 'issue an approval receipt');
+        // Every mutation runs, and the four results are asserted together: chaining the four
+        // refusals through one expectation would stop at the first broken guard and report one
+        // failure where there were four, hiding whether the others wrote durable state.
+        foreach ($mutations as $operation => $mutate) {
+            try {
+                $mutate();
+
+                $outcomes[$operation] = 'completed';
+            } catch (Throwable $error) {
+                $outcomes[$operation] = $error instanceof UnsafeOuterTransaction
+                    && str_contains($error->getMessage(), $operation)
+                        ? 'refused'
+                        : $error::class.': '.$error->getMessage();
+            }
+        }
     } finally {
         $connection->rollBack();
     }
 
+    expect($outcomes)->toBe([
+        'issue an approval receipt' => 'refused',
+        'approve an approval receipt' => 'refused',
+        'reject an approval receipt' => 'refused',
+        'consume an approval receipt' => 'refused',
+    ]);
+
     expect($connection->transactionLevel())->toBe(0)
-        ->and($connection->table('verdict_approval_receipts')->count())->toBe(0);
+        ->and($connection->table('verdict_approval_receipts')->count())->toBe(1)
+        ->and($store->findForToolCall($receipt->toolCallId)?->status)->toBe(ApprovalReceiptStatus::Pending);
 });

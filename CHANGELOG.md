@@ -4,6 +4,16 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Retry approval-receipt state transitions on a database concurrency conflict.
+  `DatabaseApprovalReceiptStore::approve()`, `reject()`, and `consume()` now take the same bounded
+  retry boundary as `issue()`, so a deadlock while deciding or spending a human approval returns a
+  policy outcome instead of an unhandled `QueryException`. Retrying cannot turn two consumers into two
+  successful consumptions: a recognized conflict aborts its transaction, so the retry re-executes
+  against committed state. Also fixes a conflict raised at COMMIT leaving the driver handle open,
+  which made the retry itself fail on PostgreSQL. See
+  [#100](https://github.com/fissible/verdict/issues/100) and
+  [ADR 0018](docs/adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md).
+
 - Verify Laravel AI streamed execution for Verdict authorization, execution claims, semantic rate
   limits, and callable action context resolution through lazy `Agent::stream()` integration
   coverage. The verification uses Laravel AI's `FakeTextGateway` and a stub `CapabilityAuthorizer`;
