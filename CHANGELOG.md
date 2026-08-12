@@ -4,6 +4,11 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add refreshed-target and one-logical-operation capability starter patterns. They show existing
+  Verdict policies with application-owned lookup, identity, and operation-binding callbacks; they
+  do not introduce authorization, tenancy, side effects, or new public API. See
+  [#109](https://github.com/fissible/verdict/issues/109).
+
 - Add `verdict:make-approval-flow`, an opt-in generator for route-free, application-owned approval
   decision skeletons. It publishes no routes, middleware, views, notifications, jobs, or policies;
   adopters must supply reviewer authorization, tenant and conversation context, notification, and
