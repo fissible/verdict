@@ -142,11 +142,15 @@ For operations that must not be admitted twice, an execution-claim policy provid
 
 Verdict derives a fingerprint from the claim policy’s canonical inputs and uses an atomic state transition in its independent security state. The exact semantics, retention trade-offs, and failure behavior are documented in [ADR 0002](docs/adr/0002-strict-at-most-once-admission.md) and [ADR 0009](docs/adr/0009-execution-claim-retention.md).
 
+The [security-state concurrency benchmarks](docs/benchmarks.md) record measured SQLite and MySQL characteristics.
+
 </details>
 
 ### Limiting what AI can do
 
 Semantic rate limits count application-defined action semantics—such as refunds per actor or high-value changes—not model tokens. This lets limits express the operation you actually need to control.
+
+Measured SQLite and MySQL contention characteristics are in the [security-state concurrency benchmarks](docs/benchmarks.md).
 
 ### Controlling what information the AI sees
 

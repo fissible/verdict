@@ -4,6 +4,9 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add reproducible SQLite and MySQL security-state concurrency benchmark results for execution
+  claims, semantic rate limits, and approval receipts. See [#16](https://github.com/fissible/verdict/issues/16).
+
 - Retry approval-receipt state transitions on a database concurrency conflict.
   `DatabaseApprovalReceiptStore::approve()`, `reject()`, and `consume()` now take the same bounded
   retry boundary as `issue()`, so a deadlock while deciding or spending a human approval returns a
