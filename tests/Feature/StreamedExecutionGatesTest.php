@@ -6,17 +6,23 @@ use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
+use Fissible\Verdict\LaravelAi\InvocationContext;
+use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Promptable;
@@ -57,7 +63,7 @@ final class StreamedGateDefinition implements Tool
     }
 }
 
-final class StreamedGateAgent implements Agent, HasTools
+final class StreamedGateAgent implements Agent, HasMiddleware, HasTools
 {
     use Promptable;
 
@@ -77,6 +83,16 @@ final class StreamedGateAgent implements Agent, HasTools
     public function maxSteps(): int
     {
         return 2;
+    }
+
+    /** @return array<int, object> */
+    public function middleware(): array
+    {
+        return [new VerdictProvenanceMiddleware(
+            provenance: app(ProvenanceLedger::class),
+            trust: Trust::Untrusted,
+            dataClass: DataClass::Internal,
+        )];
     }
 }
 
@@ -119,6 +135,15 @@ function streamedGateEvidence(): InMemoryEvidenceRecorder
     }
 
     return $evidence;
+}
+
+function assertStreamedGateEvidenceIsCorrelated(string $invocationId, int $offset = 0): void
+{
+    $evidence = streamedGateEvidence();
+
+    expect(collect($evidence->all())->slice($offset)->pluck('invocationId')->unique()->values()->all())
+        ->toBe([$invocationId])
+        ->and(app(InvocationContext::class)->current())->toBeNull();
 }
 
 it('runs proposal and execution authorization during lazy Agent streaming and denies before the executor', function (): void {
@@ -167,6 +192,8 @@ it('runs proposal and execution authorization during lazy Agent streaming and de
 
     expect(collect($evidence->all())->pluck('stage')->all())->toBe(['proposal', 'target_refresh', 'execution'])
         ->and(collect($evidence->all())->pluck('disposition')->all())->toBe(['permit', 'permit', 'deny']);
+
+    assertStreamedGateEvidenceIsCorrelated($response->invocationId);
 });
 
 it('prevents a duplicate logical action when it is invoked through separate Agent streams', function (): void {
@@ -208,6 +235,8 @@ it('prevents a duplicate logical action when it is invoked through separate Agen
     expect($executorCalls)->toBe(1);
 
     $recordedBeforeDuplicate = count($evidence->all());
+    assertStreamedGateEvidenceIsCorrelated($first->invocationId);
+
     $duplicate = $agent->stream('repeat operation');
 
     // The executor count cannot tell a lazy stream from an eager one here, because the duplicate is
@@ -220,6 +249,8 @@ it('prevents a duplicate logical action when it is invoked through separate Agen
 
     expect(count($evidence->all()))->toBeGreaterThan($recordedBeforeDuplicate)
         ->and($executorCalls)->toBe(1);
+
+    assertStreamedGateEvidenceIsCorrelated($duplicate->invocationId, $recordedBeforeDuplicate);
 
     expect(collect($evidence->all())->where('stage', 'execution_claim')->pluck('disposition')->all())
         ->toBe(['permit', 'permit', 'deny']);
@@ -269,6 +300,8 @@ it('consumes and enforces a semantic rate limit through Agent streaming', functi
     expect($executorCalls)->toBe(1);
 
     $recordedBeforeSecond = count($evidence->all());
+    assertStreamedGateEvidenceIsCorrelated($first->invocationId);
+
     $second = $agent->stream('perform second operation');
 
     // As above: the throttled action leaves the executor count at 1 either way, so laziness is only
@@ -280,6 +313,8 @@ it('consumes and enforces a semantic rate limit through Agent streaming', functi
 
     expect(count($evidence->all()))->toBeGreaterThan($recordedBeforeSecond)
         ->and($executorCalls)->toBe(1);
+
+    assertStreamedGateEvidenceIsCorrelated($second->invocationId, $recordedBeforeSecond);
 
     expect(collect($evidence->all())->where('stage', 'rate_limit')->pluck('disposition')->all())
         ->toBe(['permit', 'throttle']);
@@ -331,4 +366,6 @@ it('resolves a callable action context during iteration rather than when the str
     // own envelope. A resolver with side effects has to tolerate that.
     expect($contextResolutions)->toBe(2);
     expect($executorActor)->toBe('customer-1001');
+
+    assertStreamedGateEvidenceIsCorrelated($response->invocationId);
 });
