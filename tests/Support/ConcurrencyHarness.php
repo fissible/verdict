@@ -79,10 +79,7 @@ final class ConcurrencyHarness
             $remaining = array_keys($processes);
 
             while ($remaining !== []) {
-                foreach ($remaining as $index) {
-                    $processes[$index]['stdout'] .= (string) stream_get_contents($processes[$index]['pipes'][1]);
-                    $processes[$index]['stderr'] .= (string) stream_get_contents($processes[$index]['pipes'][2]);
-                }
+                self::drainOutput($processes);
 
                 $remaining = array_filter(
                     $remaining,
@@ -125,12 +122,14 @@ final class ConcurrencyHarness
      *
      * @param  array<int, array{process: resource, pipes: array<int, resource>, stdout: string, stderr: string}>  $processes
      */
-    private static function releaseWhenAllReady(array $processes): void
+    private static function releaseWhenAllReady(array &$processes): void
     {
         $pending = array_keys($processes);
         $deadline = microtime(true) + self::READY_TIMEOUT_SECONDS;
 
         while ($pending !== []) {
+            self::drainOutput($processes);
+
             foreach ($pending as $key => $index) {
                 $signal = stream_get_contents($processes[$index]['pipes'][3]);
 
@@ -144,10 +143,16 @@ final class ConcurrencyHarness
             }
 
             if (microtime(true) > $deadline) {
+                $stderr = array_filter(array_map(
+                    fn (array $entry): string => trim($entry['stderr']),
+                    $processes,
+                ));
+
                 throw new RuntimeException(sprintf(
-                    'Timed out after %.1fs waiting for %d child process(es) to signal readiness — a child failed to boot or connect.',
+                    'Timed out after %.1fs waiting for %d child process(es) to signal readiness — a child failed to boot or connect.%s',
                     self::READY_TIMEOUT_SECONDS,
                     count($pending),
+                    $stderr === [] ? '' : ' Child stderr: '.json_encode($stderr, JSON_THROW_ON_ERROR),
                 ));
             }
 
@@ -157,6 +162,22 @@ final class ConcurrencyHarness
         foreach ($processes as $entry) {
             fclose($entry['pipes'][4]);
         }
+    }
+
+    /**
+     * Drain output during both the readiness handshake and the mutation phase. Without this, a
+     * boot failure's stderr is lost on timeout and a verbose child can fill an undrained pipe
+     * before it reaches its fd 3 readiness signal.
+     *
+     * @param  array<int, array{process: resource, pipes: array<int, resource>, stdout: string, stderr: string}>  $processes
+     */
+    private static function drainOutput(array &$processes): void
+    {
+        foreach ($processes as &$entry) {
+            $entry['stdout'] .= (string) stream_get_contents($entry['pipes'][1]);
+            $entry['stderr'] .= (string) stream_get_contents($entry['pipes'][2]);
+        }
+        unset($entry);
     }
 
     /**
