@@ -144,8 +144,9 @@ it('asks the same structural questions that the noninteractive flags provide', f
 });
 
 it('uses the application namespace for generated capability and model classes', function (): void {
-    $namespace = config('app.namespace');
-    config()->set('app.namespace', 'Domain');
+    $namespace = new ReflectionProperty($this->app, 'namespace');
+    $original = $namespace->getValue($this->app);
+    $namespace->setValue($this->app, 'Acme\\');
 
     try {
         $this->artisan('verdict:make-capability', makeCapabilityArguments($this))
@@ -154,12 +155,12 @@ it('uses the application namespace for generated capability and model classes', 
         $capability = $this->capabilityOutputRoot.'/app/Capabilities/Orders/RefundCapability.php';
 
         expect(file_get_contents($capability))->toContain(
-            'namespace Domain\\Capabilities\\Orders;',
-            'use Domain\\Models\\Order;',
+            'namespace Acme\\Capabilities\\Orders;',
+            'use Acme\\Models\\Order;',
         );
 
         assertGeneratedPhpParses($capability);
     } finally {
-        config()->set('app.namespace', $namespace);
+        $namespace->setValue($this->app, $original);
     }
 });

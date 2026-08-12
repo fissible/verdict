@@ -294,9 +294,7 @@ PHP;
 
     private function applicationNamespace(): string
     {
-        $namespace = config('app.namespace', 'App');
-
-        return is_string($namespace) && trim($namespace) !== '' ? trim($namespace, '\\') : 'App';
+        return rtrim($this->laravel->getNamespace(), '\\');
     }
 
     private function testNamespace(string $capability): string
