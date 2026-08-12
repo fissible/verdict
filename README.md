@@ -166,6 +166,10 @@ For capability integration tests, the framework-agnostic [capability security te
 drives a hand-written capability through Verdict's protected execution path and checks the common
 authorization, freshness, approval, claim, rate-limit, and failure invariants.
 
+For common structural composition, see [capability starter patterns](docs/capability-starter-patterns.md).
+They require your application-owned lookup, identity, and operation-binding callbacks; they never
+register capabilities or supply policy, tenancy, or side-effect behavior.
+
 ### Generate a fail-closed capability skeleton
 
 `verdict:make-capability` creates a capability module and test skeleton, but never edits a policy,
