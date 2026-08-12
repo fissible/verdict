@@ -39,6 +39,13 @@ All notable changes to Verdict will be documented in this file.
 - Add reproducible SQLite and MySQL security-state concurrency benchmark results for execution
   claims, semantic rate limits, and approval receipts. See [#16](https://github.com/fissible/verdict/issues/16).
 
+- Add `verdict:validate`, a read-only wiring audit over registered capabilities. It executes no
+  actions: it reports non-executable capabilities, capabilities that deliberately accept a stale
+  execution-target snapshot, and — only for the store contracts the registered capabilities actually
+  need — unresolvable stores and missing database tables. It exits non-zero on errors alone, so
+  warnings and informational findings do not fail a deploy check. See
+  [#36](https://github.com/fissible/verdict/issues/36).
+
 - Retry approval-receipt state transitions on a database concurrency conflict.
   `DatabaseApprovalReceiptStore::approve()`, `reject()`, and `consume()` now take the same bounded
   retry boundary as `issue()`, so a deadlock while deciding or spending a human approval returns a
@@ -48,6 +55,23 @@ All notable changes to Verdict will be documented in this file.
   which made the retry itself fail on PostgreSQL. See
   [#100](https://github.com/fissible/verdict/issues/100) and
   [ADR 0018](docs/adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md).
+
+- Retry every Verdict-owned security-state transaction on a database concurrency conflict, through one
+  shared `SecurityStateTransaction` boundary now used by the approval-receipt, semantic rate-limit, and
+  execution-claim stores alike — execution-claim transitions previously had no retry at all. The
+  boundary makes at most four attempts, sleeping a randomized 10–50 ms scaled by attempt number so that
+  synchronized first-insert races spread rather than re-collide. Conflicts are classified by Laravel's
+  container-bound `ConcurrencyErrorDetector`, so an application that rebinds it is honored and SQLite's
+  `database is locked` still counts as a conflict; a `DeadlockException` from an application-owned outer
+  transaction is deliberately never retried. See [#86](https://github.com/fissible/verdict/issues/86)
+  and [#112](https://github.com/fissible/verdict/issues/112).
+
+- Fix prompt provenance for fresh streamed prompts. `VerdictProvenanceMiddleware` registers a pending
+  prompt registration only when lazy iteration actually begins and Laravel AI dispatches
+  `StreamingAgent`, instead of registering synchronously and discarding it before the stream is
+  consumed. A streamed prompt now records its provenance, and a `StreamableAgentResponse` that is
+  created but never iterated no longer pins a stale registration for the rest of the agent's request
+  scope. See [#83](https://github.com/fissible/verdict/issues/83).
 
 - Verify queued Laravel AI execution for Verdict authorization, execution claims, semantic rate
   limits, durable evidence, and context release using an actual database-queue `InvokeAgent` payload
@@ -75,12 +99,34 @@ All notable changes to Verdict will be documented in this file.
   they provide. `EvidenceRecorder` remains a deprecated pre-1.0 compatibility bridge, and existing
   recorder configuration remains unchanged. See [#90](https://github.com/fissible/verdict/issues/90).
 
+- Record actor and subject identity in decision evidence. `ActionContext` gains an optional `subject`
+  — who the actor is acting on behalf of, defaulting to `null` for "the actor acts for itself" — and
+  `DecisionEvidence` gains `actor_fingerprint` and `subject_fingerprint` columns via migration. Both
+  are SHA-256 fingerprints under ADR 0008's privacy model, and both are populated only when the value
+  implements the new `ProvidesVerdictIdentity` contract; anything else fingerprints as `null`, so
+  identity is an application-declared canonical string rather than a guess at object shape. Evidence
+  can now demonstrate the identity-binding layer of
+  [ADR 0013](docs/adr/0013-authorization-binding-layers.md) after the fact, and record the delegation
+  and escalation distinction of [ADR 0015](docs/adr/0015-authority-propagation.md). Existing
+  `ActionContext` construction is unchanged. See [#31](https://github.com/fissible/verdict/issues/31).
+
 - Fix streamed invocation-ID correlation: `VerdictProvenanceMiddleware` now keeps its invocation
   frame active while a `StreamableAgentResponse` is iterated, so lazily executed tool decisions and
   context releases retain their `invocation_id`. See [#80](https://github.com/fissible/verdict/issues/80).
 
 - Add a consolidated security-state gate ordering table and a streaming/queued execution-mode
   compatibility matrix to `docs/architecture.md`, citing ADR 0001–0004 and ADR 0013 at each step.
+
+- Add four operator-facing documents. `docs/adoption-guide.md` turns the documented security boundary
+  into a pilot-first adoption plan, explicitly not a production certification
+  ([#103](https://github.com/fissible/verdict/issues/103)). `docs/extension-contract-stability.md`
+  inventories which interfaces are intentional extension points and what kind of extension each one
+  supports ([#17](https://github.com/fissible/verdict/issues/17)).
+  `docs/laravel-ai-compatibility.md` inventories every place `src/` depends on Laravel AI's surface,
+  classifies each dependency by how silently it could change, and names the test that would catch it
+  ([#18](https://github.com/fissible/verdict/issues/18)). `docs/evaluation.md` documents the evaluation
+  harness, the shipped attack packs, baselines, and comparison
+  ([#49](https://github.com/fissible/verdict/issues/49)).
 
 - Fix streaming approval resumption: `VerdictApprovalMiddleware` now keeps the scoped
   approval context alive for a streamed response's full iteration instead of popping it
@@ -127,6 +173,26 @@ All notable changes to Verdict will be documented in this file.
   chaining, bounded write retries, and a durable `chain_gap` marker plus `ChainWriteFailed` event on
   exhaustion. See `docs/limitations.md`, "Tamper-evident evidence is opt-in, partial, and bounded by key
   custody", for what the chain does and does not guarantee.
+
+- Record derivation edges between provenance entries, so a correlation is a graph rather than a set.
+  `ProvenanceLedger::declareDerivation()` stores content-addressed child-to-parent edges — multiple
+  parents per child — typed by a `DerivationKind` of `retrieved`, `summarized`, `transformed`, or
+  `tool_result`, in a new `verdict_provenance_derivations` table published by migration.
+  `backwardReachableContentFingerprints()` answers the forensic question the edges exist for: which
+  inputs contributed to this output. `ContextReleaseManager` declares the one derivation Verdict
+  observes directly — a release whose content changed is `transformed` from its source — and does not
+  infer the rest; applications declare derivations they can prove. See
+  [#30](https://github.com/fissible/verdict/issues/30).
+
+- Correlate provenance entries with decision and context-release evidence. `DecisionEvidence` and
+  `ContextReleaseEvidence` gain a nullable `invocationId`, persisted to an indexed `invocation_id`
+  column on `verdict_evidence` via migration, so "what was in the context window when this capability
+  ran" is one indexed lookup rather than a timestamp correlation. The identifier is Laravel AI's
+  per-generation invocation ID, propagated through Verdict's execution scope with no application-side
+  threading, and validated with the existing `ProvenanceEntry::assertIdentifier()` format. It reads
+  `null` outside a Laravel AI invocation — a queue job, a controller, a test — which means "no
+  invocation context", not "lost". Correlation is containment, not causality. See
+  [#29](https://github.com/fissible/verdict/issues/29).
 
 ## [0.3.0] - 2026-08-08
 

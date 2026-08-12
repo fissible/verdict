@@ -37,22 +37,28 @@ flight does not need to wait for it.
 
 ---
 
-## v0.4.0 — Provenance chain and dependency honesty
+## v0.4.0 — Provenance chain and dependency honesty *(cut)*
 
 **Theme.** Make provenance a chain rather than a set, and stop depending on Laravel AI's surface by
 assumption. Also absorbs the evaluation and documentation scope displaced when v0.3.0 was cut small.
 
+**This tag also carries the whole of the v0.5.0 milestone below.** Both milestones' scope completed on
+`main` before either was tagged. Rather than emit two tags from one commit or hold the evidence-identity
+work back to manufacture a v0.5.0 line that never existed as installable software, both shipped under
+`v0.4.0`. The milestone numbering below is retained as the record of *how the work was planned*; the tag
+is the record of what shipped. The next tag is `v0.5.0` and will carry the v0.6.0 plan.
+
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#29](https://github.com/fissible/verdict/issues/29) Correlate provenance entries with decision evidence | M | #50 ✅ | Open |
-| [#30](https://github.com/fissible/verdict/issues/30) Record derivation edges between provenance entries | L | #29 | Open |
-| [#18](https://github.com/fissible/verdict/issues/18) Audit Laravel AI dependency surface and undocumented assumptions | M | none | Open |
-| [#11](https://github.com/fissible/verdict/issues/11) Tamper-evident evidence recorder via `fissible/attest` | M | `attest-laravel` `^1.0.0` ✅ | Open |
-| [#48](https://github.com/fissible/verdict/issues/48) `CaseStatus::Pending` for cases blocked on unlanded dependencies | M | none | Open — displaced from v0.3.0 |
-| [#38](https://github.com/fissible/verdict/issues/38) Document approval TTL sizing against worst-case latency | XS | none | Open |
-| [#39](https://github.com/fissible/verdict/issues/39) Document confirmation-fatigue guidance | XS | none | Open |
-| [#40](https://github.com/fissible/verdict/issues/40) Frame shared rate-limit buckets as a composition bound | XS | none | Open |
-| [#41](https://github.com/fissible/verdict/issues/41) Add evidence-verification cadence to operational responsibilities | XS | none | Open |
+| [#29](https://github.com/fissible/verdict/issues/29) Correlate provenance entries with decision evidence | M | #50 ✅ | ✅ |
+| [#30](https://github.com/fissible/verdict/issues/30) Record derivation edges between provenance entries | L | #29 ✅ | ✅ |
+| [#18](https://github.com/fissible/verdict/issues/18) Audit Laravel AI dependency surface and undocumented assumptions | M | none | ✅ |
+| [#11](https://github.com/fissible/verdict/issues/11) Tamper-evident evidence recorder via `fissible/attest` | M | `attest-laravel` `^1.0.0` ✅ | ✅ |
+| [#48](https://github.com/fissible/verdict/issues/48) `CaseStatus::Pending` for cases blocked on unlanded dependencies | M | none | ✅ — displaced from v0.3.0 |
+| [#38](https://github.com/fissible/verdict/issues/38) Document approval TTL sizing against worst-case latency | XS | none | ✅ |
+| [#39](https://github.com/fissible/verdict/issues/39) Document confirmation-fatigue guidance | XS | none | ✅ |
+| [#40](https://github.com/fissible/verdict/issues/40) Frame shared rate-limit buckets as a composition bound | XS | none | ✅ |
+| [#41](https://github.com/fissible/verdict/issues/41) Add evidence-verification cadence to operational responsibilities | XS | none | ✅ |
 
 **Why #48 belongs with this group.** #43 surfaced it, and the RAG pack shipped with a skipped case that
 is exactly what `CaseStatus::Pending` exists to express. That same skipped case is what #29 and #30
@@ -96,38 +102,39 @@ worth correcting when the issue is picked up.
 
 ---
 
-## v0.5.0 — Evidence identity and configuration
+## v0.5.0 — Evidence identity and configuration *(shipped in `v0.4.0`)*
 
 **Theme.** Make a decision record say *who*, *against what configuration*, and *through which adapter* —
-the identity questions currently missing from `DecisionEvidence`.
+the identity questions previously missing from `DecisionEvidence`.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#32](https://github.com/fissible/verdict/issues/32) Record a capability configuration fingerprint | S | none | Open |
-| [#34](https://github.com/fissible/verdict/issues/34) Expose a stable execution identity to executors | S | none | Open — `scope: design` |
-| [#31](https://github.com/fissible/verdict/issues/31) Record actor and subject identity in decision evidence | M | none | Open |
-| [#33](https://github.com/fissible/verdict/issues/33) Add a content-addressed capability configuration registry | M | #32 | Open |
-| [#15](https://github.com/fissible/verdict/issues/15) Make `GuardedTool` usage observable in evidence | — | none | Implemented by [#73](https://github.com/fissible/verdict/pull/73) |
+| [#32](https://github.com/fissible/verdict/issues/32) Record a capability configuration fingerprint | S | none | ✅ |
+| [#34](https://github.com/fissible/verdict/issues/34) Expose a stable execution identity to executors | S | none | ✅ — `scope: design` resolved |
+| [#31](https://github.com/fissible/verdict/issues/31) Record actor and subject identity in decision evidence | M | none | ✅ |
+| [#33](https://github.com/fissible/verdict/issues/33) Add a content-addressed capability configuration registry | M | #32 ✅ | ✅ |
+| [#15](https://github.com/fissible/verdict/issues/15) Make `GuardedTool` usage observable in evidence | — | none | ✅ Implemented by [#73](https://github.com/fissible/verdict/pull/73) |
 
-The remaining work shares one evidence surface and ADR cluster (0013, 0015, 0017, 0008). #15 establishes
-the adapter dimension; coordinate the remaining actor and configuration work to avoid repeated evidence
-serialization and upgrade changes.
-
-#34 is still `scope: design` — resolve that before this milestone opens, or drop it.
+This work shared one evidence surface and ADR cluster (0013, 0015, 0017, 0008) with the v0.4.0 group,
+which is why coordinating them mattered — and, in the end, why they tagged together rather than forcing
+two rounds of evidence serialization and upgrade changes on adopters.
 
 ---
 
-## v0.6.0 — Live evaluation and harness documentation
+## v0.6.0 — Live evaluation and harness documentation *(ships as tag `v0.5.0`)*
 
 **Theme.** Make the evaluation subsystem usable by someone who did not build it.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#51](https://github.com/fissible/verdict/issues/51) Provide a live agent runner and a command to run live evaluation | L | none | Open |
-| [#49](https://github.com/fissible/verdict/issues/49) Document the evaluation harness and attack packs | M/L | #51 (partial) | Open |
+| [#49](https://github.com/fissible/verdict/issues/49) Document the evaluation harness and attack packs | M/L | #51 (partial) | ✅ |
 
-Ordered, not parallel. #49's live-evaluation section cannot be written honestly before #51 lands, and its
-`CaseStatus` section changes once #48 ships in v0.3.0. Writing the docs first means writing them twice.
+Ordered, not parallel. #49's live-evaluation section could not be written honestly before #51 lands, and
+its `CaseStatus` section changed once #48 shipped in `v0.4.0`. #49 closed ahead of #51 on the sections
+that do not depend on the live runner; the live-evaluation section is #51's to complete.
+
+#51 is the only open issue left in the scheduled plan.
 
 ---
 
