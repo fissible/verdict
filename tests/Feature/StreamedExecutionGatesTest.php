@@ -524,7 +524,8 @@ it('propagates an executor infrastructure failure without dispatching a tool res
     expect(fn (): array => iterator_to_array($response))
         ->toThrow(RuntimeException::class, 'Executor infrastructure is unavailable.')
         ->and($toolResults)->toBe([])
-        ->and($toolInvoked)->toBeFalse();
+        ->and($toolInvoked)->toBeFalse()
+        ->and(app(InvocationContext::class)->current())->toBeNull();
 });
 
 it('prevents a duplicate claim between two tool calls in one lazy streamed response', function (): void {
