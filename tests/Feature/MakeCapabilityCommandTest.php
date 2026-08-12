@@ -28,6 +28,17 @@ function makeCapabilityArguments(object $test, array $overrides = []): array
     ];
 }
 
+function assertGeneratedPhpParses(string $path): void
+{
+    $contents = file_get_contents($path);
+
+    if ($contents === false) {
+        throw new LogicException("Unable to read generated PHP file [{$path}].");
+    }
+
+    token_get_all($contents, TOKEN_PARSE);
+}
+
 it('generates fail-closed selected-control wiring noninteractively', function (): void {
     $this->artisan('verdict:make-capability', makeCapabilityArguments($this, [
         '--confirmation' => true,
@@ -56,13 +67,18 @@ it('generates fail-closed selected-control wiring noninteractively', function ()
             'CapabilitySecurityTestKit::for(',
             'assertPolicyDenial(',
             'assertRefreshedTargetSubstitution(',
-            'approval binding invalidation',
+            'checks_approval_binding_invalidation',
             'assertApprovalBindingInvalidation(',
-            'execution-claim duplicate admission',
+            'checks_execution_claim_duplicate_admission',
             'assertExecutionClaimDuplicateAdmission(',
-            'rate-limit enforcement',
+            'checks_rate_limit_enforcement',
             'assertRateLimitEnforcement(',
+            'final class RefundCapabilityTest extends TestCase',
+            'use PHPUnit\\Framework\\Attributes\\Test;',
         );
+
+    assertGeneratedPhpParses($capability);
+    assertGeneratedPhpParses($test);
 
     require_once $capability;
 
@@ -101,6 +117,18 @@ it('requires every noninteractive structural decision', function (): void {
         ->assertExitCode(1);
 });
 
+it('names the required positional capability argument accurately', function (): void {
+    $this->artisan('verdict:make-capability', [
+        '--model' => 'Order',
+        '--ability' => 'refund',
+        '--target-argument' => 'order_id',
+        '--path' => $this->capabilityOutputRoot,
+        '--no-interaction' => true,
+    ])
+        ->expectsOutputToContain('The [capability] value is required when not running interactively.')
+        ->assertExitCode(1);
+});
+
 it('asks the same structural questions that the noninteractive flags provide', function (): void {
     $this->artisan('verdict:make-capability', ['--path' => $this->capabilityOutputRoot])
         ->expectsQuestion('Capability name', 'orders.refund')
@@ -113,4 +141,25 @@ it('asks the same structural questions that the noninteractive flags provide', f
         ->assertExitCode(0);
 
     expect($this->capabilityOutputRoot.'/app/Capabilities/Orders/RefundCapability.php')->toBeFile();
+});
+
+it('uses the application namespace for generated capability and model classes', function (): void {
+    $namespace = config('app.namespace');
+    config()->set('app.namespace', 'Domain');
+
+    try {
+        $this->artisan('verdict:make-capability', makeCapabilityArguments($this))
+            ->assertExitCode(0);
+
+        $capability = $this->capabilityOutputRoot.'/app/Capabilities/Orders/RefundCapability.php';
+
+        expect(file_get_contents($capability))->toContain(
+            'namespace Domain\\Capabilities\\Orders;',
+            'use Domain\\Models\\Order;',
+        );
+
+        assertGeneratedPhpParses($capability);
+    } finally {
+        config()->set('app.namespace', $namespace);
+    }
 });

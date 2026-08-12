@@ -219,15 +219,7 @@ final class VerdictServiceProvider extends ServiceProvider
                     // so a request-scoped or tenant-scoped binding inside resolve() is re-evaluated
                     // fresh each time. Caching a resolved instance here would reintroduce the exact
                     // stale-state-across-requests bug this design exists to avoid under Octane.
-                    $chainIdUsing = static function () use ($app, $resolverClass): string {
-                        $resolver = $app->make($resolverClass);
-
-                        if (! $resolver instanceof AttestChainResolver) {
-                            throw new LogicException("The [{$resolverClass}] chain resolver must implement ".AttestChainResolver::class.'.');
-                        }
-
-                        return $resolver->resolve();
-                    };
+                    $chainIdUsing = static fn (): string => $app->make($resolverClass)->resolve();
                 } elseif ($chain !== null) {
                     $chainIdUsing = static fn (): string => $chain;
                 } else {

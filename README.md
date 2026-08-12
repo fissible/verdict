@@ -191,19 +191,33 @@ observations. It already calls the [capability security test kit](docs/testing.m
 same registered capability and protected path Verdict uses at runtime:
 
 ```php
-it('denies orders.refund without executing', function (): void {
-    $this->markTestIncomplete('TODO: register RefundCapability::make(), provide a denied envelope, and assert policy observation plus no side effects.');
+namespace Tests\Feature\Capabilities\Orders;
 
-    CapabilitySecurityTestKit::for(app(VerdictManager::class), 'orders.refund')
-        ->assertPolicyDenial($deniedEnvelope, $assertPolicyWasApplied, $assertNoSideEffects);
-});
+use Fissible\Verdict\Testing\CapabilitySecurityTestKit;
+use Fissible\Verdict\VerdictManager;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
 
-it('uses a refreshed orders.refund target', function (): void {
-    $this->markTestIncomplete('TODO: provide proposal and refreshed target fixtures plus an executor side-effect assertion.');
+final class RefundCapabilityTest extends TestCase
+{
+    #[Test]
+    public function denies_capability_without_executing(): void
+    {
+        $this->markTestIncomplete('TODO: register RefundCapability::make(), provide a denied envelope, and assert policy observation plus no side effects.');
 
-    CapabilitySecurityTestKit::for(app(VerdictManager::class), 'orders.refund')
-        ->assertRefreshedTargetSubstitution($permittedEnvelope, $assertRefreshedSideEffects);
-});
+        CapabilitySecurityTestKit::for(app(VerdictManager::class), 'orders.refund')
+            ->assertPolicyDenial($deniedEnvelope, $assertPolicyWasApplied, $assertNoSideEffects);
+    }
+
+    #[Test]
+    public function uses_a_refreshed_capability_target(): void
+    {
+        $this->markTestIncomplete('TODO: provide proposal and refreshed target fixtures plus an executor side-effect assertion.');
+
+        CapabilitySecurityTestKit::for(app(VerdictManager::class), 'orders.refund')
+            ->assertRefreshedTargetSubstitution($permittedEnvelope, $assertRefreshedSideEffects);
+    }
+}
 ```
 
 When selected, `--confirmation`, `--claim`, and `--rate-limit` add the corresponding approval,

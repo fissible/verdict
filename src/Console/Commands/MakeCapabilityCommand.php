@@ -102,7 +102,9 @@ final class MakeCapabilityCommand extends Command
         }
 
         if (! is_string($value) || trim($value) === '') {
-            throw new InvalidArgumentException("The [--{$key}] value is required when not running interactively.");
+            $name = $key === 'capability' ? $key : "--{$key}";
+
+            throw new InvalidArgumentException("The [{$name}] value is required when not running interactively.");
         }
 
         return trim($value);
@@ -211,25 +213,27 @@ PHP;
     private function testStub(array $input): string
     {
         [, $class] = $this->classParts($input['capability']);
+        $testNamespace = $this->testNamespace($input['capability']);
         $selected = '';
 
         foreach ([
             'confirmation' => [
                 'approval binding invalidation',
-                'assertApprovalBindingInvalidation(\$approvedEnvelope, \$approvedBy, \$invalidateBinding, \$assertNoSideEffects)',
+                'assertApprovalBindingInvalidation($approvedEnvelope, $approvedBy, $invalidateBinding, $assertNoSideEffects)',
             ],
             'claim' => [
                 'execution-claim duplicate admission',
-                'assertExecutionClaimDuplicateAdmission(\$firstEnvelope, \$duplicateEnvelope, \$assertOneSideEffect)',
+                'assertExecutionClaimDuplicateAdmission($firstEnvelope, $duplicateEnvelope, $assertOneSideEffect)',
             ],
             'rateLimit' => [
                 'rate-limit enforcement',
-                'assertRateLimitEnforcement(\$firstPermittedEnvelope, [], \$deniedEnvelope, \$assertExpectedSideEffects)',
+                'assertRateLimitEnforcement($firstPermittedEnvelope, [], $deniedEnvelope, $assertExpectedSideEffects)',
             ],
         ] as $control => $label) {
             if ($input[$control]) {
                 [$description, $assertion] = $label;
-                $selected .= "\nit('checks {$description}', function (): void {\n    \$this->markTestIncomplete('TODO: provide application fixtures and call the capability security test kit.');\n\n    CapabilitySecurityTestKit::for(app(VerdictManager::class), '{$input['capability']}')\n        ->{$assertion};\n});\n";
+                $method = Str::snake(str_replace('-', ' ', "checks {$description}"));
+                $selected .= "\n    #[Test]\n    public function {$method}(): void\n    {\n        \$this->markTestIncomplete('TODO: provide application fixtures and call the capability security test kit.');\n\n        CapabilitySecurityTestKit::for(app(VerdictManager::class), '{$input['capability']}')\n            ->{$assertion};\n    }\n";
             }
         }
 
@@ -238,23 +242,34 @@ PHP;
 
 declare(strict_types=1);
 
+namespace {$testNamespace};
+
 use Fissible\Verdict\Testing\CapabilitySecurityTestKit;
 use Fissible\Verdict\VerdictManager;
+use PHPUnit\Framework\Attributes\Test;
+use Tests\TestCase;
 
-it('denies {$input['capability']} without executing', function (): void {
-    \$this->markTestIncomplete('TODO: register {$class}::make(), provide a denied envelope, and assert policy observation plus no side effects.');
+final class {$class}Test extends TestCase
+{
+    #[Test]
+    public function denies_capability_without_executing(): void
+    {
+        \$this->markTestIncomplete('TODO: register {$class}::make(), provide a denied envelope, and assert policy observation plus no side effects.');
 
-    CapabilitySecurityTestKit::for(app(VerdictManager::class), '{$input['capability']}')
-        ->assertPolicyDenial(\$deniedEnvelope, \$assertPolicyWasApplied, \$assertNoSideEffects);
-});
+        CapabilitySecurityTestKit::for(app(VerdictManager::class), '{$input['capability']}')
+            ->assertPolicyDenial(\$deniedEnvelope, \$assertPolicyWasApplied, \$assertNoSideEffects);
+    }
 
-it('uses a refreshed {$input['capability']} target', function (): void {
-    \$this->markTestIncomplete('TODO: provide proposal and refreshed target fixtures plus an executor side-effect assertion.');
+    #[Test]
+    public function uses_a_refreshed_capability_target(): void
+    {
+        \$this->markTestIncomplete('TODO: provide proposal and refreshed target fixtures plus an executor side-effect assertion.');
 
-    CapabilitySecurityTestKit::for(app(VerdictManager::class), '{$input['capability']}')
-        ->assertRefreshedTargetSubstitution(\$permittedEnvelope, \$assertRefreshedSideEffects);
-});
+        CapabilitySecurityTestKit::for(app(VerdictManager::class), '{$input['capability']}')
+            ->assertRefreshedTargetSubstitution(\$permittedEnvelope, \$assertRefreshedSideEffects);
+    }
 {$selected}
+}
 PHP;
     }
 
@@ -263,7 +278,7 @@ PHP;
     {
         $segments = explode('.', $capability);
         $class = Str::studly((string) array_pop($segments)).'Capability';
-        $namespace = 'App\\Capabilities'.($segments === [] ? '' : '\\'.implode('\\', array_map(Str::studly(...), $segments)));
+        $namespace = $this->applicationNamespace().'\\Capabilities'.($segments === [] ? '' : '\\'.implode('\\', array_map(Str::studly(...), $segments)));
 
         return [$namespace, $class];
     }
@@ -272,9 +287,24 @@ PHP;
     private function modelParts(string $model): array
     {
         $class = Str::afterLast($model, '\\');
-        $import = str_contains($model, '\\') ? $model : 'App\\Models\\'.Str::studly($model);
+        $import = str_contains($model, '\\') ? $model : $this->applicationNamespace().'\\Models\\'.Str::studly($model);
 
         return [$class, $import];
+    }
+
+    private function applicationNamespace(): string
+    {
+        $namespace = config('app.namespace', 'App');
+
+        return is_string($namespace) && trim($namespace) !== '' ? trim($namespace, '\\') : 'App';
+    }
+
+    private function testNamespace(string $capability): string
+    {
+        $segments = array_map(Str::studly(...), explode('.', $capability));
+        array_pop($segments);
+
+        return 'Tests\\Feature\\Capabilities'.($segments === [] ? '' : '\\'.implode('\\', $segments));
     }
 
     /** @param array{capability: string} $input */
