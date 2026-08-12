@@ -12,4 +12,4 @@ Before including `routes/verdict-approval-flow.php`, the application must:
 - select and test its own agent/conversation resumption strategy; and
 - decide whether and how to dispatch `NotifyVerdictApprovalDecision` through its notification transport.
 
-Read the [Verdict adoption guide](https://github.com/fissible/verdict/blob/main/docs/adoption-guide.md) ([#103](https://github.com/fissible/verdict/issues/103)) before a pilot. It covers independently committed security-state connections, opt-in evidence, topology, alerting, and the separate high-consequence production gate.
+Read the [Verdict adoption guide](adoption-guide.md) ([#103](https://github.com/fissible/verdict/issues/103)) before a pilot. It covers independently committed security-state connections, opt-in evidence, topology, alerting, and the separate high-consequence production gate.
