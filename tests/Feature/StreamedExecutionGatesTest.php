@@ -110,6 +110,17 @@ function streamedGateAgent(Tool $tool, array $responses): StreamedGateAgent
     return new StreamedGateAgent($tool);
 }
 
+function streamedGateEvidence(): InMemoryEvidenceRecorder
+{
+    $evidence = app(EvidenceRecorder::class);
+
+    if (! $evidence instanceof InMemoryEvidenceRecorder) {
+        throw new RuntimeException('These cases require the in-memory evidence recorder bound by the test suite.');
+    }
+
+    return $evidence;
+}
+
 it('runs proposal and execution authorization during lazy Agent streaming and denies before the executor', function (): void {
     $authorizationCalls = 0;
     $executorCalls = 0;
@@ -152,13 +163,10 @@ it('runs proposal and execution authorization during lazy Agent streaming and de
     expect($authorizationCalls)->toBe(2)
         ->and($executorCalls)->toBe(0);
 
-    $evidence = app(EvidenceRecorder::class);
-    expect($evidence)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+    $evidence = streamedGateEvidence();
 
-    if ($evidence instanceof InMemoryEvidenceRecorder) {
-        expect(collect($evidence->all())->pluck('stage')->all())->toBe(['proposal', 'target_refresh', 'execution'])
-            ->and(collect($evidence->all())->pluck('disposition')->all())->toBe(['permit', 'permit', 'deny']);
-    }
+    expect(collect($evidence->all())->pluck('stage')->all())->toBe(['proposal', 'target_refresh', 'execution'])
+        ->and(collect($evidence->all())->pluck('disposition')->all())->toBe(['permit', 'permit', 'deny']);
 });
 
 it('prevents a duplicate logical action when it is invoked through separate Agent streams', function (): void {
@@ -192,23 +200,29 @@ it('prevents a duplicate logical action when it is invoked through separate Agen
         ],
     );
 
+    $evidence = streamedGateEvidence();
+
     $first = $agent->stream('perform operation');
     expect($executorCalls)->toBe(0);
     iterator_to_array($first);
-
-    $duplicate = $agent->stream('repeat operation');
     expect($executorCalls)->toBe(1);
+
+    $recordedBeforeDuplicate = count($evidence->all());
+    $duplicate = $agent->stream('repeat operation');
+
+    // The executor count cannot tell a lazy stream from an eager one here, because the duplicate is
+    // denied either way. Recorded evidence can: an eager stream() would have run the duplicate's
+    // gates, and recorded their dispositions, before iteration begins.
+    expect($evidence->all())->toHaveCount($recordedBeforeDuplicate)
+        ->and($executorCalls)->toBe(1);
+
     iterator_to_array($duplicate);
 
-    expect($executorCalls)->toBe(1);
+    expect(count($evidence->all()))->toBeGreaterThan($recordedBeforeDuplicate)
+        ->and($executorCalls)->toBe(1);
 
-    $evidence = app(EvidenceRecorder::class);
-    expect($evidence)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
-
-    if ($evidence instanceof InMemoryEvidenceRecorder) {
-        expect(collect($evidence->all())->where('stage', 'execution_claim')->pluck('disposition')->all())
-            ->toBe(['permit', 'permit', 'deny']);
-    }
+    expect(collect($evidence->all())->where('stage', 'execution_claim')->pluck('disposition')->all())
+        ->toBe(['permit', 'permit', 'deny']);
 });
 
 it('consumes and enforces a semantic rate limit through Agent streaming', function (): void {
@@ -247,21 +261,74 @@ it('consumes and enforces a semantic rate limit through Agent streaming', functi
         ],
     );
 
+    $evidence = streamedGateEvidence();
+
     $first = $agent->stream('perform first operation');
     expect($executorCalls)->toBe(0);
     iterator_to_array($first);
-
-    $second = $agent->stream('perform second operation');
     expect($executorCalls)->toBe(1);
+
+    $recordedBeforeSecond = count($evidence->all());
+    $second = $agent->stream('perform second operation');
+
+    // As above: the throttled action leaves the executor count at 1 either way, so laziness is only
+    // observable through evidence that has not been recorded yet.
+    expect($evidence->all())->toHaveCount($recordedBeforeSecond)
+        ->and($executorCalls)->toBe(1);
+
     iterator_to_array($second);
 
-    expect($executorCalls)->toBe(1);
+    expect(count($evidence->all()))->toBeGreaterThan($recordedBeforeSecond)
+        ->and($executorCalls)->toBe(1);
 
-    $evidence = app(EvidenceRecorder::class);
-    expect($evidence)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+    expect(collect($evidence->all())->where('stage', 'rate_limit')->pluck('disposition')->all())
+        ->toBe(['permit', 'throttle']);
+});
 
-    if ($evidence instanceof InMemoryEvidenceRecorder) {
-        expect(collect($evidence->all())->where('stage', 'rate_limit')->pluck('disposition')->all())
-            ->toBe(['permit', 'throttle']);
-    }
+it('resolves a callable action context during iteration rather than when the stream is created', function (): void {
+    $contextResolutions = 0;
+    $executorActor = null;
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(streamedGateCapability(
+        'operations.stream-context',
+        function (AuthorizedAction $action) use (&$executorActor): string {
+            $executorActor = $action->envelope->context->actor;
+
+            return 'executed';
+        },
+    ));
+
+    $agent = streamedGateAgent(
+        $verdict->bound(
+            new StreamedGateDefinition,
+            'operations.stream-context',
+            function (Request $request) use (&$contextResolutions): ActionContext {
+                $contextResolutions++;
+
+                return new ActionContext('customer-'.$request->all()['operation_id']);
+            },
+        ),
+        [new ToolCall('stream-context', 'StreamedGateDefinition', ['operation_id' => 1001]), 'done'],
+    );
+
+    $response = $agent->stream('perform operation');
+
+    // The callable form is the streaming-specific hazard the compatibility matrix is about: Laravel
+    // AI invokes it during lazy iteration, after the call that created the stream has returned.
+    expect($contextResolutions)->toBe(0);
+
+    iterator_to_array($response);
+
+    // Twice, not once: Laravel AI calls shouldRequestApproval() before handle(), and each builds its
+    // own envelope. A resolver with side effects has to tolerate that.
+    expect($contextResolutions)->toBe(2);
+    expect($executorActor)->toBe('customer-1001');
 });
