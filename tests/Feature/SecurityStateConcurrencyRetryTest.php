@@ -6,6 +6,10 @@ use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
+use Fissible\Verdict\ExecutionClaims\ExecutionClaim;
+use Fissible\Verdict\ExecutionClaims\ExecutionClaimOutcome;
+use Fissible\Verdict\ExecutionClaims\ExecutionClaimStatus;
 use Fissible\Verdict\Tests\Support\ConcurrencyHarness;
 use Illuminate\Database\DatabaseManager;
 
@@ -148,6 +152,42 @@ function concurrencyApprovalStore(): DatabaseApprovalReceiptStore
     return new DatabaseApprovalReceiptStore(app(DatabaseManager::class)->connection());
 }
 
+function concurrencyExecutionClaimStore(): DatabaseExecutionClaimStore
+{
+    return new DatabaseExecutionClaimStore(app(DatabaseManager::class)->connection());
+}
+
+/** Seed a claimed or indeterminate execution claim for a transition race. */
+function concurrencySeededExecutionClaim(string $at, bool $indeterminate = false): ExecutionClaim
+{
+    $store = concurrencyExecutionClaimStore();
+    $claimedAt = new DateTimeImmutable($at);
+    $claim = new ExecutionClaim(
+        id: bin2hex(random_bytes(16)),
+        capability: 'concurrency-test.execution-claim',
+        policy: 'concurrency-test-policy',
+        bindingFingerprint: hash('sha256', random_bytes(16)),
+        status: ExecutionClaimStatus::Claimed,
+        attemptCount: 1,
+        claimedAt: $claimedAt,
+        completedAt: null,
+        indeterminateAt: null,
+        releasedAt: null,
+        resolvedBy: null,
+        resolutionReason: null,
+        createdAt: $claimedAt,
+        updatedAt: $claimedAt,
+    );
+
+    expect($store->claim($claim)->outcome)->toBe(ExecutionClaimOutcome::Claimed);
+
+    if ($indeterminate) {
+        expect($store->markIndeterminate($claim->id, $claimedAt)->outcome)->toBe(ExecutionClaimOutcome::Indeterminate);
+    }
+
+    return $claim;
+}
+
 /**
  * Seed a receipt for the transition races to contend over, from the parent process.
  *
@@ -244,6 +284,33 @@ it('admits at most one winner when racing DatabaseExecutionClaimStore::claim() u
     assertRaceOutcome($decoded, $winners, 1);
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
+/** @verdict-claim limitation.security-state-retries */
+it('returns ordinary outcomes when real database connections race every execution-claim transition', function (): void {
+    $at = (new DateTimeImmutable)->format(DATE_ATOM);
+
+    foreach ([
+        'complete' => [false, ExecutionClaimOutcome::Completed, ExecutionClaimStatus::Completed],
+        'mark_indeterminate' => [false, ExecutionClaimOutcome::Indeterminate, ExecutionClaimStatus::Indeterminate],
+        'resolve_retryable' => [true, ExecutionClaimOutcome::Released, ExecutionClaimStatus::Released],
+    ] as $action => [$indeterminate, $winner, $status]) {
+        $claim = concurrencySeededExecutionClaim($at, $indeterminate);
+        $results = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/execution-claim-transition.php', array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
+            'connection' => concurrencyTestConnectionConfig(),
+            'action' => $action,
+            'claim_id' => $claim->id,
+            'at' => $at,
+        ]));
+        $decoded = array_map(fn ($result) => json_decode($result['stdout'], true), $results);
+        $winners = count(array_filter($decoded, fn ($result) => is_array($result) && ($result['ok'] ?? false) && ($result['outcome'] ?? null) === $winner->value));
+        $losers = array_filter($decoded, fn ($result) => is_array($result) && ($result['ok'] ?? false) && ($result['outcome'] ?? null) === ExecutionClaimOutcome::InvalidState->value);
+
+        assertRaceOutcome($decoded, $winners, 1);
+
+        expect($losers)->toHaveCount(CONCURRENCY_TEST_CONCURRENCY - 1)
+            ->and(concurrencyExecutionClaimStore()->find($claim->id)?->status)->toBe($status);
+    }
+})->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
+
 it('issues at most one receipt when racing DatabaseApprovalReceiptStore::issue() under the connection\'s natural isolation level', function (): void {
     $bindingFingerprint = hash('sha256', random_bytes(16));
     $toolCallId = bin2hex(random_bytes(16));
@@ -332,6 +399,35 @@ it('resolves PostgreSQL SERIALIZABLE cleanly for all security-state stores at hi
 
     expect($claimErrors)->toBe([])
         ->and($claimWinners)->toBe(1);
+
+    // Claim admission takes a binding-fingerprint lock, while its post-admission transitions lock
+    // one primary-key row and mutate status. A clean SERIALIZABLE admission race is therefore not
+    // evidence for complete(), markIndeterminate(), or resolve(): PostgreSQL reports the latter's
+    // concurrent update as SQLSTATE 40001. Race each shape directly so an unguarded bare
+    // transaction leaks the conflict instead of this test merely observing blocked losers.
+    foreach ([
+        'complete' => [false, ExecutionClaimOutcome::Completed, ExecutionClaimStatus::Completed],
+        'mark_indeterminate' => [false, ExecutionClaimOutcome::Indeterminate, ExecutionClaimStatus::Indeterminate],
+        'resolve_retryable' => [true, ExecutionClaimOutcome::Released, ExecutionClaimStatus::Released],
+    ] as $action => [$indeterminate, $winner, $status]) {
+        $claim = concurrencySeededExecutionClaim($at, $indeterminate);
+        $transitionResults = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/execution-claim-transition.php', array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
+            'connection' => $connectionConfig,
+            'action' => $action,
+            'claim_id' => $claim->id,
+            'at' => $at,
+            'force_serializable' => true,
+        ]));
+        $transitionDecoded = array_map(fn ($result) => json_decode($result['stdout'], true), $transitionResults);
+        $transitionErrors = array_values(array_filter($transitionDecoded, fn ($result) => ! is_array($result) || ! ($result['ok'] ?? false)));
+        $transitionWinners = count(array_filter($transitionDecoded, fn ($result) => is_array($result) && ($result['ok'] ?? false) && ($result['outcome'] ?? null) === $winner->value));
+        $transitionLosers = array_filter($transitionDecoded, fn ($result) => is_array($result) && ($result['ok'] ?? false) && ($result['outcome'] ?? null) === ExecutionClaimOutcome::InvalidState->value);
+
+        expect($transitionErrors)->toBe([])
+            ->and($transitionWinners)->toBe(1)
+            ->and($transitionLosers)->toHaveCount(CONCURRENCY_TEST_CONCURRENCY - 1)
+            ->and(concurrencyExecutionClaimStore()->find($claim->id)?->status)->toBe($status);
+    }
 
     $approvalResults = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/approval-receipt-issue.php', array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
         'connection' => $connectionConfig,

@@ -8,8 +8,7 @@ use DateTimeImmutable;
 use DateTimeZone;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
-use Fissible\Verdict\Support\IndependentTransactionGuard;
-use Fissible\Verdict\Support\TransactionRetry;
+use Fissible\Verdict\Support\SecurityStateTransaction;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -39,10 +38,8 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
 
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
     {
-        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'issue an approval receipt');
-
         try {
-            return TransactionRetry::run($this->connection, function () use ($receipt): ApprovalTransition {
+            return SecurityStateTransaction::run($this->connection, 'issue an approval receipt', function () use ($receipt): ApprovalTransition {
                 $existing = $this->lockedReceiptForBinding(
                     $receipt->toolCallId,
                     $receipt->capability,
@@ -88,9 +85,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         string $approvedBy,
         DateTimeImmutable $at,
     ): ApprovalTransition {
-        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'approve an approval receipt');
-
-        return TransactionRetry::run($this->connection, function () use ($receiptId, $toolCallId, $approvedBy, $at): ApprovalTransition {
+        return SecurityStateTransaction::run($this->connection, 'approve an approval receipt', function () use ($receiptId, $toolCallId, $approvedBy, $at): ApprovalTransition {
             $receipt = $this->findLocked($receiptId);
             $failure = $this->decisionFailure($receipt, $toolCallId, $at);
 
@@ -118,9 +113,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         string $rejectedBy,
         DateTimeImmutable $at,
     ): ApprovalTransition {
-        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'reject an approval receipt');
-
-        return TransactionRetry::run($this->connection, function () use ($receiptId, $toolCallId, $rejectedBy, $at): ApprovalTransition {
+        return SecurityStateTransaction::run($this->connection, 'reject an approval receipt', function () use ($receiptId, $toolCallId, $rejectedBy, $at): ApprovalTransition {
             $receipt = $this->findLocked($receiptId);
             $failure = $this->decisionFailure($receipt, $toolCallId, $at);
 
@@ -147,9 +140,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         string $bindingFingerprint,
         DateTimeImmutable $at,
     ): ApprovalTransition {
-        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'consume an approval receipt');
-
-        return TransactionRetry::run($this->connection, function () use ($toolCallId, $bindingFingerprint, $at): ApprovalTransition {
+        return SecurityStateTransaction::run($this->connection, 'consume an approval receipt', function () use ($toolCallId, $bindingFingerprint, $at): ApprovalTransition {
             $receipt = $this->lockedReceiptForBindingFingerprint($toolCallId, $bindingFingerprint);
             $validation = $this->validateReceipt($receipt, $bindingFingerprint, $at);
 
