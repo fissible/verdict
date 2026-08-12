@@ -10,7 +10,8 @@ final class DecideVerdictApprovalRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // TODO: Check the authenticated reviewer's application policy and tenant scope.
+        // TODO: Verify this receipt and tool call belong to an application-owned conversation
+        // the authenticated reviewer may decide in this tenant.
         return false;
     }
 

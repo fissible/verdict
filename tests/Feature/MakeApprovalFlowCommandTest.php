@@ -55,8 +55,8 @@ it('publishes application-owned decision outcomes and disabled route scaffolding
     $routes = file_get_contents(base_path('routes/verdict-approval-flow.php'));
     $guide = file_get_contents(base_path('docs/verdict-approval-flow.md'));
 
-    expect($controller)->toContain('ApprovalManager', 'approve(', 'reject(', 'challengeForToolCall($toolCallId)', 'exact receipt and tool call belong', 'not_found, mismatch, expired, and invalid_state', 'TODO: Resume the application-owned agent/conversation')
-        ->and($request)->toContain('TODO: Check the authenticated reviewer')
+    expect($controller)->toContain('ApprovalManager', 'approve(', 'reject(', 'receiptId:', 'toolCallId:', 'approvedBy:', 'rejectedBy:', 'challengeForToolCall($toolCallId)', 'exact receipt and tool call belong', 'not_found, mismatch, expired, and invalid_state', 'TODO: Resume the application-owned agent/conversation')
+        ->and($request)->toContain('receipt and tool call belong to an application-owned conversation', 'authenticated reviewer may decide in this tenant')
         ->and($routes)->toContain('deliberately not included', "//     Route::post('/verdict/approvals/approve'")
         ->not->toMatch('/^\s*Route::post\(/m')
         ->and($guide)->toContain('opaque application identifier', 'did not register the route file', 'challengeForToolCall($toolCallId)', 'already-decided or already-consumed receipt returns `invalid_state`', 'https://github.com/fissible/verdict/blob/main/docs/adoption-guide.md', '#103', 'raw prompts or tool arguments into Verdict receipts')
@@ -66,7 +66,7 @@ it('publishes application-owned decision outcomes and disabled route scaffolding
 it('keeps generated PHP syntactically valid and coupled to the approval decision API', function (): void {
     $this->artisan('verdict:make-approval-flow')->assertSuccessful();
 
-    foreach (array_slice(approvalFlowGeneratedPaths(), 0, 4) as $path) {
+    foreach (array_filter(approvalFlowGeneratedPaths(), fn (string $path): bool => str_ends_with($path, '.php')) as $path) {
         $process = new Process([PHP_BINARY, '-l', $path]);
         $process->mustRun();
     }

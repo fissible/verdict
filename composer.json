@@ -43,7 +43,8 @@
     "pestphp/pest": "^4.6",
     "pestphp/pest-plugin-laravel": "^4.1",
     "pestphp/pest-plugin-type-coverage": "^4.0",
-    "phpstan/extension-installer": "^1.4"
+    "phpstan/extension-installer": "^1.4",
+    "symfony/process": "^7.4 || ^8.0"
   },
   "suggest": {
     "fissible/attest-laravel": "Enables AttestEvidenceRecorder: a tamper-evident (signed, hash-chained) evidence recorder. See docs/limitations.md."
