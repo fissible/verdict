@@ -15,12 +15,14 @@ use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
+use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Illuminate\Support\Facades\Event;
 use Laravel\Ai\Ai;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Gateway\StepTextGateway;
@@ -28,6 +30,7 @@ use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Contracts\Tool;
+use Laravel\Ai\Events\ToolInvoked;
 use Laravel\Ai\Gateway\StepContext;
 use Laravel\Ai\Gateway\StepResponse;
 use Laravel\Ai\Gateway\TextGenerationOptions;
@@ -248,6 +251,39 @@ function assertStreamedGateEvidenceIsCorrelated(string $invocationId, int $offse
         ->and(app(InvocationContext::class)->current())->toBeNull();
 }
 
+/**
+ * @param  array<string, mixed>  $arguments
+ * @param  list<mixed>  $results
+ */
+function captureStreamedToolResults(BoundTool $tool, array $arguments, array &$results): void
+{
+    // ToolInvoked is Laravel AI's in-process lifecycle event, not an SSE event. Its result becomes
+    // the next-step ToolResultMessage after the gateway stream returns its StepResponse.
+    Event::listen(ToolInvoked::class, function (ToolInvoked $event) use ($tool, $arguments, &$results): void {
+        if ($event->tool === $tool && $event->arguments === $arguments) {
+            $results[] = $event->result;
+        }
+    });
+}
+
+/**
+ * @param  list<mixed>  $results
+ */
+function assertStreamedDeniedToolResult(array $results, string $capability, string $decision): void
+{
+    expect($results)->toHaveCount(1)
+        ->and($results[0])->toBeString();
+
+    $payload = json_decode($results[0], true, 512, JSON_THROW_ON_ERROR);
+
+    expect($payload)->toBe([
+        'status' => 'not_executed',
+        'capability' => $capability,
+        'decision' => $decision,
+        'message' => 'This action was not authorized.',
+    ]);
+}
+
 it('runs proposal and execution authorization during lazy Agent streaming and denies before the executor', function (): void {
     $authorizationCalls = 0;
     $executorCalls = 0;
@@ -275,15 +311,19 @@ it('runs proposal and execution authorization during lazy Agent streaming and de
         },
     ));
 
+    $tool = $verdict->bound(new StreamedGateDefinition, 'operations.stream-authorize', new ActionContext('customer-72'));
     $agent = streamedGateAgent(
-        $verdict->bound(new StreamedGateDefinition, 'operations.stream-authorize', new ActionContext('customer-72')),
+        $tool,
         [new ToolCall('stream-authorization', 'StreamedGateDefinition', ['operation_id' => 1001]), 'done'],
     );
+    $toolResults = [];
+    captureStreamedToolResults($tool, ['operation_id' => 1001], $toolResults);
 
     $response = $agent->stream('perform operation');
 
     expect($authorizationCalls)->toBe(0)
-        ->and($executorCalls)->toBe(0);
+        ->and($executorCalls)->toBe(0)
+        ->and($toolResults)->toBe([]);
 
     iterator_to_array($response);
 
@@ -295,6 +335,7 @@ it('runs proposal and execution authorization during lazy Agent streaming and de
     expect(collect($evidence->all())->pluck('stage')->all())->toBe(['proposal', 'target_refresh', 'execution'])
         ->and(collect($evidence->all())->pluck('disposition')->all())->toBe(['permit', 'permit', 'deny']);
 
+    assertStreamedDeniedToolResult($toolResults, 'operations.stream-authorize', 'deny');
     assertStreamedGateEvidenceIsCorrelated($response->invocationId);
 });
 
@@ -321,13 +362,16 @@ it('prevents a duplicate logical action when it is invoked through separate Agen
         ),
     ));
 
+    $tool = $verdict->bound(new StreamedGateDefinition, 'operations.stream-claim', new ActionContext('customer-72'));
     $agent = streamedGateAgent(
-        $verdict->bound(new StreamedGateDefinition, 'operations.stream-claim', new ActionContext('customer-72')),
+        $tool,
         [
             new ToolCall('stream-claim-first', 'StreamedGateDefinition', ['operation_id' => 1001]), 'done',
             new ToolCall('stream-claim-duplicate', 'StreamedGateDefinition', ['operation_id' => 1001]), 'done',
         ],
     );
+    $toolResults = [];
+    captureStreamedToolResults($tool, ['operation_id' => 1001], $toolResults);
 
     $evidence = streamedGateEvidence();
 
@@ -337,6 +381,7 @@ it('prevents a duplicate logical action when it is invoked through separate Agen
     expect($executorCalls)->toBe(1);
 
     $recordedBeforeDuplicate = count($evidence->all());
+    $toolResultsBeforeDuplicate = count($toolResults);
     assertStreamedGateEvidenceIsCorrelated($first->invocationId);
 
     $duplicate = $agent->stream('repeat operation');
@@ -345,7 +390,8 @@ it('prevents a duplicate logical action when it is invoked through separate Agen
     // denied either way. Recorded evidence can: an eager stream() would have run the duplicate's
     // gates, and recorded their dispositions, before iteration begins.
     expect($evidence->all())->toHaveCount($recordedBeforeDuplicate)
-        ->and($executorCalls)->toBe(1);
+        ->and($executorCalls)->toBe(1)
+        ->and($toolResults)->toHaveCount($toolResultsBeforeDuplicate);
 
     iterator_to_array($duplicate);
 
@@ -355,7 +401,11 @@ it('prevents a duplicate logical action when it is invoked through separate Agen
     assertStreamedGateEvidenceIsCorrelated($duplicate->invocationId, $recordedBeforeDuplicate);
 
     expect(collect($evidence->all())->where('stage', 'execution_claim')->pluck('disposition')->all())
-        ->toBe(['permit', 'permit', 'deny']);
+        ->toBe(['permit', 'permit', 'deny'])
+        ->and($toolResults)->toHaveCount(2)
+        ->and($toolResults[0])->toBe('executed');
+
+    assertStreamedDeniedToolResult([$toolResults[1]], 'operations.stream-claim', 'deny');
 });
 
 it('consumes and enforces a semantic rate limit through Agent streaming', function (): void {
@@ -386,13 +436,16 @@ it('consumes and enforces a semantic rate limit through Agent streaming', functi
         ),
     ));
 
+    $tool = $verdict->bound(new StreamedGateDefinition, 'operations.stream-rate-limit', new ActionContext('customer-72'));
     $agent = streamedGateAgent(
-        $verdict->bound(new StreamedGateDefinition, 'operations.stream-rate-limit', new ActionContext('customer-72')),
+        $tool,
         [
             new ToolCall('stream-limit-first', 'StreamedGateDefinition', ['operation_id' => 1001]), 'done',
             new ToolCall('stream-limit-second', 'StreamedGateDefinition', ['operation_id' => 1002]), 'done',
         ],
     );
+    $toolResults = [];
+    captureStreamedToolResults($tool, ['operation_id' => 1002], $toolResults);
 
     $evidence = streamedGateEvidence();
 
@@ -402,6 +455,7 @@ it('consumes and enforces a semantic rate limit through Agent streaming', functi
     expect($executorCalls)->toBe(1);
 
     $recordedBeforeSecond = count($evidence->all());
+    $toolResultsBeforeSecond = count($toolResults);
     assertStreamedGateEvidenceIsCorrelated($first->invocationId);
 
     $second = $agent->stream('perform second operation');
@@ -409,7 +463,8 @@ it('consumes and enforces a semantic rate limit through Agent streaming', functi
     // As above: the throttled action leaves the executor count at 1 either way, so laziness is only
     // observable through evidence that has not been recorded yet.
     expect($evidence->all())->toHaveCount($recordedBeforeSecond)
-        ->and($executorCalls)->toBe(1);
+        ->and($executorCalls)->toBe(1)
+        ->and($toolResults)->toHaveCount($toolResultsBeforeSecond);
 
     iterator_to_array($second);
 
@@ -420,6 +475,56 @@ it('consumes and enforces a semantic rate limit through Agent streaming', functi
 
     expect(collect($evidence->all())->where('stage', 'rate_limit')->pluck('disposition')->all())
         ->toBe(['permit', 'throttle']);
+
+    assertStreamedDeniedToolResult($toolResults, 'operations.stream-rate-limit', 'throttle');
+});
+
+it('propagates an executor infrastructure failure without dispatching a tool result', function (): void {
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(streamedGateCapability(
+        'operations.stream-executor-failure',
+        function (AuthorizedAction $action): string {
+            throw new RuntimeException('Executor infrastructure is unavailable.');
+        },
+    ));
+
+    $tool = $verdict->bound(
+        new StreamedGateDefinition,
+        'operations.stream-executor-failure',
+        new ActionContext('customer-72'),
+    );
+    $agent = streamedGateAgent(
+        $tool,
+        [new ToolCall('stream-executor-failure', 'StreamedGateDefinition', ['operation_id' => 1001]), 'done'],
+    );
+    $toolResults = [];
+    $toolInvoked = false;
+    captureStreamedToolResults($tool, ['operation_id' => 1001], $toolResults);
+    Event::listen(ToolInvoked::class, function (ToolInvoked $event) use ($tool, &$toolInvoked): void {
+        if ($event->tool === $tool) {
+            $toolInvoked = true;
+        }
+    });
+
+    $response = $agent->stream('perform operation');
+
+    expect($toolResults)->toBe([])
+        ->and($toolInvoked)->toBeFalse();
+
+    // Laravel AI v0.10.3 exposes no ToolFailed lifecycle event or failure callback; revisit this
+    // positive assertion when upstream #874 lands. Until then, no ToolInvoked result proves the
+    // exception was not normalized into Verdict's policy-refusal envelope.
+    expect(fn (): array => iterator_to_array($response))
+        ->toThrow(RuntimeException::class, 'Executor infrastructure is unavailable.')
+        ->and($toolResults)->toBe([])
+        ->and($toolInvoked)->toBeFalse();
 });
 
 it('prevents a duplicate claim between two tool calls in one lazy streamed response', function (): void {
