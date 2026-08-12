@@ -42,11 +42,14 @@ flight does not need to wait for it.
 **Theme.** Make provenance a chain rather than a set, and stop depending on Laravel AI's surface by
 assumption. Also absorbs the evaluation and documentation scope displaced when v0.3.0 was cut small.
 
-**This tag also carries the whole of the v0.5.0 milestone below.** Both milestones' scope completed on
-`main` before either was tagged. Rather than emit two tags from one commit or hold the evidence-identity
-work back to manufacture a v0.5.0 line that never existed as installable software, both shipped under
-`v0.4.0`. The milestone numbering below is retained as the record of *how the work was planned*; the tag
-is the record of what shipped. The next tag is `v0.5.0` and will carry the v0.6.0 plan.
+**This tag also carries the whole of the v0.5.0 plan below.** Both milestones' scope completed on `main`
+before either was tagged. Rather than emit two tags from one commit or hold the evidence-identity work
+back to manufacture a v0.5.0 line that never existed as installable software, both shipped under
+`v0.4.0`. The plan section below is retained as the record of *how the work was planned*; the tag is the
+record of what shipped.
+
+The work originally planned as v0.6.0 has been renumbered to v0.5.0, here and on GitHub, so that a
+milestone name once again names the tag it ships in.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
@@ -102,7 +105,7 @@ worth correcting when the issue is picked up.
 
 ---
 
-## v0.5.0 — Evidence identity and configuration *(shipped in `v0.4.0`)*
+## v0.5.0 plan — Evidence identity and configuration *(shipped in `v0.4.0`)*
 
 **Theme.** Make a decision record say *who*, *against what configuration*, and *through which adapter* —
 the identity questions previously missing from `DecisionEvidence`.
@@ -121,7 +124,7 @@ two rounds of evidence serialization and upgrade changes on adopters.
 
 ---
 
-## v0.6.0 — Live evaluation and harness documentation *(ships as tag `v0.5.0`)*
+## v0.5.0 — Live evaluation and harness documentation *(next)*
 
 **Theme.** Make the evaluation subsystem usable by someone who did not build it.
 
