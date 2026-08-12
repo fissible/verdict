@@ -81,10 +81,10 @@ The invariant names in kit failures identify the capability but deliberately do 
 arguments or target values. Let the surrounding application test render any safe, local detail it
 needs.
 
-## Generator-facing shape
+## Generated test skeletons
 
-The registered capability name passed to `CapabilitySecurityTestKit::for()` and the six explicit
-assertion methods are the stable public seam for the future `verdict:make-capability` skeleton.
-That generator should leave every target, tenant or ownership fixture, policy observation, binding
-mutation, and side-effect assertion for the application to write; it must not generate permissive
-fixtures or replace an application's provider registration.
+`verdict:make-capability` generates a test skeleton using the registered capability name and the
+applicable assertions from this kit. It leaves every target, tenant or ownership fixture, policy
+observation, binding mutation, and side-effect assertion for the application to write; it never
+generates permissive fixtures or replaces an application's provider registration. See the
+[generator example](../README.md#generate-a-fail-closed-capability-skeleton).
