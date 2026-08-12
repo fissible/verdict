@@ -30,6 +30,7 @@ use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasTools;
@@ -195,7 +196,34 @@ final class QueuedGateAgent implements Agent, HasTools
     }
 }
 
+/** @return list<string> */
+function queuedGateTables(): array
+{
+    return [
+        'jobs',
+        'verdict_provenance_derivations',
+        'verdict_capability_configurations',
+        'verdict_execution_claims',
+        'verdict_rate_limit_buckets',
+        'verdict_approval_receipts',
+        'verdict_evidence',
+        'failed_jobs',
+        'job_batches',
+    ];
+}
+
+function resetQueuedGateTables(): void
+{
+    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+
+    foreach (queuedGateTables() as $table) {
+        $schema->dropIfExists($table);
+    }
+}
+
 beforeEach(function (): void {
+    resetQueuedGateTables();
+
     (require __DIR__.'/../../vendor/orchestra/testbench-core/laravel/migrations/0001_01_01_000002_testbench_create_jobs_table.php')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->up();
@@ -250,6 +278,10 @@ beforeEach(function (): void {
     $this->app->forgetScopedInstances();
 });
 
+afterEach(function (): void {
+    resetQueuedGateTables();
+});
+
 /** @param array<int, ToolCall|string> $responses */
 function queuedGateAgent(array $responses): QueuedGateAgent
 {
@@ -267,6 +299,9 @@ function runQueuedGate(QueuedGateAgent $agent): void
 
     test()->artisan('queue:work', ['connection' => 'database', '--once' => true, '--queue' => 'default'])
         ->assertSuccessful();
+
+    expect(app('db')->table('jobs')->count())->toBe(0)
+        ->and(app(QueuedGateState::class)->handled)->toBeGreaterThan(0);
 }
 
 it('dispatches and handles a queued Laravel AI agent job through Verdict in worker-visible container state', function (): void {
@@ -305,7 +340,6 @@ it('enforces execution claims and semantic rate limits across queued jobs', func
         ->and(app('db')->table('verdict_execution_claims')->count())->toBe(1)
         ->and(app('db')->table('verdict_execution_claims')->value('status'))->toBe('completed')
         ->and(app('db')->table('verdict_evidence')->where('stage', 'execution_claim')->count())->toBe(3);
-
 });
 
 it('enforces semantic rate limits across queued jobs', function (): void {
