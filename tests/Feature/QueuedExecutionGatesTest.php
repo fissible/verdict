@@ -297,7 +297,10 @@ function runQueuedGate(QueuedGateAgent $agent): void
 
     expect(app('db')->table('jobs')->count())->toBe(1);
 
-    test()->artisan('queue:work', ['connection' => 'database', '--once' => true, '--queue' => 'default'])
+    // WorkCommand otherwise exits successfully without polling when the test application is in
+    // maintenance mode. This test verifies the worker's handling path, so force that real poll
+    // rather than treating a no-op exit as coverage.
+    test()->artisan('queue:work', ['connection' => 'database', '--once' => true, '--queue' => 'default', '--force' => true])
         ->assertSuccessful();
 
     expect(app('db')->table('jobs')->count())->toBe(0)
@@ -329,7 +332,7 @@ it('denies a queued execution when authorization changes after the proposal chec
         ->and(app('db')->table('verdict_evidence')->where('stage', 'execution')->where('disposition', 'deny')->count())->toBe(1);
 });
 
-it('enforces execution claims and semantic rate limits across queued jobs', function (): void {
+it('enforces execution claims across queued jobs', function (): void {
     $state = app(QueuedGateState::class);
     $state->atMostOnce = true;
 
