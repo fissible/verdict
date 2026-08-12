@@ -4,6 +4,17 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Retry every durable security-state mutation on a database concurrency conflict, not only the three
+  admission paths. `DatabaseApprovalReceiptStore::approve()`, `reject()`, and `consume()`, and
+  `DatabaseExecutionClaimStore::complete()`, `markIndeterminate()`, and `resolve()`, now take the same
+  bounded, jittered retry as `issue()` and `claim()`, so a deadlock while deciding or spending a human
+  approval returns a policy outcome instead of an unhandled `QueryException`. The retry is paired with
+  ADR 0004's independent-transaction guard in one call (`TransactionRetry::runIndependently()`), and is
+  scoped to SQLSTATE `40001`/`40P01` rather than Laravel's broader message list — MySQL's lock-wait
+  timeout is deliberately surfaced rather than retried. See
+  [#100](https://github.com/fissible/verdict/issues/100) and
+  [ADR 0018](docs/adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md).
+
 - Narrow `CapabilityConfigurationStore` to a closure-free `CapabilityConfiguration` value object,
   so custom registry adapters receive only the content-addressed fingerprint and declared
   configuration they are permitted to retain. See [#91](https://github.com/fissible/verdict/issues/91).

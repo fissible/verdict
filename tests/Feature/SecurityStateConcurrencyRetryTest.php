@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Approvals\ApprovalOutcome;
+use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
+use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Tests\Support\ConcurrencyHarness;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\QueryException;
@@ -73,6 +77,54 @@ function assertRaceOutcome(array $decoded, int $winners, int $expectedWinners): 
 
     expect($errors)->toBe([])
         ->and($winners)->toBe($expectedWinners);
+}
+
+function concurrencyApprovalReceipt(string $bindingFingerprint, string $toolCallId, string $at): ApprovalReceipt
+{
+    $createdAt = new DateTimeImmutable($at);
+
+    return new ApprovalReceipt(
+        id: bin2hex(random_bytes(16)),
+        toolCallId: $toolCallId,
+        capability: 'concurrency-test.approval',
+        bindingFingerprint: $bindingFingerprint,
+        status: ApprovalReceiptStatus::Pending,
+        reason: null,
+        expiresAt: $createdAt->modify('+1 hour'),
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        consumedAt: null,
+        createdAt: $createdAt,
+        updatedAt: $createdAt,
+    );
+}
+
+function concurrencyApprovalStore(): DatabaseApprovalReceiptStore
+{
+    return new DatabaseApprovalReceiptStore(app(DatabaseManager::class)->connection());
+}
+
+/**
+ * Seed a receipt for the transition races to contend over, from the parent process.
+ *
+ * The seeding calls are asserted rather than assumed: a race that silently started from the wrong
+ * receipt state would report a clean "exactly one winner" for a contest that never happened.
+ */
+function concurrencySeededReceipt(string $at, bool $approved): ApprovalReceipt
+{
+    $store = concurrencyApprovalStore();
+    $receipt = concurrencyApprovalReceipt(hash('sha256', random_bytes(16)), bin2hex(random_bytes(16)), $at);
+
+    expect($store->issue($receipt)->outcome)->toBe(ApprovalOutcome::Issued);
+
+    if ($approved) {
+        expect($store->approve($receipt->id, $receipt->toolCallId, 'concurrency-test:approver', new DateTimeImmutable($at))->outcome)
+            ->toBe(ApprovalOutcome::Approved);
+    }
+
+    return $receipt;
 }
 
 beforeEach(function (): void {
@@ -168,6 +220,53 @@ it('issues at most one receipt when racing DatabaseApprovalReceiptStore::issue()
     assertRaceOutcome($decoded, $issuers, 1);
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
+it('consumes an approved receipt exactly once when real database connections race', function (): void {
+    $at = (new DateTimeImmutable)->format(DATE_ATOM);
+    $receipt = concurrencySeededReceipt($at, approved: true);
+    $store = concurrencyApprovalStore();
+
+    $results = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/approval-receipt-transition.php', array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
+        'connection' => concurrencyTestConnectionConfig(),
+        'action' => 'consume',
+        'tool_call_id' => $receipt->toolCallId,
+        'binding_fingerprint' => $receipt->bindingFingerprint,
+        'at' => $at,
+    ]));
+    $decoded = array_map(fn ($r) => json_decode($r['stdout'], true), $results);
+    $consumed = count(array_filter($decoded, fn ($d) => is_array($d) && ($d['ok'] ?? false) && ($d['outcome'] ?? null) === ApprovalOutcome::Consumed->value));
+
+    assertRaceOutcome($decoded, $consumed, 1);
+
+    expect($store->findForToolCall($receipt->toolCallId)?->status)->toBe(ApprovalReceiptStatus::Consumed);
+})->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
+
+it('keeps one terminal decision when approve and reject race on separate real database connections', function (): void {
+    $at = (new DateTimeImmutable)->format(DATE_ATOM);
+    $receipt = concurrencySeededReceipt($at, approved: false);
+    $store = concurrencyApprovalStore();
+    $payloads = [];
+
+    foreach (range(0, CONCURRENCY_TEST_CONCURRENCY - 1) as $index) {
+        $payloads[] = [
+            'connection' => concurrencyTestConnectionConfig(),
+            'action' => $index % 2 === 0 ? 'approve' : 'reject',
+            'receipt_id' => $receipt->id,
+            'tool_call_id' => $receipt->toolCallId,
+            'decided_by' => "concurrency-test:{$index}",
+            'at' => $at,
+        ];
+    }
+
+    $results = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/approval-receipt-transition.php', $payloads);
+    $decoded = array_map(fn ($r) => json_decode($r['stdout'], true), $results);
+    $decisions = count(array_filter($decoded, fn ($d) => is_array($d) && ($d['ok'] ?? false) && in_array($d['outcome'] ?? null, [ApprovalOutcome::Approved->value, ApprovalOutcome::Rejected->value], true)));
+
+    assertRaceOutcome($decoded, $decisions, 1);
+
+    expect($store->findForToolCall($receipt->toolCallId)?->status)
+        ->toBeIn([ApprovalReceiptStatus::Approved, ApprovalReceiptStatus::Rejected]);
+})->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
+
 it('resolves PostgreSQL SERIALIZABLE cleanly for execution claims and approval receipts at high contention, but rate limits retain a known residual failure rate', function (): void {
     if (concurrencyTestDriver() !== 'pgsql') {
         $this->markTestSkipped('This test is specific to PostgreSQL SERIALIZABLE; MySQL/MariaDB are covered by the tests above at their natural REPEATABLE READ default.');
@@ -204,6 +303,28 @@ it('resolves PostgreSQL SERIALIZABLE cleanly for execution claims and approval r
 
     expect($approvalErrors)->toBe([])
         ->and($approvalIssuers)->toBe(1);
+
+    // Approval transitions, raced directly rather than inferred from issue(). The clean issue()
+    // result above is not evidence for them: consume() takes its lock through a different read
+    // (`tool_call_id` + `binding_fingerprint`, not the three-column unique key) and then mutates
+    // `status`, which is a different predicate-lock shape under SSI. This is where a SERIALIZABLE
+    // 40001 would originate if one does, so it is measured, not assumed — the reasoning ADR 0018
+    // already applied once to issue()'s non-reproduction.
+    $consumeReceipt = concurrencySeededReceipt($at, approved: true);
+    $consumeResults = ConcurrencyHarness::run(__DIR__.'/../Support/concurrency-children/approval-receipt-transition.php', array_fill(0, CONCURRENCY_TEST_CONCURRENCY, [
+        'connection' => $connectionConfig,
+        'action' => 'consume',
+        'tool_call_id' => $consumeReceipt->toolCallId,
+        'binding_fingerprint' => $consumeReceipt->bindingFingerprint,
+        'at' => $at,
+        'force_serializable' => true,
+    ]));
+    $consumeDecoded = array_map(fn ($r) => json_decode($r['stdout'], true), $consumeResults);
+    $consumeErrors = array_values(array_filter($consumeDecoded, fn ($d) => ! is_array($d) || ! ($d['ok'] ?? false)));
+    $consumers = count(array_filter($consumeDecoded, fn ($d) => is_array($d) && ($d['ok'] ?? false) && ($d['outcome'] ?? null) === ApprovalOutcome::Consumed->value));
+
+    expect($consumeErrors)->toBe([])
+        ->and($consumers)->toBe(1);
 
     // Rate limits: NOT fully resolved at 20-way SERIALIZABLE contention by a bounded 2-attempt
     // retry with no backoff — measured directly (#86): errors dropped from 20/20 (unfixed) to a

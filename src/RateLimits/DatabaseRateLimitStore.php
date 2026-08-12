@@ -7,7 +7,6 @@ namespace Fissible\Verdict\RateLimits;
 use DateTimeImmutable;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\PrunableRateLimitStore;
-use Fissible\Verdict\Support\IndependentTransactionGuard;
 use Fissible\Verdict\Support\TransactionRetry;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
@@ -38,20 +37,20 @@ final readonly class DatabaseRateLimitStore implements DatabaseTableStore, Pruna
 
     public function consume(RateLimitConsumption $consumption): RateLimitOutcome
     {
-        IndependentTransactionGuard::assertNoOuterTransaction($this->connection, 'consume a semantic rate-limit unit');
-
         [$windowStartsAt, $resetAt] = $this->window($consumption);
 
         try {
-            return TransactionRetry::run(
+            return TransactionRetry::runIndependently(
                 $this->connection,
+                'consume a semantic rate-limit unit',
                 fn (): RateLimitOutcome => $this->consumeLocked($consumption, $windowStartsAt, $resetAt, true),
             );
         } catch (UniqueConstraintViolationException) {
             // Another transaction created the first bucket concurrently. Retry the actual
             // consume operation so this caller is counted rather than merely reading its row.
-            return TransactionRetry::run(
+            return TransactionRetry::runIndependently(
                 $this->connection,
+                'consume a semantic rate-limit unit',
                 fn (): RateLimitOutcome => $this->consumeLocked($consumption, $windowStartsAt, $resetAt, false),
             );
         }
