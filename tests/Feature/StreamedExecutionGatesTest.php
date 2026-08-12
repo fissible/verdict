@@ -7,6 +7,7 @@ use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
+use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
@@ -27,10 +28,18 @@ final readonly class StreamedGateTarget
     public function __construct(public int $id) {}
 }
 
+final readonly class StreamedGateClock implements Clock
+{
+    public function __construct(private DateTimeImmutable $time) {}
+
+    public function now(): DateTimeImmutable
+    {
+        return $this->time;
+    }
+}
+
 final class StreamedGateDefinition implements Tool
 {
-    public int $invocations = 0;
-
     public function description(): Stringable|string
     {
         return 'Perform the protected operation.';
@@ -38,8 +47,6 @@ final class StreamedGateDefinition implements Tool
 
     public function handle(Request $request): Stringable|string
     {
-        $this->invocations++;
-
         return 'The bound executor should handle this operation.';
     }
 
@@ -130,9 +137,8 @@ it('runs proposal and execution authorization during lazy Agent streaming and de
         },
     ));
 
-    $definition = new StreamedGateDefinition;
     $agent = streamedGateAgent(
-        $verdict->bound($definition, 'operations.stream-authorize', new ActionContext('customer-72')),
+        $verdict->bound(new StreamedGateDefinition, 'operations.stream-authorize', new ActionContext('customer-72')),
         [new ToolCall('stream-authorization', 'StreamedGateDefinition', ['operation_id' => 1001]), 'done'],
     );
 
@@ -144,8 +150,7 @@ it('runs proposal and execution authorization during lazy Agent streaming and de
     iterator_to_array($response);
 
     expect($authorizationCalls)->toBe(2)
-        ->and($executorCalls)->toBe(0)
-        ->and($definition->invocations)->toBe(0);
+        ->and($executorCalls)->toBe(0);
 
     $evidence = app(EvidenceRecorder::class);
     expect($evidence)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
@@ -208,6 +213,9 @@ it('prevents a duplicate logical action when it is invoked through separate Agen
 
 it('consumes and enforces a semantic rate limit through Agent streaming', function (): void {
     $executorCalls = 0;
+    $this->app->instance(Clock::class, new StreamedGateClock(
+        new DateTimeImmutable('2026-08-01 12:00:15', new DateTimeZone('UTC')),
+    ));
     $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
     {
         public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision

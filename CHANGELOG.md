@@ -4,6 +4,10 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Verify Laravel AI streamed execution for Verdict authorization, execution claims, and semantic
+  rate limits through lazy `Agent::stream()` integration coverage. The verification uses Laravel
+  AI's `FakeTextGateway`; it does not exercise a live provider transport. See [#101](https://github.com/fissible/verdict/issues/101).
+
 - Resolve PostgreSQL SERIALIZABLE rate-limit conflicts with up to three retries after increasing
   randomized delays (10–50 ms, then 20–100 ms, then 30–150 ms). The retries remain confined to
   Verdict-owned transactions; a synchronized 20-way PostgreSQL contention suite now requires every
