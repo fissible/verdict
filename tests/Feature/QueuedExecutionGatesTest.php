@@ -253,6 +253,7 @@ beforeEach(function (): void {
         }
     });
 
+    config()->set('cache.default', 'array');
     config()->set('queue.default', 'database');
     config()->set('queue.connections.database.connection', config('database.default'));
     config()->set('queue.connections.database.table', 'jobs');
