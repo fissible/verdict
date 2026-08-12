@@ -1,0 +1,62 @@
+name: laravel-ai-canary
+
+# Early warning for upstream laravel/ai drift. This job is NOT a gate on this repository's work.
+#
+# A red run means UPSTREAM CHANGED, not that the branch under test is broken. It installs
+# laravel/ai's development branch, which is deliberately outside the range composer.json
+# supports, so it can fail for changes we have not adopted yet and are not required to.
+#
+# When it fails, work the checklist in issue #130 (widen the supported laravel/ai range as one
+# reviewed change) rather than loosening the constraint in composer.json to make it green.
+#
+# The constraint is `0.x-dev`, not `dev-0.x`. Composer normalizes a branch whose name already
+# looks like a version, so `dev-0.x` does not resolve at all.
+
+on:
+  schedule:
+    - cron: '0 6 * * 4' # Thursday 06:00 UTC, offset from concurrency-matrix's Monday run
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    name: laravel/ai 0.x-dev (non-blocking)
+
+    # Never block a merge on upstream's development branch. The signal is the point, not the gate.
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo, sqlite, pdo_sqlite, bcmath, intl, sodium
+          tools: composer:v2
+          coverage: none
+
+      # One Laravel cell on purpose. This job isolates a single variable — upstream laravel/ai —
+      # so version-matrix coverage stays in tests.yml where it belongs.
+      - name: Install dependencies against the laravel/ai development branch
+        run: |
+          composer require "laravel/framework:13.*" "orchestra/testbench:11.*" "laravel/ai:0.x-dev" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction --no-progress --no-scripts --with-all-dependencies
+          composer run prepare
+
+      # Names the upstream commit in the log so a failure can be attributed to a specific merge.
+      - name: Record the upstream commit under test
+        run: composer show laravel/ai
+
+      # PHPStan and the suite are the two checks upstream can actually break: Larastan analyses
+      # Verdict against laravel/ai's types, and the suite exercises its runtime behavior. Pint and
+      # type coverage measure only Verdict's own source, so they are left to tests.yml.
+      - name: PHPStan
+        run: composer analyse
+
+      - name: Test suite
+        run: vendor/bin/pest
