@@ -1,0 +1,25 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+final class DecideVerdictApprovalRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        // TODO: Check the authenticated reviewer's application policy and tenant scope.
+        return false;
+    }
+
+    /** @return array<string, list<string>> */
+    public function rules(): array
+    {
+        return [
+            'receipt_id' => ['required', 'string', 'max:255'],
+            'tool_call_id' => ['required', 'string', 'max:255'],
+        ];
+    }
+}

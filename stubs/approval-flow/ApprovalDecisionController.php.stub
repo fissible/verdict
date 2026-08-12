@@ -1,0 +1,55 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers;
+
+use App\Http\Requests\DecideVerdictApprovalRequest;
+use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ApprovalOutcome;
+use Illuminate\Http\RedirectResponse;
+
+final class VerdictApprovalDecisionController
+{
+    public function approve(DecideVerdictApprovalRequest $request, ApprovalManager $approvals): RedirectResponse
+    {
+        // TODO: Authenticate and authorize this reviewer for the tenant and conversation.
+        // TODO: Look up the pending call and display context from application-owned storage.
+        // Do not put raw prompts or tool arguments in a Verdict receipt.
+        $decisionMaker = 'user:'.(string) $request->user()->getAuthIdentifier();
+
+        $transition = $approvals->approve(
+            receiptId: $request->string('receipt_id')->toString(),
+            toolCallId: $request->string('tool_call_id')->toString(),
+            approvedBy: $decisionMaker,
+        );
+
+        return $this->respond($request, $transition->outcome, $transition->succeeded());
+    }
+
+    public function reject(DecideVerdictApprovalRequest $request, ApprovalManager $approvals): RedirectResponse
+    {
+        // TODO: Apply the same application-owned reviewer, tenant, and conversation checks.
+        $decisionMaker = 'user:'.(string) $request->user()->getAuthIdentifier();
+
+        $transition = $approvals->reject(
+            receiptId: $request->string('receipt_id')->toString(),
+            toolCallId: $request->string('tool_call_id')->toString(),
+            rejectedBy: $decisionMaker,
+        );
+
+        return $this->respond($request, $transition->outcome, $transition->succeeded());
+    }
+
+    private function respond(DecideVerdictApprovalRequest $request, ApprovalOutcome $outcome, bool $succeeded): RedirectResponse
+    {
+        if (! $succeeded) {
+            // Normal outcomes: not_found, mismatch, expired, and invalid_state. Do not resume.
+            return back()->with('verdict_approval_outcome', $outcome->value);
+        }
+
+        // TODO: Resume the application-owned agent/conversation only after this transition succeeds.
+        // This package deliberately supplies neither a conversation store nor a resume strategy.
+        return back()->with('verdict_approval_outcome', $outcome->value);
+    }
+}

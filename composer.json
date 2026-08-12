@@ -31,6 +31,7 @@
     "illuminate/contracts": "^12.0||^13.0",
     "illuminate/console": "^12.0||^13.0",
     "illuminate/database": "^12.0||^13.0",
+    "illuminate/filesystem": "^12.0||^13.0",
     "illuminate/support": "^12.0||^13.0",
     "laravel/ai": "^0.10.2"
   },
