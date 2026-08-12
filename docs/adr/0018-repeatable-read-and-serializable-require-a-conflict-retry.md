@@ -291,13 +291,13 @@ human approval surfaces as an unhandled `QueryException` where the caller expect
 and unlike an admission race there is no second chance: the receipt is single-use. #100 extends the
 retry to all three.
 
-**Deliberately not extended here:** the execution-claim transitions (`complete()`,
-`markIndeterminate()`, `resolve()`) have the same gap and still carry ADR 0004's guard without a
-retry. Widening the shared mechanism and expanding a second store in the same change would put a
-behavior change to rate limits and execution claims inside an approvals fix; it is tracked
-separately in [#112](https://github.com/fissible/verdict/issues/112) so it can land with its own
-measurement and acceptance tests. The same reasoning defers any narrowing of what counts as a
-retryable conflict: `TransactionRetry` continues to classify through Laravel's
+**Deliberately not extended in #100:** the execution-claim transitions (`complete()`,
+`markIndeterminate()`, `resolve()`) had the same gap and still carried ADR 0004's guard without a
+retry. Widening the shared mechanism and expanding a second store in an approvals fix would put a
+behavior change to rate limits and execution claims inside that approvals change; it was tracked
+separately in [#112](https://github.com/fissible/verdict/issues/112). The same reasoning deferred
+any narrowing of what counts as a retryable conflict: `TransactionRetry` continues to classify
+through Laravel's
 container-configurable `ConcurrencyErrorDetector`, which an application may rebind, and which
 recognizes concurrency errors that carry no `40001` SQLSTATE at all — SQLite's `database is locked`
 among them.
@@ -347,6 +347,26 @@ another caller genuinely won the race, which is the honest answer rather than a 
 reconciliation would convert a correct refusal into a fabricated success. The ambiguous case —
 a commit whose result was never observed — is a lost connection, which the detector does not match
 and which propagates untouched.
+
+## Update (#112): every execution-claim transition uses the shared guarded retry boundary
+
+#112 replaces the split guard-plus-transaction calls in the security-state stores with one internal
+`SecurityStateTransaction` boundary. It establishes Verdict ownership of the transaction first and
+then invokes `TransactionRetry`, so rate-limit consumption, execution-claim admission and every
+execution-claim transition, plus approval issue, decision, and consumption all have the same
+bounded retry behavior. An application-owned outer transaction still fails before any retry.
+
+The conflict classifier remains Laravel's container-resolved
+`Illuminate\Contracts\Database\ConcurrencyErrorDetector`; #112 intentionally does not narrow it to
+SQLSTATE `40001`. That preserves supported SQLite lock messages, custom application classifier
+bindings, and MySQL's `1205` lock-wait timeout. The four-attempt budget remains deliberate: an
+exhausted MySQL timeout is returned as its final exception rather than being retried forever.
+
+The durable ready/release harness now races `complete()`, `markIndeterminate()`, and retryable
+`resolve()` independently with twenty real processes. On every supported engine, exactly one
+transition wins, every loser receives the ordinary `invalid_state` outcome, and no retryable
+concurrency conflict reaches the caller. This makes the post-admission execution-claim behavior
+subject to the same real-driver evidence standard as the admission and approval paths.
 
 ## Consequences
 
