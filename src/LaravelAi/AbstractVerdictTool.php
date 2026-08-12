@@ -8,9 +8,11 @@ use Closure;
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
+use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\VerdictManager;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use JsonException;
@@ -37,6 +39,9 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     /**
      * @param  ActionContext|callable(Request): mixed  $context
+     * @param  InvocationContext|null  $invocations  Optional only for direct construction outside
+     *                                               the container; without an active scoped frame,
+     *                                               callable contexts deliberately resolve fresh.
      */
     public function __construct(
         private readonly Tool $tool,
@@ -44,6 +49,8 @@ abstract class AbstractVerdictTool implements Approvable, Tool
         ActionContext|callable $context,
         private readonly VerdictManager $verdict,
         private readonly string $deniedMessage = 'This action was not authorized.',
+        private readonly ?InvocationContext $invocations = null,
+        private readonly ?ApprovalExecutionContext $approvalExecutions = null,
     ) {
         $this->contextResolver = $context instanceof ActionContext
             ? static fn (Request $request): ActionContext => $context
@@ -87,7 +94,11 @@ abstract class AbstractVerdictTool implements Approvable, Tool
      */
     final public function handle(Request $request): Stringable|string
     {
-        $envelope = $this->envelope($request);
+        $toolCallId = $request->toolCallId() ?? '';
+        $prepared = $this->invocations()->takePreparedEnvelope($toolCallId, $request->all());
+        $envelope = ! $this->approvalExecutions()->allows($toolCallId)
+            ? ($prepared ?? $this->envelope($request))
+            : $this->envelope($request);
 
         $result = $this->executeAction($envelope, $request);
 
@@ -123,25 +134,26 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     public function shouldRequestApproval(Request $request): ?Approval
     {
-        $decision = $this->supportsVerifiedConfirmation()
-            ? $this->verdict->requestConfirmation($this->envelope($request))
-            : null;
+        $envelope = $this->supportsVerifiedConfirmation() ? $this->envelope($request) : null;
+        $decision = $envelope === null ? null : $this->verdict->requestConfirmation($envelope);
 
         if ($decision !== null) {
             return Approval::required($decision->reason);
         }
 
-        if ($this->approvalRequirement === false) {
-            return null;
-        }
-
-        if ($this->approvalRequirement instanceof Approval) {
+        if ($this->approvalRequirement !== false && $this->approvalRequirement instanceof Approval) {
             return $this->approvalRequirement;
         }
 
-        return $this->tool instanceof Approvable
-            ? $this->tool->shouldRequestApproval($request)
-            : null;
+        $approval = $this->approvalRequirement === false
+            ? null
+            : ($this->tool instanceof Approvable ? $this->tool->shouldRequestApproval($request) : null);
+
+        if ($approval === null && $envelope !== null) {
+            $this->invocations()->rememberPreparedEnvelope($request->toolCallId() ?? '', $request->all(), $envelope);
+        }
+
+        return $approval;
     }
 
     final protected function definition(): Tool
@@ -157,6 +169,16 @@ abstract class AbstractVerdictTool implements Approvable, Tool
     protected function supportsVerifiedConfirmation(): bool
     {
         return false;
+    }
+
+    private function invocations(): InvocationContext
+    {
+        return $this->invocations ?? Container::getInstance()->make(InvocationContext::class);
+    }
+
+    private function approvalExecutions(): ApprovalExecutionContext
+    {
+        return $this->approvalExecutions ?? Container::getInstance()->make(ApprovalExecutionContext::class);
     }
 
     private function envelope(Request $request): ActionEnvelope

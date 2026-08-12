@@ -4,6 +4,11 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Make Laravel AI `BoundTool` callable contexts consistent across immediate approval preflight and
+  execution within one invocation, without caching across approval resumes, direct calls, nested
+  agent invocations, or request scopes. `VerdictManager::__construct()` now requires the scoped
+  `ApprovalExecutionContext` dependency. See [#116](https://github.com/fissible/verdict/issues/116).
+
 - Add refreshed-target and one-logical-operation capability starter patterns. They show existing
   Verdict policies with application-owned lookup, identity, and operation-binding callbacks; they
   do not introduce authorization, tenancy, side effects, or new public API. See

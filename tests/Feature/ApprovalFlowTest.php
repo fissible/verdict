@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
@@ -20,6 +21,7 @@ use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Decisions\Decision as VerdictDecision;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\LaravelAi\BoundTool;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\VerdictApprovalMiddleware;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
@@ -156,6 +158,7 @@ function approvalTool(
     ?int $ttlSeconds = null,
     ?RateLimitPolicy $rateLimit = null,
     ?ExecutionTargetPolicy $executionTarget = null,
+    ActionContext|callable $context = new ActionContext(actor: 72),
 ): BoundTool {
     $verdict = app(VerdictManager::class);
     $capability = Capability::usingPolicy(
@@ -185,7 +188,7 @@ function approvalTool(
     return $verdict->bound(
         definition: new ApprovalDefinitionTool,
         capability: 'orders.cancel',
-        context: new ActionContext(actor: 72),
+        context: $context,
     );
 }
 
@@ -323,6 +326,57 @@ it('validates approval bindings against refreshed state before consuming the rec
         ->and($executions)->toBe(0)
         ->and($approvalEvidence?->approvalPhase)->toBe('execution_validation')
         ->and($approvalEvidence?->approvalOutcome)->toBe('not_found');
+});
+
+it('resolves a fresh callable context when an approved execution resumes within one invocation', function (): void {
+    $executions = 0;
+    $contextResolutions = 0;
+    $proposal = new ApprovalOrder(1001, 72, 1);
+    $current = $proposal;
+    $tool = approvalTool(
+        [1001 => $proposal],
+        $executions,
+        executionTarget: ExecutionTargetPolicy::refresh(
+            name: 'approval-order-primary-key',
+            identityUsing: fn (ActionEnvelope $envelope, ApprovalOrder $order): array => ['order_id' => $order->id],
+            refreshUsing: fn (ActionEnvelope $envelope, ApprovalOrder $order): ApprovalOrder => $current,
+        ),
+        context: function (Request $request) use (&$contextResolutions): ActionContext {
+            $contextResolutions++;
+
+            return new ActionContext(actor: 'customer-'.$contextResolutions);
+        },
+    );
+    $request = new Request(['order_id' => 1001], 'call-resume-fresh-context');
+
+    app(InvocationContext::class)->within('approval-resume-invocation', function () use ($tool, $request, &$current, &$contextResolutions, &$executions): void {
+        $tool->shouldRequestApproval($request);
+        $challenge = app(ApprovalManager::class)->challengeForToolCall('call-resume-fresh-context');
+        expect($challenge)->not->toBeNull();
+
+        // A pre-approval bridge must be unusable during verified execution, even if a matching
+        // entry exists in the same invocation frame.
+        app(InvocationContext::class)->rememberPreparedEnvelope(
+            'call-resume-fresh-context',
+            ['order_id' => 1001],
+            ActionEnvelope::wrap(
+                proposal: new ActionProposal('orders.cancel', ['order_id' => 1001], 'call-resume-fresh-context'),
+                context: new ActionContext(actor: 'stale-customer'),
+            ),
+        );
+
+        app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'customer:72');
+        $current = new ApprovalOrder(1001, 72, 2);
+        $result = json_decode(
+            executeWithinApprovalMiddleware($tool, $request, Decisions::from(['call-resume-fresh-context' => Decision::approve()])),
+            true,
+            flags: JSON_THROW_ON_ERROR,
+        );
+
+        expect($result['decision'])->toBe('require_confirmation')
+            ->and($contextResolutions)->toBe(2)
+            ->and($executions)->toBe(0);
+    });
 });
 
 it('fails closed when receipt state changes after validation and spends only a recoverable rate unit', function (): void {
