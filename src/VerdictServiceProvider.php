@@ -15,6 +15,7 @@ use Fissible\Verdict\Console\Commands\CompareEvaluationCommand;
 use Fissible\Verdict\Console\Commands\CreateEvaluationBaselineCommand;
 use Fissible\Verdict\Console\Commands\ListExecutionClaimsCommand;
 use Fissible\Verdict\Console\Commands\MakeApprovalFlowCommand;
+use Fissible\Verdict\Console\Commands\MakeCapabilityCommand;
 use Fissible\Verdict\Console\Commands\PruneRateLimitBucketsCommand;
 use Fissible\Verdict\Console\Commands\ResolveExecutionClaimCommand;
 use Fissible\Verdict\Console\Commands\ValidateVerdictCommand;
@@ -218,7 +219,15 @@ final class VerdictServiceProvider extends ServiceProvider
                     // so a request-scoped or tenant-scoped binding inside resolve() is re-evaluated
                     // fresh each time. Caching a resolved instance here would reintroduce the exact
                     // stale-state-across-requests bug this design exists to avoid under Octane.
-                    $chainIdUsing = static fn (): string => $app->make($resolverClass)->resolve();
+                    $chainIdUsing = static function () use ($app, $resolverClass): string {
+                        $resolver = $app->make($resolverClass);
+
+                        if (! $resolver instanceof AttestChainResolver) {
+                            throw new LogicException("The [{$resolverClass}] chain resolver must implement ".AttestChainResolver::class.'.');
+                        }
+
+                        return $resolver->resolve();
+                    };
                 } elseif ($chain !== null) {
                     $chainIdUsing = static fn (): string => $chain;
                 } else {
@@ -427,6 +436,7 @@ final class VerdictServiceProvider extends ServiceProvider
             CreateEvaluationBaselineCommand::class,
             ListExecutionClaimsCommand::class,
             MakeApprovalFlowCommand::class,
+            MakeCapabilityCommand::class,
             PruneRateLimitBucketsCommand::class,
             ResolveExecutionClaimCommand::class,
             ValidateVerdictCommand::class,
