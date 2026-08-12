@@ -1,0 +1,14 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Http\Controllers\VerdictApprovalDecisionController;
+use Illuminate\Support\Facades\Route;
+
+// This route file is deliberately not included by Verdict or Laravel automatically.
+// Include it only after adding the application's authentication, tenancy, and policy middleware.
+//
+// Route::middleware(['auth', 'verified', 'TODO:tenant-and-reviewer-policy'])->group(function (): void {
+//     Route::post('/verdict/approvals/approve', [VerdictApprovalDecisionController::class, 'approve']);
+//     Route::post('/verdict/approvals/reject', [VerdictApprovalDecisionController::class, 'reject']);
+// });

@@ -1,0 +1,26 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+final class DecideVerdictApprovalRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        // TODO: Verify this receipt and tool call belong to an application-owned conversation
+        // the authenticated reviewer may decide in this tenant.
+        return false;
+    }
+
+    /** @return array<string, list<string>> */
+    public function rules(): array
+    {
+        return [
+            'receipt_id' => ['required', 'string', 'max:255'],
+            'tool_call_id' => ['required', 'string', 'max:255'],
+        ];
+    }
+}

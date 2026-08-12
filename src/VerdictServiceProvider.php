@@ -14,6 +14,7 @@ use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
 use Fissible\Verdict\Console\Commands\CompareEvaluationCommand;
 use Fissible\Verdict\Console\Commands\CreateEvaluationBaselineCommand;
 use Fissible\Verdict\Console\Commands\ListExecutionClaimsCommand;
+use Fissible\Verdict\Console\Commands\MakeApprovalFlowCommand;
 use Fissible\Verdict\Console\Commands\PruneRateLimitBucketsCommand;
 use Fissible\Verdict\Console\Commands\ResolveExecutionClaimCommand;
 use Fissible\Verdict\Console\Commands\ValidateVerdictCommand;
@@ -425,6 +426,7 @@ final class VerdictServiceProvider extends ServiceProvider
             CompareEvaluationCommand::class,
             CreateEvaluationBaselineCommand::class,
             ListExecutionClaimsCommand::class,
+            MakeApprovalFlowCommand::class,
             PruneRateLimitBucketsCommand::class,
             ResolveExecutionClaimCommand::class,
             ValidateVerdictCommand::class,

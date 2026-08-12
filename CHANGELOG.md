@@ -4,6 +4,11 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add `verdict:make-approval-flow`, an opt-in generator for route-free, application-owned approval
+  decision skeletons. It publishes no routes, middleware, views, notifications, jobs, or policies;
+  adopters must supply reviewer authorization, tenant and conversation context, notification, and
+  resumption behavior. See [#105](https://github.com/fissible/verdict/issues/105).
+
 - Expose an admitted execution claim's opaque ID to target-bound capability executors through
   `AuthorizedAction::executionIdentity()`, so downstream side effects can use it as a stable
   idempotency key. The identity is `null` without `atMostOnce()` and remains stable for an
