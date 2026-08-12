@@ -21,12 +21,25 @@ use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
+use Laravel\Ai\Ai;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\Gateway\StepTextGateway;
 use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasTools;
+use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Contracts\Tool;
+use Laravel\Ai\Gateway\StepContext;
+use Laravel\Ai\Gateway\StepResponse;
+use Laravel\Ai\Gateway\TextGenerationOptions;
+use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
+use Laravel\Ai\Responses\Data\FinishReason;
+use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\Data\ToolCall;
+use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Streaming\Events\StreamEvent;
+use Laravel\Ai\Streaming\Events\StreamStart;
+use Laravel\Ai\Streaming\Events\ToolCall as StreamToolCall;
 use Laravel\Ai\Tools\Request;
 
 final readonly class StreamedGateTarget
@@ -60,6 +73,88 @@ final class StreamedGateDefinition implements Tool
     public function schema(JsonSchema $schema): array
     {
         return [];
+    }
+}
+
+/**
+ * Test-only provider boundary for the one response shape FakeTextGateway cannot express: two tool
+ * calls returned from one streamed generation step. Laravel AI's provider, response, stream, and
+ * tool-execution loop remain real.
+ */
+final class StreamedGateTwoToolCallsGateway implements StepTextGateway
+{
+    /** @var list<int> */
+    public array $observedSteps = [];
+
+    /** @param list<ToolCall> $toolCalls */
+    public function __construct(private readonly array $toolCalls) {}
+
+    /**
+     * @param  Message[]  $messages
+     * @param  Tool[]  $tools
+     * @param  array<string, Type>|null  $schema
+     */
+    public function generateTextStep(
+        TextProvider $provider,
+        string $model,
+        ?string $instructions,
+        array $messages,
+        array $tools,
+        ?array $schema,
+        ?TextGenerationOptions $options,
+        ?int $timeout,
+        StepContext $stepContext,
+    ): StepResponse {
+        throw new LogicException('This test gateway only supports Agent::stream().');
+    }
+
+    /**
+     * @param  Message[]  $messages
+     * @param  Tool[]  $tools
+     * @param  array<string, Type>|null  $schema
+     * @return Generator<int, StreamEvent, mixed, StepResponse|null>
+     */
+    public function generateStreamStep(
+        string $invocationId,
+        TextProvider $provider,
+        string $model,
+        ?string $instructions,
+        array $messages,
+        array $tools,
+        ?array $schema,
+        ?TextGenerationOptions $options,
+        ?int $timeout,
+        StepContext $stepContext,
+    ): Generator {
+        $this->observedSteps[] = $stepContext->stepNumber;
+
+        if ($stepContext->stepNumber === 0) {
+            yield (new StreamStart('two-tool-calls', 'openai', $model, time()))->withInvocationId($invocationId);
+
+            foreach ($this->toolCalls as $toolCall) {
+                yield (new StreamToolCall('event-'.$toolCall->id, $toolCall, time()))->withInvocationId($invocationId);
+            }
+
+            return new StepResponse(
+                text: '',
+                toolCalls: $this->toolCalls,
+                finishReason: FinishReason::ToolCalls,
+                usage: new Usage,
+                meta: new Meta('openai', $model),
+            );
+        }
+
+        if ($stepContext->stepNumber === 1) {
+            return new StepResponse(
+                text: 'completed',
+                toolCalls: [],
+                finishReason: FinishReason::Stop,
+                usage: new Usage,
+                meta: new Meta('openai', $model),
+            );
+        }
+
+        throw new LogicException('The test gateway only defines two generation steps.');
     }
 }
 
@@ -122,6 +217,13 @@ function streamedGateCapability(
 function streamedGateAgent(Tool $tool, array $responses): StreamedGateAgent
 {
     StreamedGateAgent::fake($responses);
+
+    return new StreamedGateAgent($tool);
+}
+
+function streamedGateAgentWithTwoToolCalls(Tool $tool, StreamedGateTwoToolCallsGateway $gateway): StreamedGateAgent
+{
+    Ai::textProvider('openai')->useTextGateway($gateway);
 
     return new StreamedGateAgent($tool);
 }
@@ -318,6 +420,109 @@ it('consumes and enforces a semantic rate limit through Agent streaming', functi
 
     expect(collect($evidence->all())->where('stage', 'rate_limit')->pluck('disposition')->all())
         ->toBe(['permit', 'throttle']);
+});
+
+it('prevents a duplicate claim between two tool calls in one lazy streamed response', function (): void {
+    $executorCalls = 0;
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(streamedGateCapability(
+        'operations.stream-two-tool-claim',
+        function (AuthorizedAction $action) use (&$executorCalls): string {
+            $executorCalls++;
+
+            return 'executed';
+        },
+        ExecutionClaimPolicy::named(
+            'stream-two-tool-operation',
+            fn (ActionEnvelope $envelope, StreamedGateTarget $target): array => ['operation_id' => $target->id],
+        ),
+    ));
+
+    $gateway = new StreamedGateTwoToolCallsGateway([
+        new ToolCall('stream-two-tool-claim-first', 'StreamedGateDefinition', ['operation_id' => 1001]),
+        new ToolCall('stream-two-tool-claim-duplicate', 'StreamedGateDefinition', ['operation_id' => 1001]),
+    ]);
+    $agent = streamedGateAgentWithTwoToolCalls(
+        $verdict->bound(new StreamedGateDefinition, 'operations.stream-two-tool-claim', new ActionContext('customer-72')),
+        $gateway,
+    );
+    $evidence = streamedGateEvidence();
+
+    $response = $agent->stream('perform the operation twice');
+
+    expect($executorCalls)->toBe(0)
+        ->and($evidence->all())->toBe([])
+        ->and($gateway->observedSteps)->toBe([]);
+
+    iterator_to_array($response);
+
+    expect($executorCalls)->toBe(1)
+        ->and($gateway->observedSteps)->toBe([0, 1])
+        ->and(collect($evidence->all())->where('stage', 'execution_claim')->pluck('disposition')->all())
+        ->toBe(['permit', 'permit', 'deny']);
+
+    assertStreamedGateEvidenceIsCorrelated($response->invocationId);
+});
+
+it('enforces a rate limit between two tool calls in one lazy streamed response', function (): void {
+    $executorCalls = 0;
+    $this->app->instance(Clock::class, new StreamedGateClock(
+        new DateTimeImmutable('2026-08-01 12:00:15', new DateTimeZone('UTC')),
+    ));
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(streamedGateCapability(
+        'operations.stream-two-tool-rate-limit',
+        function (AuthorizedAction $action) use (&$executorCalls): string {
+            $executorCalls++;
+
+            return 'executed';
+        },
+        rateLimit: RateLimitPolicy::fixedWindow(
+            name: 'one-two-tool-operation-per-customer',
+            limit: 1,
+            windowSeconds: 60,
+            keyUsing: fn (ActionEnvelope $envelope): array => ['actor' => $envelope->context->actor],
+        ),
+    ));
+
+    $gateway = new StreamedGateTwoToolCallsGateway([
+        new ToolCall('stream-two-tool-limit-first', 'StreamedGateDefinition', ['operation_id' => 1001]),
+        new ToolCall('stream-two-tool-limit-second', 'StreamedGateDefinition', ['operation_id' => 1002]),
+    ]);
+    $agent = streamedGateAgentWithTwoToolCalls(
+        $verdict->bound(new StreamedGateDefinition, 'operations.stream-two-tool-rate-limit', new ActionContext('customer-72')),
+        $gateway,
+    );
+    $evidence = streamedGateEvidence();
+
+    $response = $agent->stream('perform two operations');
+
+    expect($executorCalls)->toBe(0)
+        ->and($evidence->all())->toBe([])
+        ->and($gateway->observedSteps)->toBe([]);
+
+    iterator_to_array($response);
+
+    expect($executorCalls)->toBe(1)
+        ->and($gateway->observedSteps)->toBe([0, 1])
+        ->and(collect($evidence->all())->where('stage', 'rate_limit')->pluck('disposition')->all())
+        ->toBe(['permit', 'throttle']);
+
+    assertStreamedGateEvidenceIsCorrelated($response->invocationId);
 });
 
 it('resolves a callable action context during iteration rather than when the stream is created', function (): void {
