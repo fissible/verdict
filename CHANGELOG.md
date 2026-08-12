@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-12
+
 - Make Laravel AI `BoundTool` callable contexts consistent across immediate approval preflight and
   execution within one invocation, without caching across approval resumes, direct calls, nested
   agent invocations, or request scopes. `VerdictManager::__construct()` now requires the scoped
@@ -280,7 +282,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/fissible/verdict/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fissible/verdict/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fissible/verdict/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/fissible/verdict/compare/v0.1.0...v0.1.1
