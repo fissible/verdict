@@ -57,7 +57,7 @@ it('publishes application-owned decision outcomes and disabled route scaffolding
         ->and($request)->toContain('TODO: Check the authenticated reviewer')
         ->and($routes)->toContain('deliberately not included', "//     Route::post('/verdict/approvals/approve'")
         ->not->toMatch('/^\s*Route::post\(/m')
-        ->and($guide)->toContain('opaque application identifier', 'did not register the route file', 'adoption guide', '#103', 'raw prompts or tool arguments into Verdict receipts')
+        ->and($guide)->toContain('opaque application identifier', 'did not register the route file', 'https://github.com/fissible/verdict/blob/main/docs/adoption-guide.md', '#103', 'raw prompts or tool arguments into Verdict receipts')
         ->and($guide)->not->toContain('store raw prompts');
 });
 
