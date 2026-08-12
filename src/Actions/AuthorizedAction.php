@@ -15,9 +15,10 @@ final readonly class AuthorizedAction
         public ActionEnvelope $envelope,
         public Capability $capability,
         public mixed $target,
+        private ?string $executionIdentity,
     ) {}
 
-    public static function fromExecutionEvaluation(Evaluation $evaluation): self
+    public static function fromExecutionEvaluation(Evaluation $evaluation, ?string $executionIdentity = null): self
     {
         if ($evaluation->stage !== EvaluationStage::Execution) {
             throw new LogicException('An authorized action requires an execution-stage evaluation.');
@@ -31,6 +32,17 @@ final readonly class AuthorizedAction
             envelope: $evaluation->envelope,
             capability: $evaluation->capability,
             target: $evaluation->target,
+            executionIdentity: $executionIdentity,
         );
+    }
+
+    /**
+     * Returns the opaque identity of the admitted execution claim, when configured.
+     *
+     * The value remains stable when an operator releases the claim for an explicit retry.
+     */
+    public function executionIdentity(): ?string
+    {
+        return $this->executionIdentity;
     }
 }

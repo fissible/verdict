@@ -160,6 +160,86 @@ it('keeps distinct canonical operations independent', function (): void {
         ->and($executions)->toBe(2);
 });
 
+/** @verdict-claim limitation.downstream-effects */
+it('passes the opaque claim identity to the executor', function (): void {
+    $executionIdentity = null;
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(executionClaimCapability(function (AuthorizedAction $action) use (&$executionIdentity): string {
+        $executionIdentity = $action->executionIdentity();
+
+        return 'cancelled';
+    }));
+
+    expect($verdict->runBound(executionClaimEnvelope())->executed)->toBeTrue()
+        ->and($executionIdentity)->toBeString()
+        ->and($executionIdentity)->toHaveLength(64);
+
+    $evidence = app(EvidenceRecorder::class);
+    expect($evidence)->toBeInstanceOf(InMemoryEvidenceRecorder::class);
+
+    if ($evidence instanceof InMemoryEvidenceRecorder) {
+        expect(collect($evidence->all())->contains(
+            fn ($record): bool => $record->executionClaimFingerprint === hash('sha256', $executionIdentity),
+        ))->toBeTrue();
+    }
+});
+
+/** @verdict-claim limitation.downstream-effects */
+it('keeps an execution identity stable across an explicitly released retry', function (): void {
+    $executionIdentities = [];
+    $attempt = 0;
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(executionClaimCapability(function (AuthorizedAction $action) use (&$executionIdentities, &$attempt): string {
+        $executionIdentities[] = $action->executionIdentity();
+        $attempt++;
+
+        if ($attempt === 1) {
+            throw new RuntimeException('Carrier outcome was ambiguous.');
+        }
+
+        return 'cancelled';
+    }));
+
+    expect(fn () => $verdict->runBound(executionClaimEnvelope()))
+        ->toThrow(RuntimeException::class, 'Carrier outcome was ambiguous.');
+
+    $claim = $verdict->executionClaims()->unresolved()[0];
+    $verdict->executionClaims()->resolve(
+        $claim->id,
+        ExecutionClaimResolution::Retryable,
+        'operator:7',
+        'Carrier confirmed no request was accepted.',
+    );
+
+    expect($verdict->runBound(executionClaimEnvelope(toolCallId: 'retry-call'))->executed)->toBeTrue()
+        ->and($executionIdentities)->toBe([$claim->id, $claim->id]);
+});
+
+/** @verdict-claim limitation.downstream-effects */
+it('does not invent an execution identity without an execution-claim policy', function (): void {
+    $executionIdentity = 'not-run';
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(Capability::usingPolicy(
+        name: 'orders.cancel-without-claim',
+        ability: 'cancel',
+        resolveTarget: fn (): ExecutionClaimTarget => new ExecutionClaimTarget(1002),
+    )->executionTarget(acceptTestSnapshot('claimless-target-snapshot'))->executeUsing(
+        function (AuthorizedAction $action) use (&$executionIdentity): string {
+            $executionIdentity = $action->executionIdentity();
+
+            return 'cancelled';
+        },
+    ));
+
+    $envelope = ActionEnvelope::wrap(
+        new ActionProposal('orders.cancel-without-claim'),
+        new ActionContext(72),
+    );
+
+    expect($verdict->runBound($envelope)->executed)->toBeTrue()
+        ->and($executionIdentity)->toBeNull();
+});
+
 it('consumes the semantic rate limit before attempting an execution claim', function (): void {
     $verdict = app(VerdictManager::class);
     $executions = 0;

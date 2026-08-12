@@ -24,6 +24,21 @@ Only tools and code paths that use Verdict are protected. An unwrapped Laravel A
 
 An execution claim controls Verdict admission. It cannot guarantee exactly-once completion in a payment processor, email API, queue, or remote system after the executor begins. Design external integrations with idempotency keys, transactional outboxes, reconciliation, and compensating operations where appropriate.
 
+When a target-bound capability runs through `runBound()` (including `BoundTool`) and uses `atMostOnce()`, its executor receives the admitted claim's opaque, high-entropy identity through `AuthorizedAction::executionIdentity()`. Pass that value directly to a downstream idempotency-key field; do not derive a key from tool arguments, because those arguments are model-supplied and can be attacker-influenced. For example:
+
+```php
+->executeUsing(function (AuthorizedAction $action): string {
+    return $this->payments->refund(
+        order: $action->target,
+        idempotencyKey: $action->executionIdentity(),
+    );
+});
+```
+
+`executionIdentity()` is `null` when the capability has no execution-claim policy. It is not a substitute for one: Verdict deliberately does not derive a weaker identity from transport or tool arguments. When an operator resolves an indeterminate claim as `retryable`, the explicit retry receives the same identity, so the downstream operation can safely recognize it as a retry of the original request. The token is intentionally returned raw, without a `verdict:` prefix, so it remains a transport-neutral opaque idempotency key.
+
+`GuardedTool` is a migration bridge around a foreign handler and cannot provide an `AuthorizedAction` or its execution identity. Migrate a downstream side effect that needs this key to a target-bound capability and `BoundTool`; see [ADR 0005](adr/0005-guardedtool-is-a-bounded-migration-bridge.md).
+
 When an executor fails without a conclusive outcome, Verdict marks the claim indeterminate rather than guessing or caching a potentially sensitive result. An operator must investigate and reconcile it:
 
 ```bash
