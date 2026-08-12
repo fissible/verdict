@@ -14,6 +14,13 @@ All notable changes to Verdict will be documented in this file.
   idempotency key. The identity is `null` without `atMostOnce()` and remains stable for an
   operator-authorized retry. See [#34](https://github.com/fissible/verdict/issues/34).
 
+- Add a framework-agnostic `CapabilitySecurityTestKit` for driving application capabilities through
+  Verdict's real protected execution path. It covers policy denial, refreshed targets, approval
+  binding invalidation, duplicate claims, rate limits, and indeterminate claims after executor
+  failures. `VerdictManager::registeredCapability()` exposes the application-registered capability
+  to the kit, and `ApprovalManager::withinApprovedToolCalls()` executes an assertion in the same
+  approval context Verdict validates. See [#108](https://github.com/fissible/verdict/issues/108).
+
 - Add reproducible SQLite and MySQL security-state concurrency benchmark results for execution
   claims, semantic rate limits, and approval receipts. See [#16](https://github.com/fissible/verdict/issues/16).
 

@@ -162,6 +162,10 @@ Context-release policies and layered evidence help you decide what may be disclo
 
 Verdict includes deterministic evaluation primitives and an opt-in repeated-trial live evaluation runner, so applications can test security and utility thresholds without making a specific model provider part of the package contract.
 
+For capability integration tests, the framework-agnostic [capability security test kit](docs/testing.md)
+drives a hand-written capability through Verdict's protected execution path and checks the common
+authorization, freshness, approval, claim, rate-limit, and failure invariants.
+
 ## Guarantees
 
 For actions that are registered as capabilities and executed through Verdict’s protected path, Verdict provides these package-level guarantees:
