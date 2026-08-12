@@ -4,6 +4,11 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Expose an admitted execution claim's opaque ID to target-bound capability executors through
+  `AuthorizedAction::executionIdentity()`, so downstream side effects can use it as a stable
+  idempotency key. The identity is `null` without `atMostOnce()` and remains stable for an
+  operator-authorized retry. See [#34](https://github.com/fissible/verdict/issues/34).
+
 - Add reproducible SQLite and MySQL security-state concurrency benchmark results for execution
   claims, semantic rate limits, and approval receipts. See [#16](https://github.com/fissible/verdict/issues/16).
 

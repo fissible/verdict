@@ -232,7 +232,12 @@ final readonly class VerdictManager
 
         return $this->executeAfterRateLimit(
             $executionEvaluation,
-            fn (): mixed => $capability->execute(AuthorizedAction::fromExecutionEvaluation($executionEvaluation)),
+            fn (?ExecutionClaimAdmission $admission): mixed => $capability->execute(
+                AuthorizedAction::fromExecutionEvaluation(
+                    $executionEvaluation,
+                    $admission?->claim()?->id,
+                ),
+            ),
         );
     }
 
@@ -334,10 +339,13 @@ final readonly class VerdictManager
             return ExecutionResult::denied($rateLimitEvaluation);
         }
 
-        return $this->executeAfterRateLimit($evaluation, $executor);
+        return $this->executeAfterRateLimit(
+            $evaluation,
+            fn (?ExecutionClaimAdmission $admission): mixed => $executor(),
+        );
     }
 
-    /** @param callable(): mixed $executor */
+    /** @param callable(?ExecutionClaimAdmission): mixed $executor */
     private function executeAfterRateLimit(Evaluation $evaluation, callable $executor): ExecutionResult
     {
         $admission = $this->claimExecution($evaluation);
@@ -353,7 +361,7 @@ final readonly class VerdictManager
         }
 
         try {
-            $output = $executor();
+            $output = $executor($admission);
         } catch (Throwable $executionFailure) {
             if ($admission !== null) {
                 try {

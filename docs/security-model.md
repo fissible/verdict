@@ -83,6 +83,8 @@ Do not raise a TTL merely because expiry errors appear: first identify the laten
 
 The guarantee concerns admission by Verdict, not universal exactly-once delivery across every database and external provider. Claim identity and retention are business decisions. Read [ADR 0002](adr/0002-strict-at-most-once-admission.md), [ADR 0004](adr/0004-independent-security-state-transactions.md), and [ADR 0009](adr/0009-execution-claim-retention.md).
 
+For a target-bound executor, `AuthorizedAction::executionIdentity()` is the raw opaque claim ID suitable for a downstream idempotency key. The execution-claim evidence records `hash('sha256', $identity)`, not the raw value. During reconciliation, hash the provider-side key and compare it with `execution_claim_fingerprint` in the evidence record; `php artisan verdict:execution-claims` shows the raw IDs of unresolved claims.
+
 <!-- @verdict-claim security.rate-limits tested -->
 ## Limiting what AI can do
 
