@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Approvals\ApprovalManager;
 use Illuminate\Support\Facades\Route;
+use Symfony\Component\Process\Process;
 
 function approvalFlowGeneratedPaths(): array
 {
@@ -53,12 +55,34 @@ it('publishes application-owned decision outcomes and disabled route scaffolding
     $routes = file_get_contents(base_path('routes/verdict-approval-flow.php'));
     $guide = file_get_contents(base_path('docs/verdict-approval-flow.md'));
 
-    expect($controller)->toContain('ApprovalManager', 'approve(', 'reject(', 'not_found, mismatch, expired, and invalid_state', 'TODO: Resume the application-owned agent/conversation')
+    expect($controller)->toContain('ApprovalManager', 'approve(', 'reject(', 'challengeForToolCall($toolCallId)', 'exact receipt and tool call belong', 'not_found, mismatch, expired, and invalid_state', 'TODO: Resume the application-owned agent/conversation')
         ->and($request)->toContain('TODO: Check the authenticated reviewer')
         ->and($routes)->toContain('deliberately not included', "//     Route::post('/verdict/approvals/approve'")
         ->not->toMatch('/^\s*Route::post\(/m')
-        ->and($guide)->toContain('opaque application identifier', 'did not register the route file', 'https://github.com/fissible/verdict/blob/main/docs/adoption-guide.md', '#103', 'raw prompts or tool arguments into Verdict receipts')
+        ->and($guide)->toContain('opaque application identifier', 'did not register the route file', 'challengeForToolCall($toolCallId)', 'already-decided or already-consumed receipt returns `invalid_state`', 'https://github.com/fissible/verdict/blob/main/docs/adoption-guide.md', '#103', 'raw prompts or tool arguments into Verdict receipts')
         ->and($guide)->not->toContain('store raw prompts');
+});
+
+it('keeps generated PHP syntactically valid and coupled to the approval decision API', function (): void {
+    $this->artisan('verdict:make-approval-flow')->assertSuccessful();
+
+    foreach (array_slice(approvalFlowGeneratedPaths(), 0, 4) as $path) {
+        $process = new Process([PHP_BINARY, '-l', $path]);
+        $process->mustRun();
+    }
+
+    expect((new ReflectionMethod(ApprovalManager::class, 'approve'))->getParameters())
+        ->sequence(
+            fn ($parameter) => $parameter->getName()->toBe('receiptId'),
+            fn ($parameter) => $parameter->getName()->toBe('toolCallId'),
+            fn ($parameter) => $parameter->getName()->toBe('approvedBy'),
+        )
+        ->and((new ReflectionMethod(ApprovalManager::class, 'reject'))->getParameters())
+        ->sequence(
+            fn ($parameter) => $parameter->getName()->toBe('receiptId'),
+            fn ($parameter) => $parameter->getName()->toBe('toolCallId'),
+            fn ($parameter) => $parameter->getName()->toBe('rejectedBy'),
+        );
 });
 
 it('does not replace existing application files without force', function (): void {

@@ -13,10 +13,12 @@ final class VerdictApprovalDecisionController
 {
     public function approve(DecideVerdictApprovalRequest $request, ApprovalManager $approvals): RedirectResponse
     {
-        // TODO: Authenticate and authorize this reviewer for the tenant and conversation.
-        // TODO: Look up the pending call and display context from application-owned storage.
+        // TODO: Verify this exact receipt and tool call belong to an application-owned conversation
+        // the authenticated reviewer may decide in this tenant.
+        // TODO: Look up the pending Verdict summary with challengeForToolCall($toolCallId), then
+        // combine it with application-owned display context. The challenge excludes raw arguments.
         // Do not put raw prompts or tool arguments in a Verdict receipt.
-        $decisionMaker = 'user:'.(string) $request->user()->getAuthIdentifier();
+        $decisionMaker = $this->decisionMaker($request);
 
         $transition = $approvals->approve(
             receiptId: $request->string('receipt_id')->toString(),
@@ -29,8 +31,8 @@ final class VerdictApprovalDecisionController
 
     public function reject(DecideVerdictApprovalRequest $request, ApprovalManager $approvals): RedirectResponse
     {
-        // TODO: Apply the same application-owned reviewer, tenant, and conversation checks.
-        $decisionMaker = 'user:'.(string) $request->user()->getAuthIdentifier();
+        // TODO: Apply the same exact receipt, tenant, and conversation checks before rejecting.
+        $decisionMaker = $this->decisionMaker($request);
 
         $transition = $approvals->reject(
             receiptId: $request->string('receipt_id')->toString(),
@@ -51,5 +53,14 @@ final class VerdictApprovalDecisionController
         // TODO: Resume the application-owned agent/conversation only after this transition succeeds.
         // This package deliberately supplies neither a conversation store nor a resume strategy.
         return back()->with('verdict_approval_outcome', $outcome->value);
+    }
+
+    private function decisionMaker(DecideVerdictApprovalRequest $request): string
+    {
+        $reviewer = $request->user();
+
+        abort_unless($reviewer !== null, 403);
+
+        return 'user:'.(string) $reviewer->getAuthIdentifier();
     }
 }
