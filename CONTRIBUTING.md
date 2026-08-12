@@ -69,6 +69,41 @@ Add the narrowest useful tests at each affected boundary:
 Tests should assert both the protected side effect and the evidence produced. Unexpected
 infrastructure exceptions should remain distinguishable from ordinary policy denials.
 
+### Genuine concurrency tests
+
+For a database atomicity claim, do not call a store twice in one test process and call that a race.
+Use `tests/Support/ConcurrencyHarness.php` with a small child script in
+`tests/Support/concurrency-children/`. Each child must:
+
+- decode the JSON payload supplied as `$argv[1]`, including its connection configuration;
+- create and force its own PDO connection, then apply any session setup, before the barrier;
+- signal readiness on fd 3, then wait for the parent release on fd 4;
+- perform one mutation; and
+- catch `Throwable` around that mutation and write one JSON outcome to STDOUT: an `ok: true`
+  result on success, or `ok: false` with the exception facts on failure;
+
+The parent receives transport records shaped as `{exit_code, stdout, stderr}` from
+`ConcurrencyHarness::run()` and must decode each record's `stdout` before asserting the outcomes.
+Keep STDOUT to that final JSON object only: PHP CLI notices or other output corrupt its JSON
+channel. Do not produce unbounded output before readiness; the harness has a 10-second readiness
+deadline and drains child output while it waits, but pre-barrier diagnostics can still delay the
+signal that establishes the race.
+
+The harness releases every child only after all connections are ready. The optional
+`force_serializable` examples use PostgreSQL's `SET SESSION CHARACTERISTICS` syntax; only set it
+for PostgreSQL children, and do so before signalling readiness. The default test run uses SQLite
+and intentionally skips these cases. To run a real MariaDB race locally, start the checked-in
+service and use Laravel's MariaDB connection name:
+
+```sh
+docker compose -f docker-compose.spike.yml up -d mariadb
+DB_CONNECTION=mariadb DB_HOST=127.0.0.1 DB_PORT=3309 DB_DATABASE=verdict_spike \
+  DB_USERNAME=verdict DB_PASSWORD=verdict vendor/bin/pest tests/Feature/SecurityStateConcurrencyRetryTest.php
+```
+
+MySQL and PostgreSQL use the corresponding `mysql` and `pgsql` connection names and services in
+the same compose file. SQLite does not exercise the relevant locking and isolation behavior.
+
 ## Pull requests
 
 A pull request should include:

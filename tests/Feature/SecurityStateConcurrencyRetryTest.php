@@ -48,17 +48,17 @@ const CONCURRENCY_TEST_RATE_LIMIT = 5;
 
 function concurrencyTestDriver(): ?string
 {
-    $driver = config('database.default');
+    $driver = app(DatabaseManager::class)->connection()->getDriverName();
 
-    return in_array($driver, ['mysql', 'pgsql'], true) ? $driver : null;
+    return in_array($driver, ['mysql', 'mariadb', 'pgsql'], true) ? $driver : null;
 }
 
 /** @return array<string, mixed> */
 function concurrencyTestConnectionConfig(): array
 {
-    $driver = concurrencyTestDriver();
+    $connection = app(DatabaseManager::class);
 
-    return config("database.connections.{$driver}");
+    return config("database.connections.{$connection->getDefaultConnection()}");
 }
 
 function concurrencyTestSkipReason(): string
