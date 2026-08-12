@@ -63,6 +63,11 @@ final readonly class VerdictManager
         return $this;
     }
 
+    public function registeredCapability(string $name): Capability
+    {
+        return $this->capabilities->get($name);
+    }
+
     public function releasePolicy(ReleasePolicy $policy): self
     {
         $this->contextReleases->policy($policy);

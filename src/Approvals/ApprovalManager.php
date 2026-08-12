@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Approvals;
 
+use Closure;
 use DateInterval;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\Clock;
@@ -11,6 +12,7 @@ use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Laravel\Ai\Approvals\Decisions;
 
 final readonly class ApprovalManager
 {
@@ -127,6 +129,12 @@ final readonly class ApprovalManager
             bindingFingerprint: $this->fingerprint($evaluation),
             at: $this->clock->now(),
         );
+    }
+
+    /** @param Closure(): mixed $callback */
+    public function withinApprovedToolCalls(Decisions $decisions, Closure $callback): mixed
+    {
+        return $this->executionContext->within($decisions, $callback);
     }
 
     private function executionStateFailure(Evaluation $evaluation): ?ApprovalTransition
