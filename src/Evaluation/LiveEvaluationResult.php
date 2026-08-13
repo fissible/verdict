@@ -27,4 +27,23 @@ final readonly class LiveEvaluationResult
     {
         return new LiveEvaluationReport($this);
     }
+
+    /**
+     * The map is sparse: a category absent from it occurred zero times, not an unreported or
+     * unclassified outcome.
+     *
+     * @return array<string,int>
+     */
+    public function errorBreakdown(): array
+    {
+        $breakdown = [];
+
+        foreach ($this->cases as $case) {
+            foreach ($case->errorBreakdown as $category => $count) {
+                $breakdown[$category] = ($breakdown[$category] ?? 0) + $count;
+            }
+        }
+
+        return $breakdown;
+    }
 }

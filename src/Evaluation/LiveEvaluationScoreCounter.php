@@ -14,7 +14,10 @@ final class LiveEvaluationScoreCounter
 
     private int $pending = 0;
 
-    public function record(CaseStatus $status): void
+    /** @var array<string,int> */
+    private array $errorBreakdown = [];
+
+    public function record(CaseStatus $status, ?string $errorClass = null): void
     {
         switch ($status) {
             case CaseStatus::Passed:
@@ -27,6 +30,8 @@ final class LiveEvaluationScoreCounter
                 return;
             case CaseStatus::Error:
                 $this->errors++;
+                $category = LiveErrorCategory::fromErrorClass($errorClass) ?? LiveErrorCategory::Uncategorized;
+                $this->errorBreakdown[$category->value] = ($this->errorBreakdown[$category->value] ?? 0) + 1;
 
                 return;
             case CaseStatus::Pending:
@@ -37,5 +42,11 @@ final class LiveEvaluationScoreCounter
     public function score(): Score
     {
         return new Score($this->passed, $this->failed, $this->errors, $this->pending);
+    }
+
+    /** @return array<string,int> */
+    public function errorBreakdown(): array
+    {
+        return $this->errorBreakdown;
     }
 }

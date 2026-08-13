@@ -32,7 +32,7 @@ final readonly class LiveEvaluationRunner
             $result = $suite->run($clock);
 
             foreach ($result->cases as $index => $case) {
-                $counters[$index]->record($case->status);
+                $counters[$index]->record($case->status, $case->errorClass);
             }
         }
 
@@ -44,6 +44,7 @@ final readonly class LiveEvaluationRunner
                 trustedSetupFingerprint: $case->input->trustedSetupFingerprint(),
                 untrustedInputFingerprint: $case->input->untrustedInputFingerprint(),
                 score: $counter->score(),
+                errorBreakdown: $counter->errorBreakdown(),
             ),
             $suite->cases,
             $counters,
