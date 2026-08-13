@@ -10,6 +10,7 @@ use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Exceptions\ExecutionClaimTransitionFailed;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use LogicException;
@@ -70,7 +71,7 @@ final readonly class ExecutionClaimManager
         $transition = $this->store->complete($claim->id, $this->clock->now());
 
         if ($transition->outcome !== ExecutionClaimOutcome::Completed || $transition->claim === null) {
-            throw new LogicException('The execution claim could not be marked completed.');
+            throw ExecutionClaimTransitionFailed::completing($claim->id, $transition->outcome);
         }
 
         return Decision::permit('At-most-once execution claim completed.', $this->metadata($transition->claim));
@@ -87,7 +88,7 @@ final readonly class ExecutionClaimManager
         $transition = $this->store->markIndeterminate($claim->id, $this->clock->now());
 
         if ($transition->outcome !== ExecutionClaimOutcome::Indeterminate || $transition->claim === null) {
-            throw new LogicException('The execution claim could not be marked indeterminate.');
+            throw ExecutionClaimTransitionFailed::markingIndeterminate($claim->id, $transition->outcome);
         }
 
         return Decision::deny('Executor failed after admission; claim requires reconciliation.', $this->metadata($transition->claim));

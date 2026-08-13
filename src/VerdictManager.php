@@ -26,9 +26,11 @@ use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\Exceptions\ExecutionClaimFinalizationFailed;
+use Fissible\Verdict\Exceptions\ExecutionCompletedWithUnfinalizedClaim;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimAdmission;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
@@ -37,6 +39,7 @@ use Fissible\Verdict\LaravelAi\GuardedTool;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\RateLimits\RateLimitManager;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Support\Arrayable;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Tools\Request;
@@ -56,6 +59,7 @@ final readonly class VerdictManager
         private ProvenanceLedger $provenance,
         private InvocationContext $invocations,
         private string $deniedMessage,
+        private Dispatcher $events,
     ) {}
 
     public function capability(Capability $capability): self
@@ -388,7 +392,21 @@ final readonly class VerdictManager
         }
 
         if ($admission !== null) {
-            $this->recordClaimDecision($evaluation, $this->executionClaims->complete($admission));
+            // ADR 0007's Update (#149) splits this block by layer. The claim transition is
+            // operational state: if it diverges from reality the caller must be told, and told
+            // that the side effect already happened. The evidence write below is a record about
+            // that decision, and must not be able to report a completed execution as a failure.
+            try {
+                $decision = $this->executionClaims->complete($admission);
+            } catch (Throwable $finalizationFailure) {
+                throw ExecutionCompletedWithUnfinalizedClaim::fromFailure(
+                    $output,
+                    $admission->claim()?->id,
+                    $finalizationFailure,
+                );
+            }
+
+            $this->recordFinalizedClaimDecision($evaluation, $decision);
         }
 
         return ExecutionResult::executed($evaluation, $output);
@@ -528,6 +546,26 @@ final readonly class VerdictManager
         $this->recordClaimDecision($evaluation, $admission->decision);
 
         return $admission;
+    }
+
+    /**
+     * Record a post-execution claim decision without letting an evidence failure reach the caller.
+     *
+     * See ADR 0007's Update (#149). Every other evidence call site keeps the original propagation
+     * behavior; this one cannot, because the executor has already run.
+     */
+    private function recordFinalizedClaimDecision(Evaluation $evaluation, Decision $decision): void
+    {
+        try {
+            $this->recordClaimDecision($evaluation, $decision);
+        } catch (Throwable $evidenceFailure) {
+            $this->events->dispatch(new EvidenceWriteFailed(
+                capability: $evaluation->envelope->proposal->capability,
+                stage: EvaluationStage::ExecutionClaim->value,
+                invocationId: $this->invocations->current(),
+                message: $evidenceFailure->getMessage(),
+            ));
+        }
     }
 
     private function recordClaimDecision(Evaluation $evaluation, Decision $decision): Evaluation

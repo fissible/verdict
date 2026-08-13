@@ -410,6 +410,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 provenance: $app->make(ProvenanceLedger::class),
                 invocations: $app->make(InvocationContext::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
+                events: $app->make(Dispatcher::class),
             );
         });
     }
