@@ -337,7 +337,7 @@ final readonly class VerdictManager
             return null;
         }
 
-        return $this->record(new Evaluation(
+        return $this->recordCommitted(new Evaluation(
             envelope: $evaluation->envelope,
             capability: $capability,
             target: $evaluation->target,
@@ -411,7 +411,7 @@ final readonly class VerdictManager
                 );
             }
 
-            $this->recordFinalizedClaimDecision($evaluation, $decision);
+            $this->recordClaimDecision($evaluation, $decision);
         }
 
         return ExecutionResult::executed($evaluation, $output);
@@ -435,7 +435,13 @@ final readonly class VerdictManager
                 : hash('sha256', $transition->receipt->id),
         ];
 
-        return $this->record(new Evaluation(
+        // Only Consumption mutates; ApprovalManager::validate() is non-mutating, so gates 4 and 9
+        // keep the original propagation behavior.
+        $recorder = $phase === ApprovalEvidencePhase::Consumption
+            ? $this->recordCommitted(...)
+            : $this->record(...);
+
+        return $recorder(new Evaluation(
             envelope: $evaluation->envelope,
             capability: $evaluation->capability,
             target: $evaluation->target,
@@ -554,28 +560,34 @@ final readonly class VerdictManager
     }
 
     /**
-     * Record a post-execution claim decision without letting an evidence failure reach the caller.
+     * Record evidence for a gate that has already committed security-state, without letting an
+     * evidence failure reach the caller or stop execution.
      *
-     * See ADR 0007's Update (#149). Every other evidence call site keeps the original propagation
-     * behavior; this one cannot, because the executor has already run.
+     * See ADR 0007's Updates (#149) and (#153). Before a mutation, abandoning on an evidence
+     * failure is fail-closed and costs only a retry, so gates 1-9 keep the original propagation
+     * behavior. After one, abandoning moves state and tells the caller it did not.
      */
-    private function recordFinalizedClaimDecision(Evaluation $evaluation, Decision $decision): void
+    private function recordCommitted(Evaluation $evaluation): Evaluation
     {
         try {
-            $this->recordClaimDecision($evaluation, $decision);
+            return $this->record($evaluation);
         } catch (Throwable $evidenceFailure) {
             $this->events->dispatch(new EvidenceWriteFailed(
                 capability: $evaluation->envelope->proposal->capability,
-                stage: EvaluationStage::ExecutionClaim->value,
+                stage: $evaluation->stage->value,
                 invocationId: $this->invocations->current(),
                 message: $evidenceFailure->getMessage(),
             ));
+
+            return $evaluation;
         }
     }
 
     private function recordClaimDecision(Evaluation $evaluation, Decision $decision): Evaluation
     {
-        return $this->record(new Evaluation(
+        // Both call sites follow a committed mutation: gate 12 has admitted the claim, and gate 14
+        // has transitioned it. Neither may let an evidence failure rewrite that.
+        return $this->recordCommitted(new Evaluation(
             envelope: $evaluation->envelope,
             capability: $evaluation->capability,
             target: $evaluation->target,
