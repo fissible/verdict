@@ -4,6 +4,21 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Mark Verdict service constructors `@internal` and remove the tool adapters' container fallback.
+  `VerdictManager`, the managers it composes, and the tool adapters are container-resolved
+  collaborators; constructing them directly was never documented and is now stated as unsupported in
+  [`RELEASES.md`](RELEASES.md) and [ADR 0019](docs/adr/0019-verdict-services-are-container-resolved.md),
+  so a new collaborator may be added as a required constructor parameter in any release. Build tool
+  adapters through `Verdict::bound()` or `Verdict::guard()`.
+
+  `AbstractVerdictTool`'s `InvocationContext` and `ApprovalExecutionContext` parameters are now
+  required, and the `Container::getInstance()` fallback behind them is gone. **This is a deliberate
+  downgrade in tolerance:** four-argument direct construction previously produced a working object
+  whose collaborators came from wherever the global container happened to point, with no signal that
+  anything had been substituted. It now fails immediately with a missing argument. Applications using
+  `Verdict::bound()`, `Verdict::guard()`, or container resolution are unaffected. See
+  [#157](https://github.com/fissible/verdict/issues/157).
+
 - Reject a redaction path that the release allowlist can never match, instead of silently scrubbing
   nothing. A `StructuredRedactor` configured with `user.social_security` when the allowlist permits
   `user.socialSecurity` previously released the field in full and recorded the release as permitted;

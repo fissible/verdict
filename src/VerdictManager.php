@@ -47,6 +47,11 @@ use Throwable;
 
 final readonly class VerdictManager
 {
+    /**
+     * @internal Resolve VerdictManager from the container. This constructor is not part of the
+     *           supported surface and may gain required parameters in any release.
+     *           See docs/adr/0019-verdict-services-are-container-resolved.md.
+     */
     public function __construct(
         private CapabilityRegistry $capabilities,
         private CapabilityAuthorizer $authorizer,

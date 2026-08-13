@@ -16,6 +16,11 @@ use LogicException;
 
 final readonly class ProvenanceLedger
 {
+    /**
+     * @internal Resolve ProvenanceLedger from the container. This constructor is not part of the
+     *           supported surface and may gain required parameters in any release.
+     *           See docs/adr/0019-verdict-services-are-container-resolved.md.
+     */
     public function __construct(
         private EvidenceWriter $writer,
         private ProvenanceLedgerStore $store,

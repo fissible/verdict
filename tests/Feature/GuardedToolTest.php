@@ -7,7 +7,6 @@ use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
-use Fissible\Verdict\LaravelAi\GuardedTool;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Auth\Access\Response;
 use Illuminate\Auth\Authenticatable;
@@ -194,11 +193,10 @@ it('fails closed when a tool references an unregistered capability', function ()
 
 it('rejects an invalid server context without invoking the tool', function (): void {
     $tool = new LookupOrderTool([1001 => new TestOrder(1001, 72)]);
-    $guarded = new GuardedTool(
+    $guarded = app(VerdictManager::class)->guard(
         tool: $tool,
         capability: 'orders.view',
         context: fn (Request $request): null => null,
-        verdict: app(VerdictManager::class),
     );
 
     expect(fn (): Stringable|string => $guarded->handle(new Request(['order_id' => 1001])))

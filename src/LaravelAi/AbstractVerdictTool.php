@@ -12,7 +12,6 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\VerdictManager;
-use Illuminate\Container\Container;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use JsonException;
@@ -38,19 +37,20 @@ abstract class AbstractVerdictTool implements Approvable, Tool
     private ?string $invocationDescriptionFingerprint = null;
 
     /**
+     * @internal Construct tool adapters through Verdict::bound() or Verdict::guard(). This
+     *           constructor is not part of the supported surface and may gain required
+     *           parameters in any release. See docs/adr/0019-verdict-services-are-container-resolved.md.
+     *
      * @param  ActionContext|callable(Request): mixed  $context
-     * @param  InvocationContext|null  $invocations  Optional only for direct construction outside
-     *                                               the container; without an active scoped frame,
-     *                                               callable contexts deliberately resolve fresh.
      */
     public function __construct(
         private readonly Tool $tool,
         private readonly string $capability,
         ActionContext|callable $context,
         private readonly VerdictManager $verdict,
-        private readonly string $deniedMessage = 'This action was not authorized.',
-        private readonly ?InvocationContext $invocations = null,
-        private readonly ?ApprovalExecutionContext $approvalExecutions = null,
+        private readonly string $deniedMessage,
+        private readonly InvocationContext $invocations,
+        private readonly ApprovalExecutionContext $approvalExecutions,
     ) {
         $this->contextResolver = $context instanceof ActionContext
             ? static fn (Request $request): ActionContext => $context
@@ -173,12 +173,12 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     private function invocations(): InvocationContext
     {
-        return $this->invocations ?? Container::getInstance()->make(InvocationContext::class);
+        return $this->invocations;
     }
 
     private function approvalExecutions(): ApprovalExecutionContext
     {
-        return $this->approvalExecutions ?? Container::getInstance()->make(ApprovalExecutionContext::class);
+        return $this->approvalExecutions;
     }
 
     private function envelope(Request $request): ActionEnvelope

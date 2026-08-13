@@ -16,6 +16,11 @@ use Laravel\Ai\Approvals\Decisions;
 
 final readonly class ApprovalManager
 {
+    /**
+     * @internal Resolve ApprovalManager from the container. This constructor is not part of the
+     *           supported surface and may gain required parameters in any release.
+     *           See docs/adr/0019-verdict-services-are-container-resolved.md.
+     */
     public function __construct(
         private ApprovalReceiptStore $receipts,
         private ApprovalExecutionContext $executionContext,
