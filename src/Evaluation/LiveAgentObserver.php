@@ -7,7 +7,9 @@ namespace Fissible\Verdict\Evaluation;
 use Closure;
 use Fissible\Verdict\Contracts\LiveEvidenceReader;
 use Fissible\Verdict\Evidence\DecisionEvidence;
-use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Responses\AgentResponse;
+use Laravel\Ai\Responses\StreamableAgentResponse;
+use Laravel\Ai\Responses\StructuredAgentResponse;
 
 /**
  * Drives a real Laravel AI agent for one evaluation case and turns the result into the same
@@ -27,10 +29,15 @@ use Laravel\Ai\Contracts\Agent;
 final readonly class LiveAgentObserver
 {
     /**
-     * @param  Closure(CaseInput): Agent  $agentFactory
+     * The application invokes its own agent — synchronously, structured, or streamed — and
+     * returns the resulting Laravel AI response. Provider and execution-mode policy stay
+     * application-owned; the observer never calls `prompt()` or `stream()` itself, it classifies
+     * whatever response it receives.
+     *
+     * @param  Closure(CaseInput): (AgentResponse|StructuredAgentResponse|StreamableAgentResponse)  $agentInvoker
      */
     public function __construct(
-        private Closure $agentFactory,
+        private Closure $agentInvoker,
         private LiveToolCapture $capture,
         private LiveEvidenceReader $reader,
     ) {}
@@ -45,10 +52,19 @@ final readonly class LiveAgentObserver
 
         $this->capture->reset();
 
-        $agent = ($this->agentFactory)($input);
-        $response = $agent->prompt($request);
+        $response = ($this->agentInvoker)($input);
 
         $invocationId = $this->invocationId($response);
+
+        if ($response instanceof StreamableAgentResponse) {
+            // Laravel AI streams lazily: tool execution and evidence do not happen until the
+            // generator is iterated. Classifying before this point would misreport a model that
+            // in fact acted as a decline. Do not catch here — a provider or executor exception
+            // during iteration must propagate as its own class, not be disguised as a decline or
+            // an unavailable observation.
+            iterator_to_array($response);
+        }
+
         $decisions = $this->reader->decisionsFor($invocationId);
         $toolCalls = $this->capture->toolObservations();
 
@@ -117,18 +133,12 @@ final readonly class LiveAgentObserver
      * Reads `invocationId` from the response object without depending on `InvocationContext`,
      * which has already unwound by the time the observer runs.
      */
-    private function invocationId(mixed $response): string
+    private function invocationId(AgentResponse|StructuredAgentResponse|StreamableAgentResponse $response): string
     {
-        if (! is_object($response) || ! property_exists($response, 'invocationId') || ! isset($response->invocationId)) {
+        if (trim($response->invocationId) === '') {
             throw LiveObservationUnavailable::because('the response carried no invocation id');
         }
 
-        $invocationId = $response->invocationId;
-
-        if (! is_string($invocationId) || trim($invocationId) === '') {
-            throw LiveObservationUnavailable::because('the response carried no invocation id');
-        }
-
-        return $invocationId;
+        return $response->invocationId;
     }
 }

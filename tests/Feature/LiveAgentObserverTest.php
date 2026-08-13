@@ -255,31 +255,46 @@ function liveObserverDecisionEvidence(string $capability, string $argumentFinger
     );
 }
 
-/** @return Closure(CaseInput): LiveObserverAgent */
+/**
+ * Builds the agent, then invokes it synchronously via `prompt()` and returns the response — the
+ * same thing an application's own agent invoker does for `LiveAgentObserver`'s `$agentInvoker`.
+ *
+ * @return Closure(CaseInput): AgentResponse
+ */
 function liveObserverAgentFactory(LiveToolCapture $capture, string $capability): Closure
 {
-    return function (CaseInput $input) use ($capture, $capability): LiveObserverAgent {
+    return function (CaseInput $input) use ($capture, $capability): AgentResponse {
         $tool = app(VerdictManager::class)->bound(
             new LiveObserverOrderLookup,
             $capability,
             new ActionContext('customer-'.$input->trustedSetup['actor_id']),
         );
 
-        return new LiveObserverAgent(new CapturingTool($tool, $capability, $capture));
+        $agent = new LiveObserverAgent(new CapturingTool($tool, $capability, $capture));
+
+        /** @var string $request */
+        $request = $input->untrustedInput['request'];
+
+        return $agent->prompt($request);
     };
 }
 
-/** @return Closure(CaseInput): LiveObserverStructuredAgent */
+/** @return Closure(CaseInput): AgentResponse */
 function liveObserverStructuredAgentFactory(LiveToolCapture $capture, string $capability): Closure
 {
-    return function (CaseInput $input) use ($capture, $capability): LiveObserverStructuredAgent {
+    return function (CaseInput $input) use ($capture, $capability): AgentResponse {
         $tool = app(VerdictManager::class)->bound(
             new LiveObserverOrderLookup,
             $capability,
             new ActionContext('customer-'.$input->trustedSetup['actor_id']),
         );
 
-        return new LiveObserverStructuredAgent(new CapturingTool($tool, $capability, $capture));
+        $agent = new LiveObserverStructuredAgent(new CapturingTool($tool, $capability, $capture));
+
+        /** @var string $request */
+        $request = $input->untrustedInput['request'];
+
+        return $agent->prompt($request);
     };
 }
 
@@ -430,8 +445,14 @@ it('does not decline when the capture is empty but the reader already holds evid
 it('throws LiveObservationUnavailable when the response carries no invocation id', function (): void {
     $capture = new LiveToolCapture;
     $reader = new StubLiveEvidenceReader;
+    $bareAgent = new LiveObserverBareAgent;
     $observer = new LiveAgentObserver(
-        fn (CaseInput $input): LiveObserverBareAgent => new LiveObserverBareAgent,
+        function (CaseInput $input) use ($bareAgent): AgentResponse {
+            /** @var string $request */
+            $request = $input->untrustedInput['request'];
+
+            return $bareAgent->prompt($request);
+        },
         $capture,
         $reader,
     );
