@@ -6,8 +6,10 @@ Status: Accepted
 
 - [#1](https://github.com/fissible/verdict/issues/1) (closed; delivered) implemented the provenance ledger and evidence records described by this layering model.
 - [#11](https://github.com/fissible/verdict/issues/11) (open) proposes the optional tamper-evident evidence recorder.
-- [#149](https://github.com/fissible/verdict/issues/149) (open) found that this ADR's decision point 2
-  states two rules that collide on the post-execution path; see the Update below for the resolution.
+- [#149](https://github.com/fissible/verdict/issues/149) (implemented) found that this ADR's decision
+  point 2 states two rules that collide on the post-execution path; see the first Update below.
+- [#153](https://github.com/fissible/verdict/issues/153) found the same collision at the three mutating
+  gates, where it also strands an execution claim; see the second Update below.
 
 ## Context
 
@@ -45,7 +47,7 @@ conflate them:
 2. **Evidence is a record about a decision, not the decision itself.** Losing evidence does not
    change what already executed; it changes what can later be investigated or audited. Evidence
    persistence failures propagate as application faults (the recorder throws) — **scoped by the
-   Update (#149) below, which excludes the post-execution path where propagating would violate this
+   Updates (#149) and (#153) below, which exclude the paths where propagating would violate this
    bullet's own first sentence** — but evidence writes
    are not wrapped in the same fail-closed transaction guard as operational state, and evidence
    recorder selection, retention, and encryption remain application policy
@@ -100,7 +102,8 @@ require deleting the first sentence, and with it the reason this layer is separa
   requires. #149 introduces a dedicated exception for that case carrying the executor's output, so the
   caller can reconcile.
 - Every evidence call site other than post-execution finalization keeps the original propagation
-  behavior.
+  behavior. *(Superseded by the Update (#153) below, which extends the same scoping to the three
+  mutating gates. Left here as the historical record of what this Update decided.)*
 - Nothing here brings evidence writes inside ADR 0004's transaction guard. The rejection in
   "Alternatives rejected" below stands unchanged.
 
@@ -123,6 +126,53 @@ executor-failure path already wrapped finalization failures in `ExecutionClaimFi
 caller could distinguish them, while the success path — the more dangerous of the two to get wrong — had
 no equivalent. The ADR's two sentences were read separately for long enough that the one path where they
 disagree was never tested against either.
+
+## Update (#153): the same scoping applies after any committed security-state mutation, not only after a successful executor
+
+The Update above scoped the propagation rule to exclude the post-execution path. That scoping was drawn
+too narrowly: the same collision occurs at every mutating gate, and there it does more damage.
+
+Steps 10, 11, and 12 of the [gate ordering](../architecture.md#security-state-gate-ordering) — consume a
+rate-limit unit, consume an approval receipt, admit an execution claim — each commit operational state and
+then write evidence describing it. When that evidence write fails today, the exception propagates and the
+action is abandoned. Two things are wrong with that:
+
+1. **Evidence acts as an authorization gate.** An evidence-store outage stops a protected action that every
+   security control had already permitted. Decision point 2 says evidence is a record about a decision, not
+   the decision itself; letting its failure veto execution makes it the decision.
+2. **At gate 12 it strands operational state.** The claim is admitted, the exception unwinds past the
+   executor, and the claim is never finalized. What remains is a `claimed` row that blocks every future
+   duplicate of that binding indefinitely, until an operator runs `verdict:resolve-execution-claim`. An
+   evidence write inflicts a durable denial on a logical operation.
+
+**Resolution.** An evidence-write failure that follows a committed security-state mutation must not
+propagate and must not stop execution. It emits `EvidenceWriteFailed`, the operational outcome stands, and
+the flow continues to the next gate.
+
+Stated positively, decision point 2's propagation rule now holds exactly where an evidence write neither
+follows a committed security-state mutation nor follows a successful executor.
+
+**Why the line falls at "committed mutation" rather than at "any evidence write".** Before anything has been
+mutated, propagating an evidence failure is safe: the action is abandoned having changed nothing, which is
+fail-closed and costs the caller only a retry. Steps 1 through 9 are reads and non-mutating validations, so
+they keep the original behavior. After a mutation, abandoning is no longer neutral — state has moved, and
+the caller is told it has not. The asymmetry is the point, not an inconsistency.
+
+**What does not change.**
+
+- The operational outcomes themselves still gate. A rate limit that denies, an approval receipt that cannot
+  be consumed, a duplicate claim that cannot be admitted — each remains a `Decision` that stops execution.
+  Only the *record* of those outcomes loses its ability to stop anything.
+- Non-mutating approval validation (gates 4 and 9) is unaffected. `ApprovalManager::validate()` mutates
+  nothing, so an evidence failure there still propagates.
+- Nothing here brings evidence writes inside ADR 0004's transaction guard.
+
+**A deliberate consequence worth naming.** After this change, an evidence-store outage no longer halts
+protected actions: they execute with no durable record. That is what decision point 2 requires, and it is a
+real change in posture for a deployment that would rather fail closed than act unrecorded. Verdict already
+has a precedent for that preference in the attest recorder's `on_failure: 'alert' | 'throw'`. A general
+fail-closed lever is deliberately **not** introduced here — inventing a configuration surface alongside a
+behavioral fix is how a reasoned change acquires an unexamined one — and is tracked separately.
 
 ## Consequences
 
