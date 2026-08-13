@@ -125,10 +125,38 @@ if [[ -f package.json ]]; then
     sed -i'' -e "s/\"version\": \"[^\"]*\"/\"version\": \"${new_version}\"/" package.json
 fi
 
+# --- update the documented install constraint ---
+#
+# Composer's caret pins the leftmost non-zero component, so on a 0.x line ^0.5
+# means >=0.5.0 <0.6.0. A minor bump therefore leaves a README that still says
+# ^0.4 documenting a range that excludes the release it ships with — readers
+# following it install the previous minor and silently miss every fix in this
+# one. Derive the constraint here rather than hand-editing it each release.
+
+if [[ -f README.md && -f composer.json ]]; then
+    package=$(php -r 'echo json_decode(file_get_contents("composer.json"), true)["name"] ?? "";')
+    [[ -n "$package" ]] || die "composer.json has no package name — cannot update the README constraint"
+
+    if (( major == 0 )); then
+        constraint="^0.${minor}"      # pre-1.0: the minor is the compatibility boundary
+    else
+        constraint="^${major}.0"      # post-1.0: the major is
+    fi
+
+    # A silent no-op here would reintroduce exactly the drift this guards against,
+    # so a README that no longer carries the line stops the release.
+    grep -q "composer require ${package}:" README.md \
+        || die "no 'composer require ${package}:' line in README.md — refusing to release with an unverifiable install constraint"
+
+    sed -i'' -e "s|composer require ${package}:[^[:space:]]*|composer require ${package}:${constraint}|g" README.md
+    printf 'README install constraint: %s\n' "$constraint"
+fi
+
 # --- commit and tag ---
 
 git add VERSION CHANGELOG.md
 [[ -f package.json ]] && git add package.json
+[[ -f README.md ]] && git add README.md
 git commit -m "chore: release ${new_tag}"
 git tag -a "$new_tag" -m "$new_tag"
 
