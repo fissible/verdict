@@ -6,6 +6,8 @@ Status: Accepted
 
 - [#1](https://github.com/fissible/verdict/issues/1) (closed; delivered) implemented the provenance ledger and evidence records described by this layering model.
 - [#11](https://github.com/fissible/verdict/issues/11) (open) proposes the optional tamper-evident evidence recorder.
+- [#149](https://github.com/fissible/verdict/issues/149) (open) found that this ADR's decision point 2
+  states two rules that collide on the post-execution path; see the Update below for the resolution.
 
 ## Context
 
@@ -42,7 +44,9 @@ conflate them:
    consume/claim semantics (ADR 0001, 0002).
 2. **Evidence is a record about a decision, not the decision itself.** Losing evidence does not
    change what already executed; it changes what can later be investigated or audited. Evidence
-   persistence failures propagate as application faults (the recorder throws), but evidence writes
+   persistence failures propagate as application faults (the recorder throws) — **scoped by the
+   Update (#149) below, which excludes the post-execution path where propagating would violate this
+   bullet's own first sentence** — but evidence writes
    are not wrapped in the same fail-closed transaction guard as operational state, and evidence
    recorder selection, retention, and encryption remain application policy
    ([limitations: tamper-evident evidence is opt-in, partial, and bounded by key custody](../limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody)).
@@ -59,6 +63,53 @@ just that it was authoritatively permitted), that requirement lives in the evide
 #11, not by asking the approval/rate-limit/execution-claim stores to grow signing behavior of their
 own.
 
+## Update (#149): the propagation rule is scoped, because after a successful executor it contradicts the layer it belongs to
+
+Decision point 2 states two rules. Both are correct in isolation, and they collide on exactly one path.
+
+- *"Losing evidence does not change what already executed."*
+- *"Evidence persistence failures propagate as application faults (the recorder throws)."*
+
+The collision is in `VerdictManager::executeAfterRateLimit()`. After the executor has returned
+successfully, Verdict finalizes the execution claim and records that finalization as evidence. At that
+point the only channel back to the caller is an exception — and an exception raised by an evidence write
+is indistinguishable from one raised by the executor. A caller who receives it concludes the side effect
+did not happen. It did.
+
+So on that path, applying the second rule produces precisely the outcome the first rule forbids: the loss
+of an evidence write changes what the caller believes about an execution that already completed.
+
+**Resolution.** The propagation rule is scoped rather than abandoned. It holds wherever the evidence write
+precedes or accompanies the decision it records, which is every call site except one: an evidence-write
+failure occurring **after a successful executor** must not propagate to the caller. It is surfaced as a
+failure event instead, in the shape `Fissible\Verdict\Evidence\Events\ChainWriteFailed` already
+establishes.
+
+**Why the principle wins and the mechanism yields.** "Failures propagate" was a statement about how
+evidence failures surface — that they are not silently swallowed — not a claim that they may misrepresent
+execution. Layer 2 exists to say that evidence is a record *about* a decision and not the decision itself.
+A record's failure cannot be permitted to rewrite the caller's understanding of the thing being recorded;
+that would make evidence authoritative over execution, which is layer 1's role and explicitly not
+evidence's. Scoping the mechanism preserves both sentences. Preserving the mechanism unscoped would
+require deleting the first sentence, and with it the reason this layer is separate at all.
+
+**What does not change.**
+
+- Operational-state failures on the same path still propagate, and must. A claim transition that fails
+  means security state and reality have diverged, which is layer 1 behaving exactly as decision point 1
+  requires. #149 introduces a dedicated exception for that case carrying the executor's output, so the
+  caller can reconcile.
+- Every evidence call site other than post-execution finalization keeps the original propagation
+  behavior.
+- Nothing here brings evidence writes inside ADR 0004's transaction guard. The rejection in
+  "Alternatives rejected" below stands unchanged.
+
+**How this went unnoticed.** The asymmetry was visible in the code before it was visible in the ADR: the
+executor-failure path already wrapped finalization failures in `ExecutionClaimFinalizationFailed` so a
+caller could distinguish them, while the success path — the more dangerous of the two to get wrong — had
+no equivalent. The ADR's two sentences were read separately for long enough that the one path where they
+disagree was never tested against either.
+
 ## Consequences
 
 - Future ADRs and issues that touch evidence (schema, privacy, chain topology — see issue #11) should
@@ -67,7 +118,11 @@ own.
   read this ADR first: that guard exists because rolling back operational state can let an
   unauthorized operation execute; rolling back an evidence write cannot, because the write already
   happened after the operational decision was made.
-- This ADR does not implement anything. It formalizes a boundary the code already has.
+- This ADR does not implement anything. It formalizes a boundary the code already has. The Update (#149)
+  is the one place where it now states behavior the code does not yet have; #149 implements it.
+- A change that surfaces a failure to a caller should state which layer the failure belongs to. Where an
+  operational-state failure and an evidence failure can occur in the same block, they need distinguishable
+  outcomes — indistinguishable ones let the weaker layer speak for the stronger.
 
 ## Alternatives rejected
 
