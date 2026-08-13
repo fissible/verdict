@@ -170,44 +170,60 @@ All three are `scope: design` — each needs a decision recorded before implemen
 
 ---
 
-## 1.0 readiness — unversioned backlog
+## Contributor-ready — deliberately unscheduled
 
-Not scheduled. These gate a 1.0 tag rather than any particular minor, and several are `help wanted`.
+These carry `scope: ready` and are open to anyone. They are **not** attached to a milestone, and that is a
+decision rather than an oversight: a milestone closes when its issues close, so scheduling unclaimed
+volunteer work would make a release depend on strangers who may never start. Labels are the discovery
+surface — `CONTRIBUTING.md` points contributors at `scope: ready`, and newcomers filter on
+`good first issue`. Whatever lands before a tag ships in that tag, exactly as displaced scope did for
+v0.4.0.
 
-**Concurrency assurance.** Currently `grep -rli concurrent tests/` returns zero matches; the atomicity
-claims are untested against actual concurrency.
+Ordered by suggested pickup order: self-contained work with a visible result first.
 
-| Issue | Effort | Deps |
-|---|---|---|
-| [#37](https://github.com/fissible/verdict/issues/37) Determine required isolation level for security-state connections | M | none — blocks a follow-on ADR |
-| [#20](https://github.com/fissible/verdict/issues/20) Add genuine concurrency tests for claims, rate limits, approvals | — | related #37 |
-| [#16](https://github.com/fissible/verdict/issues/16) Benchmark concurrency for claims, rate limits, approvals | — | related #37 |
-
-Take #37 first: it is a spike, and its answer shapes what #20 and #16 are even measuring.
-
-**Stability and traceability.**
-
-| Issue | Effort | Deps |
-|---|---|---|
-| [#17](https://github.com/fissible/verdict/issues/17) Audit and label public extension-contract stability | — | none |
-| [#42](https://github.com/fissible/verdict/issues/42) Trace each documented guarantee and non-guarantee to a test | M | none |
-| [#19](https://github.com/fissible/verdict/issues/19) Add consolidated ordering table and streaming/queued compatibility matrix | — | none |
-| [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | none — precedent in #91 |
-
-#17 and #42 are the two that genuinely gate 1.0: one states which interfaces are load-bearing, the other
-proves the documented guarantees are actually tested.
-
-#141 is smaller and independent: it applies #91's value-object treatment to the config layer, where the
-provider currently spends ~95 lines validating eight attest keys imperatively. It does not gate 1.0, but
-it removes a documented-unreachable branch and makes the attest invariants structural rather than
-enforced by a sequence of runtime throws.
-
-**Unscheduled.**
-
-| Issue | Effort | Deps | Note |
+| Issue | Effort | Label | Deps |
 |---|---|---|---|
-| [#22](https://github.com/fissible/verdict/issues/22) Extend `ApprovalExecutionContext` scope across streamed responses | — | none | Overlaps the streaming path touched by laravel/ai#848 |
-| [#36](https://github.com/fissible/verdict/issues/36) Add a `verdict:validate` wiring audit command | S | #35 ✅ | Issue states priority **low** |
+| [#143](https://github.com/fissible/verdict/issues/143) Publish PostgreSQL and MariaDB arms of the security-state benchmark | S | `good first issue` | none — compose services already exist |
+| [#142](https://github.com/fissible/verdict/issues/142) Collapse the repeated store/connection/table triple into a shared value object | XS | `good first issue` | none — carved out of #141 |
+| [#146](https://github.com/fissible/verdict/issues/146) Warn from `verdict:validate` when a non-durable adapter is configured outside local | S | `good first issue` | none |
+| [#147](https://github.com/fissible/verdict/issues/147) Write a worked incident-response walkthrough over the evidence tables | M | `help wanted` | none — the v0.4.0 chain is complete |
+| [#144](https://github.com/fissible/verdict/issues/144) Prove the in-memory stores agree with the database stores | M | `help wanted` | none |
+| [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | `help wanted` | none |
+| [#145](https://github.com/fissible/verdict/issues/145) Add a delegation attack pack for actor-versus-subject confusion | M | `help wanted` | #31 ✅ |
+| [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | `scope: ready` | none — precedent in #91 |
+
+**#147 is the one worth finishing soonest.** v0.4.0 completed the forensic chain — invocation correlation,
+derivation edges, actor and subject identity, configuration fingerprints, optional tamper-evidence — and
+every piece is documented where it was built, nowhere end to end. It is the document a prospective adopter
+opens to decide whether any of this is real.
+
+**#143 closes a gap between what is claimed and what is published.** ADR 0018's retry policy exists because
+of how PostgreSQL reports serialization failures at COMMIT. That behavior is tested, but the benchmark table
+covers SQLite and MySQL only.
+
+**#142 and #141 must not collide.** #141 owns the `evidence.attest` block, which has real invariants; #142
+owns the four repeated store sections, which have none. Whoever takes the second should rebase on the first.
+
+---
+
+## 1.0 readiness
+
+Nothing is scheduled, and nothing is listed here on purpose.
+
+Every issue this section previously named — the concurrency spike and its tests and benchmarks, the
+extension-contract stability audit, the guarantee-to-test traceability sweep, the ordering and
+compatibility matrix — is closed. Listing closed work as a backlog made the document say the opposite of
+what was true.
+
+What replaces it is not a shorter list. Verdict's remaining 1.0 questions are the ones only real
+applications can ask: which contracts turn out to be load-bearing in an integration nobody here designed,
+which documented guarantee turns out to be worded more strongly than the implementation supports, and which
+upgrade path hurts. Those become issues when someone hits them, not before. Inventing them now would
+produce a backlog that measures imagination rather than adoption.
+
+The 1.0 bar itself is unchanged and stated in [`RELEASES.md`](RELEASES.md): stable documented contracts, an
+explicit Laravel AI compatibility strategy, upgrade-safe migrations, real-application feedback, and no known
+silent bypass within the supported integration paths.
 
 ---
 
