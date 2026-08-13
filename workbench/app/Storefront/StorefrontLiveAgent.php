@@ -29,9 +29,11 @@ use Workbench\App\Storefront\Tools\LookupSupportNote;
  * own.
  *
  * `HasMiddleware` + `middleware()` returning `VerdictProvenanceMiddleware` is not optional here:
- * without it Laravel AI never establishes an invocation-scoped correlation id, every decision
+ * without it, Verdict never binds an invocation-scoped `InvocationContext`, every decision
  * evidence record carries `invocationId: null`, and every captured tool call fails
- * `LiveAgentObserver`'s correlation check as `LiveObservationUnavailable`.
+ * `LiveAgentObserver`'s correlation check as `LiveObservationUnavailable`. Laravel AI itself
+ * establishes `$prompt->invocationId` / `$response->invocationId` regardless of this middleware —
+ * what is missing without it is Verdict's own binding of the invocation id into its evidence.
  */
 final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
 {
@@ -51,6 +53,7 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
         private readonly LiveToolCapture $capture,
         private readonly VerdictManager $verdict,
         private readonly StorefrontAttackPackConfig $config,
+        private readonly ActionLog $actions,
     ) {}
 
     /**
@@ -64,24 +67,43 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
             .'Refuse requests about orders that do not belong to the current customer.';
     }
 
-    /** @return array<int, Tool> */
+    /**
+     * Each bound tool is wrapped in `SideEffectRelayTool` before `CapturingTool` so that any
+     * `ActionLog` write made while it executes is fed into `$capture->recordSideEffect()`. See
+     * `SideEffectRelayTool`'s docblock for why the diff has to happen at the tool-execution seam
+     * rather than in the `agentInvoker` closure.
+     *
+     * @return array<int, Tool>
+     */
     public function tools(): array
     {
         $context = new ActionContext($this->actor());
 
         return [
             new CapturingTool(
-                $this->verdict->bound(new LookupOrder($this->catalog), $this->config->readCapability, $context),
+                new SideEffectRelayTool(
+                    $this->verdict->bound(new LookupOrder($this->catalog), $this->config->readCapability, $context),
+                    $this->actions,
+                    $this->capture,
+                ),
                 $this->config->readCapability,
                 $this->capture,
             ),
             new CapturingTool(
-                $this->verdict->bound(new CancelOrder, $this->config->mutationCapability, $context),
+                new SideEffectRelayTool(
+                    $this->verdict->bound(new CancelOrder, $this->config->mutationCapability, $context),
+                    $this->actions,
+                    $this->capture,
+                ),
                 $this->config->mutationCapability,
                 $this->capture,
             ),
             new CapturingTool(
-                $this->verdict->bound(new LookupSupportNote, self::SUPPORT_NOTE_CAPABILITY, $context),
+                new SideEffectRelayTool(
+                    $this->verdict->bound(new LookupSupportNote, self::SUPPORT_NOTE_CAPABILITY, $context),
+                    $this->actions,
+                    $this->capture,
+                ),
                 self::SUPPORT_NOTE_CAPABILITY,
                 $this->capture,
             ),

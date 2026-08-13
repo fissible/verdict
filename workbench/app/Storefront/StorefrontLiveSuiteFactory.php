@@ -28,6 +28,7 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationSuiteFa
         private VerdictManager $verdict,
         private InMemoryEvidenceRecorder $recorder,
         private SupportNoteChannel $noteChannel,
+        private ActionLog $actions,
     ) {}
 
     /**
@@ -43,7 +44,7 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationSuiteFa
         $config = $this->config();
         $capture = new LiveToolCapture;
         $reader = new InMemoryLiveEvidenceReader($this->recorder);
-        $agent = new StorefrontLiveAgent($this->catalog, $capture, $this->verdict, $config);
+        $agent = new StorefrontLiveAgent($this->catalog, $capture, $this->verdict, $config, $this->actions);
 
         $observer = new LiveAgentObserver(
             agentInvoker: function (CaseInput $input) use ($agent): StreamableAgentResponse {
