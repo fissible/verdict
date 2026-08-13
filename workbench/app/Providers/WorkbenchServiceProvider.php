@@ -34,6 +34,7 @@ use Workbench\App\Storefront\Catalog;
 use Workbench\App\Storefront\Order;
 use Workbench\App\Storefront\OrderPolicy;
 use Workbench\App\Storefront\StorefrontLiveSuiteFactory;
+use Workbench\App\Storefront\SupportNoteChannel;
 
 final class WorkbenchServiceProvider extends ServiceProvider
 {
@@ -41,6 +42,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
     {
         $this->app->singleton(Catalog::class);
         $this->app->scoped(ActionLog::class);
+        $this->app->scoped(SupportNoteChannel::class);
         $this->app->scoped(InMemoryEvidenceRecorder::class);
         $this->app->scoped(InMemoryApprovalReceiptStore::class);
         $this->app->scoped(InMemoryRateLimitStore::class);
@@ -71,11 +73,25 @@ final class WorkbenchServiceProvider extends ServiceProvider
         // Live evaluation is opt-in and workbench-only: the package's own config/verdict.php
         // ships `evaluation.suites` empty and `live_enabled` false. This is the application
         // (workbench) supplying its own agent, model, and fixtures — see docs/evaluation.md,
-        // "Ollama live evaluation".
-        config()->set('verdict.evaluation.live_enabled', true);
+        // "Ollama live evaluation". The suite mapping alone is inert (RunLiveEvaluationCommand
+        // still requires the suite name argument and LiveEvaluationOptions(enabled: true)), so
+        // it is safe to register unconditionally. `live_enabled` is Verdict's real default-off
+        // safety gate, though, and LiveEvaluationRunner reads it eagerly when the container
+        // resolves it for RunLiveEvaluationCommand::handle() — before that command body runs —
+        // so it cannot be deferred into StorefrontLiveSuiteFactory::make(). Flipping it here
+        // unconditionally would flip the repo's default-off posture for every testbench boot,
+        // including the other ~420 package tests. Scope it to only the process invoking
+        // `verdict:evaluation-live` by name, identified from the real CLI argv rather than a
+        // config or container flag nothing else sets.
         config()->set('verdict.evaluation.suites', [
             'storefront' => StorefrontLiveSuiteFactory::class,
         ]);
+
+        $argv = $_SERVER['argv'] ?? [];
+
+        if (is_array($argv) && in_array('verdict:evaluation-live', $argv, true)) {
+            config()->set('verdict.evaluation.live_enabled', true);
+        }
     }
 
     public function boot(VerdictManager $verdict, Catalog $catalog): void
@@ -104,6 +120,27 @@ final class WorkbenchServiceProvider extends ServiceProvider
                 }
 
                 return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
+            }),
+        );
+
+        $verdict->capability(
+            Capability::usingPolicy(
+                name: 'orders.support-notes',
+                ability: 'view',
+                resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
+                    (int) $envelope->proposal->arguments['order_id'],
+                ),
+            )->executionTarget($this->orderTargetPolicy($catalog))->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof Order) {
+                    throw new LogicException('The storefront support-note capability expected an order.');
+                }
+
+                $note = app(SupportNoteChannel::class)->current();
+
+                return json_encode([
+                    'order_id' => $action->target->id,
+                    'note' => $note ?? 'No support note is on file for this order.',
+                ], JSON_THROW_ON_ERROR);
             }),
         );
 
