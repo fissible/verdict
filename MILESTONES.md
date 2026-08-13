@@ -163,9 +163,15 @@ Take #37 first: it is a spike, and its answer shapes what #20 and #16 are even m
 | [#17](https://github.com/fissible/verdict/issues/17) Audit and label public extension-contract stability | — | none |
 | [#42](https://github.com/fissible/verdict/issues/42) Trace each documented guarantee and non-guarantee to a test | M | none |
 | [#19](https://github.com/fissible/verdict/issues/19) Add consolidated ordering table and streaming/queued compatibility matrix | — | none |
+| [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | none — precedent in #91 |
 
 #17 and #42 are the two that genuinely gate 1.0: one states which interfaces are load-bearing, the other
 proves the documented guarantees are actually tested.
+
+#141 is smaller and independent: it applies #91's value-object treatment to the config layer, where the
+provider currently spends ~95 lines validating eight attest keys imperatively. It does not gate 1.0, but
+it removes a documented-unreachable branch and makes the attest invariants structural rather than
+enforced by a sequence of runtime throws.
 
 **Unscheduled.**
 
