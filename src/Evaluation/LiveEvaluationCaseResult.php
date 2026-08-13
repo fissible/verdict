@@ -7,6 +7,9 @@ namespace Fissible\Verdict\Evaluation;
 final readonly class LiveEvaluationCaseResult
 {
     /**
+     * `$errorBreakdown` is sparse: a category absent from it occurred zero times for this case,
+     * not an unreported or unclassified outcome.
+     *
      * @param  array<string,int>  $errorBreakdown
      */
     public function __construct(
