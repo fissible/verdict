@@ -57,6 +57,12 @@ data release, or durable security state should document:
 Substantial or difficult-to-reverse decisions should be recorded in `docs/adr`. Storage migrations
 must be additive within a patch release and must include publication/configuration tests.
 
+A new collaborator on a Verdict service is a **required** constructor parameter. Do not make it
+optional to preserve direct construction, and do not fall back to `Container::getInstance()`: these
+services are container-resolved, their constructors are `@internal`, and a default that resolves
+itself from a global is a hidden dependency that degrades silently. See
+[ADR 0019](docs/adr/0019-verdict-services-are-container-resolved.md).
+
 ## Testing changes
 
 Add the narrowest useful tests at each affected boundary:

@@ -57,6 +57,13 @@ Workbench classes, test fixtures, private/protected methods, undocumented implem
 database row shapes, and internal evidence metadata keys are not stable extension points during
 the developer preview.
 
+**Service constructors are excluded.** `VerdictManager`, the managers it composes, and the tool
+adapters are container-resolved collaborators; constructing them directly is unsupported and their
+constructors are marked `@internal`. A new collaborator may therefore be added as a required
+constructor parameter in any release without that counting as a change to the surface above. Resolve
+Verdict services from the container, and build tool adapters through `Verdict::bound()` or
+`Verdict::guard()`. See [ADR 0019](docs/adr/0019-verdict-services-are-container-resolved.md).
+
 ## Release readiness
 
 A release is cut only when:
