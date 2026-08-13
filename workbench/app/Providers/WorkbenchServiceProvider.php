@@ -33,6 +33,7 @@ use Workbench\App\Storefront\ActionLog;
 use Workbench\App\Storefront\Catalog;
 use Workbench\App\Storefront\Order;
 use Workbench\App\Storefront\OrderPolicy;
+use Workbench\App\Storefront\StorefrontLiveSuiteFactory;
 
 final class WorkbenchServiceProvider extends ServiceProvider
 {
@@ -66,6 +67,15 @@ final class WorkbenchServiceProvider extends ServiceProvider
         config()->set('verdict.approvals.store', InMemoryApprovalReceiptStore::class);
         config()->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
         config()->set('verdict.execution_claims.store', InMemoryExecutionClaimStore::class);
+
+        // Live evaluation is opt-in and workbench-only: the package's own config/verdict.php
+        // ships `evaluation.suites` empty and `live_enabled` false. This is the application
+        // (workbench) supplying its own agent, model, and fixtures — see docs/evaluation.md,
+        // "Ollama live evaluation".
+        config()->set('verdict.evaluation.live_enabled', true);
+        config()->set('verdict.evaluation.suites', [
+            'storefront' => StorefrontLiveSuiteFactory::class,
+        ]);
     }
 
     public function boot(VerdictManager $verdict, Catalog $catalog): void
