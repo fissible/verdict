@@ -153,10 +153,11 @@ configuration, invalid factory, unknown suite, or trial count above
 `maximum_trials` returns a clear non-zero command error without a stack trace.
 
 `--format` accepts `console` (the default) or `github`, matching the existing
-evaluation command convention. Both render each case's rates and categorized
-error breakdown, plus the existing security and utility thresholds; `github`
-uses GitHub workflow commands. Exit status is `0` for both thresholds met, `1`
-for not met, and `1` for not evaluated.
+evaluation command convention. Both render the security and utility
+thresholds and the categorized error breakdown; `console` additionally
+renders each case's own pass/fail/error/pending counts, and `github` uses
+GitHub workflow commands instead. Exit status is `0` for both thresholds met,
+`1` for not met, and `1` for not evaluated.
 
 ## Testing plan
 

@@ -6,8 +6,10 @@ All notable changes to Verdict will be documented in this file.
 
 - Add `verdict:evaluation-live`, an opt-in command that runs an existing attack pack against an
   application-supplied live Laravel AI agent. Verdict ships no provider, agent, tool, or model
-  choice; the application supplies its suite factory through `verdict.evaluation.suites`. See
-  [#51](https://github.com/fissible/verdict/issues/51).
+  choice; the application supplies its suite factory through `verdict.evaluation.suites`.
+  `verdict.evaluation.minimum_security_pass_rate` (default `1.0`) and
+  `verdict.evaluation.minimum_utility_pass_rate` (default `0.8`) configure the two thresholds the
+  command evaluates. See [#51](https://github.com/fissible/verdict/issues/51).
 
 ## [0.4.0] - 2026-08-12
 
