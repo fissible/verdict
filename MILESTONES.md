@@ -124,7 +124,7 @@ two rounds of evidence serialization and upgrade changes on adopters.
 
 ---
 
-## v0.5.0 — Live evaluation and harness documentation *(ready to tag)*
+## v0.5.0 — Live evaluation and harness documentation *(cut)*
 
 **Theme.** Make the evaluation subsystem usable by someone who did not build it.
 
@@ -183,8 +183,6 @@ Ordered by suggested pickup order: defects first, then self-contained work with 
 
 | Issue | Effort | Label | Deps |
 |---|---|---|---|
-| [#149](https://github.com/fissible/verdict/issues/149) A claim-finalization failure after a successful executor is reported as if the action never ran | S | `bug` | none |
-| [#150](https://github.com/fissible/verdict/issues/150) A redaction path that matches nothing is a silent no-op | S | `bug` | none |
 | [#143](https://github.com/fissible/verdict/issues/143) Publish PostgreSQL and MariaDB arms of the security-state benchmark | S | `good first issue` | none — compose services already exist |
 | [#142](https://github.com/fissible/verdict/issues/142) Collapse the repeated store/connection/table triple into a shared value object | XS | `good first issue` | none — carved out of #141 |
 | [#146](https://github.com/fissible/verdict/issues/146) Warn from `verdict:validate` when a non-durable adapter is configured outside local | S | `good first issue` | none |
@@ -192,22 +190,20 @@ Ordered by suggested pickup order: defects first, then self-contained work with 
 | [#144](https://github.com/fissible/verdict/issues/144) Prove the in-memory stores agree with the database stores | M | `help wanted` | none |
 | [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | `help wanted` | none |
 | [#145](https://github.com/fissible/verdict/issues/145) Add a delegation attack pack for actor-versus-subject confusion | M | `help wanted` | #31 ✅ |
-| [#151](https://github.com/fissible/verdict/issues/151) Harden field-path handling in the release path | M | `help wanted` | do after #150 |
+| [#151](https://github.com/fissible/verdict/issues/151) Harden field-path handling in the release path | M | `help wanted` | none — #150 shipped in v0.5.0 |
 | [#152](https://github.com/fissible/verdict/issues/152) Decide and enforce the binding fingerprint canonicalization contract | M | `scope: ready` | none |
 | [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | `scope: ready` | none — precedent in #91 |
 
-**#149 through #152 came out of a code audit, not from a report.** Neither defect is an authorization
-bypass and neither makes a released version unsafe: #149 misinforms a caller about a side effect that
-already happened and still fails closed on retry, and #150's exposure is bounded by the allowlist that runs
-before any transformer. Both are small, and both are the kind of asymmetry that is cheap to fix now and
-expensive to explain later. #151 and #152 are the hardening the same audit surfaced around them.
+**#151 and #152 are the hardening that remained open after the same audit.** #149 and #150 were fixed in
+v0.5.0: neither was an authorization bypass, but both were asymmetries that were cheap to fix and
+expensive to explain later. #151 and #152 continue that hardening around field-path handling and binding
+fingerprint canonicalization.
 
-[#153](https://github.com/fissible/verdict/issues/153) came from the same audit but is **not** in the table
-above, because it is `scope: design` and therefore not pickable: three mutating gates commit operational
-state and then write evidence describing it, so a failed evidence write misreports a committed mutation.
-It fails closed and predates v0.5.0. Whether a failed evidence write may discard a committed operational
-outcome is the decision it exists to settle, and that answer may differ between a self-healing rate-limit
-unit and an execution claim that blocks its binding indefinitely.
+[#153](https://github.com/fissible/verdict/issues/153) was settled in v0.5.0: a failed evidence write now
+dispatches `EvidenceWriteFailed` and execution continues, leaving the operational gates — rate-limit
+consumption, approval consumption, and execution-claim admission — as the only authorization decisions.
+The outcome differs by gate: a rate-limit unit can self-heal, while an admitted execution claim that
+cannot be finalized blocks its binding indefinitely. See ADR 0007 and the v0.5.0 changelog.
 
 **#147 is the one worth finishing soonest.** v0.4.0 completed the forensic chain — invocation correlation,
 derivation edges, actor and subject identity, configuration fingerprints, optional tamper-evidence — and
