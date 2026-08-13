@@ -88,6 +88,45 @@ final class MalformedEnvelopeTool implements Approvable, Tool
     }
 }
 
+/**
+ * Same rationale as `MalformedEnvelopeTool`: a real `BoundTool` always sources its `decision` from a
+ * backed enum's `->value` (see `AbstractVerdictTool::handle()`), so it structurally cannot return a
+ * `decision` string that no `Disposition` case matches. Only a fake can reach that branch.
+ */
+final class UnrecognizedDecisionTool implements Approvable, Tool
+{
+    public function description(): Stringable|string
+    {
+        return 'Cancel an order.';
+    }
+
+    public function handle(Request $request): Stringable|string
+    {
+        return '{"status":"not_executed","decision":"bogus"}';
+    }
+
+    /** @return array<string, Type> */
+    public function schema(JsonSchema $schema): array
+    {
+        return [];
+    }
+
+    public function requireApproval(?string $reason = null): static
+    {
+        return $this;
+    }
+
+    public function withoutApproval(): static
+    {
+        return $this;
+    }
+
+    public function shouldRequestApproval(Request $request): ?Approval
+    {
+        return null;
+    }
+}
+
 function capturingToolDenyingCapability(string $name, int &$executorCalls): Capability
 {
     return Capability::usingPolicy(
@@ -207,4 +246,11 @@ it('reports a malformed decision envelope as an unavailable observation', functi
 
     expect(fn () => $tool->handle(new Request(['order_id' => 1001], 'call-1')))
         ->toThrow(LiveObservationUnavailable::class, 'decision envelope');
+});
+
+it('reports an unrecognized decision value as an unavailable observation', function (): void {
+    $tool = new CapturingTool(new UnrecognizedDecisionTool, 'orders.cancel', new LiveToolCapture);
+
+    expect(fn () => $tool->handle(new Request(['order_id' => 1001], 'call-1')))
+        ->toThrow(LiveObservationUnavailable::class, 'unrecognized decision');
 });
