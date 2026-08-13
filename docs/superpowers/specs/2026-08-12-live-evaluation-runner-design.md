@@ -85,8 +85,14 @@ For a prompt-shaped case, `LiveAgentObserver`:
 
 1. Requires a string `untrustedInput['request']`; otherwise throws
    `CaseNotLiveExpressible`.
-2. Builds the application agent for the supplied trusted setup and invokes it
-   through the application's real `BoundTool` path.
+2. Invokes the application-supplied agent invoker, a
+   `Closure(CaseInput): AgentResponse|StructuredAgentResponse|StreamableAgentResponse`.
+   The application builds its agent for the supplied trusted setup and chooses
+   `prompt()` or `stream()` itself, returning the resulting response; the observer
+   only consumes and classifies what it receives. This keeps provider and
+   execution-mode policy application-owned, makes the streamed branch reachable
+   without an untrusted `CaseInput` mode flag, and avoids making package-wide
+   streaming an opinion Verdict holds.
 3. Gets the invocation ID from the returned Laravel AI response. Synchronous,
    structured, streamed, and streamable response types expose it. A future
    response shape without one is a harness failure, not a model decline.
