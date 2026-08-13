@@ -18,8 +18,14 @@ use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Decisions\Decision as VerdictDecision;
+use Fissible\Verdict\Evidence\ContextReleaseEvidence;
+use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\Evidence\ProvenanceDerivation;
+use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\VerdictApprovalMiddleware;
@@ -29,6 +35,7 @@ use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Event;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Approvals\Decision;
 use Laravel\Ai\Approvals\Decisions;
@@ -835,4 +842,55 @@ it('re-authorizes after approval and preserves an unused receipt when policy now
         ->and($authorizer->calls)->toBe(2)
         ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-cancel-revoked')?->status)
         ->toBe(ApprovalReceiptStatus::Approved);
+});
+
+it('executes when the approval consumption gate records no evidence', function (): void {
+    // Installed before VerdictManager is resolved, because the manager is a singleton and would
+    // otherwise capture the original writer. Failure is armed later so the receipt can be issued
+    // and approved normally first.
+    // Faked before VerdictManager is resolved, for the same reason as the writer: the manager
+    // captures its dispatcher at construction.
+    Event::fake([EvidenceWriteFailed::class]);
+
+    $writer = new class implements EvidenceWriter
+    {
+        public bool $failConsumption = false;
+
+        public function record(DecisionEvidence $evidence): void
+        {
+            if ($this->failConsumption && $evidence->approvalPhase === 'consumption') {
+                throw new RuntimeException('The evidence store is unavailable.');
+            }
+        }
+
+        public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+        public function recordProvenance(ProvenanceEntry $entry): void {}
+
+        public function recordDerivation(ProvenanceDerivation $derivation): void {}
+    };
+    app()->instance(EvidenceWriter::class, $writer);
+
+    $executions = 0;
+    $tool = approvalTool([1001 => new ApprovalOrder(1001, 72)], $executions);
+    $request = new Request(['order_id' => 1001], 'call-consumption-evidence');
+
+    $tool->shouldRequestApproval($request);
+    $challenge = app(ApprovalManager::class)->challengeForToolCall('call-consumption-evidence');
+
+    expect($challenge)->not->toBeNull();
+
+    json_decode((string) $tool->handle($request), true, flags: JSON_THROW_ON_ERROR);
+    app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'customer:72');
+
+    $writer->failConsumption = true;
+
+    $decisions = Decisions::from(['call-consumption-evidence' => Decision::approve()]);
+
+    // The receipt is spent either way. An evidence failure must not also cost the human decision
+    // by abandoning the action it authorized.
+    expect(executeWithinApprovalMiddleware($tool, $request, $decisions))->toBe('cancelled')
+        ->and($executions)->toBe(1);
+
+    Event::assertDispatched(EvidenceWriteFailed::class);
 });

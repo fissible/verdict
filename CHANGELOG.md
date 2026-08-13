@@ -4,6 +4,26 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Stop an evidence-write failure from vetoing an action that every security control already
+  permitted. The three mutating gates — consume a semantic rate-limit unit, consume an approval
+  receipt, admit an execution claim — each commit operational state and then record it. A failure of
+  that record previously propagated, abandoning the action while the mutation stood, which made
+  evidence an authorization gate that [ADR 0007](docs/adr/0007-evidence-layering.md) decision point 2
+  says it is not. At the claim gate it was worse: the exception unwound past the executor and left an
+  admitted claim that was never finalized, blocking every future duplicate of that binding until an
+  operator ran `verdict:resolve-execution-claim`.
+
+  Such a failure now dispatches `EvidenceWriteFailed` and execution continues. The operational
+  outcomes still gate — a denied rate limit, an unconsumable receipt, or a duplicate claim each
+  remains a `Decision` that stops execution; only the *record* of them lost that power. Non-mutating
+  gates are unchanged: before anything is mutated, abandoning is fail-closed and costs only a retry.
+
+  **Operational note.** An evidence-store outage no longer halts protected actions; they execute with
+  no durable record. That is what ADR 0007 requires, and it is a change in posture for a deployment
+  that would rather fail closed than act unrecorded. A general fail-closed lever is tracked in
+  [#160](https://github.com/fissible/verdict/issues/160). See
+  [#153](https://github.com/fissible/verdict/issues/153) and ADR 0007's Update (#153).
+
 - Mark Verdict service constructors `@internal` and remove the tool adapters' container fallback.
   `VerdictManager`, the managers it composes, and the tool adapters are container-resolved
   collaborators; constructing them directly was never documented and is now stated as unsupported in
