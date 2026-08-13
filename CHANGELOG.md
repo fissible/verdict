@@ -4,6 +4,24 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Reject a redaction path that the release allowlist can never match, instead of silently scrubbing
+  nothing. A `StructuredRedactor` configured with `user.social_security` when the allowlist permits
+  `user.socialSecurity` previously released the field in full and recorded the release as permitted;
+  it now raises `UnreachableTransformerFieldPath` naming the offending path. The check compares
+  configuration against configuration, so a path matching nothing in a particular payload stays
+  legitimate — a wildcard over an empty collection, or an optional field a record happens to lack.
+  Transformers declare their paths through a new optional `DeclaresFieldPaths` contract; the
+  `ContextTransformer` contract is unchanged, and a transformer that does not implement the new one
+  is skipped by the check.
+
+  **Upgrade note.** This turns a previously silent misconfiguration into a release-time failure, so a
+  release carrying a redaction path that was never matching will now throw where it used to return.
+  That is the defect being fixed, but it surfaces at runtime rather than at deploy time. **The check
+  does not reach inside a subtree allowlist:** `only(['user'])` makes both `user.socialSecurity` and a
+  misspelled `user.social_security` reachable, so a typo under that subtree remains undetectable —
+  allowlist the field explicitly if you want the check to protect it. `withoutFieldPathValidation()`
+  opts a release out deliberately. See [#150](https://github.com/fissible/verdict/issues/150).
+
 - Stop reporting a completed action as a failure when its at-most-once claim cannot be finalized.
   If the claim transition fails after the executor succeeded — most often because an operator ran
   `verdict:resolve-execution-claim` against a claim that looked stuck while its executor was still

@@ -67,6 +67,15 @@ Content and component fingerprints are deterministic. A hash of a predictable pr
 
 Actor and subject fingerprints have the same boundary. `ProvidesVerdictIdentity::verdictIdentity()` is an application-supplied correlation string, not an authentication assertion: Verdict does not verify that the string identifies the actor, subject, or any delegated authority. It records only the fingerprint, never the raw value, just as an approval's `approvedBy` is application-supplied rather than authenticated by Verdict.
 
+<!-- @verdict-claim limitation.redaction-subtree-allowlist tested -->
+### Redaction validation does not reach inside a subtree allowlist
+
+A `StructuredRedactor` path that the release allowlist can never match is rejected at release time, so a redaction that would silently scrub nothing fails instead. That check is a comparison between the configured redaction paths and the configured allowlist, and it is exactly as precise as the allowlist is.
+
+An allowlist naming a subtree defeats it. With `only(['user'])`, every path beneath `user` is reachable in principle, so a misspelled `user.social_security` is accepted and scrubs nothing — the same silent outcome the check exists to prevent, in the one shape it cannot see. Allowlist a field explicitly if you want the check to protect it.
+
+The check also does not verify that a redaction ran. A path reachable under the allowlist but absent from a particular payload is legitimate, because an optional field or an empty collection matching nothing is normal. Redaction remains a structural transform over paths you name, not a guarantee that sensitive content was removed.
+
 <!-- @verdict-claim limitation.tamper-evidence tested -->
 ### Tamper-evident evidence is opt-in, partial, and bounded by key custody
 

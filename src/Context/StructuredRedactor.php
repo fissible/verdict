@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Context;
 
 use Fissible\Verdict\Contracts\ContextTransformer;
+use Fissible\Verdict\Contracts\DeclaresFieldPaths;
 use InvalidArgumentException;
 
-final readonly class StructuredRedactor implements ContextTransformer
+final readonly class StructuredRedactor implements ContextTransformer, DeclaresFieldPaths
 {
     /**
      * @param  list<string>  $paths
@@ -32,6 +33,12 @@ final readonly class StructuredRedactor implements ContextTransformer
     public function name(): string
     {
         return 'structured_redaction';
+    }
+
+    /** @return list<string> */
+    public function declaredFieldPaths(): array
+    {
+        return $this->paths;
     }
 
     public function transform(array $payload): ContextTransformationResult

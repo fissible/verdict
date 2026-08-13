@@ -6,11 +6,13 @@ namespace Fissible\Verdict\Context;
 
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\ContextTransformer;
+use Fissible\Verdict\Contracts\DeclaresFieldPaths;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\Exceptions\UnreachableTransformerFieldPath;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Arr;
@@ -55,7 +57,12 @@ final readonly class ContextReleaseManager
         array $paths,
         Destination $destination,
         array $transformers = [],
+        bool $validateFieldPaths = true,
     ): ContextReleaseResult {
+        if ($validateFieldPaths) {
+            $this->assertTransformerFieldPathsAreReachable($paths, $transformers);
+        }
+
         $transformNames = array_map(function (ContextTransformer $transformer): string {
             $name = $transformer->name();
 
@@ -126,6 +133,78 @@ final readonly class ContextReleaseManager
         $this->recordObservedDerivation($payload, $released, $source, $trust, $dataClass);
 
         return ContextReleaseResult::permitted($released, $evidence);
+    }
+
+    /**
+     * Reject a transformer field path that no allowed path can ever match.
+     *
+     * The comparison is configuration against configuration — declared transformer paths against
+     * the release allowlist — never against the realized projection. A path absent from *this*
+     * payload (an optional field, a wildcard over an empty collection) is legitimate, and the
+     * projector omits absent paths from its output entirely, so comparing against the projection
+     * would reject exactly those correct cases.
+     *
+     * Known limitation: a subtree allowlist such as `only(['user'])` makes every path beneath it
+     * reachable, so a typo under that subtree is undetectable here. See docs/security-model.md.
+     *
+     * @param  list<string>  $allowedPaths
+     * @param  list<ContextTransformer>  $transformers
+     */
+    private function assertTransformerFieldPathsAreReachable(array $allowedPaths, array $transformers): void
+    {
+        foreach ($transformers as $transformer) {
+            if (! $transformer instanceof DeclaresFieldPaths) {
+                continue;
+            }
+
+            $unreachable = array_values(array_filter(
+                $transformer->declaredFieldPaths(),
+                fn (string $path): bool => ! $this->isReachable($path, $allowedPaths),
+            ));
+
+            if ($unreachable !== []) {
+                throw UnreachableTransformerFieldPath::forTransformer($transformer->name(), $unreachable);
+            }
+        }
+    }
+
+    /** @param list<string> $allowedPaths */
+    private function isReachable(string $path, array $allowedPaths): bool
+    {
+        $segments = explode('.', $path);
+
+        foreach ($allowedPaths as $allowed) {
+            if ($this->segmentsOverlap($segments, explode('.', $allowed))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Two paths overlap when one is a segment-wise prefix of the other, treating `*` as any
+     * segment. A prefix in either direction counts: an allowlisted subtree covers a deeper
+     * transformer path, and a transformer path covering a subtree reaches the allowed leaves
+     * beneath it.
+     *
+     * @param  list<string>  $segments
+     * @param  list<string>  $allowedSegments
+     */
+    private function segmentsOverlap(array $segments, array $allowedSegments): bool
+    {
+        $shared = min(count($segments), count($allowedSegments));
+
+        for ($index = 0; $index < $shared; $index++) {
+            $segment = $segments[$index];
+            $allowed = $allowedSegments[$index];
+
+            if ($segment !== $allowed && $segment !== '*' && $allowed !== '*') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**

@@ -22,27 +22,28 @@ final readonly class PendingContextRelease
         private ?DataClass $dataClass = null,
         private array $paths = [],
         private array $transformers = [],
+        private bool $validateFieldPaths = true,
     ) {}
 
     public function source(Source $source): self
     {
-        return new self($this->manager, $this->payload, $source, $this->trust, $this->dataClass, $this->paths, $this->transformers);
+        return new self($this->manager, $this->payload, $source, $this->trust, $this->dataClass, $this->paths, $this->transformers, $this->validateFieldPaths);
     }
 
     public function trust(Trust $trust): self
     {
-        return new self($this->manager, $this->payload, $this->source, $trust, $this->dataClass, $this->paths, $this->transformers);
+        return new self($this->manager, $this->payload, $this->source, $trust, $this->dataClass, $this->paths, $this->transformers, $this->validateFieldPaths);
     }
 
     public function classify(DataClass $dataClass): self
     {
-        return new self($this->manager, $this->payload, $this->source, $this->trust, $dataClass, $this->paths, $this->transformers);
+        return new self($this->manager, $this->payload, $this->source, $this->trust, $dataClass, $this->paths, $this->transformers, $this->validateFieldPaths);
     }
 
     /** @param list<string> $paths */
     public function only(array $paths): self
     {
-        return new self($this->manager, $this->payload, $this->source, $this->trust, $this->dataClass, $paths, $this->transformers);
+        return new self($this->manager, $this->payload, $this->source, $this->trust, $this->dataClass, $paths, $this->transformers, $this->validateFieldPaths);
     }
 
     public function through(ContextTransformer ...$transformers): self
@@ -55,6 +56,7 @@ final readonly class PendingContextRelease
             $this->dataClass,
             $this->paths,
             array_values([...$this->transformers, ...$transformers]),
+            $this->validateFieldPaths,
         );
     }
 
@@ -62,6 +64,26 @@ final readonly class PendingContextRelease
     public function redact(array $paths, string $replacement = '[REDACTED]'): self
     {
         return $this->through(new StructuredRedactor($paths, $replacement));
+    }
+
+    /**
+     * Accept transformer field paths the release allowlist can never match.
+     *
+     * The escape hatch for what the validation cannot see: a projection whose shape varies across
+     * releases in ways the operator knows about. It is deliberately explicit at the call site.
+     */
+    public function withoutFieldPathValidation(): self
+    {
+        return new self(
+            $this->manager,
+            $this->payload,
+            $this->source,
+            $this->trust,
+            $this->dataClass,
+            $this->paths,
+            $this->transformers,
+            false,
+        );
     }
 
     public function to(Destination $destination): ContextReleaseResult
@@ -78,6 +100,7 @@ final readonly class PendingContextRelease
             paths: $this->paths,
             destination: $destination,
             transformers: $this->transformers,
+            validateFieldPaths: $this->validateFieldPaths,
         );
     }
 }
