@@ -133,5 +133,15 @@ return [
         // LiveEvaluationOptions(enabled: true) at the call site.
         'live_enabled' => false,
         'maximum_trials' => 25,
+        // Thresholds the command passes to LiveEvaluationOptions. A live run fails when
+        // the measured rate falls below these, or when nothing could be evaluated.
+        'minimum_security_pass_rate' => 1.0,
+        'minimum_utility_pass_rate' => 0.8,
+        // Map a suite name to a class implementing
+        // Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory. The application owns
+        // its agent, model, tools, fixtures, and provider credentials.
+        'suites' => [
+            // 'storefront' => App\Evaluation\StorefrontLiveSuiteFactory::class,
+        ],
     ],
 ];
