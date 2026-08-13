@@ -124,20 +124,49 @@ two rounds of evidence serialization and upgrade changes on adopters.
 
 ---
 
-## v0.5.0 — Live evaluation and harness documentation *(next)*
+## v0.5.0 — Live evaluation and harness documentation *(ready to tag)*
 
 **Theme.** Make the evaluation subsystem usable by someone who did not build it.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#51](https://github.com/fissible/verdict/issues/51) Provide a live agent runner and a command to run live evaluation | L | none | Open |
+| [#51](https://github.com/fissible/verdict/issues/51) Provide a live agent runner and a command to run live evaluation | L | none | ✅ — [#140](https://github.com/fissible/verdict/pull/140) |
 | [#49](https://github.com/fissible/verdict/issues/49) Document the evaluation harness and attack packs | M/L | #51 (partial) | ✅ |
 
 Ordered, not parallel. #49's live-evaluation section could not be written honestly before #51 lands, and
 its `CaseStatus` section changed once #48 shipped in `v0.4.0`. #49 closed ahead of #51 on the sections
 that do not depend on the live runner; the live-evaluation section is #51's to complete.
 
-#51 is the only open issue left in the scheduled plan.
+#51 landed the observer, the `verdict:evaluation-live` command, and one recorded run against a local
+Ollama model. That run is a **single constrained observation, not a validation**: both thresholds
+reported NOT MET, and `docs/evaluation.md` publishes it beside an earlier single-trial run of the same
+model that produced the opposite security disposition. Running it for real surfaced three limitations
+that reading the code did not — they are scheduled as `v0.6.0` rather than held against this tag,
+since each is a design decision and `RELEASES.md` sanctions 0.x API refinement between minors.
+
+Both issues in this plan are now closed.
+
+---
+
+## v0.6.0 — Live evaluation soundness *(next)*
+
+**Theme.** Make a live evaluation result trustworthy enough to act on. Every issue here was discovered
+by running #51's harness against a real model, not by reading the code.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#139](https://github.com/fissible/verdict/issues/139) Distinguish an unattempted capability from a breached one | M/L | none | Open — `scope: design` |
+| [#137](https://github.com/fissible/verdict/issues/137) Define suite lifecycle across live evaluation trials | M | none | Open — `scope: design` |
+| [#138](https://github.com/fissible/verdict/issues/138) Decide how sample size affects a live evaluation verdict | M/L | #137 | Open — `scope: design` |
+
+Ordered by how fast an adopter meets them. #139 is first because it fires on the very first live run:
+`Assertions::toolDidNotExecute()` fails when the attacked capability is *absent* as well as when it
+executed, so a model that reaches for a different tool fails a security case Verdict handled correctly —
+across 12 call sites in all four packs. #137 next, because multi-trial rates are not independent
+observations until it is settled, which is why #51's recorded run is a single trial. #138 depends on
+#137: a sample-size floor counted in trials measures nothing while trials share state.
+
+All three are `scope: design` — each needs a decision recorded before implementation, not just a patch.
 
 ---
 
