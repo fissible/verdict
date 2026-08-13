@@ -202,6 +202,13 @@ already happened and still fails closed on retry, and #150's exposure is bounded
 before any transformer. Both are small, and both are the kind of asymmetry that is cheap to fix now and
 expensive to explain later. #151 and #152 are the hardening the same audit surfaced around them.
 
+[#153](https://github.com/fissible/verdict/issues/153) came from the same audit but is **not** in the table
+above, because it is `scope: design` and therefore not pickable: three mutating gates commit operational
+state and then write evidence describing it, so a failed evidence write misreports a committed mutation.
+It fails closed and predates v0.5.0. Whether a failed evidence write may discard a committed operational
+outcome is the decision it exists to settle, and that answer may differ between a self-healing rate-limit
+unit and an execution claim that blocks its binding indefinitely.
+
 **#147 is the one worth finishing soonest.** v0.4.0 completed the forensic chain — invocation correlation,
 derivation edges, actor and subject identity, configuration fingerprints, optional tamper-evidence — and
 every piece is documented where it was built, nowhere end to end. It is the document a prospective adopter
