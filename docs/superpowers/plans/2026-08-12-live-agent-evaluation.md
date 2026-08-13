@@ -13,7 +13,7 @@
 - Spec of record: `docs/superpowers/specs/2026-08-12-live-evaluation-runner-design.md` (commit `95c96bc`).
 - Do not modify `StorefrontAttackPack`, `RagBorneInjectionAttackPack`, `ToolIntegrityAttackPack`, `AccountRecoveryAttackPack`, or any `EvaluationCase` definition.
 - Do not change `CaseStatus`, `Score`, or `ObservationEvidence`'s projection. Provenance stays out of persisted live evidence.
-- `LiveEvaluationRunner` keeps sole ownership of both gates, `maximum_trials`, aggregation, thresholds, and reports. The only permitted change is passing `$case->errorClass` through to the counter at line 33.
+- `LiveEvaluationRunner` keeps sole ownership of both gates, `maximum_trials`, aggregation, thresholds, and reports. The only permitted changes are passing `$case->errorClass` through to the counter and populating the new `errorBreakdown` argument when constructing each `LiveEvaluationCaseResult`.
 - Additions to `LiveEvaluationScoreCounter` and `LiveEvaluationCaseResult` must be additive; existing callers keep working.
 - The package ships no provider, agent, tool, fixture, credential, or model choice.
 - Every guard added in this plan is mutation-checked: remove the guard, confirm the test fails, restore.
