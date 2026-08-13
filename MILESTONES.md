@@ -179,10 +179,12 @@ surface — `CONTRIBUTING.md` points contributors at `scope: ready`, and newcome
 `good first issue`. Whatever lands before a tag ships in that tag, exactly as displaced scope did for
 v0.4.0.
 
-Ordered by suggested pickup order: self-contained work with a visible result first.
+Ordered by suggested pickup order: defects first, then self-contained work with a visible result.
 
 | Issue | Effort | Label | Deps |
 |---|---|---|---|
+| [#149](https://github.com/fissible/verdict/issues/149) A claim-finalization failure after a successful executor is reported as if the action never ran | S | `bug` | none |
+| [#150](https://github.com/fissible/verdict/issues/150) A redaction path that matches nothing is a silent no-op | S | `bug` | none |
 | [#143](https://github.com/fissible/verdict/issues/143) Publish PostgreSQL and MariaDB arms of the security-state benchmark | S | `good first issue` | none — compose services already exist |
 | [#142](https://github.com/fissible/verdict/issues/142) Collapse the repeated store/connection/table triple into a shared value object | XS | `good first issue` | none — carved out of #141 |
 | [#146](https://github.com/fissible/verdict/issues/146) Warn from `verdict:validate` when a non-durable adapter is configured outside local | S | `good first issue` | none |
@@ -190,7 +192,15 @@ Ordered by suggested pickup order: self-contained work with a visible result fir
 | [#144](https://github.com/fissible/verdict/issues/144) Prove the in-memory stores agree with the database stores | M | `help wanted` | none |
 | [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | `help wanted` | none |
 | [#145](https://github.com/fissible/verdict/issues/145) Add a delegation attack pack for actor-versus-subject confusion | M | `help wanted` | #31 ✅ |
+| [#151](https://github.com/fissible/verdict/issues/151) Harden field-path handling in the release path | M | `help wanted` | do after #150 |
+| [#152](https://github.com/fissible/verdict/issues/152) Decide and enforce the binding fingerprint canonicalization contract | M | `scope: ready` | none |
 | [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | `scope: ready` | none — precedent in #91 |
+
+**#149 through #152 came out of a code audit, not from a report.** Neither defect is an authorization
+bypass and neither makes a released version unsafe: #149 misinforms a caller about a side effect that
+already happened and still fails closed on retry, and #150's exposure is bounded by the allowlist that runs
+before any transformer. Both are small, and both are the kind of asymmetry that is cheap to fix now and
+expensive to explain later. #151 and #152 are the hardening the same audit surfaced around them.
 
 **#147 is the one worth finishing soonest.** v0.4.0 completed the forensic chain — invocation correlation,
 derivation edges, actor and subject identity, configuration fingerprints, optional tamper-evidence — and
