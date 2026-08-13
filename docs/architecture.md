@@ -72,7 +72,18 @@ The seven steps above are the orientation-level summary. Gate ordering is fully 
 | 11 | Atomically consume confirmation against the execution target, if required | [ADR 0001](adr/0001-semantic-execution-rate-limits.md) origin, reordered to follow rate limiting by [ADR 0003](adr/0003-execution-target-freshness.md); transaction independence per [ADR 0004](adr/0004-independent-security-state-transactions.md) |
 | 12 | Atomically claim the logical operation against the execution target, if configured | [ADR 0002](adr/0002-strict-at-most-once-admission.md); transaction independence per [ADR 0004](adr/0004-independent-security-state-transactions.md) |
 | 13 | Pass the execution target to `AuthorizedAction` and enter the executor | — application code, not a Verdict gate |
-| 14 | Finalize the execution claim as completed or indeterminate | [ADR 0002](adr/0002-strict-at-most-once-admission.md) |
+| 14 | Finalize the execution claim as completed or indeterminate | [ADR 0002](adr/0002-strict-at-most-once-admission.md); failure reporting per [ADR 0007](adr/0007-evidence-layering.md) Update (#149) |
+
+**What a caller sees when step 14 fails.** The executor has already run by then, so the two failures possible
+at that step are reported differently, per [ADR 0007](adr/0007-evidence-layering.md)'s Update (#149). If the
+claim transition fails — most often because an operator resolved the claim through
+`verdict:resolve-execution-claim` while the executor was still running — Verdict throws
+`ExecutionCompletedWithUnfinalizedClaim`, carrying the executor's output and the claim ID so the side effect
+is recoverable and the claim can be reconciled with one command. That is distinct from
+`ExecutionClaimFinalizationFailed`, which means the executor itself failed. If instead the *evidence* write
+for that finalization fails, it does not reach the caller at all: an `EvidenceWriteFailed` event is
+dispatched and the successful result is returned, because an exception there would be indistinguishable from
+execution failure. Retrying after either outcome fails closed, since the claim is no longer `claimed`.
 
 Two things the table doesn't show on its own: gates are ordered from more recoverable to less recoverable — a rate-limit unit precedes a human approval receipt, and the strict execution claim remains the final gate — and every mutating step from 10–12 additionally requires its store's connection to commit independently of any outer application transaction ([ADR 0004](adr/0004-independent-security-state-transactions.md)), or the operation fails closed with `UnsafeOuterTransaction` before changing state.
 

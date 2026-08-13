@@ -4,6 +4,20 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Stop reporting a completed action as a failure when its at-most-once claim cannot be finalized.
+  If the claim transition fails after the executor succeeded — most often because an operator ran
+  `verdict:resolve-execution-claim` against a claim that looked stuck while its executor was still
+  running — Verdict now throws `ExecutionCompletedWithUnfinalizedClaim`, carrying the executor's
+  output and the claim ID, instead of a bare `LogicException` that a caller would reasonably read as
+  "the action did not run". If instead the *evidence* write for that finalization fails, it no longer
+  reaches the caller at all: an `EvidenceWriteFailed` event is dispatched and the successful result is
+  returned, because an exception there is indistinguishable from execution failure. Retrying after
+  either outcome still fails closed. `ExecutionClaimManager::complete()` and `markIndeterminate()` now
+  raise `ExecutionClaimTransitionFailed` rather than `LogicException`, since an operator resolving a
+  claim concurrently is a concurrency event, not a programming error. `VerdictManager::__construct()`
+  takes an event dispatcher. See [#149](https://github.com/fissible/verdict/issues/149) and
+  [ADR 0007](docs/adr/0007-evidence-layering.md) Update (#149).
+
 - Add `verdict:evaluation-live`, an opt-in command that runs an existing attack pack against an
   application-supplied live Laravel AI agent. Verdict ships no provider, agent, tool, or model
   choice; the application supplies its suite factory through `verdict.evaluation.suites`.
