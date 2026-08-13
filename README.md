@@ -71,7 +71,7 @@ The `refund` Laravel policy decides whether the authenticated actor can refund t
 ## Installation
 
 ```bash
-composer require fissible/verdict:^0.2
+composer require fissible/verdict:^0.4
 php artisan vendor:publish --provider="Fissible\Verdict\VerdictServiceProvider" --tag="verdict-config"
 php artisan migrate
 ```
