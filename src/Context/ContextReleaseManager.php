@@ -20,6 +20,11 @@ use LogicException;
 
 final readonly class ContextReleaseManager
 {
+    /**
+     * @internal Resolve ContextReleaseManager from the container. This constructor is not part of the
+     *           supported surface and may gain required parameters in any release.
+     *           See docs/adr/0019-verdict-services-are-container-resolved.md.
+     */
     public function __construct(
         private ReleasePolicyRegistry $policies,
         private FieldProjector $projector,

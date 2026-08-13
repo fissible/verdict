@@ -13,6 +13,11 @@ use Fissible\Verdict\Evidence\ArgumentFingerprint;
 
 final readonly class RateLimitManager
 {
+    /**
+     * @internal Resolve RateLimitManager from the container. This constructor is not part of the
+     *           supported surface and may gain required parameters in any release.
+     *           See docs/adr/0019-verdict-services-are-container-resolved.md.
+     */
     public function __construct(
         private RateLimitStore $store,
         private Clock $clock,
