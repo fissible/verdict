@@ -27,4 +27,18 @@ final readonly class LiveEvaluationResult
     {
         return new LiveEvaluationReport($this);
     }
+
+    /** @return array<string,int> */
+    public function errorBreakdown(): array
+    {
+        $breakdown = [];
+
+        foreach ($this->cases as $case) {
+            foreach ($case->errorBreakdown as $category => $count) {
+                $breakdown[$category] = ($breakdown[$category] ?? 0) + $count;
+            }
+        }
+
+        return $breakdown;
+    }
 }
