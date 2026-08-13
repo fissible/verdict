@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Console\Commands\CompareEvaluationCommand;
+use Fissible\Verdict\Console\Commands\RunLiveEvaluationCommand;
 use Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
@@ -199,4 +201,61 @@ it('prints per-case rates and the four-way error breakdown', function (): void {
         ->expectsOutputToContain('declined')
         ->expectsOutputToContain('not_expressible')
         ->assertExitCode(1);
+});
+
+// --- --format=github: pin the exact emitted workflow command lines, not just the exit code. ---
+
+it('emits a github ::notice line per threshold when both thresholds are met', function (): void {
+    $this->artisan('verdict:evaluation-live', ['suite' => 'fake', '--trials' => 2, '--format' => 'github'])
+        ->expectsOutput('::notice title=Verdict live evaluation%3A security::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 100%25)')
+        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25)')
+        ->assertExitCode(0);
+});
+
+it('emits a github ::error line for a threshold that is not met', function (): void {
+    $this->artisan('verdict:evaluation-live', ['suite' => 'failing', '--trials' => 2, '--format' => 'github'])
+        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT MET — 0 passed / 2 failed / 0 errors / 0 pending (0%25) (minimum 100%25)')
+        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25)')
+        ->assertExitCode(1);
+});
+
+it('emits a github ::error line for a threshold that could not be evaluated', function (): void {
+    $this->artisan('verdict:evaluation-live', ['suite' => 'declining', '--trials' => 2, '--format' => 'github'])
+        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT EVALUATED — 0 passed / 0 failed / 2 errors / 0 pending (no pass rate) (minimum 100%25)')
+        ->expectsOutput('::error title=Verdict live evaluation%3A utility::NOT EVALUATED — 0 passed / 0 failed / 0 errors / 0 pending (no pass rate) (minimum 80%25)')
+        ->expectsOutput('::notice title=Verdict live evaluation error breakdown::declined=2')
+        ->assertExitCode(1);
+});
+
+it('escapes github workflow command text identically to CompareEvaluationCommand', function (): void {
+    // GitHub workflow commands require %, \r and \n escaped in message text, and additionally
+    // : and , escaped in property values (https://docs.github.com/actions - workflow commands).
+    // RunLiveEvaluationCommand's escapeMessage()/escapeProperty() were written by mirroring
+    // CompareEvaluationCommand's, but nothing pinned that they actually match byte-for-byte.
+    // Drive text containing every character GitHub's protocol requires escaped through both
+    // commands' private helpers directly, since RunLiveEvaluationCommand's github renderer has
+    // no channel (unlike CompareEvaluationCommand's case_id) that carries free-form suite/case
+    // text into the emitted line — the closest live-fire equivalent is the literal ":" already
+    // present in its static "Verdict live evaluation: {purpose}" title, pinned above as %3A.
+    $dangerous = '100% risky: pass, fail'."\r\n".'next line';
+
+    $live = new RunLiveEvaluationCommand;
+    $compare = new CompareEvaluationCommand;
+
+    $liveMessage = new ReflectionMethod($live, 'escapeMessage');
+    $liveProperty = new ReflectionMethod($live, 'escapeProperty');
+    $compareMessage = new ReflectionMethod($compare, 'escapeMessage');
+    $compareProperty = new ReflectionMethod($compare, 'escapeProperty');
+
+    $liveMessageOut = $liveMessage->invoke($live, $dangerous);
+    $livePropertyOut = $liveProperty->invoke($live, $dangerous);
+    $compareMessageOut = $compareMessage->invoke($compare, $dangerous);
+    $comparePropertyOut = $compareProperty->invoke($compare, $dangerous);
+
+    expect($liveMessageOut)->toBe('100%25 risky: pass, fail%0D%0Anext line');
+    expect($livePropertyOut)->toBe('100%25 risky%3A pass%2C fail%0D%0Anext line');
+
+    // The substance of the check: identical bytes out of both commands for identical input.
+    expect($liveMessageOut)->toBe($compareMessageOut);
+    expect($livePropertyOut)->toBe($comparePropertyOut);
 });
