@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-13
+
 - Stop an evidence-write failure from vetoing an action that every security control already
   permitted. The three mutating gates — consume a semantic rate-limit unit, consume an approval
   receipt, admit an execution claim — each commit operational state and then record it. A failure of
@@ -356,7 +358,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/fissible/verdict/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fissible/verdict/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fissible/verdict/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/fissible/verdict/compare/v0.1.1...v0.2.0
