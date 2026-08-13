@@ -227,6 +227,17 @@ it('emits a github ::error line for a threshold that could not be evaluated', fu
         ->assertExitCode(1);
 });
 
+// Boundary set by the plan owner: today, no arbitrary user-controlled suite name or case ID
+// reaches RunLiveEvaluationCommand's github output — renderGithub() only ever interpolates a
+// closed CasePurpose enum ('security'/'utility'), a closed LiveErrorCategory enum, and computed
+// numbers (see the three ::notice/::error tests above, which pin the exact emitted lines,
+// including the escape artifacts those fixed strings already produce). That absence of a free-
+// text channel is why reflection-based parity on the escape helpers, plus those exact-line
+// behavioral assertions, is proportionate coverage here rather than an end-to-end injection
+// test. If a future change routes user-controlled content (a suite name, a case ID, anything
+// from config or a report file) into that output, this test stops being sufficient: add an
+// end-to-end test at that point that drives hostile characters (%, :, ,, CR, LF) through the
+// actual emitted `::notice`/`::error` line, not just through the escape helpers in isolation.
 it('escapes github workflow command text identically to CompareEvaluationCommand', function (): void {
     // GitHub workflow commands require %, \r and \n escaped in message text, and additionally
     // : and , escaped in property values (https://docs.github.com/actions - workflow commands).
