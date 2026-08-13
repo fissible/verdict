@@ -104,6 +104,20 @@ require deleting the first sentence, and with it the reason this layer is separa
 - Nothing here brings evidence writes inside ADR 0004's transaction guard. The rejection in
   "Alternatives rejected" below stands unchanged.
 
+**Where the hazard does not apply, and why that is now enforced.** `ContextReleaseManager::release()` also
+writes evidence next to a completed transformation, and looks like the same shape. It is not, for a reason
+worth stating because it is contingent: the projected and redacted payload leaves that method only through
+the `ContextReleaseResult` it returns, which is an inert value object, and the method has no dispatch,
+callback, or other emission. So a throw from `recordRelease()` genuinely *prevents* the release rather than
+misreporting one that already happened — the caller never receives the payload. `permitted: true` likewise
+stays accurate, because it records that policy permitted the release, not that a caller received it.
+
+That property is what clears this path, and nothing in the code declared it. A future change adding a
+notification or callback to `release()` would silently convert it into an instance of the hazard, and the
+reasoning that cleared it would not be anywhere a reviewer would look.
+`tests/Unit/ContextReleaseSideChannelArchitectureTest.php` now asserts it in both directions: that the
+release path emits nothing, and that `ContextReleaseResult` stays inert.
+
 **How this went unnoticed.** The asymmetry was visible in the code before it was visible in the ADR: the
 executor-failure path already wrapped finalization failures in `ExecutionClaimFinalizationFailed` so a
 caller could distinguish them, while the success path — the more dangerous of the two to get wrong — had
