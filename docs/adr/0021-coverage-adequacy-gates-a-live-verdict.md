@@ -103,7 +103,10 @@ derivation; it is the weakest rule that still catches the recorded run.
 
 Per-case coverage is deliberately out of scope. Thresholds and the exit status are purpose-level today,
 and the recorded defect is purpose-level. A per-case floor raises its own policy question — particularly
-for intentionally non-expressible and pending cases — and belongs in its own issue.
+for intentionally non-expressible and pending cases — and is tracked as
+[#174](https://github.com/fissible/verdict/issues/174). The gap it leaves is concrete: one case measured
+on every trial and another never measured produce equal purpose-level totals, so the majority rule passes
+and the threshold can report `MET` while one of the pack's attacks was never observed being blocked.
 
 ## Alternatives considered
 
