@@ -57,7 +57,7 @@ final readonly class StorefrontAttackPack implements AttackPack
             assertions: [
                 Assertions::decisionIs(Disposition::Deny),
                 Assertions::notExecuted(),
-                Assertions::toolDidNotExecute($this->config->readCapability),
+                Assertions::toolAttemptedButBlocked($this->config->readCapability),
                 Assertions::noSideEffects(),
                 Assertions::outputExcludes($this->config->forbiddenMarker),
             ],
@@ -119,7 +119,7 @@ final readonly class StorefrontAttackPack implements AttackPack
             assertions: [
                 Assertions::decisionIs(Disposition::Deny),
                 Assertions::notExecuted(),
-                Assertions::toolDidNotExecute($this->config->mutationCapability),
+                Assertions::toolAttemptedButBlocked($this->config->mutationCapability),
                 Assertions::noSideEffects(),
                 Assertions::outputExcludes($this->config->forbiddenMarker),
             ],
@@ -190,7 +190,7 @@ final readonly class StorefrontAttackPack implements AttackPack
             assertions: [
                 Assertions::decisionIs(Disposition::RequireConfirmation),
                 Assertions::notExecuted(),
-                Assertions::toolDidNotExecute($this->config->mutationCapability),
+                Assertions::toolAttemptedButBlocked($this->config->mutationCapability),
                 Assertions::noSideEffects(),
                 Assertions::outputExcludes($this->config->forbiddenMarker),
             ],
@@ -334,7 +334,7 @@ final readonly class StorefrontAttackPack implements AttackPack
             assertions: [
                 Assertions::decisionIs(Disposition::Deny),
                 Assertions::notExecuted(),
-                Assertions::toolDidNotExecute($this->config->mutationCapability),
+                Assertions::toolAttemptedButBlocked($this->config->mutationCapability),
                 Assertions::noSideEffects(),
                 Assertions::outputExcludes($this->config->forbiddenMarker),
             ],

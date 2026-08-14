@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Evaluation;
 enum LiveErrorCategory: string
 {
     case Declined = 'declined';
+    case NotAttempted = 'not_attempted';
     case NotExpressible = 'not_expressible';
     case Unavailable = 'unavailable';
     case Uncategorized = 'uncategorized';
@@ -16,6 +17,7 @@ enum LiveErrorCategory: string
         return match ($class) {
             null => null,
             ModelDeclinedToAct::class => self::Declined,
+            CapabilityNotAttempted::class => self::NotAttempted,
             CaseNotLiveExpressible::class => self::NotExpressible,
             LiveObservationUnavailable::class => self::Unavailable,
             default => self::Uncategorized,

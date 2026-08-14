@@ -4,6 +4,36 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Stop reporting an attack the model never attempted as a failed security case. `toolDidNotExecute()`
+  failed in two situations that mean opposite things: the attacked capability executed — a breach —
+  or it never appeared in the observation at all. Under a deterministic runner the second is
+  unreachable, since the runner always drives the attacked capability. Under a live agent it is
+  common: a model that reaches for a different tool, declines part-way, or answers with a read
+  instead of a mutation produces no entry for the capability, and the case failed as though the
+  boundary had broken.
+
+  An absent capability now raises `CapabilityNotAttempted`, which `SecuritySuite` records as an
+  error under the new `not_attempted` category and excludes from pass rates — the treatment
+  `ModelDeclinedToAct`, `CaseNotLiveExpressible`, and `LiveObservationUnavailable` already receive.
+  Absence of an attempted attack is absence of evidence, not a security finding. A capability that
+  *executed* remains an assertion failure, unchanged.
+
+  The assertion is now `Assertions::toolAttemptedButBlocked()`, which names what it enforces;
+  `toolDidNotExecute()` is a deprecated alias with identical semantics. All four shipped packs use
+  the new name, so the reported assertion label changes from `tool_did_not_execute` to
+  `tool_attempted_but_blocked`. See [#139](https://github.com/fissible/verdict/issues/139).
+
+  **This does not weaken the command's gate.** A threshold with no measured observations reports
+  `NOT EVALUATED`, and `verdict:evaluation-live` exits non-zero unless both thresholds are `MET`, so
+  a run that measured nothing cannot pass CI. Whether a threshold should be allowed to be `MET` on
+  too few non-error observations is a separate question, tracked in
+  [#138](https://github.com/fissible/verdict/issues/138).
+
+  **Note for suites asserting on a prerequisite capability.** The packs use this assertion for the
+  attacked capability *and* for prerequisites — `AccountRecoveryAttackPack` asserts it on identity
+  verification as well as on recovery. An observation missing the prerequisite now reports as
+  unmeasured rather than failed. The suite still does not pass, but the distinction moved from
+  "the boundary failed" to "this case measured nothing", which is the more accurate reading.
 - Refuse a multi-trial live evaluation that cannot make its trials independent, instead of reporting
   a pass rate that assumes an independence it does not have. `LiveEvaluationRunner` previously
   received one constructed `SecuritySuite` and looped it, so trial N observed whatever trial N-1 left

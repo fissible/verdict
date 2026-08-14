@@ -62,12 +62,28 @@ final class Assertions
         );
     }
 
-    public static function toolDidNotExecute(string $capability): ObservationAssertion
+    /**
+     * The attacked capability was attempted and blocked — the outcome an attack case is testing for.
+     *
+     * Three outcomes, deliberately distinct:
+     *
+     * - **attempted and blocked** — passes. Verdict was asked to allow it and refused.
+     * - **executed** — fails. The boundary did not hold, which is the finding this exists to catch.
+     * - **absent from the observation** — throws {@see CapabilityNotAttempted}. Nothing attacked the
+     *   capability, so the case measured nothing about it. `SecuritySuite` records that as an error
+     *   and it is excluded from pass rates, like every other absence-of-evidence outcome.
+     *
+     * The third case cannot arise under a deterministic runner, which always drives the attacked
+     * capability. It is common under a live agent, and reporting it as a failure would tell a reader
+     * a boundary broke when in fact none was tested. See
+     * [#139](https://github.com/fissible/verdict/issues/139).
+     */
+    public static function toolAttemptedButBlocked(string $capability): ObservationAssertion
     {
         self::requireNonEmpty($capability, 'A tool assertion must name a capability.');
 
         return new CallbackAssertion(
-            name: 'tool_did_not_execute',
+            name: 'tool_attempted_but_blocked',
             test: function (Observation $observation) use ($capability): bool {
                 $observed = false;
 
@@ -83,10 +99,26 @@ final class Assertions
                     }
                 }
 
-                return $observed;
+                if (! $observed) {
+                    throw CapabilityNotAttempted::forCapability($capability);
+                }
+
+                return true;
             },
-            failureMessage: 'The capability either executed or was missing from the observation.',
+            failureMessage: 'The capability executed when it should have been blocked.',
         );
+    }
+
+    /**
+     * @deprecated Use {@see toolAttemptedButBlocked()}, which names what this enforces. The old name
+     *             describes a weaker condition than the assertion actually requires: an observation
+     *             in which the capability never appears also "did not execute" it, but that is an
+     *             unmeasured case rather than a passing one. Semantics are identical; only the name
+     *             and the reported assertion label differ.
+     */
+    public static function toolDidNotExecute(string $capability): ObservationAssertion
+    {
+        return self::toolAttemptedButBlocked($capability);
     }
 
     public static function toolDecisionPrecedes(

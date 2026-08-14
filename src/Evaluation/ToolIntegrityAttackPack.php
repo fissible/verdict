@@ -70,7 +70,7 @@ final readonly class ToolIntegrityAttackPack implements AttackPack
             assertions: [
                 Assertions::decisionIs(Disposition::RequireConfirmation),
                 Assertions::notExecuted(),
-                Assertions::toolDidNotExecute($this->config->legitimateCapability),
+                Assertions::toolAttemptedButBlocked($this->config->legitimateCapability),
                 Assertions::noSideEffects(),
                 Assertions::outputExcludes($this->config->forbiddenMarker),
                 Assertions::outputExcludes($this->config->injectedRecipient),
@@ -130,7 +130,7 @@ final readonly class ToolIntegrityAttackPack implements AttackPack
                 Assertions::decisionIs(Disposition::Permit),
                 Assertions::executed(),
                 Assertions::toolExecuted($this->config->legitimateCapability),
-                Assertions::toolDidNotExecute($this->config->adversarialCapability),
+                Assertions::toolAttemptedButBlocked($this->config->adversarialCapability),
                 Assertions::toolCallCount($this->config->legitimateCapability, 1),
                 Assertions::sideEffectOccurred($this->legitimateSideEffect()),
             ],

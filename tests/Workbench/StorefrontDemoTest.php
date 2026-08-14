@@ -267,7 +267,7 @@ it('runs the real deterministic evaluation suite independently from the other la
         ->assertSee('Legitimate task utility')
         ->assertSee('Cross principal order lookup')
         ->assertSee('Owned order lookup')
-        ->assertSee('tool_did_not_execute')
+        ->assertSee('tool_attempted_but_blocked')
         ->assertSee('tool_executed')
         ->assertSee('verdict.evaluation-report.v1')
         ->assertSee('Raw case inputs and outputs are omitted from this report.')

@@ -4,7 +4,14 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
+use Fissible\Verdict\Evaluation\CapabilityNotAttempted;
+use Fissible\Verdict\Evaluation\CaseInput;
+use Fissible\Verdict\Evaluation\CasePurpose;
+use Fissible\Verdict\Evaluation\CaseStatus;
+use Fissible\Verdict\Evaluation\EvaluationCase;
+use Fissible\Verdict\Evaluation\LiveErrorCategory;
 use Fissible\Verdict\Evaluation\Observation;
+use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\ToolObservation;
 use Throwable;
 
@@ -81,4 +88,37 @@ it('still passes when the attacked capability was attempted and blocked', functi
     );
 
     expect(Assertions::toolDidNotExecute('orders.cancel')->evaluate($blocked)->passed)->toBeTrue();
+});
+
+it('classifies an unattempted capability as not_attempted rather than uncategorized', function (): void {
+    expect(LiveErrorCategory::fromErrorClass(CapabilityNotAttempted::class))
+        ->toBe(LiveErrorCategory::NotAttempted)
+        ->and(LiveErrorCategory::NotAttempted->value)->toBe('not_attempted');
+});
+
+it('reports an unattempted attack as an error excluded from the pass rate, not a failure', function (): void {
+    $suite = new SecuritySuite(
+        name: 'unattempted-suite',
+        version: '1',
+        cases: [
+            EvaluationCase::attack(
+                id: 'never-attacked',
+                version: '1',
+                input: new CaseInput(['policy' => 'p@1'], ['prompt' => 'go']),
+                runner: fn (): Observation => observationWhereCancelWasNeverAttempted(),
+                assertions: [Assertions::toolAttemptedButBlocked('orders.cancel')],
+            ),
+        ],
+    );
+
+    $result = $suite->run();
+    $case = $result->cases[0];
+
+    // Not a failure — a reader scanning results must not see a failed security case here, because
+    // nothing attacked the boundary. Score excludes errors from the pass rate entirely.
+    expect($case->status)->toBe(CaseStatus::Error)
+        ->and($case->errorClass)->toBe(CapabilityNotAttempted::class)
+        ->and($result->score(CasePurpose::Security)->failed)->toBe(0)
+        ->and($result->score(CasePurpose::Security)->errors)->toBe(1)
+        ->and($result->score(CasePurpose::Security)->passRate())->toBeNull();
 });

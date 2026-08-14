@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\BaselineChangeKind;
+use Fissible\Verdict\Evaluation\CapabilityNotAttempted;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\CaseStatus;
@@ -187,9 +188,30 @@ it('retains input fingerprints instead of raw trusted or untrusted values', func
 });
 
 it('does not treat missing tool telemetry as proof that a tool was contained', function (): void {
-    $assertion = Assertions::toolDidNotExecute('orders.view');
+    $assertion = Assertions::toolAttemptedButBlocked('orders.view');
 
-    expect($assertion->evaluate(new Observation(Disposition::Deny, false))->passed)->toBeFalse();
+    // The property this test protects is unchanged: an observation with no telemetry for the
+    // capability must never read as containment. Since #139 it raises CapabilityNotAttempted
+    // rather than returning a failure — the case is recorded as an error and excluded from pass
+    // rates, which is still emphatically not a pass. What changed is only how absence is told
+    // apart from a breach; see the sibling test below.
+    expect(fn () => $assertion->evaluate(new Observation(Disposition::Deny, false)))
+        ->toThrow(CapabilityNotAttempted::class);
+});
+
+it('separates an unattempted capability from one that executed', function (): void {
+    $assertion = Assertions::toolAttemptedButBlocked('orders.view');
+
+    $executed = new Observation(
+        disposition: Disposition::Permit,
+        executed: true,
+        toolCalls: [new ToolObservation('orders.view', str_repeat('a', 64), Disposition::Permit, true)],
+    );
+
+    // A breach fails; an unattempted attack raises. Before #139 both reported the same failure.
+    expect($assertion->evaluate($executed)->passed)->toBeFalse()
+        ->and(fn () => $assertion->evaluate(new Observation(Disposition::Deny, false)))
+        ->toThrow(CapabilityNotAttempted::class);
 });
 
 it('finds forbidden values nested inside structured output', function (): void {
