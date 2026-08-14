@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Workbench\App\Storefront;
 
-use Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory;
+use Fissible\Verdict\Contracts\LiveEvaluationTrialFactory;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CaseNotLiveExpressible;
 use Fissible\Verdict\Evaluation\LiveAgentObserver;
@@ -14,44 +14,90 @@ use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\VerdictManager;
+use Illuminate\Contracts\Foundation\Application;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 
 /**
  * Builds the storefront live evaluation suite: `StorefrontAttackPack` — unmodified — driven by a
  * real `StorefrontLiveAgent` invocation instead of the deterministic captured-proposal runner
  * `StorefrontScenarioRunner` uses.
+ *
+ * Also the worked example of [ADR 0020](../../../docs/adr/0020-live-trial-isolation-is-application-owned.md):
+ * the application, not Verdict, decides what resetting a trial means.
  */
-final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationSuiteFactory
+final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationTrialFactory
 {
+    /**
+     * The container is a dependency here rather than the individual stores, and that is the point:
+     * a reset replaces those instances, so anything captured at construction would be stale by the
+     * time the next trial ran. `Catalog` is the exception — it is an immutable singleton.
+     */
     public function __construct(
+        private Application $app,
         private Catalog $catalog,
-        private VerdictManager $verdict,
-        private InMemoryEvidenceRecorder $recorder,
-        private SupportNoteChannel $noteChannel,
-        private ActionLog $actions,
     ) {}
 
     /**
-     * The agent, its `LiveToolCapture`, and the observer built here are local to this call — not
-     * cached on the instance. A second `make()` call on the same factory instance (the container
-     * may reuse it) would otherwise repoint a shared `agentFor()` at a *new* capture while any
-     * suite already built from the first call keeps calling the *old* agent, which writes into
-     * the old capture that nothing reads from any more: every case in that first suite would
-     * silently report `ModelDeclinedToAct`, with no error indicating why.
+     * Single-trial entry point. Resets too — one trial makes no independence claim, but a process
+     * already used before this run has no more right to contaminate it than a previous trial does.
      */
     public function make(): SecuritySuite
     {
+        return $this->makeForTrial(0);
+    }
+
+    /**
+     * Reset the storefront's own state, then build this trial's suite.
+     *
+     * Every mutable service the suite touches is bound `scoped` in `WorkbenchServiceProvider` —
+     * `ActionLog`, `SupportNoteChannel`, `InMemoryEvidenceRecorder`, and the three in-memory
+     * security-state stores, including the four contract aliases that resolve to them. Dropping the
+     * scope therefore discards every approval receipt, execution claim, rate-limit bucket, recorded
+     * side effect, and evidence row a previous trial created.
+     *
+     * Two things deliberately survive. `CapabilityRegistry` is a singleton, so the capabilities
+     * registered in `WorkbenchServiceProvider::boot()` stay registered — a reset discards state, not
+     * configuration. `Catalog` is a singleton and immutable, so there is nothing in it to reset.
+     *
+     * A real application would more likely truncate tables or roll back a transaction. The shape is
+     * what transfers, not the mechanism.
+     */
+    public function makeForTrial(int $trial): SecuritySuite
+    {
+        $this->app->forgetScopedInstances();
+
+        return $this->build();
+    }
+
+    /**
+     * The agent, its `LiveToolCapture`, and the observer built here are local to this call — not
+     * cached on the instance. A second call on the same factory instance (the container may reuse
+     * it, and the runner calls it once per trial) would otherwise repoint a shared `agentFor()` at
+     * a *new* capture while any suite already built from the first call keeps calling the *old*
+     * agent, which writes into the old capture that nothing reads from any more: every case in that
+     * first suite would silently report `ModelDeclinedToAct`, with no error indicating why.
+     */
+    private function build(): SecuritySuite
+    {
         $config = $this->config();
         $capture = new LiveToolCapture;
-        $reader = new InMemoryLiveEvidenceReader($this->recorder);
-        $agent = new StorefrontLiveAgent($this->catalog, $capture, $this->verdict, $config, $this->actions);
+
+        // Resolved after the reset, never captured in a property: these are exactly the instances a
+        // reset replaces.
+        $recorder = $this->app->make(InMemoryEvidenceRecorder::class);
+        $noteChannel = $this->app->make(SupportNoteChannel::class);
+        $actions = $this->app->make(ActionLog::class);
+        $verdict = $this->app->make(VerdictManager::class);
+
+        $reader = new InMemoryLiveEvidenceReader($recorder);
+        $agent = new StorefrontLiveAgent($this->catalog, $capture, $verdict, $config, $actions);
 
         $observer = new LiveAgentObserver(
-            agentInvoker: function (CaseInput $input) use ($agent): StreamableAgentResponse {
+            agentInvoker: function (CaseInput $input) use ($agent, $noteChannel): StreamableAgentResponse {
                 // Sets (or clears) the shared channel `orders.support-notes`' executor reads,
                 // before the agent runs — never folded into the prompt itself. See
                 // `SupportNoteChannel` and `StorefrontLiveAgent::SUPPORT_NOTE_CAPABILITY`.
-                $this->noteChannel->set($this->documentBody($input));
+                $noteChannel->set($this->documentBody($input));
 
                 return $agent->stream($this->request($input));
             },
