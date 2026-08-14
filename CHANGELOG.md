@@ -24,8 +24,12 @@ All notable changes to Verdict will be documented in this file.
   singletons — correct production behaviour, and precisely why resetting is the application's job.
 
   Trial results are now aggregated by case identity rather than array position, so a factory may
-  return its cases in any order. A suite whose name, version, case identities, or per-case immutable
-  metadata change mid-run raises `TrialSuiteChanged` rather than being reconciled. See
+  return its cases in any order. A suite whose name, version, case identities, per-case immutable
+  metadata, or reproduction metadata change mid-run raises `TrialSuiteChanged` rather than being
+  reconciled. Reproduction metadata is included because the report carries one such record for the
+  whole aggregate: a factory that switched model, provider, prompt configuration, or policy revision
+  between trials would otherwise have its results averaged into a report claiming a configuration
+  they were not all produced under. See
   [#137](https://github.com/fissible/verdict/issues/137) and
   [ADR 0020](docs/adr/0020-live-trial-isolation-is-application-owned.md).
 

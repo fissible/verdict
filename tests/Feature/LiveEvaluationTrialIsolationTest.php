@@ -18,6 +18,7 @@ use Fissible\Verdict\Evaluation\LiveEvaluationOptions;
 use Fissible\Verdict\Evaluation\LiveEvaluationRequiresTrialIsolation;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\Observation;
+use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\TrialSuiteChanged;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
@@ -184,6 +185,34 @@ final class ReorderingTrialSuiteFactory implements LiveEvaluationTrialFactory
     }
 }
 
+/**
+ * A trial factory that keeps every case identical but switches the model between trials.
+ *
+ * The aggregate report carries one reproduction record for the whole run, so without this check a
+ * run could mix two models and present the result as though all trials used the last one.
+ */
+final class DriftingReproductionTrialSuiteFactory implements LiveEvaluationTrialFactory
+{
+    public function make(): SecuritySuite
+    {
+        return $this->makeForTrial(0);
+    }
+
+    public function makeForTrial(int $trial): SecuritySuite
+    {
+        $suite = trialIsolationSuite();
+
+        return new SecuritySuite(
+            name: $suite->name,
+            version: $suite->version,
+            cases: $suite->cases,
+            reproduction: new ReproductionMetadata([
+                'model' => $trial === 0 ? 'gpt-oss:20b' : 'some-other-model:7b',
+            ]),
+        );
+    }
+}
+
 /** A trial factory that changes the measurement mid-run. */
 final class DriftingTrialSuiteFactory implements LiveEvaluationTrialFactory
 {
@@ -301,6 +330,16 @@ it('attributes each trial by case identity, so a reordered suite is harmless', f
         ->and($byId['always-executes']->failed)->toBe(0)
         ->and($byId['never-executes']->passed)->toBe(0)
         ->and($byId['never-executes']->failed)->toBe(2);
+});
+
+it('rejects a trial that changed the model, provider, or policy revision it ran under', function (): void {
+    app(VerdictManager::class)->capability(trialIsolationCapability(fn (): string => 'cancelled'));
+
+    $run = fn (): mixed => trialIsolationRunner()->run(new DriftingReproductionTrialSuiteFactory, trialIsolationOptions(2));
+
+    // Every case is byte-identical here; only the reproduction record moved. Without this check the
+    // report would present two models' results as one, attributed to whichever ran last.
+    expect($run)->toThrow(TrialSuiteChanged::class, 'ran under different reproduction metadata');
 });
 
 it('rejects a trial that changes the measurement rather than reconciling it', function (): void {

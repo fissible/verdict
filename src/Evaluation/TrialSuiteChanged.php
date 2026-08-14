@@ -47,6 +47,16 @@ final class TrialSuiteChanged extends RuntimeException
         );
     }
 
+    public static function reproduction(int $trial, string $expected, string $actual): self
+    {
+        return new self(
+            "Trial {$trial} ran under different reproduction metadata: [{$actual}], but the run is ".
+            "measuring [{$expected}]. The model, provider, prompt configuration, and policy revision ".
+            'a result was produced under must hold for every trial, because the report carries one '.
+            'such record for the whole aggregate.'
+        );
+    }
+
     public static function caseMetadata(int $trial, string $caseId): self
     {
         return new self(

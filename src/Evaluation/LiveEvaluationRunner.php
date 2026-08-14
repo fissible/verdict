@@ -62,8 +62,10 @@ final readonly class LiveEvaluationRunner
             $trial++;
         } while ($trial < $options->trials);
 
-        // $suite is the final trial's, and every trial is identity-checked against the first, so
-        // the case metadata reported here holds for all of them.
+        // $suite is the final trial's. Everything read from it below — case metadata, suite name
+        // and version, and the reproduction record naming the model and configuration — is covered
+        // by the identity check every trial after the first passes, so reporting the last trial's
+        // copy reports what all of them ran under.
         $cases = array_map(
             static fn (EvaluationCase $case): LiveEvaluationCaseResult => new LiveEvaluationCaseResult(
                 id: $case->id,
