@@ -210,8 +210,19 @@ it('ships disabled, bounded live evaluation defaults', function (): void {
     /** @var array<string, mixed> $defaults */
     $defaults = require __DIR__.'/../../config/verdict.php';
 
-    expect($defaults['evaluation']['live_enabled'])->toBeFalse()
-        ->and($defaults['evaluation']['maximum_trials'])->toBe(25);
+    // Read from the shipped file rather than resolved config, so a setting the command falls back to
+    // a default for — and therefore never fails on — cannot go missing from what an adopter publishes.
+    expect($defaults['evaluation'])->toHaveKeys([
+        'live_enabled',
+        'maximum_trials',
+        'minimum_security_pass_rate',
+        'minimum_utility_pass_rate',
+        'minimum_observations',
+        'suites',
+    ])
+        ->and($defaults['evaluation']['live_enabled'])->toBeFalse()
+        ->and($defaults['evaluation']['maximum_trials'])->toBe(25)
+        ->and($defaults['evaluation']['minimum_observations'])->toBe(0);
 });
 
 it('resolves the configured live evaluation runner', function (): void {

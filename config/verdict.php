@@ -144,6 +144,7 @@ return [
         // purpose whose measurable-but-unmeasured outcomes outnumber its evaluated ones reports
         // INSUFFICIENT regardless of this setting. Coverage asks how much of what could have been
         // measured was; this asks how much is enough. Neither is a statistical confidence claim.
+        'minimum_observations' => 0,
         // Map a suite name to a class implementing
         // Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory. The application owns
         // its agent, model, tools, fixtures, and provider credentials.

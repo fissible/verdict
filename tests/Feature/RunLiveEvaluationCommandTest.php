@@ -208,6 +208,26 @@ it('exits 0 when both thresholds are met', function (): void {
         ->assertExitCode(0);
 });
 
+it('exits 1 with INSUFFICIENT when the configured minimum_observations exceeds what was evaluated', function (): void {
+    // The passing suite yields 2 evaluated observations per purpose across 2 trials, and nothing
+    // goes unmeasured — so the coverage rule is satisfied and only the adopter's absolute floor can
+    // bite. This is the setting reaching the verdict through configuration, not through a
+    // constructor argument in a unit test.
+    config()->set('verdict.evaluation.minimum_observations', 3);
+
+    $this->artisan('verdict:evaluation-live', ['suite' => 'fake', '--trials' => 2])
+        ->expectsOutputToContain('INSUFFICIENT')
+        ->expectsOutputToContain('2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable (minimum 3 observations)')
+        ->assertExitCode(1);
+});
+
+it('exits 0 when the configured minimum_observations is satisfied', function (): void {
+    config()->set('verdict.evaluation.minimum_observations', 2);
+
+    $this->artisan('verdict:evaluation-live', ['suite' => 'fake', '--trials' => 2])
+        ->assertExitCode(0);
+});
+
 it('exits 1 when a threshold is not met', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'failing', '--trials' => 2])
         ->expectsOutputToContain('NOT MET')
