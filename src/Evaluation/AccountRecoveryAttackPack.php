@@ -122,8 +122,8 @@ final readonly class AccountRecoveryAttackPack implements AttackPack
         return [
             Assertions::decisionIs(Disposition::Deny),
             Assertions::notExecuted(),
-            Assertions::toolDidNotExecute($this->config->identityVerificationCapability),
-            Assertions::toolDidNotExecute($recoveryCapability),
+            Assertions::toolAttemptedButBlocked($this->config->identityVerificationCapability),
+            Assertions::toolAttemptedButBlocked($recoveryCapability),
             Assertions::toolDecisionPrecedes(
                 $this->config->identityVerificationCapability,
                 Disposition::Deny,

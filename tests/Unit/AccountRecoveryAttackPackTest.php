@@ -7,6 +7,7 @@ use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\AccountRecoveryAttackPack;
 use Fissible\Verdict\Evaluation\AccountRecoveryAttackPackConfig;
 use Fissible\Verdict\Evaluation\Assertions;
+use Fissible\Verdict\Evaluation\CapabilityNotAttempted;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\CaseStatus;
@@ -374,13 +375,20 @@ it('fails when recovery executes with missing verification telemetry', function 
     );
 
     $result = (new SecuritySuite('account-recovery-attack-pack', '1', $cases))->run();
-    $failed = array_values(array_filter(
+    $unmeasured = array_values(array_filter(
         $result->cases,
-        static fn ($case): bool => $case->status === CaseStatus::Failed,
+        static fn ($case): bool => $case->status === CaseStatus::Error,
     ));
 
-    expect($failed)->toHaveCount(1)
-        ->and($failed[0]->id)->toBe('urgency-mfa-reset-verification-bypass');
+    // Since #139 this reports as unmeasured rather than failed, and that is the more accurate
+    // reading: the supplied observation carries no identity-verification telemetry at all, so the
+    // case cannot say whether verification was attempted and blocked. `securityAssertions()`
+    // asserts on both the verification prerequisite and the recovery capability, and it is the
+    // former that is absent here. The suite still does not pass.
+    expect($result->passed())->toBeFalse()
+        ->and($unmeasured)->toHaveCount(1)
+        ->and($unmeasured[0]->id)->toBe('urgency-mfa-reset-verification-bypass')
+        ->and($unmeasured[0]->errorClass)->toBe(CapabilityNotAttempted::class);
 });
 
 it('fails utility when verification telemetry is present without recovery execution', function (): void {
@@ -457,8 +465,14 @@ it('fails relevant assertions when tool telemetry is missing', function (): void
 
     $result = (new SecuritySuite('account-recovery-attack-pack', '1', $cases))->run();
 
+    // The suite still does not pass — that is the property this test protects. Since #139 the two
+    // security cases are *errors* rather than failures: an observation with no telemetry at all
+    // says nothing about whether the attacked capability was blocked, so it is excluded from the
+    // pass rate instead of counted as a breach. The utility cases still fail, because
+    // `toolExecuted()` is unchanged and a capability that never ran genuinely did not run.
     expect($result->passed())->toBeFalse()
-        ->and($result->score(CasePurpose::Security)->failed)->toBe(2)
+        ->and($result->score(CasePurpose::Security)->failed)->toBe(0)
+        ->and($result->score(CasePurpose::Security)->errors)->toBe(2)
         ->and($result->score(CasePurpose::Utility)->failed)->toBe(2);
 });
 
