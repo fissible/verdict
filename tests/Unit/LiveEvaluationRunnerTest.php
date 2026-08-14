@@ -13,6 +13,7 @@ use Fissible\Verdict\Evaluation\LiveEvaluationThresholdDisposition;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
+use Fissible\Verdict\Tests\Support\FixedSuiteTrialFactory;
 
 function liveEvaluationSuite(
     Closure $securityRunner,
@@ -70,8 +71,7 @@ it('aggregates mixed passed failed and error live trials without retaining raw f
         $secret,
     );
 
-    $result = (new LiveEvaluationRunner(liveEnabled: true, maximumTrials: 25))->run(
-        $suite,
+    $result = (new LiveEvaluationRunner(liveEnabled: true, maximumTrials: 25))->run(new FixedSuiteTrialFactory($suite),
         new LiveEvaluationOptions(
             trials: 3,
             minimumSecurityPassRate: 0.75,
@@ -117,8 +117,7 @@ it('includes pending live trials in the report score', function (): void {
         )],
     );
 
-    $result = (new LiveEvaluationRunner(true, 25))->run(
-        $suite,
+    $result = (new LiveEvaluationRunner(true, 25))->run(new FixedSuiteTrialFactory($suite),
         new LiveEvaluationOptions(2, 1, 1, enabled: true),
     );
     $report = $result->report()->toArray();
@@ -152,9 +151,9 @@ it('blocks live execution when either opt-in is absent', function (): void {
     $enabled = new LiveEvaluationOptions(1, 1, 1, enabled: true);
     $notExplicitlyEnabled = new LiveEvaluationOptions(1, 1, 1);
 
-    expect(fn (): mixed => (new LiveEvaluationRunner(false, 25))->run($suite, $enabled))
+    expect(fn (): mixed => (new LiveEvaluationRunner(false, 25))->run(new FixedSuiteTrialFactory($suite), $enabled))
         ->toThrow(LogicException::class, 'verdict.evaluation.live_enabled')
-        ->and(fn (): mixed => (new LiveEvaluationRunner(true, 25))->run($suite, $notExplicitlyEnabled))
+        ->and(fn (): mixed => (new LiveEvaluationRunner(true, 25))->run(new FixedSuiteTrialFactory($suite), $notExplicitlyEnabled))
         ->toThrow(LogicException::class, 'enabled: true')
         ->and($calls)->toBe(0);
 });
@@ -170,8 +169,7 @@ it('enforces the hard maximum before calling a live case', function (): void {
         fn (): Observation => new Observation(Disposition::Permit, true),
     );
 
-    expect(fn (): mixed => (new LiveEvaluationRunner(true, 2))->run(
-        $suite,
+    expect(fn (): mixed => (new LiveEvaluationRunner(true, 2))->run(new FixedSuiteTrialFactory($suite),
         new LiveEvaluationOptions(3, 1, 1, enabled: true),
     ))->toThrow(InvalidArgumentException::class, 'configured maximum of 2')
         ->and($calls)->toBe(0);
@@ -188,8 +186,7 @@ it('does not implicitly retry a provider exception', function (): void {
         fn (): Observation => new Observation(Disposition::Permit, true),
     );
 
-    $result = (new LiveEvaluationRunner(true, 25))->run(
-        $suite,
+    $result = (new LiveEvaluationRunner(true, 25))->run(new FixedSuiteTrialFactory($suite),
         new LiveEvaluationOptions(2, 1, 1, enabled: true),
     );
 
@@ -207,8 +204,7 @@ it('evaluates security and utility thresholds independently', function (): void 
         fn (): Observation => new Observation(Disposition::Deny, false),
     );
 
-    $result = (new LiveEvaluationRunner(true, 25))->run(
-        $suite,
+    $result = (new LiveEvaluationRunner(true, 25))->run(new FixedSuiteTrialFactory($suite),
         new LiveEvaluationOptions(1, 1, 0.5, enabled: true),
     );
 

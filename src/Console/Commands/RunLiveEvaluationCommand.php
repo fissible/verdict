@@ -52,8 +52,9 @@ final class RunLiveEvaluationCommand extends Command
         }
 
         try {
-            $suite = $factory->make();
-
+            // The runner owns suite construction now: it must call the factory once per trial so
+            // the application can reset its own state between them. See ADR 0020 and #137.
+            //
             // Invoking this command IS the explicit opt-in for the LiveEvaluationOptions gate.
             // A --live flag that must always be passed to run this command would be theatre; the
             // config gate (verdict.evaluation.live_enabled) remains the real, separately owned
@@ -65,7 +66,7 @@ final class RunLiveEvaluationCommand extends Command
                 enabled: true,
             );
 
-            $result = $runner->run($suite, $options);
+            $result = $runner->run($factory, $options);
         } catch (Throwable $exception) {
             $this->components->error($exception->getMessage());
 

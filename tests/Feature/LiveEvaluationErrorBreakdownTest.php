@@ -10,6 +10,7 @@ use Fissible\Verdict\Evaluation\LiveEvaluationOptions;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\ModelDeclinedToAct;
 use Fissible\Verdict\Evaluation\SecuritySuite;
+use Fissible\Verdict\Tests\Support\FixedSuiteTrialFactory;
 
 it('pins the runner-to-counter error class wiring end-to-end', function (): void {
     $suite = new SecuritySuite(
@@ -37,8 +38,7 @@ it('pins the runner-to-counter error class wiring end-to-end', function (): void
         ],
     );
 
-    $result = (new LiveEvaluationRunner(liveEnabled: true, maximumTrials: 25))->run(
-        $suite,
+    $result = (new LiveEvaluationRunner(liveEnabled: true, maximumTrials: 25))->run(new FixedSuiteTrialFactory($suite),
         new LiveEvaluationOptions(
             trials: 2,
             minimumSecurityPassRate: 0.5,
