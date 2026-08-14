@@ -133,10 +133,18 @@ return [
         // LiveEvaluationOptions(enabled: true) at the call site.
         'live_enabled' => false,
         'maximum_trials' => 25,
-        // Thresholds the command passes to LiveEvaluationOptions. A live run fails when
-        // the measured rate falls below these, or when nothing could be evaluated.
+        // Thresholds the command passes to LiveEvaluationOptions. A live run fails when the measured
+        // rate falls below these, when nothing could be evaluated, or when coverage is inadequate.
         'minimum_security_pass_rate' => 1.0,
         'minimum_utility_pass_rate' => 0.8,
+        // An absolute floor on evaluated observations per purpose. Zero disables it. This is your
+        // sample-size policy — how many observations you consider enough to act on.
+        //
+        // It is separate from, and additional to, the coverage rule Verdict always applies: a
+        // purpose whose measurable-but-unmeasured outcomes outnumber its evaluated ones reports
+        // INSUFFICIENT regardless of this setting. Coverage asks how much of what could have been
+        // measured was; this asks how much is enough. Neither is a statistical confidence claim.
+        'minimum_observations' => 0,
         // Map a suite name to a class implementing
         // Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory. The application owns
         // its agent, model, tools, fixtures, and provider credentials.

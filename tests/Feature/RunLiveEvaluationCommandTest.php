@@ -208,6 +208,26 @@ it('exits 0 when both thresholds are met', function (): void {
         ->assertExitCode(0);
 });
 
+it('exits 1 with INSUFFICIENT when the configured minimum_observations exceeds what was evaluated', function (): void {
+    // The passing suite yields 2 evaluated observations per purpose across 2 trials, and nothing
+    // goes unmeasured — so the coverage rule is satisfied and only the adopter's absolute floor can
+    // bite. This is the setting reaching the verdict through configuration, not through a
+    // constructor argument in a unit test.
+    config()->set('verdict.evaluation.minimum_observations', 3);
+
+    $this->artisan('verdict:evaluation-live', ['suite' => 'fake', '--trials' => 2])
+        ->expectsOutputToContain('INSUFFICIENT')
+        ->expectsOutputToContain('2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable (minimum 3 observations)')
+        ->assertExitCode(1);
+});
+
+it('exits 0 when the configured minimum_observations is satisfied', function (): void {
+    config()->set('verdict.evaluation.minimum_observations', 2);
+
+    $this->artisan('verdict:evaluation-live', ['suite' => 'fake', '--trials' => 2])
+        ->assertExitCode(0);
+});
+
 it('exits 1 when a threshold is not met', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'failing', '--trials' => 2])
         ->expectsOutputToContain('NOT MET')
@@ -231,22 +251,22 @@ it('prints per-case rates and the four-way error breakdown', function (): void {
 
 it('emits a github ::notice line per threshold when both thresholds are met', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'fake', '--trials' => 2, '--format' => 'github'])
-        ->expectsOutput('::notice title=Verdict live evaluation%3A security::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 100%25)')
-        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25)')
+        ->expectsOutput('::notice title=Verdict live evaluation%3A security::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 100%25) — 2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
+        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25) — 2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
         ->assertExitCode(0);
 });
 
 it('emits a github ::error line for a threshold that is not met', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'failing', '--trials' => 2, '--format' => 'github'])
-        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT MET — 0 passed / 2 failed / 0 errors / 0 pending (0%25) (minimum 100%25)')
-        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25)')
+        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT MET — 0 passed / 2 failed / 0 errors / 0 pending (0%25) (minimum 100%25) — 2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
+        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25) — 2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
         ->assertExitCode(1);
 });
 
 it('emits a github ::error line for a threshold that could not be evaluated', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'declining', '--trials' => 2, '--format' => 'github'])
-        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT EVALUATED — 0 passed / 0 failed / 2 errors / 0 pending (no pass rate) (minimum 100%25)')
-        ->expectsOutput('::error title=Verdict live evaluation%3A utility::NOT EVALUATED — 0 passed / 0 failed / 0 errors / 0 pending (no pass rate) (minimum 80%25)')
+        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT EVALUATED — 0 passed / 0 failed / 2 errors / 0 pending (no pass rate) (minimum 100%25) — 0 evaluated / 2 measurable but unmeasured / 0 structurally unavailable')
+        ->expectsOutput('::error title=Verdict live evaluation%3A utility::NOT EVALUATED — 0 passed / 0 failed / 0 errors / 0 pending (no pass rate) (minimum 80%25) — 0 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
         ->expectsOutput('::notice title=Verdict live evaluation error breakdown::declined=2')
         ->assertExitCode(1);
 });

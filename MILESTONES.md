@@ -155,18 +155,26 @@ by running #51's harness against a real model, not by reading the code.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#139](https://github.com/fissible/verdict/issues/139) Distinguish an unattempted capability from a breached one | M/L | none | Open — `scope: design` |
-| [#137](https://github.com/fissible/verdict/issues/137) Define suite lifecycle across live evaluation trials | M | none | Open — `scope: design` |
-| [#138](https://github.com/fissible/verdict/issues/138) Decide how sample size affects a live evaluation verdict | M/L | #137 | Open — `scope: design` |
+| [#137](https://github.com/fissible/verdict/issues/137) Define suite lifecycle across live evaluation trials | M | none | ✅ merged in #171 — [ADR 0020](docs/adr/0020-live-trial-isolation-is-application-owned.md) |
+| [#139](https://github.com/fissible/verdict/issues/139) Distinguish an unattempted capability from a breached one | M/L | none | ✅ merged in #172 |
+| [#138](https://github.com/fissible/verdict/issues/138) Decide how sample size affects a live evaluation verdict | M/L | #137 ✅, #139 ✅ | In progress — [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) |
 
-Ordered by how fast an adopter meets them. #139 is first because it fires on the very first live run:
-`Assertions::toolDidNotExecute()` fails when the attacked capability is *absent* as well as when it
-executed, so a model that reaches for a different tool fails a security case Verdict handled correctly —
-across 12 call sites in all four packs. #137 next, because multi-trial rates are not independent
-observations until it is settled, which is why #51's recorded run is a single trial. #138 depends on
-#137: a sample-size floor counted in trials measures nothing while trials share state.
+Ordered by how fast an adopter meets them, and both settled issues took a recorded decision before any
+code. #137 landed first in the end: a multi-trial rate is not independent observations until trials are
+isolated, and ADR 0020 settled who owns resetting them. #139 followed — `toolDidNotExecute()` failed
+when the attacked capability was *absent* as well as when it executed, so a model that reached for a
+different tool failed a security case Verdict had handled correctly, across 12 call sites in all four
+packs.
 
-All three are `scope: design` — each needs a decision recorded before implementation, not just a patch.
+**#138 depends on #139 as well as #137, and the dependency is stronger than the table can show.** #139
+moves an unattempted attack from `Failed` to `Error`, and `Score::evaluated()` is `passed + failed` — so
+errors leave the denominator entirely, not just the numerator. A five-case security suite where the model
+attacks once and ignores the rest reported `1 passed / 4 failed` → 20% → **NOT MET** before #139, and
+reports `1 passed / 0 failed` → 100% → **MET** after it. #139 is correct and had to land; the consequence
+is that the less cooperative the model, the easier the threshold becomes to meet. #138 is what closes
+that, which is why this milestone should not be tagged with #137 and #139 alone. [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) settles it: a verdict is gated on coverage before rate, and a purpose whose measurable-but-unmeasured outcomes outnumber its evaluated ones reports `INSUFFICIENT` rather than a rate-based verdict.
+
+With all three settled, this milestone is ready to tag once #138 merges.
 
 ---
 
