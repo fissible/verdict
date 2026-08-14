@@ -87,8 +87,8 @@ final readonly class LiveEvaluationRunner
             startedAt: $startedAt,
             completedAt: $clock->now(),
             cases: $cases,
-            securityThreshold: $this->threshold($cases, CasePurpose::Security, $options->minimumSecurityPassRate),
-            utilityThreshold: $this->threshold($cases, CasePurpose::Utility, $options->minimumUtilityPassRate),
+            securityThreshold: $this->threshold($cases, CasePurpose::Security, $options->minimumSecurityPassRate, $options->minimumObservations),
+            utilityThreshold: $this->threshold($cases, CasePurpose::Utility, $options->minimumUtilityPassRate, $options->minimumObservations),
         );
     }
 
@@ -128,12 +128,18 @@ final readonly class LiveEvaluationRunner
     }
 
     /** @param list<LiveEvaluationCaseResult> $cases */
-    private function threshold(array $cases, CasePurpose $purpose, float $minimumPassRate): LiveEvaluationThreshold
-    {
+    private function threshold(
+        array $cases,
+        CasePurpose $purpose,
+        float $minimumPassRate,
+        int $minimumObservations,
+    ): LiveEvaluationThreshold {
         $passed = 0;
         $failed = 0;
         $errors = 0;
         $pending = 0;
+        /** @var array<string,int> $breakdown */
+        $breakdown = [];
 
         foreach ($cases as $case) {
             if ($case->purpose !== $purpose) {
@@ -144,8 +150,22 @@ final readonly class LiveEvaluationRunner
             $failed += $case->score->failed;
             $errors += $case->score->errors;
             $pending += $case->score->pending;
+
+            // Summed across the purpose so coverage can tell an outcome that could have been a
+            // measurement apart from one that never could. Sparse, like the per-case map.
+            foreach ($case->errorBreakdown as $category => $count) {
+                $breakdown[$category] = ($breakdown[$category] ?? 0) + $count;
+            }
         }
 
-        return new LiveEvaluationThreshold($purpose, $minimumPassRate, new Score($passed, $failed, $errors, $pending));
+        $score = new Score($passed, $failed, $errors, $pending);
+
+        return new LiveEvaluationThreshold(
+            purpose: $purpose,
+            minimumPassRate: $minimumPassRate,
+            score: $score,
+            coverage: ThresholdCoverage::from($score, $breakdown),
+            minimumObservations: $minimumObservations,
+        );
     }
 }

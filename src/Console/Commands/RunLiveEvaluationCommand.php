@@ -64,6 +64,7 @@ final class RunLiveEvaluationCommand extends Command
                 minimumSecurityPassRate: $this->floatConfig('verdict.evaluation.minimum_security_pass_rate', 1.0),
                 minimumUtilityPassRate: $this->floatConfig('verdict.evaluation.minimum_utility_pass_rate', 0.8),
                 enabled: true,
+                minimumObservations: $this->intConfig('verdict.evaluation.minimum_observations', 0),
             );
 
             $result = $runner->run($factory, $options);
@@ -130,6 +131,13 @@ final class RunLiveEvaluationCommand extends Command
                 $this->percentage($threshold->minimumPassRate),
             ),
         );
+
+        // Printed for every disposition, not only INSUFFICIENT: a reader should be able to see what
+        // a verdict rests on without recomputing it from the score line.
+        $this->components->twoColumnDetail(
+            '  coverage',
+            $this->coverageSummary($threshold),
+        );
     }
 
     private function renderGithub(LiveEvaluationResult $result): void
@@ -138,10 +146,11 @@ final class RunLiveEvaluationCommand extends Command
             $level = $threshold->disposition() === LiveEvaluationThresholdDisposition::Met ? 'notice' : 'error';
             $title = $this->escapeProperty("Verdict live evaluation: {$threshold->purpose->value}");
             $message = $this->escapeMessage(sprintf(
-                '%s — %s (minimum %s)',
+                '%s — %s (minimum %s) — %s',
                 $this->dispositionLabel($threshold->disposition()),
                 $this->scoreSummary($threshold->score),
                 $this->percentage($threshold->minimumPassRate),
+                $this->coverageSummary($threshold),
             ));
 
             $this->line("::{$level} title={$title}::{$message}");
@@ -161,6 +170,7 @@ final class RunLiveEvaluationCommand extends Command
             LiveEvaluationThresholdDisposition::Met => 'MET',
             LiveEvaluationThresholdDisposition::NotMet => 'NOT MET',
             LiveEvaluationThresholdDisposition::NotEvaluated => 'NOT EVALUATED',
+            LiveEvaluationThresholdDisposition::Insufficient => 'INSUFFICIENT',
         };
     }
 
@@ -176,6 +186,34 @@ final class RunLiveEvaluationCommand extends Command
             $score->pending,
             $rate === null ? 'no pass rate' : $this->percentage($rate),
         );
+    }
+
+    /**
+     * Coverage in words rather than arithmetic: what was measured, what could have been and was not,
+     * and what never could be. An INSUFFICIENT verdict is unreadable without these three numbers.
+     */
+    private function coverageSummary(LiveEvaluationThreshold $threshold): string
+    {
+        $coverage = $threshold->coverage;
+        $summary = sprintf(
+            '%d evaluated / %d measurable but unmeasured / %d structurally unavailable',
+            $coverage->evaluated,
+            $coverage->measurableButUnmeasured,
+            $coverage->structurallyUnavailable,
+        );
+
+        if ($threshold->minimumObservations > 0) {
+            $summary .= sprintf(' (minimum %d observations)', $threshold->minimumObservations);
+        }
+
+        return $summary;
+    }
+
+    private function intConfig(string $key, int $default): int
+    {
+        $value = config($key, $default);
+
+        return is_numeric($value) ? (int) $value : $default;
     }
 
     private function percentage(float $rate): string

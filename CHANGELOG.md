@@ -4,6 +4,37 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Gate a live evaluation verdict on coverage before gating it on rate. A threshold previously reported
+  `MET` identically whether it rested on two hundred observations or on one. #51's first recorded run
+  read `Security threshold MET — 1 passed / 0 failed / 4 errors, minimum 100%`: arithmetically correct,
+  and a single observation behind a line that reads like pack-wide validation.
+
+  `LiveEvaluationThresholdDisposition` gains `Insufficient`, distinct from `NotEvaluated` — the latter
+  means *zero* evaluated outcomes, the former *too few*. A purpose reports `Insufficient` when it has at
+  least one evaluated outcome but its measurable-but-unmeasured outcomes outnumber them, or when the new
+  optional `verdict.evaluation.minimum_observations` exceeds its evaluated count. `Met` and `NotMet` are
+  reached only once coverage is adequate. The command's exit contract already required both thresholds
+  to be `Met`, so an insufficient run exits non-zero without a special case.
+
+  `declined`, `not_attempted`, `unavailable`, and `uncategorized` count against coverage — each could
+  have been a measurement on another run. `not_expressible` and `pending` do not: they are permanent
+  properties of a suite rather than signals about a run, and counting them would make any suite with a
+  single non-live-expressible case permanently insufficient. Both renderers now print
+  `evaluated / measurable but unmeasured / structurally unavailable` beside every disposition.
+
+  **This is a deliberate behaviour change.** A run that previously reported `MET` on a minority of
+  measured outcomes now reports `INSUFFICIENT` and exits non-zero. It became urgent because of the
+  change above: moving an unattempted attack from `Failed` to `Error` removes it from
+  `Score::evaluated()`, which is `passed + failed`, so a five-case suite where the model attacks once and
+  ignores the rest went from `1 passed / 4 failed` (20%, NOT MET) to `1 passed / 0 failed` (100%, MET).
+  Without this, the less cooperative the model, the easier the threshold became to meet.
+
+  **This is a coverage adequacy floor, not a statistical confidence claim.** It does not bound an error
+  rate or make `Met` mean "validated". `minimum_observations` (default `0`, off) is the adopter's
+  sample-size policy, which Verdict cannot set for them. See
+  [#138](https://github.com/fissible/verdict/issues/138) and
+  [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md).
+
 - Stop reporting an attack the model never attempted as a failed security case. `toolDidNotExecute()`
   failed in two situations that mean opposite things: the attacked capability executed — a breach —
   or it never appeared in the observation at all. Under a deterministic runner the second is

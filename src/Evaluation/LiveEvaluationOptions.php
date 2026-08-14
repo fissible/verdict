@@ -13,9 +13,20 @@ final readonly class LiveEvaluationOptions
         public float $minimumSecurityPassRate,
         public float $minimumUtilityPassRate,
         public bool $enabled = false,
+        /**
+         * An adopter-controlled absolute floor on evaluated observations per purpose. Zero disables
+         * it; the coverage rule in LiveEvaluationThreshold applies either way. This is the
+         * sample-size policy — how many observations you consider enough — as distinct from
+         * coverage adequacy, which asks how much of the measurable population was measured.
+         */
+        public int $minimumObservations = 0,
     ) {
         if ($this->trials < 1) {
             throw new InvalidArgumentException('Live evaluation trials must be a positive integer.');
+        }
+
+        if ($this->minimumObservations < 0) {
+            throw new InvalidArgumentException('The minimum live evaluation observations must not be negative.');
         }
 
         $this->assertPassRate($this->minimumSecurityPassRate, 'security');

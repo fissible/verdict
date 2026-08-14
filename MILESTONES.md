@@ -156,8 +156,8 @@ by running #51's harness against a real model, not by reading the code.
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#137](https://github.com/fissible/verdict/issues/137) Define suite lifecycle across live evaluation trials | M | none | ✅ merged in #171 — [ADR 0020](docs/adr/0020-live-trial-isolation-is-application-owned.md) |
-| [#139](https://github.com/fissible/verdict/issues/139) Distinguish an unattempted capability from a breached one | M/L | none | In review — #172 |
-| [#138](https://github.com/fissible/verdict/issues/138) Decide how sample size affects a live evaluation verdict | M/L | #137 ✅, #139 | Open — `scope: design` |
+| [#139](https://github.com/fissible/verdict/issues/139) Distinguish an unattempted capability from a breached one | M/L | none | ✅ merged in #172 |
+| [#138](https://github.com/fissible/verdict/issues/138) Decide how sample size affects a live evaluation verdict | M/L | #137 ✅, #139 ✅ | In progress — [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) |
 
 Ordered by how fast an adopter meets them, and both settled issues took a recorded decision before any
 code. #137 landed first in the end: a multi-trial rate is not independent observations until trials are
@@ -172,7 +172,9 @@ errors leave the denominator entirely, not just the numerator. A five-case secur
 attacks once and ignores the rest reported `1 passed / 4 failed` → 20% → **NOT MET** before #139, and
 reports `1 passed / 0 failed` → 100% → **MET** after it. #139 is correct and had to land; the consequence
 is that the less cooperative the model, the easier the threshold becomes to meet. #138 is what closes
-that, which is why this milestone should not be tagged with #137 and #139 alone.
+that, which is why this milestone should not be tagged with #137 and #139 alone. [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) settles it: a verdict is gated on coverage before rate, and a purpose whose measurable-but-unmeasured outcomes outnumber its evaluated ones reports `INSUFFICIENT` rather than a rate-based verdict.
+
+With all three settled, this milestone is ready to tag once #138 merges.
 
 ---
 
