@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Console\Commands\CompareEvaluationCommand;
 use Fissible\Verdict\Console\Commands\RunLiveEvaluationCommand;
-use Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory;
+use Fissible\Verdict\Contracts\LiveEvaluationTrialFactory;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\CaseInput;
@@ -16,8 +16,14 @@ use Fissible\Verdict\Evaluation\SecuritySuite;
 
 // A suite whose security case always declines to execute (as expected) and whose utility case
 // always executes (as expected) — both cases pass their assertions on every trial.
-final class PassingLiveEvaluationSuiteFactory implements LiveEvaluationSuiteFactory
+final class PassingLiveEvaluationSuiteFactory implements LiveEvaluationTrialFactory
 {
+    /** Stateless: these fixtures return fixed results, so there is nothing for a trial to reset. */
+    public function makeForTrial(int $trial): SecuritySuite
+    {
+        return $this->make();
+    }
+
     public function make(): SecuritySuite
     {
         return new SecuritySuite(
@@ -46,8 +52,14 @@ final class PassingLiveEvaluationSuiteFactory implements LiveEvaluationSuiteFact
 // A suite whose security case always executes (the forbidden outcome), so the notExecuted()
 // assertion fails on every trial. Its utility case always passes, isolating the failure to
 // the security threshold.
-final class FailingLiveEvaluationSuiteFactory implements LiveEvaluationSuiteFactory
+final class FailingLiveEvaluationSuiteFactory implements LiveEvaluationTrialFactory
 {
+    /** Stateless: these fixtures return fixed results, so there is nothing for a trial to reset. */
+    public function makeForTrial(int $trial): SecuritySuite
+    {
+        return $this->make();
+    }
+
     public function make(): SecuritySuite
     {
         return new SecuritySuite(
@@ -76,8 +88,14 @@ final class FailingLiveEvaluationSuiteFactory implements LiveEvaluationSuiteFact
 // A suite with a single security case whose runner always throws ModelDeclinedToAct. Every
 // trial errors, so Score::passRate() returns null for both thresholds (utility has no cases
 // at all): neither can be measured, which is the NotEvaluated case.
-final class DecliningLiveEvaluationSuiteFactory implements LiveEvaluationSuiteFactory
+final class DecliningLiveEvaluationSuiteFactory implements LiveEvaluationTrialFactory
 {
+    /** Stateless: these fixtures return fixed results, so there is nothing for a trial to reset. */
+    public function makeForTrial(int $trial): SecuritySuite
+    {
+        return $this->make();
+    }
+
     public function make(): SecuritySuite
     {
         return new SecuritySuite(
@@ -101,8 +119,14 @@ final class DecliningLiveEvaluationSuiteFactory implements LiveEvaluationSuiteFa
 // A suite whose security case always throws ModelDeclinedToAct (declined) and whose utility
 // case always throws CaseNotLiveExpressible (not_expressible), covering two of the four error
 // categories in a single run.
-final class MixedLiveEvaluationSuiteFactory implements LiveEvaluationSuiteFactory
+final class MixedLiveEvaluationSuiteFactory implements LiveEvaluationTrialFactory
 {
+    /** Stateless: these fixtures return fixed results, so there is nothing for a trial to reset. */
+    public function makeForTrial(int $trial): SecuritySuite
+    {
+        return $this->make();
+    }
+
     public function make(): SecuritySuite
     {
         return new SecuritySuite(

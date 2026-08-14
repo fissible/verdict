@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Evaluation;
 
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory;
+use Fissible\Verdict\Contracts\LiveEvaluationTrialFactory;
 use Fissible\Verdict\Support\SystemClock;
 use InvalidArgumentException;
 use LogicException;
@@ -16,38 +18,63 @@ final readonly class LiveEvaluationRunner
         private int $maximumTrials,
     ) {}
 
-    public function run(SecuritySuite $suite, LiveEvaluationOptions $options, ?Clock $clock = null): LiveEvaluationResult
+    public function run(LiveEvaluationSuiteFactory $factory, LiveEvaluationOptions $options, ?Clock $clock = null): LiveEvaluationResult
     {
         $this->assertExecutionIsEnabled($options);
         $this->assertTrialsAreBounded($options);
+        $this->assertTrialsAreIsolated($factory, $options);
 
         $clock ??= new SystemClock;
         $startedAt = $clock->now();
-        $counters = array_map(
-            static fn (EvaluationCase $case): LiveEvaluationScoreCounter => new LiveEvaluationScoreCounter,
-            $suite->cases,
-        );
 
-        for ($trial = 0; $trial < $options->trials; $trial++) {
+        /** @var array<string,LiveEvaluationScoreCounter> $counters keyed by case id, never by position */
+        $counters = [];
+        $identity = null;
+        $suite = null;
+
+        // A do/while, not a for: LiveEvaluationOptions rejects trials < 1, so at least one trial
+        // always runs and $suite is always assigned before it is read below.
+        $trial = 0;
+
+        do {
+            // Called before *every* trial, including the first: a process or database already used
+            // before this run contaminates trial 0 exactly as it would trial 1.
+            $suite = $factory instanceof LiveEvaluationTrialFactory
+                ? $factory->makeForTrial($trial)
+                : $factory->make();
+
+            if ($identity === null) {
+                $identity = TrialSuiteIdentity::of($suite);
+
+                foreach ($suite->cases as $case) {
+                    $counters[$case->id] = new LiveEvaluationScoreCounter;
+                }
+            } else {
+                $identity->assertMatches($suite, $trial);
+            }
+
             $result = $suite->run($clock);
 
-            foreach ($result->cases as $index => $case) {
-                $counters[$index]->record($case->status, $case->errorClass);
+            foreach ($result->cases as $case) {
+                $counters[$case->id]->record($case->status, $case->errorClass);
             }
-        }
 
+            $trial++;
+        } while ($trial < $options->trials);
+
+        // $suite is the final trial's, and every trial is identity-checked against the first, so
+        // the case metadata reported here holds for all of them.
         $cases = array_map(
-            static fn (EvaluationCase $case, LiveEvaluationScoreCounter $counter): LiveEvaluationCaseResult => new LiveEvaluationCaseResult(
+            static fn (EvaluationCase $case): LiveEvaluationCaseResult => new LiveEvaluationCaseResult(
                 id: $case->id,
                 version: $case->version,
                 purpose: $case->purpose,
                 trustedSetupFingerprint: $case->input->trustedSetupFingerprint(),
                 untrustedInputFingerprint: $case->input->untrustedInputFingerprint(),
-                score: $counter->score(),
-                errorBreakdown: $counter->errorBreakdown(),
+                score: $counters[$case->id]->score(),
+                errorBreakdown: $counters[$case->id]->errorBreakdown(),
             ),
             $suite->cases,
-            $counters,
         );
 
         return new LiveEvaluationResult(
@@ -71,6 +98,19 @@ final readonly class LiveEvaluationRunner
 
         if (! $options->enabled) {
             throw new LogicException('Live evaluation requires an explicit enabled: true option.');
+        }
+    }
+
+    /**
+     * Refuse a multi-trial run the factory cannot make independent, before any model is invoked.
+     *
+     * A single trial makes no independence claim, so it needs no reset seam and is left unchanged.
+     * See [ADR 0020](../../docs/adr/0020-live-trial-isolation-is-application-owned.md).
+     */
+    private function assertTrialsAreIsolated(LiveEvaluationSuiteFactory $factory, LiveEvaluationOptions $options): void
+    {
+        if ($options->trials > 1 && ! $factory instanceof LiveEvaluationTrialFactory) {
+            throw LiveEvaluationRequiresTrialIsolation::forTrials($options->trials, $factory::class);
         }
     }
 
