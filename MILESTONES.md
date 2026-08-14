@@ -183,15 +183,21 @@ Ordered by suggested pickup order: defects first, then self-contained work with 
 
 | Issue | Effort | Label | Deps |
 |---|---|---|---|
+| [#163](https://github.com/fissible/verdict/issues/163) Record the tool description fingerprints instead of discarding them | S | `bug` | none |
+| [#165](https://github.com/fissible/verdict/issues/165) Give `verdict:prune-rate-limits` a test that can fail | XS | `good first issue` | none |
 | [#143](https://github.com/fissible/verdict/issues/143) Publish PostgreSQL and MariaDB arms of the security-state benchmark | S | `good first issue` | none — compose services already exist |
 | [#142](https://github.com/fissible/verdict/issues/142) Collapse the repeated store/connection/table triple into a shared value object | XS | `good first issue` | none — carved out of #141 |
 | [#146](https://github.com/fissible/verdict/issues/146) Warn from `verdict:validate` when a non-durable adapter is configured outside local | S | `good first issue` | none |
+| [#166](https://github.com/fissible/verdict/issues/166) Prove a failing `CapabilityConfigurationStore` fails closed | S | `good first issue` | none — template at `SemanticRateLimitTest:194` |
+| [#168](https://github.com/fissible/verdict/issues/168) Assert the schema the migrations produce on MySQL, MariaDB, and PostgreSQL | S/M | `good first issue` | none — the matrix already runs them |
 | [#147](https://github.com/fissible/verdict/issues/147) Write a worked incident-response walkthrough over the evidence tables | M | `help wanted` | none — the v0.4.0 chain is complete |
 | [#144](https://github.com/fissible/verdict/issues/144) Prove the in-memory stores agree with the database stores | M | `help wanted` | none |
 | [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | `help wanted` | none |
 | [#145](https://github.com/fissible/verdict/issues/145) Add a delegation attack pack for actor-versus-subject confusion | M | `help wanted` | #31 ✅ |
+| [#167](https://github.com/fissible/verdict/issues/167) Pin cross-actor approval receipt separation end to end | S | `help wanted` | none |
 | [#151](https://github.com/fissible/verdict/issues/151) Harden field-path handling in the release path | M | `help wanted` | none — #150 shipped in v0.5.0 |
 | [#152](https://github.com/fissible/verdict/issues/152) Decide and enforce the binding fingerprint canonicalization contract | M | `scope: ready` | none |
+| [#164](https://github.com/fissible/verdict/issues/164) Cover rate-limit window boundary, expiry, and cross-window leakage | M | `scope: ready` | none |
 | [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | `scope: ready` | none — precedent in #91 |
 
 **#151 and #152 are the hardening that remained open after the same audit.** #149 and #150 were fixed in
@@ -204,6 +210,22 @@ dispatches `EvidenceWriteFailed` and execution continues, leaving the operationa
 consumption, approval consumption, and execution-claim admission — as the only authorization decisions.
 The outcome differs by gate: a rate-limit unit can self-heal, while an admitted execution claim that
 cannot be finalized blocks its binding indefinitely. See ADR 0007 and the v0.5.0 changelog.
+
+**#163 through #168 came out of a test-coverage audit after v0.5.0.** None is an authorization bypass and
+none makes a released version unsafe; they are places where a guarantee holds today but nothing pins it.
+Two are worth singling out. #163 is the only one that changes shipped behaviour: `AbstractVerdictTool`
+already fingerprints the tool description at wiring time and again at each invocation, so a description
+that changes in between is *detected* — and then discarded, because neither fingerprint reaches evidence.
+The bound capability is passed explicitly and cannot be redirected by description text, so this is a
+forensic gap rather than an authorization one. #165 is the cheapest and the most instructive: the command's
+only test asserts `Pruned 0` against an empty table, so it holds whether pruning works or does nothing at
+all.
+
+#167 and #168 are deliberately last. Cross-actor receipt separation already follows from `actor_id`
+participating in the binding, and the migrations already execute against all three engines in the
+concurrency matrix — both issues pin an existing property rather than close a suspected hole, and both say
+so. An earlier draft of the audit claimed migrations only ever run on SQLite and that a poisoned
+description could redirect a capability; neither survived checking, and neither is filed.
 
 **#147 is the one worth finishing soonest.** v0.4.0 completed the forensic chain — invocation correlation,
 derivation edges, actor and subject identity, configuration fingerprints, optional tamper-evidence — and
