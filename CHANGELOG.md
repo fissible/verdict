@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-14
+
 - Gate a live evaluation verdict on coverage before gating it on rate. A threshold previously reported
   `MET` identically whether it rested on two hundred observations or on one. #51's first recorded run
   read `Security threshold MET — 1 passed / 0 failed / 4 errors, minimum 100%`: arithmetically correct,
@@ -453,7 +455,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/fissible/verdict/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fissible/verdict/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fissible/verdict/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/fissible/verdict/compare/v0.2.0...v0.3.0
