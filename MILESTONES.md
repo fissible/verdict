@@ -157,7 +157,7 @@ by running #51's harness against a real model, not by reading the code.
 |---|---|---|---|
 | [#137](https://github.com/fissible/verdict/issues/137) Define suite lifecycle across live evaluation trials | M | none | ✅ merged in #171 — [ADR 0020](docs/adr/0020-live-trial-isolation-is-application-owned.md) |
 | [#139](https://github.com/fissible/verdict/issues/139) Distinguish an unattempted capability from a breached one | M/L | none | ✅ merged in #172 |
-| [#138](https://github.com/fissible/verdict/issues/138) Decide how sample size affects a live evaluation verdict | M/L | #137 ✅, #139 ✅ | In progress — [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) |
+| [#138](https://github.com/fissible/verdict/issues/138) Decide how sample size affects a live evaluation verdict | M/L | #137 ✅, #139 ✅ | ✅ merged in #173 — [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) |
 
 Ordered by how fast an adopter meets them, and both settled issues took a recorded decision before any
 code. #137 landed first in the end: a multi-trial rate is not independent observations until trials are
@@ -174,7 +174,17 @@ reports `1 passed / 0 failed` → 100% → **MET** after it. #139 is correct and
 is that the less cooperative the model, the easier the threshold becomes to meet. #138 is what closes
 that, which is why this milestone should not be tagged with #137 and #139 alone. [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) settles it: a verdict is gated on coverage before rate, and a purpose whose measurable-but-unmeasured outcomes outnumber its evaluated ones reports `INSUFFICIENT` rather than a rate-based verdict.
 
-With all three settled, this milestone is ready to tag once #138 merges.
+All three have merged, so this milestone is **ready to tag**.
+
+The three are one argument rather than three fixes, which is worth stating because they landed
+separately. #137 made trials independent; #139 stopped an unattempted attack being counted as a breach;
+#138 stopped #139's correction from making the gate easier to pass. Shipping any two without the third
+would have left a live verdict weaker than the one it replaced.
+
+Deferred from this milestone with their reasons recorded rather than dropped:
+[#174](https://github.com/fissible/verdict/issues/174) (per-case coverage, deferred from #138) and
+[#170](https://github.com/fissible/verdict/issues/170) (an unguarded control arm, whose three stated
+dependencies are now all settled).
 
 ---
 
