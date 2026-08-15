@@ -1,3 +1,342 @@
+# Verdict research log
+
+A record of external research surveyed for its bearing on Verdict, and what Verdict
+concluded about each item.
+
+This log exists so that a decision made once does not get relitigated. When an idea is
+rejected, the rejection and its reasoning are written down; when an idea is adopted, the
+log records where it came from.
+
+## How to read an entry
+
+Each entry names one or more **primitives** — the transferable idea, stated independently
+of the system that introduced it — and records a **verdict** for each:
+
+| Verdict | Meaning |
+| --- | --- |
+| `already implements` | Verdict has this. The entry cites where. |
+| `should adopt` | A real gap with a clear, in-scope fix. |
+| `should investigate` | Plausible fit, but the design is not settled. |
+| `intentionally rejects` | Considered and declined. The reasoning is the point. |
+| `out of repo` | Belongs to `attest`, `attest-laravel`, or upstream Laravel AI. |
+
+Verdicts cite a path in `src/`, an ADR, or a published doc. A claim that cannot be
+grounded that way is recorded as `should investigate`, never as `already implements`.
+
+**Candidate** lines carry a slug naming proposed follow-up work. Slugs are mapped to ADR
+and issue numbers once that work is approved and filed.
+
+Each section closes with a **Surveyed, no hook** line recording what was read without
+producing an entry, so the breadth of the sweep stays visible.
+
+---
+
+## 1. Agent authorization and capability papers
+
+### A Capability Kernel for Agent Authorization: Design and Threat Model — paper
+
+Ali Pourrahim, June 2026. SSRN 6931639.
+
+- Describes `authgate-kernel`, a minimal trusted computing base interposing a
+  structural, deterministic authorization check between any decision-maker and any IO
+  target. The kernel decides whether an action is *authorized*, explicitly not whether it
+  is *wise*; semantic judgement is out of the TCB by construction.
+- Argues that entangling authorization with the reasoning component is structurally
+  unsound for three reasons: a promptable component cannot enforce a boundary, framework
+  guardrails leave authority implicit and unauditable, and the set of decision-makers is
+  not fixed, so an authorization layer tied to today's agent architecture ages badly.
+- All authority lives in *capability proofs*: `subject_id`, `resource_hash`, a 64-bit
+  rights bitmask, `expiry`, `epoch`, `issuer` (root or delegated), and an ed25519
+  signature. There is no central registry in the TCB; the trust anchor is passed in by
+  the caller rather than held in a singleton.
+- Delegation is a signed chain. Validation walks leaf to root enforcing, at every node,
+  signature validity, epoch floor, issuer-key-to-parent-subject binding, resource match,
+  and **attenuation** — `child.rights ⊆ parent.rights`. Chain depth is bounded at 16 to
+  prevent unbounded traversal.
+- Revocation has two mechanisms. The primary is *epoch-based*: advancing `min_epoch`
+  invalidates every proof issued in a prior epoch in O(1), with no revocation-list
+  distribution. The secondary is an explicit root-signed revocation of a single proof
+  hash. Only root-signed revocations are honored, so an attacker can neither forge a
+  revocation nor mount denial-of-service by injecting garbage ones.
+- The `verify` function is stateless — `verify(action, root_key, now) → Permit | Deny` —
+  with no probability scores, no model invocations, and no network IO inside the gate. A
+  canonical binding-hash gate rejects any action whose hash does not match its contents
+  *before* any proof is parsed, giving tamper-evidence ahead of parsing.
+- The integration surface is a JSON wire format, not a framework API, so the same kernel
+  can sit under different decision-makers.
+- Section 4 is the paper's most unusual contribution: a per-property verification-status
+  table distinguishing what is machine-checked, what is *admitted* (axiom or `sorry`),
+  and what is *pending* a tool the authors did not run. The authors explicitly correct
+  their own repository badges, note six Lean "theorems" are tautological stubs, and
+  refuse to report a Rust test count they could not reproduce. They make no blanket
+  "formally verified" claim.
+- Out-of-scope list is equally explicit: compromised trust root, key isolation, semantic
+  manipulation upstream of the gate, clock and epoch integrity, side channels, and a
+  Python reference layer that is not the verified TCB and may diverge from it.
+
+**Primitive — structural vs. semantic authorization.** A security gate should answer
+"is this authorized," never "is this wise," and semantic judgement should be outside the
+trusted component.
+**Verdict:** `already implements`. This is Verdict's founding split — "Models propose.
+Applications authorize" (`README.md`), formalized as the boundary in
+`docs/security-model.md` where a model proposes a capability and arguments while the
+application resolves the target and evaluates policy. Useful as external corroboration,
+not as new work.
+
+**Primitive — caller-supplied time as part of the TCB.** When `now` is supplied by the
+caller, a caller that supplies stale values defeats every expiry- and
+revocation-dependent control. The paper lists this as an explicit non-goal.
+**Verdict:** `should adopt`. Verdict has the identical exposure and does not document it.
+`Clock` is a container singleton bound to `SystemClock` at
+`src/VerdictServiceProvider.php:56` and is injected into `ApprovalManager`,
+`RateLimitManager`, `ExecutionClaimManager`, `ContextReleaseManager`, and
+`ProvenanceLedger`. Approval expiry is evaluated as `$time >= $this->expiresAt`
+(`src/Approvals/ApprovalReceipt.php:28`) against that injected clock. An application that
+rebinds `Clock::class` — including a test double leaking into a non-testing environment —
+silently controls approval expiry, rate-limit windows, and claim retention. `Clock` is
+part of Verdict's trusted base, and `docs/limitations.md` does not say so.
+**Candidate:** `clock-trust-assumption`
+
+**Primitive — honest verification-status accounting.** Publish, per claimed property, the
+strongest evidence that actually exists, and mark the difference between specified,
+partially checked, and verified.
+**Verdict:** `should adopt`. `README.md` publishes six package-level guarantees and
+`docs/security-model.md` publishes a five-item threat model, but neither maps a guarantee
+to the test that demonstrates it. Verdict's tests are organized by unit
+(`tests/Unit`, `tests/Feature`), not by guarantee, so a reader cannot check the claims and
+a contributor can weaken one without an obviously failing test. Issue #20 already notes
+that genuine concurrency tests are missing, which is one such gap. A guarantee-to-test
+table is cheap, purely documentary, and directly raises the credibility of a pre-1.0
+security package.
+**Candidate:** `guarantee-test-traceability`
+
+**Primitive — attenuating delegation chains.** Authority passed onward may only shrink;
+attenuation is enforced at every node, not just at the leaf.
+**Verdict:** `should investigate`. Verdict has no delegation or sub-agent model at all.
+`ActionContext` carries a single actor (`src/Actions/ActionContext.php`) and
+`CapabilityRegistry` is a flat name-to-capability map with no notion of one capability
+granting a subset of another (`src/Capabilities/CapabilityRegistry.php`). Whether Verdict
+should model sub-agent delegation is a genuine open question — two other papers in this
+sweep raise the same gap — but the design is not settled and the answer may be "the
+application owns this."
+**Candidate:** `subagent-delegation-question`
+
+**Primitive — epoch-based bulk revocation.** A monotonic epoch counter invalidates every
+credential issued before it in constant time, with no revocation list.
+**Verdict:** `should investigate`. Verdict's approvals expire individually via
+`expiresAt`, and `ApprovalReceiptStatus` has no bulk-invalidation path. There is no way to
+express "invalidate every pending approval issued before this incident." That is a
+plausible operational need during a suspected prompt-injection incident, but it needs a
+real use case before it earns surface area.
+**Candidate:** `bulk-approval-invalidation`
+
+---
+
+### Securing Agents With Tracked Capabilities — paper
+
+Odersky, Zhao, Xu, Bračevac, Pham (EPFL LAMP). CAIS '26.
+ACM 10.1145/3786335.3813127. Local: `~/Downloads/3786335.3813127.pdf`
+
+- Puts the agent in a programming-language safety harness: instead of calling tools, the
+  agent emits code in a capability-safe language — Scala 3 with capture checking — and
+  the type system statically tracks which capabilities each expression may use. Shipped
+  as `tacit`, an MCP server, so any MCP-compatible agent connects without modification.
+- Names the failure that per-call authorization cannot catch: "an agent might read a
+  secret in one step and exfiltrate it in a later step, even if each individual step was
+  permitted." Safety is a property of the *flow*, not of any single decision.
+- The critique of sandboxing is precise and generalizes well beyond sandboxes: in the
+  classified-leak scenario, every offending operation is individually permitted — the
+  agent legitimately reads a private file and legitimately calls the cloud LLM. "The leak
+  is the data flow from one to the other, which never crosses a sandbox boundary."
+- `Classified[T]` wraps sensitive data and exposes `map(f: T -> U)` accepting only *pure*
+  functions. A closure that captures a file or network capability has type
+  `String ->{f} String` and fails to conform, so exfiltration is rejected at compile time.
+  `reveal` requires a `CanAccess` capability the agent does not hold.
+- Local purity is the load-bearing property. It requires capability safety (capabilities
+  cannot be forged or forgotten) and capability completeness (capabilities regulate all
+  safety-relevant effects), and it delivers a lightweight form of non-interference.
+- Scoped capabilities give lifetime control: `requestFileSystem(root)(block)` creates the
+  capability, passes it to the block, and invalidates it on return. The compiler rejects
+  any closure or container that would retain it, because the block's return type cannot
+  mention the capability.
+- Two output channels: a normal channel the agent observes and which feeds the cloud LLM's
+  context, and a secure channel delivered only to the human's terminal. Printing a
+  `Classified[T]` sends `Classified(****)` to the agent and the real content to the user.
+- Explicitly names *confirmation fatigue*: interactive approval prompts "cause confirmation
+  fatigue and tend to be ignored in practice," and the paper treats reducing prompt
+  volume as a design goal rather than a UX nicety.
+- Dismisses separate policy DSLs — Bedrock AgentCore's Cedar policies "require
+  coordinating two languages and offer little more than access lists," and cannot express
+  that a sub-computation must be side-effect free.
+- Treats the agent as adversarial in the system-security sense, and argues this is
+  justified less by frontier-model malice than by scale: thousands of agents running
+  business processes unsupervised make simple mistakes into vulnerabilities.
+- Non-goals: correctness and hallucination, timing and termination side channels, and
+  external processes that escape the language boundary (where the guarantee degrades to
+  the underlying allowlist).
+
+**Primitive — authorization of actions does not compose into control of flows.** A
+sequence of individually authorized actions can accomplish something no single
+authorization would have permitted.
+**Verdict:** `should adopt` (as a documented limitation). This applies to Verdict exactly
+as it applies to sandboxes, and it is the sharpest unstated gap found so far.
+`ContextReleaseManager::release()` takes `Source`, `Trust`, and `DataClass` as
+caller-supplied arguments and evaluates a single-hop predicate —
+`ReleasePolicy::permits($source, $destination, $dataClass, $trust)` returns a bool from
+those four values alone (`src/Context/ReleasePolicy.php`). The permitted payload is
+returned as a plain array in `ContextReleaseResult::permitted()`, carrying no label. So
+classification is asserted per release and does not propagate: data released as
+`Sensitive` to one destination and later re-released through a different policy is not
+recognized as the same data. Verdict performs *release control*, not *information-flow
+control*. `docs/limitations.md` lists seven non-guarantees and this is not among them.
+**Candidate:** `no-information-flow-control`
+
+**Primitive — explicit projection over redaction.** Release an allowlist of named fields
+rather than filtering a payload for things that look sensitive.
+**Verdict:** `already implements`. `ContextReleaseManager::release()` projects an explicit
+`$paths` allowlist through `FieldProjector`, and transformers are forbidden from widening
+it — a transformer whose output introduces paths outside the projected set raises
+`LogicException` (`src/Context/ContextReleaseManager.php`). This is the stronger design
+and it is already the one in place.
+
+**Primitive — asymmetric output channels.** The channel a model observes and the channel a
+human observes need not carry the same content.
+**Verdict:** `should investigate`. Verdict models release *destinations*
+(`src/Context/Destination.php`) and channel *kinds* (`src/Context/ContextChannel.php`,
+which enumerates `UserInput`, `RetrievedDocument`, `ToolResult`, `ApplicationContext`),
+but every channel is an input to the model — there is no notion of a sink the human sees
+and the model does not. Whether that belongs in Verdict or in the application's
+presentation layer is genuinely unclear.
+**Candidate:** `human-only-output-channel`
+
+**Primitive — confirmation fatigue as a security property.** Approval prompts degrade with
+volume; a design that emits many prompts is weaker than one that emits few, regardless of
+what each prompt says.
+**Verdict:** `should adopt` (as documentation). Verdict's `requiresConfirmation()` is
+subject to this and the docs do not acknowledge it. `docs/security-model.md` explains that
+approval is bound to canonical facts so a changed action cannot reuse it, which is a good
+answer to approval *reuse* but not to approval *volume*. The guidance that follows from
+the research is concrete and matches Verdict's existing stance that "a capability should
+use the smallest set that adequately protects its real side effect": reserve confirmation
+for genuinely consequential actions and prefer semantic limits for the rest.
+**Candidate:** `confirmation-fatigue-guidance`
+
+**Primitive — host-language policy over a separate policy DSL.** A policy language adds a
+second language to coordinate and typically buys little over access lists.
+**Verdict:** `already implements`. Verdict evaluates Laravel abilities through
+`Capability::usingPolicy()` and `src/Policies/LaravelPolicyAuthorizer.php` rather than
+introducing a rule DSL. The paper's critique of Cedar-based agent authorization is an
+independent argument for the choice Verdict already made. Worth citing when the question
+resurfaces.
+
+---
+
+### Governing Dynamic Capabilities: Cryptographic Binding and Reproducibility Verification for AI Agent Tool Use — paper
+
+Ziling Zhou (Genupixel). arXiv:2603.14332v2 [cs.CR], March 2026.
+Local: `~/Downloads/2603.14332v2.pdf`
+
+- Proposes the *capability-context separation*: tool definitions determine which
+  real-world actions are **possible** and change infrequently; runtime context determines
+  which actions are **chosen** and changes per interaction. Inside a transformer's forward
+  pass the two are indistinguishable token sequences, but at the orchestration layer they
+  have entirely different security semantics.
+- Derives three Agent Governance Requirements: G1 capability integrity (identity bound to
+  the complete capability set, any change invalidating credentials), G2 behavioral
+  verifiability (the agent executed the process it declared), G3 interaction auditability
+  (tamper-evident records sufficient for forensic reconstruction).
+- Identifies *silent capability escalation* as a vulnerability class: an agent acquires or
+  modifies tools at runtime without triggering any existing security mechanism. Identity
+  platforms bind agents to keys but certificates stay valid after capability changes;
+  authorization frameworks evaluate permissions at grant time without detecting drift;
+  runtime gateways inspect calls statelessly.
+- Argues even hardware TEEs do not remove the need for G1 and G3 — a TEE-attested agent
+  that silently acquires new tools is still a threat, and a TEE-attested pipeline without
+  tamper-evident records is still unauditable.
+- Instantiates G1 as a *skills manifest hash*: a SHA-256 commitment to the agent's
+  complete tool configuration, embedded in an X.509 v3 extension within a trust
+  propagation tree rooted at human principals.
+- The Chain Verifiability Theorem: behavioral verification is a chain property — one
+  unverifiable interior agent breaks end-to-end verification for every downstream node.
+- The Bounded Divergence Theorem reframes replay-based verification as a probabilistic
+  certificate (ε ≤ 1 − α^(1/n)), making software verification a graded approximation of
+  hardware attestation rather than a different kind of claim.
+- The interaction ledger stores only cryptographic commitments — agent IDs, certificate
+  hashes, content commitments, reproducibility anchors — hash-linked with per-record
+  signatures, so auditability does not require retaining content.
+- Deliberately crypto-agnostic: G1–G3 specify functional contracts with pluggable
+  primitives, demonstrated with a basic instantiation (Ed25519, SHA-256, hash chains) and
+  an enhanced one (BBS+ selective disclosure, DV-SNARK).
+- Positions the contribution as architectural rather than cryptographic, drawing the
+  analogy to Certificate Transparency: the insight was identifying what to compose and
+  where to deploy it, not inventing primitives.
+
+**Primitive — commit to the capability configuration, not just the action.** Evidence about
+a decision is incomplete unless it also identifies the configuration under which the
+decision was made.
+**Verdict:** `should adopt`. This is the strongest in-repo finding of the section.
+`DecisionEvidence` records 25 per-decision fields but nothing that commits to the
+capability's *configuration* (`src/Evidence/DecisionEvidence.php`). It stores policy
+**names** — `targetPolicy`, `rateLimitPolicy`, `executionClaimPolicy` — not their content.
+So if a capability's rate limit is changed from five per day to five thousand, or
+`requiresConfirmation()` is removed, every subsequent decision record looks byte-identical
+to the ones before. An auditor reading the evidence trail cannot tell which configuration
+was in force. `CapabilityRegistry` is a plain in-memory array with no digest and no
+change detection (`src/Capabilities/CapabilityRegistry.php`). Recording a capability
+configuration fingerprint in `DecisionEvidence` is cheap, stays fingerprint-first in
+keeping with ADR 0008, and closes a real forensic gap.
+**Candidate:** `capability-configuration-fingerprint`
+
+**Primitive — capability-context separation.** The set of actions that are possible and the
+selection of which to take are different security concerns with different change rates and
+different re-authorization requirements.
+**Verdict:** `already implements`, partially. Verdict's capability registration is
+application-owned and static — capabilities are registered by the application, and a model
+can only propose against that fixed set (`src/Capabilities/CapabilityRegistry.php`,
+`README.md`). Verdict is therefore not exposed to the paper's headline attack, in which an
+agent acquires tools at runtime. But the separation is implicit; nothing in the docs states
+that the capability envelope is deliberately not model-modifiable, and nothing detects a
+change to it between deployments. The registry side of that is covered by
+`capability-configuration-fingerprint` above.
+
+**Primitive — commitment-only audit records.** Auditability and content retention are
+separable; a ledger of commitments supports forensic reconstruction without storing
+payloads.
+**Verdict:** `already implements`. Verdict records fingerprints rather than raw content
+through `src/Evidence/ArgumentFingerprint.php` and `src/Evidence/ContentFingerprint.php`.
+ADR 0008 states the accompanying privacy limit that the paper does not: a fingerprint is
+pseudonymous correlation, not anonymization, and a hash of a low-entropy or predictable
+value may be enumerable. External corroboration for a settled decision.
+
+**Primitive — hash-linked, signed, tamper-evident ledger.** Append-only records chained by
+hash with per-record signatures.
+**Verdict:** `out of repo`. Already tracked as issue #11, to be implemented as an
+`EvidenceRecorder` backed by `fissible/attest`. ADR 0007 fixes the layering: attestation is
+a property evidence can gain, not a new operational-state store or authorization gate. The
+audit-systems section below revisits the topology question.
+
+**Primitive — behavioral verifiability via replay (G2).** Re-execute with recorded inputs
+and flag divergence beyond a declared threshold.
+**Verdict:** `intentionally rejects`. Verdict does not observe or reproduce model
+inference, and ADR 0012 already establishes that Verdict does not own token telemetry
+while `docs/limitations.md` rules out provider-internal inspection. Replay verification
+requires exactly the provider coupling both documents decline. Verdict's evaluation
+harness (`src/Evaluation/LiveEvaluationRunner.php`) runs repeated trials against
+thresholds for *testing* safeguards, which is a different activity from attesting that a
+production inference occurred as declared.
+
+---
+
+**Surveyed, no hook.** Within these three papers: the Agent Governance Trilemma via Rice's
+theorem (an impossibility argument, no design consequence for Verdict); BBS+ selective
+disclosure and Groth16 DV-SNARK instantiations (cryptographic mechanism, and out of repo
+under ADR 0007); the multi-provider inference determinism study (9 models, 7 providers)
+and its 5.8× variance finding (bears on replay verification, which is rejected above);
+Scala 3 capture-checking metatheory and safe-mode language restrictions (no PHP analogue —
+PHP has no effect system, and this is a property of the harness language, not of an
+authorization boundary); CaMeL's planner/parser split and the Dual LLM pattern (an agent
+architecture, above Verdict's boundary); TEE attestation paths; and `authgate-kernel`'s
+JSON wire format and TLA+/Lean/Kani artifacts.
 
 ## 2. Authorization systems
 
