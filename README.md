@@ -24,7 +24,7 @@ Verdict puts an authorization pipeline before that application code executes. Th
 
 ## Quick example
 
-Register a capability with the Laravel authorization ability and the trusted resource resolver. Then expose it to Laravel AI through a secure `BoundTool`.
+Register a capability with the Laravel authorization ability and a trusted resource resolver. Resolve the target from application context, then expose the capability to Laravel AI through a secure `BoundTool`.
 
 ```php
 use Fissible\Verdict\Actions\ActionContext;
@@ -39,8 +39,9 @@ Verdict::capability(
     Capability::usingPolicy(
         name: 'orders.refund',
         ability: 'refund',
+        // The target comes from application context, not from the proposal.
         resolveTarget: fn (ActionEnvelope $envelope): Order => Order::findOrFail(
-            $envelope->proposal->arguments['order_id'],
+            $envelope->context->metadata['order_id'],
         ),
     )
         ->executionTarget(ExecutionTargetPolicy::refresh(
@@ -62,11 +63,30 @@ Verdict::capability(
 $tool = Verdict::bound(
     definition: new RefundOrder,
     capability: 'orders.refund',
-    context: fn (Request $request): ActionContext => new ActionContext(auth()->user()),
+    context: function (Request $request): ActionContext {
+        // $request carries model-supplied arguments. Build context from
+        // application state the model cannot influence.
+        return new ActionContext(
+            actor: auth()->user(),
+            metadata: ['order_id' => app(SupportSession::class)->activeOrderId()],
+        );
+    },
 );
 ```
 
-The `refund` Laravel policy decides whether the authenticated actor can refund the resolved order. The executor receives the application-selected execution target—not an object supplied by the model.
+The `refund` Laravel policy decides whether the authenticated actor can refund the resolved order. Because the order was selected by the application rather than by the proposal, an injected instruction cannot redirect the refund at a different record, even one the actor owns.
+
+### When the model legitimately selects the target
+
+Some capabilities exist precisely so a model can choose among candidates. Resolve from the proposal, and scope the lookup to the actor so an argument cannot reach outside their records:
+
+```php
+resolveTarget: fn (ActionEnvelope $envelope): Order => $envelope->context->actor
+    ->orders()
+    ->findOrFail($envelope->proposal->arguments['order_id']),
+```
+
+This bounds authority: the action cannot reach a record the actor could not reach themselves. It does not bound intent. If injected content selects one of the actor's own orders, the policy will permit it. For consequential operations, pair argument-resolved targets with `requiresConfirmation()` and treat the approval, not the authorization, as the control. See [authority is not intent](docs/security-model.md#authority-is-not-intent).
 
 ## Installation
 

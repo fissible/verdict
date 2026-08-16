@@ -14,6 +14,20 @@ Refreshing an execution target narrows the gap between authorization and executi
 
 Verdict calls Laravel authorization; it does not create your policies, tenancy model, ownership rules, validation, or business invariants. A poorly scoped target resolver or policy remains an application bug.
 
+<!-- @verdict-claim limitation.intent untestable reason="A package cannot determine whether an authorized action reflects the actor's intent." -->
+### Authorization bounds authority, not intent
+
+Verdict evaluates whether an actor may perform an operation on a resolved record. It
+has no mechanism for deciding whether the actor wanted that operation on that record.
+When a target is resolved from proposal arguments, injected content that selects a
+record within the actor's authority produces a permitted action, and this is the
+authorization layer working as specified rather than failing.
+
+Resolve targets from `ActionContext` where the application, not the proposal, knows
+which record is in play. Where the model must select, treat `requiresConfirmation()`
+as the intent control and size the approval payload so a human can evaluate the
+selection, not merely the operation.
+
 <!-- @verdict-claim limitation.bypassed-paths tested -->
 ### No protection for bypassed paths
 
