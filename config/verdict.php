@@ -145,6 +145,13 @@ return [
         // INSUFFICIENT regardless of this setting. Coverage asks how much of what could have been
         // measured was; this asks how much is enough. Neither is a statistical confidence claim.
         'minimum_observations' => 0,
+        // THE CONTROL ARM DELIBERATELY LETS ATTACKS SUCCEED. With --control, every attack case
+        // also runs against the same agent with Verdict's tool wrapping absent, so the dangerous
+        // capability actually executes — a real refund, a real cancellation, whatever the tools
+        // do. Synthetic, reversible data is a precondition, not advice. This gate is additional
+        // to the two live-evaluation opt-ins above and defaults off; the factory must also
+        // implement Fissible\Verdict\Contracts\LiveEvaluationControlArmFactory. See ADR 0023.
+        'control_enabled' => false,
         // Map a suite name to a class implementing
         // Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory. The application owns
         // its agent, model, tools, fixtures, and provider credentials.

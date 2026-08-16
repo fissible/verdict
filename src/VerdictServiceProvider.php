@@ -388,10 +388,12 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->singleton(LiveEvaluationRunner::class, function (): LiveEvaluationRunner {
             $liveEnabled = config('verdict.evaluation.live_enabled', false);
             $maximumTrials = config('verdict.evaluation.maximum_trials', 25);
+            $controlEnabled = config('verdict.evaluation.control_enabled', false);
 
             return new LiveEvaluationRunner(
                 liveEnabled: $liveEnabled === true,
                 maximumTrials: is_int($maximumTrials) ? $maximumTrials : 25,
+                controlEnabled: $controlEnabled === true,
             );
         });
 

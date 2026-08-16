@@ -20,6 +20,12 @@ final readonly class LiveEvaluationOptions
          * coverage adequacy, which asks how much of the measurable population was measured.
          */
         public int $minimumObservations = 0,
+        /**
+         * Run the unguarded control arm alongside the guarded one. Requires its own configuration
+         * gate (verdict.evaluation.control_enabled) in addition to the two live-evaluation gates,
+         * and a factory implementing LiveEvaluationControlArmFactory. See ADR 0023.
+         */
+        public bool $controlArm = false,
     ) {
         if ($this->trials < 1) {
             throw new InvalidArgumentException('Live evaluation trials must be a positive integer.');
