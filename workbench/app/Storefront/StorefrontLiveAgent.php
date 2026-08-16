@@ -10,18 +10,23 @@ use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Evaluation\CapturingTool;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
+use Fissible\Verdict\Evaluation\UnguardedCapturingTool;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Fissible\Verdict\VerdictManager;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasMiddleware;
+use Laravel\Ai\Contracts\HasProviderOptions;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
+use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
 use LogicException;
 use Workbench\App\Storefront\Tools\CancelOrder;
 use Workbench\App\Storefront\Tools\LookupOrder;
 use Workbench\App\Storefront\Tools\LookupSupportNote;
+use Workbench\App\Storefront\Tools\UnguardedCancelOrder;
+use Workbench\App\Storefront\Tools\UnguardedLookupSupportNote;
 
 /**
  * The workbench's live storefront agent. It exists only to drive `StorefrontAttackPack` against a
@@ -35,7 +40,7 @@ use Workbench\App\Storefront\Tools\LookupSupportNote;
  * establishes `$prompt->invocationId` / `$response->invocationId` regardless of this middleware —
  * what is missing without it is Verdict's own binding of the invocation id into its evidence.
  */
-final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
+final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOptions, HasTools
 {
     use Promptable;
 
@@ -48,12 +53,21 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
      */
     private const string SUPPORT_NOTE_CAPABILITY = 'orders.support-notes';
 
+    /**
+     * `$guarded` selects the arm this agent instance is: the guarded arm routes every tool
+     * through `VerdictManager::bound()`, the control arm executes the same tool surface directly
+     * (#170 / ADR 0023). Defaulting to guarded is safe in both directions — a control build that
+     * forgot the flag produces observations carrying Verdict dispositions, which the runner
+     * refuses loudly as an accidentally guarded arm rather than recording silently.
+     */
     public function __construct(
         private readonly Catalog $catalog,
         private readonly LiveToolCapture $capture,
         private readonly VerdictManager $verdict,
         private readonly StorefrontAttackPackConfig $config,
         private readonly ActionLog $actions,
+        private readonly StorefrontLiveSampling $sampling,
+        private readonly bool $guarded = true,
     ) {}
 
     /**
@@ -76,6 +90,12 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
      * @return array<int, Tool>
      */
     public function tools(): array
+    {
+        return $this->guarded ? $this->guardedTools() : $this->unguardedTools();
+    }
+
+    /** @return array<int, Tool> */
+    private function guardedTools(): array
     {
         $context = new ActionContext($this->actor());
 
@@ -108,6 +128,52 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
                 $this->capture,
             ),
         ];
+    }
+
+    /**
+     * The control arm: an identical tool surface — same names, descriptions, and schemas, in the
+     * same order — with `bound()` absent and nothing else different. `SideEffectRelayTool` stays
+     * (the breach's side effects still need observing) and `UnguardedCapturingTool` records each
+     * call with no disposition, which is what an arm with no Verdict decision looks like.
+     * `LookupOrder` executes directly already; the two definition-only tools are mirrored by
+     * their `Unguarded*` counterparts.
+     *
+     * @return array<int, Tool>
+     */
+    private function unguardedTools(): array
+    {
+        return [
+            $this->unguarded(new LookupOrder($this->catalog), $this->config->readCapability),
+            $this->unguarded(
+                new UnguardedCancelOrder(new CancelOrder, $this->catalog, $this->actions),
+                $this->config->mutationCapability,
+            ),
+            $this->unguarded(
+                new UnguardedLookupSupportNote(new LookupSupportNote, $this->catalog),
+                self::SUPPORT_NOTE_CAPABILITY,
+            ),
+        ];
+    }
+
+    private function unguarded(Tool $tool, string $capability): UnguardedCapturingTool
+    {
+        return new UnguardedCapturingTool(
+            new SideEffectRelayTool($tool, $this->actions, $this->capture),
+            $capability,
+            $this->capture,
+        );
+    }
+
+    /**
+     * What is actually sent to the provider, derived from the same `StorefrontLiveSampling` value
+     * the suite's reproduction metadata attests — one source of truth, so the label and the
+     * request cannot drift apart.
+     *
+     * @return array<string, mixed>
+     */
+    public function providerOptions(Lab|string $provider): array
+    {
+        return $this->sampling->providerOptions();
     }
 
     public function maxSteps(): int

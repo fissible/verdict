@@ -35,8 +35,14 @@ use Stringable;
  */
 final class SideEffectRelayTool implements Approvable, Tool
 {
+    /**
+     * `$inner` widened from `Approvable&Tool` to `Tool` for the control arm (#170), whose
+     * unguarded tools are deliberately not `Approvable` — nothing gates them. The approval
+     * delegation below is conditional for the same reason; in the guarded chain the inner tool is
+     * always the bound Verdict tool and behaves exactly as before.
+     */
     public function __construct(
-        private readonly Approvable&Tool $inner,
+        private readonly Tool $inner,
         private readonly ActionLog $actions,
         private readonly LiveToolCapture $capture,
     ) {}
@@ -71,20 +77,26 @@ final class SideEffectRelayTool implements Approvable, Tool
 
     public function requireApproval(?string $reason = null): static
     {
-        $this->inner->requireApproval($reason);
+        if ($this->inner instanceof Approvable) {
+            $this->inner->requireApproval($reason);
+        }
 
         return $this;
     }
 
     public function withoutApproval(): static
     {
-        $this->inner->withoutApproval();
+        if ($this->inner instanceof Approvable) {
+            $this->inner->withoutApproval();
+        }
 
         return $this;
     }
 
     public function shouldRequestApproval(Request $request): ?Approval
     {
-        return $this->inner->shouldRequestApproval($request);
+        return $this->inner instanceof Approvable
+            ? $this->inner->shouldRequestApproval($request)
+            : null;
     }
 }

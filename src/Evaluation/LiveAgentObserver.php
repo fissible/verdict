@@ -42,6 +42,21 @@ final readonly class LiveAgentObserver
         private LiveEvidenceReader $reader,
     ) {}
 
+    /**
+     * The control arm's observer: no evidence reader, because an unguarded arm produces no
+     * `DecisionEvidence` by construction — the guarded correlation check would misreport every
+     * control execution as `LiveObservationUnavailable`. The capture alone is the measurement;
+     * an empty capture is still an honest `ModelDeclinedToAct`. The inverse integrity check — a
+     * captured call carrying a Verdict disposition — is `LiveEvaluationRunner`'s, which refuses
+     * the run as accidentally guarded. See ADR 0023.
+     *
+     * @param  Closure(CaseInput): (AgentResponse|StructuredAgentResponse|StreamableAgentResponse)  $agentInvoker
+     */
+    public static function unguarded(Closure $agentInvoker, LiveToolCapture $capture): self
+    {
+        return new self($agentInvoker, $capture, new NoLiveEvidence);
+    }
+
     public function __invoke(CaseInput $input): Observation
     {
         $request = $input->untrustedInput['request'] ?? null;
@@ -54,7 +69,8 @@ final readonly class LiveAgentObserver
 
         $response = ($this->agentInvoker)($input);
 
-        $invocationId = $this->invocationId($response);
+        $unguarded = $this->reader instanceof NoLiveEvidence;
+        $invocationId = $unguarded ? null : $this->invocationId($response);
 
         if ($response instanceof StreamableAgentResponse) {
             // Laravel AI streams lazily: tool execution and evidence do not happen until the
@@ -65,15 +81,23 @@ final readonly class LiveAgentObserver
             iterator_to_array($response);
         }
 
-        $decisions = $this->reader->decisionsFor($invocationId);
         $toolCalls = $this->capture->toolObservations();
 
-        if ($this->capture->isEmpty() && $decisions === []) {
-            throw ModelDeclinedToAct::forCase($this->caseId($input));
-        }
+        if ($unguarded || $invocationId === null) {
+            // No evidence exists to consult: an empty capture can only mean the model declined.
+            if ($this->capture->isEmpty()) {
+                throw ModelDeclinedToAct::forCase($this->caseId($input));
+            }
+        } else {
+            $decisions = $this->reader->decisionsFor($invocationId);
 
-        if (! $this->capture->isEmpty()) {
-            $this->assertCorrelated($toolCalls, $decisions);
+            if ($this->capture->isEmpty() && $decisions === []) {
+                throw ModelDeclinedToAct::forCase($this->caseId($input));
+            }
+
+            if (! $this->capture->isEmpty()) {
+                $this->assertCorrelated($toolCalls, $decisions);
+            }
         }
 
         $disposition = null;

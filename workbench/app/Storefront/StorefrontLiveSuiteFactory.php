@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Workbench\App\Storefront;
 
-use Fissible\Verdict\Contracts\LiveEvaluationTrialFactory;
+use Fissible\Verdict\Contracts\LiveEvaluationControlArmFactory;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CaseNotLiveExpressible;
+use Fissible\Verdict\Evaluation\ControlSamplingMode;
 use Fissible\Verdict\Evaluation\LiveAgentObserver;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
+use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
@@ -25,16 +27,18 @@ use Laravel\Ai\Responses\StreamableAgentResponse;
  * Also the worked example of [ADR 0020](../../../docs/adr/0020-live-trial-isolation-is-application-owned.md):
  * the application, not Verdict, decides what resetting a trial means.
  */
-final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationTrialFactory
+final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationControlArmFactory
 {
     /**
      * The container is a dependency here rather than the individual stores, and that is the point:
      * a reset replaces those instances, so anything captured at construction would be stale by the
-     * time the next trial ran. `Catalog` is the exception — it is an immutable singleton.
+     * time the next trial ran. `Catalog` is the exception — it is an immutable singleton, as is
+     * the sampling declaration: decoding configuration is configuration, not per-trial state.
      */
     public function __construct(
         private Application $app,
         private Catalog $catalog,
+        private StorefrontLiveSampling $sampling,
     ) {}
 
     /**
@@ -66,7 +70,25 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationTrialFa
     {
         $this->app->forgetScopedInstances();
 
-        return $this->build();
+        return $this->build(guarded: true);
+    }
+
+    /**
+     * The unguarded control arm (#170 / ADR 0023): the same reset, the same build, with
+     * `guarded: false` selecting the agent's unguarded tool chain — the single difference between
+     * the arms. The reset matters *more* here: the runner calls this after the trial's guarded
+     * arm, and whatever the control breach wrote must not survive into the next guarded build.
+     */
+    public function makeControlForTrial(int $trial): SecuritySuite
+    {
+        $this->app->forgetScopedInstances();
+
+        return $this->build(guarded: false);
+    }
+
+    public function samplingMode(): ControlSamplingMode
+    {
+        return $this->sampling->mode;
     }
 
     /**
@@ -77,7 +99,7 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationTrialFa
      * agent, which writes into the old capture that nothing reads from any more: every case in that
      * first suite would silently report `ModelDeclinedToAct`, with no error indicating why.
      */
-    private function build(): SecuritySuite
+    private function build(bool $guarded): SecuritySuite
     {
         $config = $this->config();
         $capture = new LiveToolCapture;
@@ -89,26 +111,35 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationTrialFa
         $actions = $this->app->make(ActionLog::class);
         $verdict = $this->app->make(VerdictManager::class);
 
-        $reader = new InMemoryLiveEvidenceReader($recorder);
-        $agent = new StorefrontLiveAgent($this->catalog, $capture, $verdict, $config, $actions);
+        $agent = new StorefrontLiveAgent($this->catalog, $capture, $verdict, $config, $actions, $this->sampling, $guarded);
 
-        $observer = new LiveAgentObserver(
-            agentInvoker: function (CaseInput $input) use ($agent, $noteChannel): StreamableAgentResponse {
-                // Sets (or clears) the shared channel `orders.support-notes`' executor reads,
-                // before the agent runs — never folded into the prompt itself. See
-                // `SupportNoteChannel` and `StorefrontLiveAgent::SUPPORT_NOTE_CAPABILITY`.
-                $noteChannel->set($this->documentBody($input));
+        $agentInvoker = function (CaseInput $input) use ($agent, $noteChannel): StreamableAgentResponse {
+            // Sets (or clears) the shared channel `orders.support-notes`' executor reads,
+            // before the agent runs — never folded into the prompt itself. See
+            // `SupportNoteChannel` and `StorefrontLiveAgent::SUPPORT_NOTE_CAPABILITY`.
+            $noteChannel->set($this->documentBody($input));
 
-                return $agent->stream($this->request($input));
-            },
-            capture: $capture,
-            reader: $reader,
-        );
+            return $agent->stream($this->request($input));
+        };
+
+        // The control arm produces no DecisionEvidence by construction, so its observer has no
+        // reader and no correlation check — the capture alone is the measurement. See ADR 0023.
+        $observer = $guarded
+            ? new LiveAgentObserver($agentInvoker, $capture, new InMemoryLiveEvidenceReader($recorder))
+            : LiveAgentObserver::unguarded($agentInvoker, $capture);
 
         return new SecuritySuite(
             name: 'storefront-live',
             version: '1',
             cases: (new StorefrontAttackPack($config))->cases($observer(...)),
+            // Identical for both arms — TrialSuiteIdentity asserts exactly that — and 'sampling'
+            // is the component a control run refuses to start without, derived from the same
+            // value that actually configures the provider.
+            reproduction: new ReproductionMetadata([
+                'provider' => $agent->provider(),
+                'model' => $agent->model(),
+                'sampling' => $this->sampling->component(),
+            ]),
         );
     }
 
