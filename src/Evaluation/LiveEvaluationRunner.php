@@ -43,6 +43,7 @@ final readonly class LiveEvaluationRunner
         // A do/while, not a for: LiveEvaluationOptions rejects trials < 1, so at least one trial
         // always runs and $suite is always assigned before it is read below.
         $trial = 0;
+        $haltedAfterTrial = null;
 
         do {
             // Called before *every* trial, including the first: a process or database already used
@@ -106,7 +107,19 @@ final readonly class LiveEvaluationRunner
                 }
             }
 
+            // A trial that measured nothing while the harness failed to see something is the one
+            // signature an uncooperative model cannot produce: declines and non-attempts are
+            // model-side, so a model refusing everything leaves harnessBlind at zero. Stop rather
+            // than spend the remaining trials producing nothing. See ADR 0024 §3.
+            $blindTrial = $this->trialWasSystematicallyBlind($result);
+
             $trial++;
+
+            if ($blindTrial !== null) {
+                $haltedAfterTrial = $trial;
+
+                break;
+            }
         } while ($trial < $options->trials);
 
         // $suite is the final trial's. Everything read from it below — case metadata, suite name
@@ -148,13 +161,15 @@ final readonly class LiveEvaluationRunner
             suite: $suite->name,
             version: $suite->version,
             reproduction: $suite->reproduction,
-            trials: $options->trials,
+            // The count actually run: a halted run must not claim trials it never reached.
+            trials: $haltedAfterTrial ?? $options->trials,
             startedAt: $startedAt,
             completedAt: $clock->now(),
             cases: $cases,
             securityThreshold: $this->threshold($cases, CasePurpose::Security, $options->minimumSecurityPassRate, $options->minimumObservations),
             utilityThreshold: $this->threshold($cases, CasePurpose::Utility, $options->minimumUtilityPassRate, $options->minimumObservations),
             control: $control,
+            haltedAfterTrial: $haltedAfterTrial,
         );
     }
 
@@ -231,6 +246,36 @@ final readonly class LiveEvaluationRunner
      * A single trial makes no independence claim, so it needs no reset seam and is left unchanged.
      * See [ADR 0020](../../docs/adr/0020-live-trial-isolation-is-application-owned.md).
      */
+    /**
+     * Nothing measured this trial, and something the harness could not see. Returns the blind count
+     * when that holds, null otherwise. See {@see ThresholdCoverage::isSystematicallyBlind()}.
+     */
+    private function trialWasSystematicallyBlind(SuiteResult $result): ?int
+    {
+        $evaluated = 0;
+        $blind = 0;
+        $blindValues = array_map(
+            static fn (LiveErrorCategory $category): string => $category->value,
+            ThresholdCoverage::harnessBlindCategories(),
+        );
+
+        foreach ($result->cases as $case) {
+            if ($case->status === CaseStatus::Passed || $case->status === CaseStatus::Failed) {
+                $evaluated++;
+
+                continue;
+            }
+
+            $category = LiveErrorCategory::fromErrorClass($case->errorClass);
+
+            if ($category !== null && in_array($category->value, $blindValues, true)) {
+                $blind++;
+            }
+        }
+
+        return $evaluated === 0 && $blind > 0 ? $blind : null;
+    }
+
     private function assertTrialsAreIsolated(LiveEvaluationSuiteFactory $factory, LiveEvaluationOptions $options): void
     {
         if ($options->trials > 1 && ! $factory instanceof LiveEvaluationTrialFactory) {

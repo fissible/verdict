@@ -4,6 +4,31 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Distinguish a live run the harness could not observe from one the model declined. The coverage
+  gates measured coverage of observations, not integrity of the observation pipeline, and pooled four
+  error categories into one bucket: `Declined` and `NotAttempted` — what the model chose — alongside
+  `Unavailable` and `Uncategorized` — what the apparatus could not see. A run blinded by a harness
+  defect therefore reported the same disposition as a run where the model was merely uncooperative.
+
+  [#183](https://github.com/fissible/verdict/issues/183) is the worked instance: every reachable case
+  failed correlation and the command reported `NOT EVALUATED`, which is arithmetically correct and
+  reads as a finding about the model when the harness saw nothing at all.
+
+  The population is now partitioned four ways, `LiveEvaluationThresholdDisposition` gains
+  `HarnessBlind`, and that check runs **before** any coverage or rate question — placing it after
+  them launders an apparatus failure into a measurement verdict. A trial that measures nothing while
+  something is harness-blind halts the run, a signature an uncooperative model cannot produce because
+  declines never enter that bucket. Both renderers and the JSON report carry the harness-blind count.
+
+  The coverage rule still counts harness-blind outcomes against coverage: an outcome the apparatus
+  could not see is still one that was not measured, so splitting the bucket for reporting does not
+  shrink the numerator of ADR 0021's test.
+
+  **This does not make the harness self-validating.** It detects blindness that manifests as
+  uncorrelatable or unclassifiable outcomes. A harness that observes the wrong thing confidently
+  still passes every gate here. See [#185](https://github.com/fissible/verdict/issues/185) and
+  [ADR 0024](docs/adr/0024-integrity-is-gated-before-coverage.md).
+
 ## [0.7.0] - 2026-08-16
 
 - Add an **unguarded control arm** to live evaluation, so a run can show whether an attack would have

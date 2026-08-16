@@ -23,6 +23,13 @@ final readonly class LiveEvaluationResult
         public LiveEvaluationThreshold $utilityThreshold,
         /** Present only on control-arm runs; the guarded arm's thresholds above are unaffected by it. */
         public ?LiveEvaluationControlResult $control = null,
+        /**
+         * The trial after which the run stopped because the harness was systematically blind, or
+         * null if it ran to completion. `$trials` is the number actually run, not the number
+         * requested — a halted run must not report a trial count it did not reach.
+         * See [ADR 0024](../../docs/adr/0024-integrity-is-gated-before-coverage.md).
+         */
+        public ?int $haltedAfterTrial = null,
     ) {}
 
     public function report(): LiveEvaluationReport

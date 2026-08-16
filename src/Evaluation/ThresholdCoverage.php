@@ -31,6 +31,7 @@ final readonly class ThresholdCoverage
         public int $evaluated,
         public int $measurableButUnmeasured,
         public int $structurallyUnavailable,
+        public int $harnessBlind = 0,
     ) {}
 
     /**
@@ -44,17 +45,26 @@ final readonly class ThresholdCoverage
             $unmeasured += $errorBreakdown[$category->value] ?? 0;
         }
 
+        $blind = 0;
+
+        foreach (self::harnessBlindCategories() as $category) {
+            $blind += $errorBreakdown[$category->value] ?? 0;
+        }
+
         // Pending is a case status rather than an error category, so it is carried on the Score.
         $structural = ($errorBreakdown[LiveErrorCategory::NotExpressible->value] ?? 0) + $score->pending;
 
-        return new self($score->evaluated(), $unmeasured, $structural);
+        return new self($score->evaluated(), $unmeasured, $structural, $blind);
     }
 
     /**
-     * An outcome that could have been a measurement on a different run.
+     * An outcome where **the model** could have acted and did not.
      *
      * `not_expressible` is deliberately absent: a case that cannot be expressed against a live agent
-     * will never produce an observation no matter how the run goes.
+     * will never produce an observation no matter how the run goes. So are the harness-blind
+     * categories — see {@see harnessBlindCategories()} and
+     * [ADR 0024](../../docs/adr/0024-integrity-is-gated-before-coverage.md). Pooling the two is what
+     * made a blinded run indistinguishable from an uncooperative model in #183.
      *
      * @return list<LiveErrorCategory>
      */
@@ -63,9 +73,43 @@ final readonly class ThresholdCoverage
         return [
             LiveErrorCategory::Declined,
             LiveErrorCategory::NotAttempted,
+        ];
+    }
+
+    /**
+     * An outcome where **the harness** could not see what happened.
+     *
+     * `Uncategorized` is included, and that is a judgement rather than a derivation: an
+     * unclassified error may originate in an application's case runner rather than in Verdict, but
+     * an error the taxonomy could not classify is one the apparatus did not understand. See
+     * ADR 0024 §4.
+     *
+     * @return list<LiveErrorCategory>
+     */
+    public static function harnessBlindCategories(): array
+    {
+        return [
             LiveErrorCategory::Unavailable,
             LiveErrorCategory::Uncategorized,
         ];
+    }
+
+    /**
+     * The apparatus saw less than it measured, so no verdict below it is about the model.
+     */
+    public function isDominatedByHarnessBlindness(): bool
+    {
+        return $this->harnessBlind > $this->evaluated;
+    }
+
+    /**
+     * The signature of systematic blindness: nothing measured, and something the harness could not
+     * see. An uncooperative model cannot produce this — declines and non-attempts are model-side, so
+     * a model that refuses everything leaves `harnessBlind` at zero.
+     */
+    public function isSystematicallyBlind(): bool
+    {
+        return $this->evaluated === 0 && $this->harnessBlind > 0;
     }
 
     /**
@@ -74,7 +118,12 @@ final readonly class ThresholdCoverage
      */
     public function isDominatedByUnmeasured(): bool
     {
-        return $this->measurableButUnmeasured > $this->evaluated;
+        // Counts harness-blind outcomes too. ADR 0021's question is "was enough of the measurable
+        // population measured?", and an outcome the apparatus could not see is still one that was
+        // not measured. Splitting the bucket for ADR 0024 must not weaken the coverage rule by
+        // shrinking its numerator — integrity is an *additional*, earlier gate, not a partition of
+        // the existing one.
+        return $this->measurableButUnmeasured + $this->harnessBlind > $this->evaluated;
     }
 
     /**
@@ -85,6 +134,6 @@ final readonly class ThresholdCoverage
      */
     public function hasMeasurablePopulation(): bool
     {
-        return $this->evaluated + $this->measurableButUnmeasured > 0;
+        return $this->evaluated + $this->measurableButUnmeasured + $this->harnessBlind > 0;
     }
 }

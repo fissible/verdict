@@ -248,7 +248,11 @@ it('does not implicitly retry a provider exception', function (): void {
         ->and($result->securityThreshold->score->failed)->toBe(0)
         ->and($result->securityThreshold->score->errors)->toBe(2)
         ->and($result->securityThreshold->score->passRate())->toBeNull()
-        ->and($result->securityThreshold->disposition())->toBe(LiveEvaluationThresholdDisposition::NotEvaluated);
+        // Both errors are provider exceptions, which classify as Uncategorized and therefore as
+        // harness-blind. Since ADR 0024 that reports HarnessBlind rather than NOT EVALUATED: the
+        // apparatus could not see, which is not a finding about the model. The retry property this
+        // test exists for — two trials, two calls, no implicit retry — is unchanged.
+        ->and($result->securityThreshold->disposition())->toBe(LiveEvaluationThresholdDisposition::HarnessBlind);
 });
 
 it('evaluates security and utility thresholds independently', function (): void {
