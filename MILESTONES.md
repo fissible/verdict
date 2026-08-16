@@ -148,7 +148,7 @@ Both issues in this plan are now closed.
 
 ---
 
-## v0.6.0 — Live evaluation soundness *(next)*
+## v0.6.0 — Live evaluation soundness *(cut)*
 
 **Theme.** Make a live evaluation result trustworthy enough to act on. Every issue here was discovered
 by running #51's harness against a real model, not by reading the code.
@@ -174,7 +174,7 @@ reports `1 passed / 0 failed` → 100% → **MET** after it. #139 is correct and
 is that the less cooperative the model, the easier the threshold becomes to meet. #138 is what closes
 that, which is why this milestone should not be tagged with #137 and #139 alone. [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) settles it: a verdict is gated on coverage before rate, and a purpose whose measurable-but-unmeasured outcomes outnumber its evaluated ones reports `INSUFFICIENT` rather than a rate-based verdict.
 
-All three have merged, so this milestone is **ready to tag**.
+All three have merged and **v0.6.0 was tagged on 2026-08-14**.
 
 The three are one argument rather than three fixes, which is worth stating because they landed
 separately. #137 made trials independent; #139 stopped an unattempted attack being counted as a breach;
@@ -184,7 +184,45 @@ would have left a live verdict weaker than the one it replaced.
 Deferred from this milestone with their reasons recorded rather than dropped:
 [#174](https://github.com/fissible/verdict/issues/174) (per-case coverage, deferred from #138) and
 [#170](https://github.com/fissible/verdict/issues/170) (an unguarded control arm, whose three stated
-dependencies are now all settled).
+dependencies are now all settled). Both are scheduled into v0.7.0 below.
+
+---
+
+## v0.7.0 — Prove the boundary is load-bearing *(next)*
+
+**Theme.** Answer the question every reader of a security control asks first: *what happens without it?*
+Live evaluation currently measures whether Verdict denied an attack. It does not measure whether the attack
+would have succeeded unguarded, and those are different claims — only the second shows the boundary is
+doing work.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#174](https://github.com/fissible/verdict/issues/174) Decide whether coverage adequacy applies per case | M | #138 ✅ | Open — `scope: design` |
+| [#170](https://github.com/fissible/verdict/issues/170) Add an unguarded control arm so a live run can show what Verdict prevented | XL | #137 ✅, #138 ✅, #139 ✅, #174 | Open — `scope: design` |
+
+**#174 first, and not only because it is smaller.** The control arm's unit of measurement is the 2×2 for a
+single case — guarded denied or executed, against control executed or declined. v0.6.0's coverage gate is
+purpose-level, so it cannot express "this control's breach case never ran once." Landing #170's reporting on
+top of a purpose-level adequacy rule would produce a comparison that reads as complete while a whole control
+went unmeasured — the same class of defect [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md)
+closed one level up.
+
+**#170 is XL and should not be talked down.** Its three stated dependencies closed in v0.6.0, so it is
+unblocked for the first time, but the issue carries four things that each need doing properly: a safety
+model for deliberately letting an attack succeed, a breach case per control rather than one overall, a model
+chosen to breach reliably rather than to look good, and a sampling mode that distinguishes regression from
+rate estimation. Attempting it as a reporting feature would produce a comparison that looks rigorous and is
+not — the issue says so itself.
+
+**Safety leads here, and that is a change in posture.** Every previous milestone hardened a boundary. This
+one deliberately runs an attack against an unguarded agent so the dangerous capability actually executes.
+`CONTRIBUTING.md`'s requirement that live evaluation use synthetic, reversible data stops being advisory at
+that point. Whether the control arm needs its own opt-in, separate from the two switches that already gate
+live evaluation, is part of #170's decision rather than an implementation detail.
+
+**Why this milestone is worth its size.** v0.6.0 made a single live result trustworthy. The payoff for that
+work is being able to compare two, and the comparison is the first artifact this project can produce that
+demonstrates prevention rather than asserting it.
 
 ---
 
