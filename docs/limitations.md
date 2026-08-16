@@ -93,7 +93,7 @@ The check also does not verify that a redaction ran. A path reachable under the 
 <!-- @verdict-claim limitation.tamper-evidence tested -->
 ### Tamper-evident evidence is opt-in, partial, and bounded by key custody
 
-`DatabaseEvidenceRecorder` (the usual choice when an application opts into evidence recording — `verdict.evidence.recorder` itself defaults to `NullEvidenceRecorder`, a no-op, so nothing is recorded unless explicitly configured) is an ordinary mutable audit store: not append-only, immutable, signed, or tamper-evident. A row recording a decision, context release, or provenance fact can be edited or deleted without detection. It must not be described as cryptographic proof.
+`DatabaseEvidenceRecorder` (the usual choice when an application opts into evidence recording — `verdict.evidence.recorder` itself defaults to `NullEvidenceRecorder`, a no-op, so nothing is recorded unless explicitly configured — Verdict dispatches `ConsequentialActionUnrecorded` once per process when a confirmation- or at-most-once-gated capability runs under it, and `verdict:validate` reports it, but neither blocks, because evidence is not a gate) is an ordinary mutable audit store: not append-only, immutable, signed, or tamper-evident. A row recording a decision, context release, or provenance fact can be edited or deleted without detection. It must not be described as cryptographic proof.
 
 `AttestEvidenceRecorder` (requires `composer require fissible/attest-laravel`) writes signed, hash-chained evidence via [`fissible/attest`](https://github.com/fissible/attest) instead. Even with it configured, several things remain true:
 

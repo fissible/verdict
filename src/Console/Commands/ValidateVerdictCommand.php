@@ -9,6 +9,7 @@ use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Targets\ExecutionTargetStrategy;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
@@ -16,10 +17,18 @@ use Throwable;
 
 final class ValidateVerdictCommand extends Command
 {
-    protected $signature = 'verdict:validate';
+    protected $signature = 'verdict:validate {--strict : Also fail on advisory warnings, not only on configuration that will fail at runtime}';
 
     protected $description = 'Audit registered Verdict capability wiring without executing actions';
 
+    /**
+     * Exit-code contract: verdict:validate returns non-zero only for configuration that will
+     * **fail at runtime** (a store whose backing table is missing, an unresolvable custom store).
+     * Configuration that is legal but probably not intended — a no-op evidence recorder, a
+     * non-durable store outside local (#146) — is **advisory** and warns without failing. `--strict`
+     * opts into failing on advisory findings too, for adopters who want CI to block on them. This
+     * is a single rule for every check rather than a per-check decision.
+     */
     public function handle(CapabilityRegistry $capabilities, Container $container): int
     {
         $errors = [];
@@ -72,6 +81,16 @@ final class ValidateVerdictCommand extends Command
             );
         }
 
+        // Advisory: the shipped default records nothing. It is legal (correct for tests and for
+        // applications routing evidence through a custom writer), so this warns rather than errors.
+        // The runtime once-per-process warning (ConsequentialActionUnrecorded) is the louder,
+        // action-scoped signal; this is the deploy-time one. See #194.
+        if (config('verdict.evidence.recorder', NullEvidenceRecorder::class) === NullEvidenceRecorder::class) {
+            $warnings[] = 'Evidence is going to a no-op evidence recorder (NullEvidenceRecorder), the shipped default; '
+                .'consequential decisions — confirmations and at-most-once claims — are recorded nowhere. '
+                .'Configure a durable recorder via verdict.evidence.recorder to retain an audit trail.';
+        }
+
         foreach ($errors as $error) {
             $this->components->error($error);
         }
@@ -88,7 +107,9 @@ final class ValidateVerdictCommand extends Command
             $this->components->info('Verdict wiring audit found no applicable capability configuration.');
         }
 
-        return $errors === [] ? self::SUCCESS : self::FAILURE;
+        $failed = $errors !== [] || ((bool) $this->option('strict') && $warnings !== []);
+
+        return $failed ? self::FAILURE : self::SUCCESS;
     }
 
     /** @param list<string> $errors */

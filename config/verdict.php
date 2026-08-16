@@ -33,6 +33,13 @@ return [
     'evidence' => [
         // InMemoryEvidenceRecorder is only for tests and local development. Its unbounded,
         // process-local state is unsafe for production, Octane, and queue workers.
+        //
+        // The shipped default is NullEvidenceRecorder, a no-op: a fresh install records nothing
+        // until you configure a durable recorder. This is deliberate (writing actor identities to
+        // a table you did not choose is an imposition, and evidence is never an authorization gate
+        // — ADR 0007), but its absence is not silent: Verdict dispatches ConsequentialActionUnrecorded
+        // once per process when a confirmation- or at-most-once-gated capability runs under it, and
+        // `verdict:validate` reports it. Neither blocks. See #194.
         'recorder' => NullEvidenceRecorder::class,
 
         // Pre-1.0 extension migration: `recorder` is the legacy mixed read/write contract.
