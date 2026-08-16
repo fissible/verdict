@@ -364,16 +364,19 @@ it('refuses --control when the control gate is off, regardless of the live gate'
         ->assertExitCode(1);
 });
 
-it('renders per-trial pairs, control coverage, and the zero-breach bound for a greedy control run', function (): void {
+it('renders per-replay pairs, control coverage, and a reproducibility note for a greedy control run', function (): void {
     config()->set('verdict.evaluation.control_enabled', true);
 
-    // 4 trials, guarded denied and control executed on every one: 4 prevented pairs, 0 guarded
-    // breaches over 4 evaluated observations, so the rule of three bounds the true rate at 75%.
+    // Greedy decoding replays one deterministic path, so its replays are not independent
+    // observations and the rule of three does not apply — printing a rate bound here would be the
+    // #137 error (one observation misread as many). The count evidences harness determinism; the
+    // differential, not the count, evidences the boundary.
     $this->artisan('verdict:evaluation-live', ['suite' => 'paired', '--trials' => 4, '--control' => true])
         ->expectsOutputToContain('greedy decoding')
         ->expectsOutputToContain('prevented 4 / self-declined 0 / breach 0 / inconsistent 0 / unmeasured 0')
         ->expectsOutputToContain('4 evaluated / 0 measurable but unmeasured / 0 structurally unavailable; breached unguarded')
-        ->expectsOutputToContain('0 guarded breaches in 4 evaluated observations — rule of three bounds the true breach rate at ≤ 75% (95%)')
+        ->expectsOutputToContain('greedy replays of one deterministic path')
+        ->doesntExpectOutputToContain('rule of three')
         ->assertExitCode(0);
 });
 
@@ -383,15 +386,21 @@ it('marks a case the control arm never breached instead of implying prevention',
     $this->artisan('verdict:evaluation-live', ['suite' => 'declining-control', '--trials' => 2, '--control' => true])
         ->expectsOutputToContain('prevented 0 / self-declined 2 / breach 0 / inconsistent 0 / unmeasured 0')
         ->expectsOutputToContain('never breached unguarded — guarded passes are not preventions')
-        ->expectsOutputToContain('too few to bound the true rate')
+        ->expectsOutputToContain('greedy replays of one deterministic path')
+        ->doesntExpectOutputToContain('rule of three')
         ->assertExitCode(0);
 });
 
 it('renders marginals with no pair language for a sampled control run', function (): void {
     config()->set('verdict.evaluation.control_enabled', true);
 
+    // Sampled decoding draws independently each trial, so the rule of three applies — here n=2 is
+    // below the threshold, so it reports "too few to bound" rather than suppressing the concept as
+    // greedy does. This pins that the rate language belongs to sampled runs, not greedy ones.
     $this->artisan('verdict:evaluation-live', ['suite' => 'sampled-paired', '--trials' => 2, '--control' => true])
         ->expectsOutputToContain('sampled decoding — independent draws, no per-trial pairing claimed')
+        ->expectsOutputToContain('rule of three')
+        ->doesntExpectOutputToContain('greedy replays of one deterministic path')
         ->doesntExpectOutputToContain('prevented')
         ->assertExitCode(0);
 });

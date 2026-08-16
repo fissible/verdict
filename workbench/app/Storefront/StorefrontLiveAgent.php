@@ -220,7 +220,9 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
      */
     public function model(): string
     {
-        $model = env('STOREFRONT_LIVE_MODEL', 'gpt-oss:20b');
+        // getenv, not env(): this is a runtime harness read, and env() returns null once config is
+        // cached (PHPStan flags it). The default lives in the fallback below.
+        $model = getenv('STOREFRONT_LIVE_MODEL');
 
         return is_string($model) && trim($model) !== '' ? $model : 'gpt-oss:20b';
     }
