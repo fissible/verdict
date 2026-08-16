@@ -96,6 +96,14 @@ final class WorkbenchServiceProvider extends ServiceProvider
 
         if (is_array($argv) && in_array('verdict:evaluation-live', $argv, true)) {
             config()->set('verdict.evaluation.live_enabled', true);
+
+            // The control arm's gate stays separate here too (ADR 0023): the --control flag
+            // alone must not enable it, so the workbench requires an explicit env opt-in as its
+            // config-layer act — the equivalent of what a real application sets in its own
+            // deployed configuration, scoped like live_enabled to this command's process only.
+            if (filter_var(env('VERDICT_CONTROL_ENABLED', false), FILTER_VALIDATE_BOOL)) {
+                config()->set('verdict.evaluation.control_enabled', true);
+            }
         }
     }
 

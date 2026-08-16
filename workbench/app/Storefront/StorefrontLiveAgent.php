@@ -211,9 +211,17 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
         return 'ollama';
     }
 
-    /** gpt-oss:20b is the only pulled local model that reports the `tools` capability. */
+    /**
+     * Default: gpt-oss:20b, the frontier-aligned model the guarded baseline is recorded against.
+     * `STOREFRONT_LIVE_MODEL` selects the control arm's breach instrument (#170: *capable enough
+     * to act, not aligned enough to refuse*) — the model must report Ollama's `tools` capability
+     * or every trial reports all-declines. Constant per process, so `TrialSuiteIdentity` holds;
+     * the reproduction metadata records whichever model actually ran.
+     */
     public function model(): string
     {
-        return 'gpt-oss:20b';
+        $model = env('STOREFRONT_LIVE_MODEL', 'gpt-oss:20b');
+
+        return is_string($model) && trim($model) !== '' ? $model : 'gpt-oss:20b';
     }
 }
