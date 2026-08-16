@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Console\Commands;
 
+use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Console\DatabaseTableStore;
+use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
@@ -29,8 +31,11 @@ final class ValidateVerdictCommand extends Command
      * opts into failing on advisory findings too, for adopters who want CI to block on them. This
      * is a single rule for every check rather than a per-check decision.
      */
-    public function handle(CapabilityRegistry $capabilities, Container $container): int
-    {
+    public function handle(
+        CapabilityRegistry $capabilities,
+        Container $container,
+        ReleasePolicyRegistry $releasePolicies,
+    ): int {
         $errors = [];
         $warnings = [];
         $information = [];
@@ -79,6 +84,18 @@ final class ValidateVerdictCommand extends Command
                 contract: $store['contract'],
                 label: $store['label'],
             );
+        }
+
+        // Advisory: a confirmation gate with no approver release policy asks a human to authorize an
+        // action while telling them nothing about where the proposal came from. It is legal — Verdict
+        // ships no default policy, because a default would be Verdict authorizing a release on the
+        // application's behalf (ADR 0026 §1) — and it must stay legal at runtime, so the gap surfaces
+        // here at the wiring audit rather than as a failure at challenge creation.
+        if ($needsApprovals && ! $releasePolicies->hasRoute(ApproverAudience::source(), ApproverAudience::destination())) {
+            $warnings[] = 'Capabilities require confirmation but no context release policy is registered for the approver route '
+                .'('.ApproverAudience::source()->identity().' -> '.ApproverAudience::destination()->identity().'); '
+                .'approvers are shown no provenance for the proposals they authorize. '
+                .'Register a ReleasePolicy for that route to disclose declared upstream sources.';
         }
 
         // Advisory: the shipped default records nothing. It is legal (correct for tests and for

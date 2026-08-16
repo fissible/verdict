@@ -3,11 +3,16 @@
 declare(strict_types=1);
 
 use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\ReleasePolicy;
+use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\Facades\Verdict;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitConsumption;
 use Fissible\Verdict\RateLimits\RateLimitOutcome;
@@ -103,6 +108,43 @@ it('fails under --strict when only advisory warnings are present', function (): 
     $this->artisan('verdict:validate', ['--strict' => true])
         ->expectsOutputToContain('no-op evidence recorder')
         ->assertExitCode(1);
+});
+
+it('warns when a confirmation-gated capability has no approver release policy registered', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('no context release policy is registered for the approver route')
+        ->assertExitCode(0);
+});
+
+it('does not warn about the approver route once a policy is registered for it', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+    Verdict::releasePolicy(
+        ReleasePolicy::between(ApproverAudience::source(), ApproverAudience::destination())
+            ->allow(DataClass::Internal)
+            ->whenTrustIs(Trust::Untrusted),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('approver route')
+        ->assertExitCode(0);
+});
+
+it('does not warn about the approver route when no capability requires confirmation', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.view', 'view', fn (ActionEnvelope $envelope): int => 1),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('approver route')
+        ->assertExitCode(0);
 });
 
 it('does not warn about the recorder when a real one is configured', function (): void {
