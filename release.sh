@@ -10,6 +10,16 @@ set -e
 die()     { printf 'error: %s\n' "$1" >&2; exit 1; }
 confirm() { printf '%s [y/N] ' "$1"; read -r ans; [[ "$ans" =~ ^[Yy]$ ]]; }
 
+# In-place edit that leaves no backup on either sed. GNU sed treats `-i''` as "no backup" and
+# `-e` as the script flag; BSD sed (macOS) takes `-e` as the backup *suffix* and silently leaves
+# a `<file>-e` beside the original. That artifact is untracked and not ignored, so a later
+# `git add -A` would commit it. Writing through a temp file avoids the difference entirely.
+replace_in_file() {
+    local file=$1 script=$2 tmp
+    tmp=$(mktemp) || die "could not create a temporary file"
+    sed "$script" "$file" > "$tmp" && mv "$tmp" "$file" || { rm -f "$tmp"; die "could not rewrite $file"; }
+}
+
 # --- preflight checks ---
 
 [[ -f VERSION ]] || die "VERSION file not found — are you in a fissible repo root?"
@@ -122,7 +132,7 @@ printf '%s\n' "$new_version" > VERSION
 # --- update package.json if present ---
 
 if [[ -f package.json ]]; then
-    sed -i'' -e "s/\"version\": \"[^\"]*\"/\"version\": \"${new_version}\"/" package.json
+    replace_in_file package.json "s/\"version\": \"[^\"]*\"/\"version\": \"${new_version}\"/"
 fi
 
 # --- update the documented install constraint ---
@@ -148,7 +158,7 @@ if [[ -f README.md && -f composer.json ]]; then
     grep -q "composer require ${package}:" README.md \
         || die "no 'composer require ${package}:' line in README.md — refusing to release with an unverifiable install constraint"
 
-    sed -i'' -e "s|composer require ${package}:[^[:space:]]*|composer require ${package}:${constraint}|g" README.md
+    replace_in_file README.md "s|composer require ${package}:[^[:space:]]*|composer require ${package}:${constraint}|g"
     printf 'README install constraint: %s\n' "$constraint"
 fi
 
