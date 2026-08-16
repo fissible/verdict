@@ -43,6 +43,16 @@ final readonly class DecisionEvidence
         public ?string $configurationFingerprint = null,
         public ?string $actorFingerprint = null,
         public ?string $subjectFingerprint = null,
+        /**
+         * Which channel this capability's target resolver reads from — `context` or `proposal`.
+         *
+         * Recorded per decision rather than folded into the configuration fingerprint, because an
+         * auditor filtering for proposal-resolved consequential capabilities needs a queryable
+         * value, not a hash they must recompute to interpret. It names the constructor that was
+         * used, never a verified property of the closure body. See
+         * [ADR 0025](../../docs/adr/0025-target-provenance-is-proven-where-it-can-be.md).
+         */
+        public ?string $targetSource = null,
     ) {
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
@@ -125,6 +135,7 @@ final readonly class DecisionEvidence
             // Not every evaluation resolves a Capability (e.g. an unregistered-capability denial),
             // so this is null exactly when $evaluation->capability is null.
             configurationFingerprint: $evaluation->capability?->configurationFingerprint(),
+            targetSource: $evaluation->capability?->targetSource->value,
             actorFingerprint: self::identityFingerprint($evaluation->envelope->context->actor),
             subjectFingerprint: self::identityFingerprint($evaluation->envelope->context->subject),
         );
