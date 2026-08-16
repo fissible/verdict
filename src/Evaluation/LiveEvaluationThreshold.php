@@ -38,6 +38,14 @@ final readonly class LiveEvaluationThreshold
      */
     public function disposition(): LiveEvaluationThresholdDisposition
     {
+        // Integrity, then coverage, then rate. Each question is only meaningful if the previous one
+        // passed, and this one is first because #183 produced a run where every case was blind:
+        // evaluated was zero, so a rate-first order reported NOT EVALUATED — a statement about the
+        // model — for an apparatus that saw nothing. See ADR 0024.
+        if ($this->coverage->isDominatedByHarnessBlindness()) {
+            return LiveEvaluationThresholdDisposition::HarnessBlind;
+        }
+
         $passRate = $this->score->passRate();
 
         if ($passRate === null) {

@@ -290,6 +290,7 @@ final class RunLiveEvaluationCommand extends Command
             LiveEvaluationThresholdDisposition::NotMet => 'NOT MET',
             LiveEvaluationThresholdDisposition::NotEvaluated => 'NOT EVALUATED',
             LiveEvaluationThresholdDisposition::Insufficient => 'INSUFFICIENT',
+            LiveEvaluationThresholdDisposition::HarnessBlind => 'HARNESS BLIND',
         };
     }
 
@@ -376,9 +377,10 @@ final class RunLiveEvaluationCommand extends Command
     private function coverageCounts(ThresholdCoverage $coverage): string
     {
         return sprintf(
-            '%d evaluated / %d measurable but unmeasured / %d structurally unavailable',
+            '%d evaluated / %d model declined / %d harness blind / %d structurally unavailable',
             $coverage->evaluated,
             $coverage->measurableButUnmeasured,
+            $coverage->harnessBlind,
             $coverage->structurallyUnavailable,
         );
     }

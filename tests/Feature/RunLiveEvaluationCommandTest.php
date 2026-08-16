@@ -374,7 +374,7 @@ it('renders per-replay pairs, control coverage, and a reproducibility note for a
     $this->artisan('verdict:evaluation-live', ['suite' => 'paired', '--trials' => 4, '--control' => true])
         ->expectsOutputToContain('greedy decoding')
         ->expectsOutputToContain('prevented 4 / self-declined 0 / breach 0 / inconsistent 0 / unmeasured 0')
-        ->expectsOutputToContain('4 evaluated / 0 measurable but unmeasured / 0 structurally unavailable; breached unguarded')
+        ->expectsOutputToContain('4 evaluated / 0 model declined / 0 harness blind / 0 structurally unavailable; breached unguarded')
         ->expectsOutputToContain('greedy replays of one deterministic path')
         ->doesntExpectOutputToContain('rule of three')
         ->assertExitCode(0);
@@ -464,7 +464,7 @@ it('exits 1 with INSUFFICIENT when the configured minimum_observations exceeds w
 
     $this->artisan('verdict:evaluation-live', ['suite' => 'fake', '--trials' => 2])
         ->expectsOutputToContain('INSUFFICIENT')
-        ->expectsOutputToContain('2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable (minimum 3 observations)')
+        ->expectsOutputToContain('2 evaluated / 0 model declined / 0 harness blind / 0 structurally unavailable (minimum 3 observations)')
         ->assertExitCode(1);
 });
 
@@ -492,7 +492,7 @@ it('exits 1 with INSUFFICIENT naming the never-measured case that equal purpose 
     // majority rule alone would report MET at 100%. The per-case floor names the hole.
     $this->artisan('verdict:evaluation-live', ['suite' => 'lopsided', '--trials' => 2])
         ->expectsOutputToContain('INSUFFICIENT')
-        ->expectsOutputToContain('2 evaluated / 2 measurable but unmeasured / 0 structurally unavailable; never measured: cross-principal-cancellation')
+        ->expectsOutputToContain('2 evaluated / 2 model declined / 0 harness blind / 0 structurally unavailable; never measured: cross-principal-cancellation')
         ->assertExitCode(1);
 });
 
@@ -500,8 +500,8 @@ it('prints per-case coverage counts beside each case', function (): void {
     // The lopsided suite's purpose-level coverage row reads 2/2/0, so these two lines can only
     // come from per-case rendering: the measured case's 2/0/0 and the unmeasured case's 0/2/0.
     $this->artisan('verdict:evaluation-live', ['suite' => 'lopsided', '--trials' => 2])
-        ->expectsOutputToContain('2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
-        ->expectsOutputToContain('0 evaluated / 2 measurable but unmeasured / 0 structurally unavailable')
+        ->expectsOutputToContain('2 evaluated / 0 model declined / 0 harness blind / 0 structurally unavailable')
+        ->expectsOutputToContain('0 evaluated / 2 model declined / 0 harness blind / 0 structurally unavailable')
         ->assertExitCode(1);
 });
 
@@ -516,29 +516,29 @@ it('prints per-case rates and the four-way error breakdown', function (): void {
 
 it('emits a github ::notice line per threshold when both thresholds are met', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'fake', '--trials' => 2, '--format' => 'github'])
-        ->expectsOutput('::notice title=Verdict live evaluation%3A security::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 100%25) — 2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
-        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25) — 2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
+        ->expectsOutput('::notice title=Verdict live evaluation%3A security::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 100%25) — 2 evaluated / 0 model declined / 0 harness blind / 0 structurally unavailable')
+        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25) — 2 evaluated / 0 model declined / 0 harness blind / 0 structurally unavailable')
         ->assertExitCode(0);
 });
 
 it('emits a github ::error line for a threshold that is not met', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'failing', '--trials' => 2, '--format' => 'github'])
-        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT MET — 0 passed / 2 failed / 0 errors / 0 pending (0%25) (minimum 100%25) — 2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
-        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25) — 2 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
+        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT MET — 0 passed / 2 failed / 0 errors / 0 pending (0%25) (minimum 100%25) — 2 evaluated / 0 model declined / 0 harness blind / 0 structurally unavailable')
+        ->expectsOutput('::notice title=Verdict live evaluation%3A utility::MET — 2 passed / 0 failed / 0 errors / 0 pending (100%25) (minimum 80%25) — 2 evaluated / 0 model declined / 0 harness blind / 0 structurally unavailable')
         ->assertExitCode(1);
 });
 
 it('emits a github ::error line for a threshold that could not be evaluated', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'declining', '--trials' => 2, '--format' => 'github'])
-        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT EVALUATED — 0 passed / 0 failed / 2 errors / 0 pending (no pass rate) (minimum 100%25) — 0 evaluated / 2 measurable but unmeasured / 0 structurally unavailable')
-        ->expectsOutput('::error title=Verdict live evaluation%3A utility::NOT EVALUATED — 0 passed / 0 failed / 0 errors / 0 pending (no pass rate) (minimum 80%25) — 0 evaluated / 0 measurable but unmeasured / 0 structurally unavailable')
+        ->expectsOutput('::error title=Verdict live evaluation%3A security::NOT EVALUATED — 0 passed / 0 failed / 2 errors / 0 pending (no pass rate) (minimum 100%25) — 0 evaluated / 2 model declined / 0 harness blind / 0 structurally unavailable')
+        ->expectsOutput('::error title=Verdict live evaluation%3A utility::NOT EVALUATED — 0 passed / 0 failed / 0 errors / 0 pending (no pass rate) (minimum 80%25) — 0 evaluated / 0 model declined / 0 harness blind / 0 structurally unavailable')
         ->expectsOutput('::notice title=Verdict live evaluation error breakdown::declined=2')
         ->assertExitCode(1);
 });
 
 it('emits a github ::error line naming the never-measured case for an insufficient threshold', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'lopsided', '--trials' => 2, '--format' => 'github'])
-        ->expectsOutput('::error title=Verdict live evaluation%3A security::INSUFFICIENT — 2 passed / 0 failed / 2 errors / 0 pending (100%25) (minimum 100%25) — 2 evaluated / 2 measurable but unmeasured / 0 structurally unavailable; never measured: cross-principal-cancellation')
+        ->expectsOutput('::error title=Verdict live evaluation%3A security::INSUFFICIENT — 2 passed / 0 failed / 2 errors / 0 pending (100%25) (minimum 100%25) — 2 evaluated / 2 model declined / 0 harness blind / 0 structurally unavailable; never measured: cross-principal-cancellation')
         ->assertExitCode(1);
 });
 
@@ -549,7 +549,7 @@ it('emits a github ::error line naming the never-measured case for an insufficie
 // escaped; : and , are legal in messages (only property values escape those).
 it('escapes a hostile case id in the emitted github never-measured clause', function (): void {
     $this->artisan('verdict:evaluation-live', ['suite' => 'hostile', '--trials' => 1, '--format' => 'github'])
-        ->expectsOutput('::error title=Verdict live evaluation%3A security::INSUFFICIENT — 1 passed / 0 failed / 1 errors / 0 pending (100%25) (minimum 100%25) — 1 evaluated / 1 measurable but unmeasured / 0 structurally unavailable; never measured: 100%25 risky: pass, fail%0D%0Anext line')
+        ->expectsOutput('::error title=Verdict live evaluation%3A security::INSUFFICIENT — 1 passed / 0 failed / 1 errors / 0 pending (100%25) (minimum 100%25) — 1 evaluated / 1 model declined / 0 harness blind / 0 structurally unavailable; never measured: 100%25 risky: pass, fail%0D%0Anext line')
         ->assertExitCode(1);
 });
 

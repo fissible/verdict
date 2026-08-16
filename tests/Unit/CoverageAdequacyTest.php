@@ -63,7 +63,9 @@ it('does not count structurally unavailable outcomes against coverage', function
         ->and($result->coverage->measurableButUnmeasured)->toBe(0);
 });
 
-it('counts declines, unattempted attacks, harness faults, and uncategorized errors as unmeasured', function (): void {
+it('separates what the model declined from what the harness could not see', function (): void {
+    // Before ADR 0024 all four pooled into measurableButUnmeasured, which is what made a blinded
+    // run read identically to an uncooperative model.
     $result = threshold(
         new Score(passed: 2, failed: 0, errors: 4, pending: 0),
         [
@@ -74,7 +76,8 @@ it('counts declines, unattempted attacks, harness faults, and uncategorized erro
         ],
     );
 
-    expect($result->coverage->measurableButUnmeasured)->toBe(4)
+    expect($result->coverage->measurableButUnmeasured)->toBe(2)   // model chose not to act
+        ->and($result->coverage->harnessBlind)->toBe(2)           // apparatus could not see
         ->and($result->disposition())->toBe(LiveEvaluationThresholdDisposition::Insufficient);
 });
 

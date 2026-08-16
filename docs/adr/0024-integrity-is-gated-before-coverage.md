@@ -58,6 +58,13 @@ question that is only meaningful if the previous one passed.
 dimension, because a reader and a CI job both need to see "N outcomes the harness could not observe"
 as its own number rather than folded into a coverage figure.
 
+**The coverage rule still counts both.** ADR 0021 asks *was enough of the measurable population
+measured?*, and an outcome the apparatus could not see is still one that was not measured. Splitting
+the bucket for reporting must not shrink the numerator of that test — integrity is an additional,
+earlier gate, not a re-partition of the existing one. An early draft of this change did narrow it,
+which silently weakened ADR 0021: a purpose with 2 evaluated, 2 declined, and 2 blind went from
+`INSUFFICIENT` to `MET` because neither half dominated alone.
+
 ### 2. `HarnessBlind` is a disposition, and it is checked first
 
 `LiveEvaluationThresholdDisposition` gains `HarnessBlind`, reached when harness-blind outcomes
