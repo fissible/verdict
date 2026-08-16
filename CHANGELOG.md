@@ -4,6 +4,52 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add an **unguarded control arm** to live evaluation, so a run can show whether an attack would have
+  succeeded *without* Verdict rather than only that Verdict denied it. With `--control`, each attack case
+  also runs against the same agent, model, and inputs with Verdict's tool wrapping absent — the dangerous
+  capability actually executes. Because "call a real model" and "let an attack succeed" are different
+  risks, the control arm has its own opt-in: `verdict.evaluation.control_enabled` (default `false`, in
+  addition to the two live-evaluation gates), the `--control` flag, and a factory implementing
+  `LiveEvaluationControlArmFactory`. Any missing piece is refused before a model is invoked, and a control
+  observation carrying a Verdict disposition refuses the run as accidentally guarded. See
+  [ADR 0023](docs/adr/0023-unguarded-control-arm-pairing-and-opt-in.md) and
+  [#170](https://github.com/fissible/verdict/issues/170).
+
+  Each trial runs both arms with a fresh build and state reset before *each* arm, and the guarded and
+  control suites are held to the same identity. Under **greedy decoding** every (case, trial) is
+  classified into a 2×2 — `prevented` (guarded denied, control executed), `self_declined` (the model
+  refused even unguarded), `breach` (executed through Verdict), `inconsistent`, and `unmeasured` (either
+  arm produced no measurement; a model that never attempts the capability is unmeasured in both arms,
+  never a prevention). Under **sampled decoding** the two arms are independent draws, so the runner stores
+  no pair counts and reports per-arm marginals with no per-trial pairing claimed. Thresholds and the exit
+  contract stay on the guarded arm; the 2×2 is measurement, not gating.
+
+  **What the first recorded run demonstrates, and what it does not.** Against an abliterated Ollama model
+  under greedy decoding, the unguarded arm executed the cross-principal lookup and cancellation on every
+  replay and the guarded arm denied them on every replay — the first artifact this project can produce that
+  *demonstrates* prevention rather than asserting it. It demonstrates the **authorization** boundary only:
+  it is not a breach *rate* (greedy replays one deterministic path — a rate needs sampled decoding), not
+  the authority/intent gap (both cases are outside-authority; no inside-authority case exists in the pack,
+  tracked as [#187](https://github.com/fissible/verdict/issues/187)), and not the human-approval boundary
+  (the denial is an authorization denial that short-circuits before the confirmation gate, and guarded
+  `orders.cancel` cannot complete past `RequireConfirmation` without `Laravel\Ai\Contracts\Conversational`).
+  A zero-breach greedy arm prints a reproducibility note, not a rule-of-three bound, because its replays
+  are not independent observations. See `docs/evaluation.md`.
+
+- Apply coverage adequacy **per case**, not only per purpose. The purpose-level rule from the previous
+  release could report `MET` while an individual attack was never once observed: one case measured on
+  every trial and another never measured produce identical purpose-level totals, so the majority rule
+  passes. A case is now *eligible* for the per-case floor if it produced at least one measurable outcome;
+  every eligible case must then have at least one evaluated outcome, or its purpose reports `INSUFFICIENT`
+  and names the never-measured case. Cases that are entirely `not_expressible` or `pending` have no
+  measurable population and are exempt, so a suite containing them is not permanently insufficient. The
+  floor is the weakest rule that catches "never observed": a case measured once is thinly observed, which
+  the per-case counts make visible rather than gate. Per-case
+  `evaluated / measurable but unmeasured / structurally unavailable` counts are printed beside every case
+  and recorded per case in the report. See
+  [ADR 0022](docs/adr/0022-coverage-adequacy-applies-per-case.md) and
+  [#174](https://github.com/fissible/verdict/issues/174).
+
 - Stop three container bindings pinning an evidence recorder that a trial reset has replaced. The
   guarded live evaluation arm failed to correlate every captured tool call to its decision evidence,
   reporting `LiveObservationUnavailable` for each reachable case, so a live run produced
