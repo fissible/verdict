@@ -96,6 +96,27 @@ final class WorkbenchServiceProvider extends ServiceProvider
 
         if (is_array($argv) && in_array('verdict:evaluation-live', $argv, true)) {
             config()->set('verdict.evaluation.live_enabled', true);
+
+            // The control arm's gate stays separate here too (ADR 0023): the --control flag
+            // alone must not enable it, so the workbench requires an explicit env opt-in as its
+            // config-layer act — the equivalent of what a real application sets in its own
+            // deployed configuration, scoped like live_enabled to this command's process only.
+            // getenv, not env(): a runtime harness read, and env() returns null once config is
+            // cached (PHPStan flags it). getenv returns false when unset, which filter_var reads
+            // as false — the safe default.
+            if (filter_var(getenv('VERDICT_CONTROL_ENABLED'), FILTER_VALIDATE_BOOL)) {
+                config()->set('verdict.evaluation.control_enabled', true);
+            }
+
+            // A deliberate recorded run legitimately wants more trials than the default cap of 25
+            // (e.g. n=30 so a zero-breach rule-of-three bound reaches ~10%). Raise it only for
+            // this command's process via an explicit env opt-in, leaving the shipped safety
+            // default untouched everywhere else.
+            $maxTrials = getenv('VERDICT_MAX_TRIALS');
+
+            if (is_string($maxTrials) && is_numeric($maxTrials)) {
+                config()->set('verdict.evaluation.maximum_trials', (int) $maxTrials);
+            }
         }
     }
 

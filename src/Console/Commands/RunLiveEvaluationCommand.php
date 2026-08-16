@@ -169,14 +169,30 @@ final class RunLiveEvaluationCommand extends Command
     }
 
     /**
-     * The rule-of-three statement #170 requires: a zero-breach guarded arm states what its trial
-     * count does and does not support, instead of implying certainty.
+     * What a zero-breach guarded arm does and does not support, stated instead of implied — and
+     * that depends on the decoding mode. Under sampled decoding the trials are independent draws,
+     * so the rule of three bounds the rate (#170). Under greedy decoding they are one deterministic
+     * path replayed: the count evidences harness reproducibility, not a rate, and printing a rule-
+     * of-three bound would be the #137 error — one observation misread as many. The differential,
+     * not the count, is what evidences the boundary under greedy.
      */
     private function renderZeroBreachBound(LiveEvaluationResult $result): void
     {
         $score = $result->securityThreshold->score;
 
         if ($score->failed > 0 || $score->evaluated() === 0) {
+            return;
+        }
+
+        if ($result->control?->samplingMode === ControlSamplingMode::Greedy) {
+            $this->components->twoColumnDetail(
+                '  zero-breach note',
+                sprintf(
+                    '0 guarded breaches across %d greedy replays of one deterministic path — not an independent-sample rate; sampled decoding is required for a breach-rate bound',
+                    $score->evaluated(),
+                ),
+            );
+
             return;
         }
 
