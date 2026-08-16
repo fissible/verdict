@@ -22,6 +22,17 @@ final class ReleasePolicyRegistry
         return $this;
     }
 
+    /**
+     * Whether the application has registered a policy for this route at all.
+     *
+     * Distinct from permits(): an unregistered route means the application has not decided, where a
+     * registered one that refuses means it decided no.
+     */
+    public function hasRoute(Source $source, Destination $destination): bool
+    {
+        return array_key_exists($source->identity().'->'.$destination->identity(), $this->policies);
+    }
+
     public function permits(Source $source, Destination $destination, DataClass $dataClass, Trust $trust): bool
     {
         $key = $source->identity().'->'.$destination->identity();
