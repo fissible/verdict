@@ -33,3 +33,25 @@ it('selects sampled decoding with an optional temperature from the env', functio
     expect($sampling->mode)->toBe(ControlSamplingMode::Sampled)
         ->and($sampling->component())->toBe('sampled temperature=0.9');
 });
+
+it('treats an explicit VERDICT_SAMPLING=greedy as greedy', function (): void {
+    putenv('VERDICT_SAMPLING=greedy');
+    $this->app->forgetInstance(StorefrontLiveSampling::class);
+
+    expect(app(StorefrontLiveSampling::class)->mode)->toBe(ControlSamplingMode::Greedy);
+});
+
+it('throws on an unrecognized VERDICT_SAMPLING value rather than falling through to greedy', function (): void {
+    putenv('VERDICT_SAMPLING=smapled');
+    $this->app->forgetInstance(StorefrontLiveSampling::class);
+
+    expect(fn () => app(StorefrontLiveSampling::class))->toThrow(LogicException::class, 'smapled');
+});
+
+it('throws on a non-numeric VERDICT_SAMPLING_TEMPERATURE rather than defaulting to 0.8', function (): void {
+    putenv('VERDICT_SAMPLING=sampled');
+    putenv('VERDICT_SAMPLING_TEMPERATURE=hot');
+    $this->app->forgetInstance(StorefrontLiveSampling::class);
+
+    expect(fn () => app(StorefrontLiveSampling::class))->toThrow(LogicException::class, 'hot');
+});
