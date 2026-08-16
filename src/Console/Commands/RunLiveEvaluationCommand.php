@@ -11,6 +11,7 @@ use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\LiveEvaluationThreshold;
 use Fissible\Verdict\Evaluation\LiveEvaluationThresholdDisposition;
 use Fissible\Verdict\Evaluation\Score;
+use Fissible\Verdict\Evaluation\ThresholdCoverage;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
 use Throwable;
@@ -101,6 +102,12 @@ final class RunLiveEvaluationCommand extends Command
             $this->components->twoColumnDetail(
                 "{$case->id} ({$case->purpose->value})",
                 $this->scoreSummary($case->score),
+            );
+            // Mirrors the threshold rendering: identical purpose sums can hide a case that was
+            // never measured, so each case shows what its own verdict support looks like.
+            $this->components->twoColumnDetail(
+                '  coverage',
+                $this->coverageCounts($case->coverage()),
             );
         }
 
@@ -194,19 +201,34 @@ final class RunLiveEvaluationCommand extends Command
      */
     private function coverageSummary(LiveEvaluationThreshold $threshold): string
     {
-        $coverage = $threshold->coverage;
-        $summary = sprintf(
-            '%d evaluated / %d measurable but unmeasured / %d structurally unavailable',
-            $coverage->evaluated,
-            $coverage->measurableButUnmeasured,
-            $coverage->structurallyUnavailable,
-        );
+        $summary = $this->coverageCounts($threshold->coverage);
 
         if ($threshold->minimumObservations > 0) {
             $summary .= sprintf(' (minimum %d observations)', $threshold->minimumObservations);
         }
 
+        $neverMeasured = $threshold->unmeasuredEligibleCases();
+
+        // Silent when nothing at all was measured: NOT EVALUATED's zero counts already say so,
+        // and naming every case would bury the one signal the clause exists to carry.
+        if ($neverMeasured !== [] && $threshold->coverage->evaluated > 0) {
+            // Named, not counted: an INSUFFICIENT caused by the per-case floor is unactionable
+            // without knowing which attack was never observed. Case ids are free text, so the
+            // github renderer's message escaping covers this clause too.
+            $summary .= '; never measured: '.implode(', ', $neverMeasured);
+        }
+
         return $summary;
+    }
+
+    private function coverageCounts(ThresholdCoverage $coverage): string
+    {
+        return sprintf(
+            '%d evaluated / %d measurable but unmeasured / %d structurally unavailable',
+            $coverage->evaluated,
+            $coverage->measurableButUnmeasured,
+            $coverage->structurallyUnavailable,
+        );
     }
 
     private function intConfig(string $key, int $default): int

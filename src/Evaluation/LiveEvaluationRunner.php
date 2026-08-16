@@ -140,6 +140,8 @@ final readonly class LiveEvaluationRunner
         $pending = 0;
         /** @var array<string,int> $breakdown */
         $breakdown = [];
+        /** @var array<string,ThresholdCoverage> $caseCoverage */
+        $caseCoverage = [];
 
         foreach ($cases as $case) {
             if ($case->purpose !== $purpose) {
@@ -156,6 +158,10 @@ final readonly class LiveEvaluationRunner
             foreach ($case->errorBreakdown as $category => $count) {
                 $breakdown[$category] = ($breakdown[$category] ?? 0) + $count;
             }
+
+            // Kept per case as well: identical purpose sums can hide a case that was never
+            // measured, which is what the per-case floor exists to see. See ADR 0022.
+            $caseCoverage[$case->id] = $case->coverage();
         }
 
         $score = new Score($passed, $failed, $errors, $pending);
@@ -166,6 +172,7 @@ final readonly class LiveEvaluationRunner
             score: $score,
             coverage: ThresholdCoverage::from($score, $breakdown),
             minimumObservations: $minimumObservations,
+            caseCoverage: $caseCoverage,
         );
     }
 }
