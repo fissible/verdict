@@ -28,6 +28,31 @@ Authorization and target binding are the foundation of a protected capability. C
 
 The model may supply arguments, but it is not the authority that decides whether an actor can act on a record. Target resolvers should load records from trusted storage and enforce tenant or ownership boundaries explicitly where the application needs them.
 
+### Authority is not intent
+
+Authorization answers one question: may this actor perform this operation on this
+record? It cannot answer a second question: did this actor want it?
+
+Under prompt injection the actor is the legitimate authenticated user. If injected
+content selects a record the actor is authorized for, every authorization check in
+Verdict permits the action, correctly. The gap is not in the policy evaluation. It is
+that the target was chosen by something other than the user.
+
+This is why target provenance matters more than target validation. Verdict distinguishes
+two resolution paths:
+
+- **Context-resolved targets.** The resolver reads from `ActionContext`, which the
+  application builds per invocation from state the model cannot influence. An injected
+  instruction cannot change which record is acted on, only whether an action is
+  proposed at all. This is the recommended path for consequential operations.
+- **Proposal-resolved targets.** The resolver reads from
+  `ActionEnvelope::$proposal->arguments`. Scoping the lookup to the actor bounds which
+  records are reachable. It does not establish that the actor chose this one.
+
+Verdict's authorization layer bounds authority on both paths. Only the first bounds
+selection. For proposal-resolved targets on consequential operations, the intent
+control is human approval, not the policy.
+
 ### Actor and subject evidence
 
 `ActionContext::$actor` is the principal acting and is the value Verdict passes to Laravel's Gate. Its optional `$subject` is the principal on whose behalf that actor acts; when it is `null`, the actor acts for itself. A subject is not a delegator: delegation attenuates an existing authority, while an actor acting for a subject may instead reflect a separately authorized escalation. See [ADR 0015](adr/0015-authority-propagation.md).
@@ -162,10 +187,16 @@ The derivation table has a `(correlation_id, child_content_fingerprint)` index f
 Verdict is designed to make these failures less likely on its protected path:
 
 - a model proposes an action the actor is not authorized to take;
-- an untrusted argument directs an action at the wrong resource;
+- an untrusted argument directs an action at a resource outside the actor's authority;
 - a consequential action proceeds without required human approval;
 - a qualifying action is admitted more than once; and
 - model behavior exceeds a configured semantic safety limit.
+
+Verdict does not attempt to determine whether an authorized action reflects the
+actor's intent. Where the target is proposal-resolved, an injected instruction that
+stays inside the actor's authority will pass authorization by design. See
+[authority is not intent](#authority-is-not-intent) and
+[limitations](limitations.md#authorization-bounds-authority-not-intent).
 
 It does not assume a model is malicious or trustworthy. Instead, it treats model-proposed actions as requests that need ordinary application authorization and safety controls.
 
