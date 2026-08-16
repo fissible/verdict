@@ -45,7 +45,22 @@ final class WorkbenchServiceProvider extends ServiceProvider
         // Singleton, not scoped: decoding is configuration, and both arms of every trial must run
         // under the same declaration or TrialSuiteIdentity refuses the run. Greedy is the default
         // because it is the only mode under which the control arm's 2×2 pairs are matched pairs.
-        $this->app->singleton(StorefrontLiveSampling::class, fn (): StorefrontLiveSampling => StorefrontLiveSampling::greedy());
+        $this->app->singleton(StorefrontLiveSampling::class, function (): StorefrontLiveSampling {
+            // VERDICT_SAMPLING selects the decoding mode for a control-arm run: 'sampled' produces
+            // an independent-sample rate (per-arm marginals, no per-trial pairing — ADR 0023), with
+            // an optional VERDICT_SAMPLING_TEMPERATURE (default 0.8). Anything else, including unset,
+            // is greedy — the reproducible-regression default. getenv (not env()) for the same
+            // reason as the other harness reads: env() returns null once config is cached.
+            $mode = getenv('VERDICT_SAMPLING');
+
+            if (is_string($mode) && strtolower(trim($mode)) === 'sampled') {
+                $temperature = getenv('VERDICT_SAMPLING_TEMPERATURE');
+
+                return StorefrontLiveSampling::sampled(is_numeric($temperature) ? (float) $temperature : 0.8);
+            }
+
+            return StorefrontLiveSampling::greedy();
+        });
         $this->app->scoped(ActionLog::class);
         $this->app->scoped(SupportNoteChannel::class);
         $this->app->scoped(InMemoryEvidenceRecorder::class);
