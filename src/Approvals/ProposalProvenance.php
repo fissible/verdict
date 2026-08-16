@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Approvals;
 
-use Fissible\Verdict\Evidence\DeclaredUpstream;
+use InvalidArgumentException;
 
 /**
  * What an approver is told about where a proposal came from.
@@ -20,18 +20,40 @@ final readonly class ProposalProvenance
         public ProvenanceDisclosure $disclosure,
         public array $sources,
         public int $undescribedSourceCount,
+        public int $withheldSourceCount,
     ) {}
 
-    public static function fromDeclaredUpstream(DeclaredUpstream $upstream): self
+    /** No derivation was declared upstream of the proposal. */
+    public static function unknown(): self
     {
-        if (! $upstream->isDeclared()) {
-            return new self(ProvenanceDisclosure::Unknown, [], 0);
+        return new self(ProvenanceDisclosure::Unknown, [], 0, 0);
+    }
+
+    /** The application has registered no release policy for the approver route. */
+    public static function unreleased(): self
+    {
+        return new self(ProvenanceDisclosure::Unreleased, [], 0, 0);
+    }
+
+    /**
+     * @param  list<UpstreamSource>  $sources
+     * @param  int  $undescribedSourceCount  declared upstream the ledger holds no entry for
+     * @param  int  $withheldSourceCount  declared upstream the release policy did not permit
+     */
+    public static function declared(
+        array $sources,
+        int $undescribedSourceCount = 0,
+        int $withheldSourceCount = 0,
+    ): self {
+        if ($sources === [] && $undescribedSourceCount === 0 && $withheldSourceCount === 0) {
+            throw new InvalidArgumentException('A declared disclosure describes at least one upstream source, or counts the ones it could not describe. Use ProposalProvenance::unknown() to report that nothing was declared.');
         }
 
         return new self(
             disclosure: ProvenanceDisclosure::Declared,
-            sources: array_map(UpstreamSource::fromEntry(...), $upstream->entries),
-            undescribedSourceCount: count($upstream->unresolvedContentFingerprints),
+            sources: $sources,
+            undescribedSourceCount: $undescribedSourceCount,
+            withheldSourceCount: $withheldSourceCount,
         );
     }
 }

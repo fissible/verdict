@@ -7,6 +7,7 @@ namespace Fissible\Verdict;
 use Fissible\AttestLaravel\Support\AttestRegistry;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
@@ -149,6 +150,12 @@ final class VerdictServiceProvider extends ServiceProvider
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
             );
         });
+
+        $this->app->scoped(ApproverProvenanceRelease::class, fn (Container $app): ApproverProvenanceRelease => new ApproverProvenanceRelease(
+            provenance: $app->make(ProvenanceLedger::class),
+            releases: $app->make(ContextReleaseManager::class),
+            policies: $app->make(ReleasePolicyRegistry::class),
+        ));
 
         $this->app->singleton(EvidenceRecorder::class, function (Container $app): EvidenceRecorder {
             $recorder = config('verdict.evidence.recorder', NullEvidenceRecorder::class);
