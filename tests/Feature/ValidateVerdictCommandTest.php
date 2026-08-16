@@ -6,6 +6,8 @@ use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitConsumption;
 use Fissible\Verdict\RateLimits\RateLimitOutcome;
@@ -86,3 +88,27 @@ final class UnresolvableRateLimitStore implements RateLimitStore
         throw new RuntimeException('This store should never be consumed by the audit.');
     }
 }
+
+it('warns without failing when the shipped no-op evidence recorder is configured', function (): void {
+    config()->set('verdict.evidence.recorder', NullEvidenceRecorder::class);
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('no-op evidence recorder')
+        ->assertExitCode(0);
+});
+
+it('fails under --strict when only advisory warnings are present', function (): void {
+    config()->set('verdict.evidence.recorder', NullEvidenceRecorder::class);
+
+    $this->artisan('verdict:validate', ['--strict' => true])
+        ->expectsOutputToContain('no-op evidence recorder')
+        ->assertExitCode(1);
+});
+
+it('does not warn about the recorder when a real one is configured', function (): void {
+    config()->set('verdict.evidence.recorder', InMemoryEvidenceRecorder::class);
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('no-op evidence recorder')
+        ->assertExitCode(0);
+});

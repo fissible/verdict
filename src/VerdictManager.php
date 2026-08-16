@@ -27,6 +27,7 @@ use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
+use Fissible\Verdict\Evidence\NullRecorderWarning;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\Exceptions\ExecutionClaimFinalizationFailed;
@@ -65,6 +66,7 @@ final readonly class VerdictManager
         private InvocationContext $invocations,
         private string $deniedMessage,
         private Dispatcher $events,
+        private NullRecorderWarning $nullRecorderWarning,
     ) {}
 
     public function capability(Capability $capability): self
@@ -107,6 +109,14 @@ final readonly class VerdictManager
         }
 
         $capability = $this->capabilities->get($envelope->proposal->capability);
+
+        // A capability requiring confirmation or at-most-once execution is exactly where an
+        // unrecorded decision is most consequential — an approval nobody can later prove was
+        // granted, a claim whose admission history is unrecoverable. Warn once per process if such
+        // a capability is running under the shipped no-op recorder. Advisory only (ADR 0007). #194.
+        if ($capability->confirmationRequired() || $capability->executionClaimPolicy() !== null) {
+            $this->nullRecorderWarning->noteConsequentialAction($this->evidence, $this->events);
+        }
 
         try {
             $target = $capability->resolveTarget($envelope);

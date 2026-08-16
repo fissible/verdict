@@ -86,6 +86,13 @@ final class SupportAgent implements ProvidesVerdictIdentity
 
 Verdict stores only the SHA-256 fingerprint of this application-supplied string in `actor_fingerprint` and `subject_fingerprint`; it never guesses an identity from an object hash, serialization, or raw value. Values that do not implement the contract produce nullable identity evidence, and an empty supplied identity is rejected.
 
+<!-- @verdict-claim evidence.null-recorder-warned tested -->
+## Evidence recording is opt-in, and its absence is loud
+
+Evidence recording is opt-in: `verdict.evidence.recorder` ships as `NullEvidenceRecorder`, a no-op, so a fresh install records nothing until an operator configures a durable recorder. That is a deliberate default — writing actor identities and argument fingerprints to a table the operator did not choose is a real imposition, and evidence is never an authorization gate ([ADR 0007](adr/0007-evidence-layering.md)), so the security boundary does not depend on it.
+
+The absence is made visible where it matters most, rather than left silent. When a capability requiring confirmation or at-most-once execution runs under the no-op recorder — the cases where a lost record means an approval nobody can prove was granted, or a claim whose admission history is unrecoverable — Verdict dispatches `ConsequentialActionUnrecorded` once per process. `verdict:validate` reports the same configuration at deploy time (advisory; pass `--strict` to fail CI on it). Both are advisory signals about a legal configuration, not gates: a no-op recorder never throws.
+
 <!-- @verdict-claim security.target-freshness tested -->
 ## Target freshness and TOCTOU
 

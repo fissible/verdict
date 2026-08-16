@@ -37,6 +37,7 @@ use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\Evidence\NullRecorderWarning;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
@@ -412,6 +413,10 @@ final class VerdictServiceProvider extends ServiceProvider
             );
         });
 
+        // Singleton so the no-op-recorder warning fires once per process, not once per scoped
+        // VerdictManager (which is rebuilt per live-evaluation trial). See NullRecorderWarning.
+        $this->app->singleton(NullRecorderWarning::class);
+
         $this->app->scoped(VerdictManager::class, function (Container $app): VerdictManager {
             $message = config('verdict.ai.denied_message', 'This action was not authorized.');
 
@@ -428,6 +433,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 invocations: $app->make(InvocationContext::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
                 events: $app->make(Dispatcher::class),
+                nullRecorderWarning: $app->make(NullRecorderWarning::class),
             );
         });
     }
