@@ -21,6 +21,8 @@ final readonly class LiveEvaluationResult
         public array $cases,
         public LiveEvaluationThreshold $securityThreshold,
         public LiveEvaluationThreshold $utilityThreshold,
+        /** Present only on control-arm runs; the guarded arm's thresholds above are unaffected by it. */
+        public ?LiveEvaluationControlResult $control = null,
     ) {}
 
     public function report(): LiveEvaluationReport

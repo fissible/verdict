@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Evaluation;
 
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Contracts\LiveEvaluationControlArmFactory;
 use Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory;
 use Fissible\Verdict\Contracts\LiveEvaluationTrialFactory;
 use Fissible\Verdict\Support\SystemClock;
@@ -16,6 +17,7 @@ final readonly class LiveEvaluationRunner
     public function __construct(
         private bool $liveEnabled,
         private int $maximumTrials,
+        private bool $controlEnabled = false,
     ) {}
 
     public function run(LiveEvaluationSuiteFactory $factory, LiveEvaluationOptions $options, ?Clock $clock = null): LiveEvaluationResult
@@ -23,12 +25,18 @@ final readonly class LiveEvaluationRunner
         $this->assertExecutionIsEnabled($options);
         $this->assertTrialsAreBounded($options);
         $this->assertTrialsAreIsolated($factory, $options);
+        $controlFactory = $this->controlFactory($factory, $options);
 
         $clock ??= new SystemClock;
         $startedAt = $clock->now();
 
         /** @var array<string,LiveEvaluationScoreCounter> $counters keyed by case id, never by position */
         $counters = [];
+        /** @var array<string,LiveEvaluationScoreCounter> $controlCounters */
+        $controlCounters = [];
+        /** @var array<string,array<string,int>> $pairCounts per security case id, greedy runs only */
+        $pairCounts = [];
+        $classifyPairs = $controlFactory !== null && $controlFactory->samplingMode() === ControlSamplingMode::Greedy;
         $identity = null;
         $suite = null;
 
@@ -46,8 +54,20 @@ final readonly class LiveEvaluationRunner
             if ($identity === null) {
                 $identity = TrialSuiteIdentity::of($suite);
 
+                if ($controlFactory !== null) {
+                    $this->assertSamplingIsDeclared($suite);
+                }
+
                 foreach ($suite->cases as $case) {
                     $counters[$case->id] = new LiveEvaluationScoreCounter;
+                    $controlCounters[$case->id] = new LiveEvaluationScoreCounter;
+
+                    if ($classifyPairs && $case->purpose === CasePurpose::Security) {
+                        $pairCounts[$case->id] = array_fill_keys(
+                            array_map(static fn (ControlPairOutcome $outcome): string => $outcome->value, ControlPairOutcome::cases()),
+                            0,
+                        );
+                    }
                 }
             } else {
                 $identity->assertMatches($suite, $trial);
@@ -57,6 +77,33 @@ final readonly class LiveEvaluationRunner
 
             foreach ($result->cases as $case) {
                 $counters[$case->id]->record($case->status, $case->errorClass);
+            }
+
+            if ($controlFactory !== null) {
+                // A fresh build — and therefore a fresh reset — before this arm too: the control
+                // arm actually executes the dangerous capability, and its residue leaking into the
+                // next guarded observation is ADR 0020's defect one level down.
+                $controlSuite = $controlFactory->makeControlForTrial($trial);
+                $identity->assertMatches($controlSuite, $trial);
+
+                $controlResult = $controlSuite->run($clock);
+                /** @var array<string,CaseResult> $guardedByCase */
+                $guardedByCase = [];
+
+                foreach ($result->cases as $case) {
+                    $guardedByCase[$case->id] = $case;
+                }
+
+                foreach ($controlResult->cases as $case) {
+                    $this->assertCaseRanUnguarded($case, $trial);
+                    $controlCounters[$case->id]->record($case->status, $case->errorClass);
+
+                    if ($classifyPairs && isset($pairCounts[$case->id], $guardedByCase[$case->id])) {
+                        $guarded = $guardedByCase[$case->id];
+                        $pair = ControlPairOutcome::classify($guarded->status, $guarded->errorClass, $case->status, $case->errorClass);
+                        $pairCounts[$case->id][$pair->value]++;
+                    }
+                }
             }
 
             $trial++;
@@ -79,6 +126,24 @@ final readonly class LiveEvaluationRunner
             $suite->cases,
         );
 
+        $control = null;
+
+        if ($controlFactory !== null) {
+            $control = new LiveEvaluationControlResult(
+                samplingMode: $controlFactory->samplingMode(),
+                cases: array_map(
+                    static fn (EvaluationCase $case): LiveEvaluationControlCaseResult => new LiveEvaluationControlCaseResult(
+                        id: $case->id,
+                        purpose: $case->purpose,
+                        score: $controlCounters[$case->id]->score(),
+                        errorBreakdown: $controlCounters[$case->id]->errorBreakdown(),
+                        pairCounts: $pairCounts[$case->id] ?? null,
+                    ),
+                    $suite->cases,
+                ),
+            );
+        }
+
         return new LiveEvaluationResult(
             suite: $suite->name,
             version: $suite->version,
@@ -89,7 +154,64 @@ final readonly class LiveEvaluationRunner
             cases: $cases,
             securityThreshold: $this->threshold($cases, CasePurpose::Security, $options->minimumSecurityPassRate, $options->minimumObservations),
             utilityThreshold: $this->threshold($cases, CasePurpose::Utility, $options->minimumUtilityPassRate, $options->minimumObservations),
+            control: $control,
         );
+    }
+
+    /**
+     * The control arm's preconditions, refused before any model is invoked: its own configuration
+     * gate, and a factory that can actually build the unguarded arm. See ADR 0023.
+     */
+    private function controlFactory(LiveEvaluationSuiteFactory $factory, LiveEvaluationOptions $options): ?LiveEvaluationControlArmFactory
+    {
+        if (! $options->controlArm) {
+            return null;
+        }
+
+        if (! $this->controlEnabled) {
+            throw new LogicException(
+                'The control arm is disabled by verdict.evaluation.control_enabled. It deliberately '.
+                'lets attacks execute unguarded, so it requires its own opt-in in addition to the '.
+                'live evaluation gates.'
+            );
+        }
+
+        if (! $factory instanceof LiveEvaluationControlArmFactory) {
+            throw ControlArmRequiresControlFactory::forFactory($factory::class);
+        }
+
+        return $factory;
+    }
+
+    private function assertSamplingIsDeclared(SecuritySuite $suite): void
+    {
+        if (! array_key_exists('sampling', $suite->reproduction->components)) {
+            throw ControlArmRequiresSamplingDeclaration::forSuite($suite->name);
+        }
+    }
+
+    /**
+     * The one direction of the arm contract Verdict can verify: its own dispositions are the
+     * fingerprint of a guarded path, so a control observation carrying one proves the factory
+     * built a guarded suite and every pair in the run is invalid.
+     */
+    private function assertCaseRanUnguarded(CaseResult $case, int $trial): void
+    {
+        $observation = $case->observation;
+
+        if ($observation === null) {
+            return;
+        }
+
+        if ($observation->disposition !== null) {
+            throw ControlArmAppearsGuarded::forCase($case->id, $trial);
+        }
+
+        foreach ($observation->toolCalls as $toolCall) {
+            if ($toolCall->disposition !== null) {
+                throw ControlArmAppearsGuarded::forCase($case->id, $trial);
+            }
+        }
     }
 
     private function assertExecutionIsEnabled(LiveEvaluationOptions $options): void

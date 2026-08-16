@@ -16,7 +16,7 @@ final readonly class LiveEvaluationReport implements JsonSerializable
     /** @return array<string, mixed> */
     public function toArray(): array
     {
-        return [
+        $report = [
             'schema' => self::SCHEMA,
             'suite' => $this->result->suite,
             'version' => $this->result->version,
@@ -29,6 +29,37 @@ final readonly class LiveEvaluationReport implements JsonSerializable
                 CasePurpose::Utility->value => $this->thresholdArray($this->result->utilityThreshold),
             ],
             'cases' => array_map($this->caseArray(...), $this->result->cases),
+        ];
+
+        // Additive to the v1 schema, absent on non-control runs. `pairs` is null under sampled
+        // decoding by construction — the runner never stores pair counts there. See ADR 0023.
+        if ($this->result->control !== null) {
+            $report['control'] = [
+                'sampling_mode' => $this->result->control->samplingMode->value,
+                'cases' => array_map($this->controlCaseArray(...), $this->result->control->cases),
+            ];
+        }
+
+        return $report;
+    }
+
+    /** @return array<string, mixed> */
+    private function controlCaseArray(LiveEvaluationControlCaseResult $case): array
+    {
+        $coverage = $case->coverage();
+
+        return [
+            'id' => $case->id,
+            'purpose' => $case->purpose->value,
+            'score' => $this->scoreArray($case->score),
+            'coverage' => [
+                'evaluated' => $coverage->evaluated,
+                'measurable_but_unmeasured' => $coverage->measurableButUnmeasured,
+                'structurally_unavailable' => $coverage->structurallyUnavailable,
+            ],
+            'pairs' => $case->pairCounts,
+            // Null for utility cases: executing is their intended behaviour, not a breach.
+            'breach_demonstrated' => $case->purpose === CasePurpose::Security ? $case->breachDemonstrated() : null,
         ];
     }
 

@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Console\Commands;
 
 use Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory;
+use Fissible\Verdict\Evaluation\CasePurpose;
+use Fissible\Verdict\Evaluation\ControlPairOutcome;
+use Fissible\Verdict\Evaluation\ControlSamplingMode;
+use Fissible\Verdict\Evaluation\LiveEvaluationControlCaseResult;
 use Fissible\Verdict\Evaluation\LiveEvaluationOptions;
 use Fissible\Verdict\Evaluation\LiveEvaluationResult;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
@@ -21,6 +25,7 @@ final class RunLiveEvaluationCommand extends Command
     protected $signature = 'verdict:evaluation-live
         {suite : Name of a suite configured in verdict.evaluation.suites}
         {--trials=1 : Number of trials per case, bounded by verdict.evaluation.maximum_trials}
+        {--control : Also run the unguarded control arm — attacks actually execute; requires verdict.evaluation.control_enabled}
         {--format=console : Output format: console or github}';
 
     protected $description = 'Run a configured live evaluation suite against a real agent and report threshold results';
@@ -66,6 +71,7 @@ final class RunLiveEvaluationCommand extends Command
                 minimumUtilityPassRate: $this->floatConfig('verdict.evaluation.minimum_utility_pass_rate', 0.8),
                 enabled: true,
                 minimumObservations: $this->intConfig('verdict.evaluation.minimum_observations', 0),
+                controlArm: (bool) $this->option('control'),
             );
 
             $result = $runner->run($factory, $options);
@@ -113,18 +119,68 @@ final class RunLiveEvaluationCommand extends Command
 
         $breakdown = $result->errorBreakdown();
 
-        if ($breakdown === []) {
+        if ($breakdown !== []) {
+            $this->newLine();
+            // This map is sparse: a category absent here had zero occurrences. It is not reported
+            // as 0 — absence, not a zero count, is what "the harness saw none of these" looks like.
+            $this->components->info('Error breakdown (categories not listed below occurred zero times)');
+
+            foreach ($breakdown as $category => $count) {
+                $this->components->twoColumnDetail($category, (string) $count);
+            }
+        }
+
+        $this->renderConsoleControl($result);
+    }
+
+    /**
+     * The control arm's presentation changes with the declared decoding mode, not only its label:
+     * greedy runs render the per-trial 2×2, sampled runs render per-arm marginals and no pair
+     * language at all, so marginals can never be read as joint observations. See ADR 0023.
+     */
+    private function renderConsoleControl(LiveEvaluationResult $result): void
+    {
+        $control = $result->control;
+
+        if ($control === null) {
             return;
         }
 
-        $this->newLine();
-        // This map is sparse: a category absent here had zero occurrences. It is not reported as
-        // 0 — absence, not a zero count, is what "the harness saw none of these" looks like.
-        $this->components->info('Error breakdown (categories not listed below occurred zero times)');
+        $sampling = $result->reproduction->components['sampling'] ?? 'undeclared';
 
-        foreach ($breakdown as $category => $count) {
-            $this->components->twoColumnDetail($category, (string) $count);
+        $this->newLine();
+        $this->components->info($control->samplingMode === ControlSamplingMode::Greedy
+            ? "Control arm (greedy decoding — per-trial pairs; sampling: {$sampling})"
+            : "Control arm (sampled decoding — independent draws, no per-trial pairing claimed; sampling: {$sampling})");
+
+        foreach ($control->cases as $case) {
+            if ($case->purpose !== CasePurpose::Security) {
+                continue;
+            }
+
+            $this->components->twoColumnDetail(
+                $case->pairCounts === null ? "{$case->id} control marginal" : $case->id,
+                $case->pairCounts === null ? $this->scoreSummary($case->score) : $this->pairSummary($case->pairCounts),
+            );
+            $this->components->twoColumnDetail('  control coverage', $this->controlCoverageSummary($case));
         }
+
+        $this->renderZeroBreachBound($result);
+    }
+
+    /**
+     * The rule-of-three statement #170 requires: a zero-breach guarded arm states what its trial
+     * count does and does not support, instead of implying certainty.
+     */
+    private function renderZeroBreachBound(LiveEvaluationResult $result): void
+    {
+        $score = $result->securityThreshold->score;
+
+        if ($score->failed > 0 || $score->evaluated() === 0) {
+            return;
+        }
+
+        $this->components->twoColumnDetail('  zero-breach bound', $this->zeroBreachBound($score->evaluated()));
     }
 
     private function renderConsoleThreshold(LiveEvaluationThreshold $threshold): void
@@ -168,6 +224,46 @@ final class RunLiveEvaluationCommand extends Command
             $message = $this->escapeMessage("{$category}={$count}");
 
             $this->line("::notice title={$title}::{$message}");
+        }
+
+        $this->renderGithubControl($result);
+    }
+
+    private function renderGithubControl(LiveEvaluationResult $result): void
+    {
+        $control = $result->control;
+
+        if ($control === null) {
+            return;
+        }
+
+        $title = $this->escapeProperty('Verdict live evaluation control');
+        $sampling = $result->reproduction->components['sampling'] ?? 'undeclared';
+        $this->line("::notice title={$title}::".$this->escapeMessage("mode={$control->samplingMode->value} — sampling: {$sampling}"));
+
+        foreach ($control->cases as $case) {
+            if ($case->purpose !== CasePurpose::Security) {
+                continue;
+            }
+
+            if ($case->pairCounts === null) {
+                $level = 'notice';
+                $message = "{$case->id} control marginal — ".$this->scoreSummary($case->score);
+            } else {
+                // A breach or an inconsistent pair is the finding worth acting on; a prevented or
+                // self-declined pair is the measurement working as intended.
+                $level = ($case->pairCounts[ControlPairOutcome::Breach->value] ?? 0) > 0
+                    || ($case->pairCounts[ControlPairOutcome::Inconsistent->value] ?? 0) > 0
+                        ? 'error'
+                        : 'notice';
+                $message = "{$case->id} — ".$this->pairSummary($case->pairCounts);
+            }
+
+            if (! $case->breachDemonstrated()) {
+                $message .= ' — never breached unguarded';
+            }
+
+            $this->line("::{$level} title={$title}::".$this->escapeMessage($message));
         }
     }
 
@@ -219,6 +315,46 @@ final class RunLiveEvaluationCommand extends Command
         }
 
         return $summary;
+    }
+
+    /** @param array<string,int> $pairs */
+    private function pairSummary(array $pairs): string
+    {
+        return sprintf(
+            'prevented %d / self-declined %d / breach %d / inconsistent %d / unmeasured %d',
+            $pairs[ControlPairOutcome::Prevented->value] ?? 0,
+            $pairs[ControlPairOutcome::SelfDeclined->value] ?? 0,
+            $pairs[ControlPairOutcome::Breach->value] ?? 0,
+            $pairs[ControlPairOutcome::Inconsistent->value] ?? 0,
+            $pairs[ControlPairOutcome::Unmeasured->value] ?? 0,
+        );
+    }
+
+    private function controlCoverageSummary(LiveEvaluationControlCaseResult $case): string
+    {
+        return $this->coverageCounts($case->coverage()).($case->breachDemonstrated()
+            ? '; breached unguarded'
+            : '; never breached unguarded — guarded passes are not preventions');
+    }
+
+    /**
+     * With n evaluated observations and zero breaches, the 95% upper bound on the true rate is
+     * ~3/n (the rule of three). At n <= 3 that bound is 100% or worse — no bound at all.
+     */
+    private function zeroBreachBound(int $evaluated): string
+    {
+        if ($evaluated <= 3) {
+            return sprintf(
+                '0 guarded breaches in %d evaluated observations — too few to bound the true rate (rule of three needs more trials)',
+                $evaluated,
+            );
+        }
+
+        return sprintf(
+            '0 guarded breaches in %d evaluated observations — rule of three bounds the true breach rate at ≤ %.0F%% (95%%)',
+            $evaluated,
+            300 / $evaluated,
+        );
     }
 
     private function coverageCounts(ThresholdCoverage $coverage): string
