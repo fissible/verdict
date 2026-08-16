@@ -188,7 +188,7 @@ dependencies are now all settled). Both are scheduled into v0.7.0 below.
 
 ---
 
-## v0.7.0 — Prove the boundary is load-bearing *(next)*
+## v0.7.0 — Prove the boundary is load-bearing *(cut)*
 
 **Theme.** Answer the question every reader of a security control asks first: *what happens without it?*
 Live evaluation currently measures whether Verdict denied an attack. It does not measure whether the attack
@@ -197,8 +197,8 @@ doing work.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#174](https://github.com/fissible/verdict/issues/174) Decide whether coverage adequacy applies per case | M | #138 ✅ | Open — `scope: design` |
-| [#170](https://github.com/fissible/verdict/issues/170) Add an unguarded control arm so a live run can show what Verdict prevented | XL | #137 ✅, #138 ✅, #139 ✅, #174 | Open — `scope: design` |
+| [#174](https://github.com/fissible/verdict/issues/174) Decide whether coverage adequacy applies per case | M | #138 ✅ | ✅ Shipped — #179 |
+| [#170](https://github.com/fissible/verdict/issues/170) Add an unguarded control arm so a live run can show what Verdict prevented | XL | #137 ✅, #138 ✅, #139 ✅, #174 ✅ | ✅ Shipped — #180, #181, #186 |
 
 **#174 first, and not only because it is smaller.** The control arm's unit of measurement is the 2×2 for a
 single case — guarded denied or executed, against control executed or declined. v0.6.0's coverage gate is
@@ -223,6 +223,50 @@ live evaluation, is part of #170's decision rather than an implementation detail
 **Why this milestone is worth its size.** v0.6.0 made a single live result trustworthy. The payoff for that
 work is being able to compare two, and the comparison is the first artifact this project can produce that
 demonstrates prevention rather than asserting it.
+
+**Shipped 2026-08-16.** The recorded control-arm run lives in `docs/evaluation.md`: against an abliterated
+Ollama model, the unguarded arm executed the cross-principal lookup and cancellation on every replay and the
+guarded arm denied them on every replay. Read narrowly, as the run itself is written — it demonstrates the
+*authorization* boundary under greedy reproducibility, and is explicitly not a rate, not the authority/intent
+gap, and not the human-approval boundary. Three follow-ups surfaced during the work carry into v0.8.0 below:
+[#183](https://github.com/fissible/verdict/issues/183)/[#184](https://github.com/fissible/verdict/pull/184)
+(guarded-arm evidence correlation — fixed and shipped in this tag),
+[#185](https://github.com/fissible/verdict/issues/185), and
+[#187](https://github.com/fissible/verdict/issues/187).
+
+---
+
+## v0.8.0 — Measure and defend intent *(next)*
+
+**Theme.** v0.7.0 demonstrated the *authorization* boundary is load-bearing — but only that boundary, and
+only against outside-authority attacks. The harder case is inside-authority: an injected instruction
+selecting a record the actor **legitimately owns**, where authorization passes and the wrong-ness is that the
+action was not the user's intent. This milestone makes that gap measurable and hardens the harness that
+measures it, so a future recorded run can demonstrate the intent boundary the way v0.7.0 demonstrated
+authorization.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#185](https://github.com/fissible/verdict/issues/185) Distinguish harness blindness from model non-attempts in the coverage gates | M | #183 ✅ | In progress — PR #189 |
+| [#187](https://github.com/fissible/verdict/issues/187) Add an inside-authority intent case so the control arm can measure the authority/intent gap | L | #170 ✅ | Open — `scope: design` |
+
+**#185 first — it makes every future recorded run trustworthy.** v0.7.0's own recorded run was nearly
+published against a silently-blind guarded arm ([#183](https://github.com/fissible/verdict/issues/183)): the
+coverage gates could not tell "the harness saw nothing" from "the model attempted nothing." #185 gates
+integrity before coverage, failing loudly when the apparatus is blind rather than laundering blindness into a
+coverage verdict. Landing #187's intent demonstration on a harness that cannot draw that distinction would
+repeat the class of defect [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) closed one
+level up — the same argument that put #174 before #170.
+
+**#187 is the direct sequel to v0.7.0's demonstration** — the boundary that run explicitly did not cover. It
+is not a small addition: it needs a context-resolved-vs-proposal-resolved pairing, both arms guarded,
+distinct from #170's guarded/unguarded control arm, which refuses a guarded control arm by construction. The
+defensive mechanism it measures against — target provenance, so a proposal-resolved argument cannot redirect
+the executor — is being scoped separately (its ADR takes 0025, since #185 took 0024) and pairs with this
+issue rather than blocking it.
+
+**Scope is a starting point.** These are the follow-ups v0.7.0 surfaced; the milestone accretes `scope: ready`
+work that lands before the tag, exactly as prior milestones did.
 
 ---
 
