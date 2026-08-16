@@ -64,7 +64,12 @@ final class VerdictServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/verdict.php', 'verdict');
 
-        $this->app->singleton(CapabilityConfigurationStore::class, function (Container $app): CapabilityConfigurationStore {
+        // Bound `scoped`, not `singleton`, and the distinction is load-bearing: this closure
+        // resolves EvidenceRecorder and holds the result. A singleton would outlive a recorder an
+        // application rebinds with a shorter lifetime — after a Container::forgetScopedInstances()
+        // the wrapper keeps writing to the discarded instance while readers resolve the new one, and
+        // nothing errors. See #183 and ADR 0020: a binding must not outlive what it captures.
+        $this->app->scoped(CapabilityConfigurationStore::class, function (Container $app): CapabilityConfigurationStore {
             $store = config('verdict.capability_configurations.store');
 
             if ($store === null) {
@@ -268,7 +273,12 @@ final class VerdictServiceProvider extends ServiceProvider
 
         // `recorder` remains the pre-1.0 compatibility configuration. New adapters can provide
         // only the responsibility they own by configuring `writer` and/or `ledger` instead.
-        $this->app->singleton(EvidenceWriter::class, function (Container $app): EvidenceWriter {
+        // Bound `scoped`, not `singleton`, and the distinction is load-bearing: this closure
+        // resolves EvidenceRecorder and holds the result. A singleton would outlive a recorder an
+        // application rebinds with a shorter lifetime — after a Container::forgetScopedInstances()
+        // the wrapper keeps writing to the discarded instance while readers resolve the new one, and
+        // nothing errors. See #183 and ADR 0020: a binding must not outlive what it captures.
+        $this->app->scoped(EvidenceWriter::class, function (Container $app): EvidenceWriter {
             $writer = config('verdict.evidence.writer');
 
             if ($writer === null) {
@@ -288,7 +298,12 @@ final class VerdictServiceProvider extends ServiceProvider
             return $instance;
         });
 
-        $this->app->singleton(ProvenanceLedgerStore::class, function (Container $app): ProvenanceLedgerStore {
+        // Bound `scoped`, not `singleton`, and the distinction is load-bearing: this closure
+        // resolves EvidenceRecorder and holds the result. A singleton would outlive a recorder an
+        // application rebinds with a shorter lifetime — after a Container::forgetScopedInstances()
+        // the wrapper keeps writing to the discarded instance while readers resolve the new one, and
+        // nothing errors. See #183 and ADR 0020: a binding must not outlive what it captures.
+        $this->app->scoped(ProvenanceLedgerStore::class, function (Container $app): ProvenanceLedgerStore {
             $ledger = config('verdict.evidence.ledger');
 
             if ($ledger === null) {
