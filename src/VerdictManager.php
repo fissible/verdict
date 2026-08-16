@@ -114,7 +114,7 @@ final readonly class VerdictManager
         // unrecorded decision is most consequential — an approval nobody can later prove was
         // granted, a claim whose admission history is unrecoverable. Warn once per process if such
         // a capability is running under the shipped no-op recorder. Advisory only (ADR 0007). #194.
-        if ($capability->confirmationRequired() || $capability->executionClaimPolicy() !== null) {
+        if ($capability->isConsequential()) {
             $this->nullRecorderWarning->noteConsequentialAction($this->evidence, $this->events);
         }
 

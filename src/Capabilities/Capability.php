@@ -314,6 +314,20 @@ final readonly class Capability
         return $this->approvalBindingResolver !== null;
     }
 
+    /**
+     * A capability whose decisions are expensive to lose: human approval or at-most-once execution.
+     * These are the gates where an unrecorded decision means an approval nobody can later prove was
+     * granted, or a claim whose admission history is unrecoverable.
+     *
+     * The single home for that predicate, so a future gate with the same property is added here
+     * once rather than escaping an enumeration duplicated across call sites (the no-op-recorder
+     * warning in `VerdictManager`, for one). See #194.
+     */
+    public function isConsequential(): bool
+    {
+        return $this->confirmationRequired() || $this->executionClaimPolicy() !== null;
+    }
+
     public function confirmationReason(): ?string
     {
         return $this->confirmationReason;
