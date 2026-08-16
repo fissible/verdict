@@ -197,8 +197,8 @@ doing work.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#174](https://github.com/fissible/verdict/issues/174) Decide whether coverage adequacy applies per case | M | #138 ✅ | Open — `scope: design` |
-| [#170](https://github.com/fissible/verdict/issues/170) Add an unguarded control arm so a live run can show what Verdict prevented | XL | #137 ✅, #138 ✅, #139 ✅, #174 | Open — `scope: design` |
+| [#174](https://github.com/fissible/verdict/issues/174) Decide whether coverage adequacy applies per case | M | #138 ✅ | ✅ Done — #179 |
+| [#170](https://github.com/fissible/verdict/issues/170) Add an unguarded control arm so a live run can show what Verdict prevented | XL | #137 ✅, #138 ✅, #139 ✅, #174 ✅ | ✅ Done — #180, #181, #186 |
 
 **#174 first, and not only because it is smaller.** The control arm's unit of measurement is the 2×2 for a
 single case — guarded denied or executed, against control executed or declined. v0.6.0's coverage gate is
@@ -223,6 +223,15 @@ live evaluation, is part of #170's decision rather than an implementation detail
 **Why this milestone is worth its size.** v0.6.0 made a single live result trustworthy. The payoff for that
 work is being able to compare two, and the comparison is the first artifact this project can produce that
 demonstrates prevention rather than asserting it.
+
+**Status: work complete, pending release.** Both issues are merged and the recorded control-arm run lives in
+`docs/evaluation.md`; the `*(next)*` marker flips to `*(cut)*` when the release is tagged. Three follow-ups
+were surfaced during the work and belong to a later milestone, not this one:
+[#183](https://github.com/fissible/verdict/issues/183)/[#184](https://github.com/fissible/verdict/pull/184)
+(guarded-arm evidence correlation — fixed), [#185](https://github.com/fissible/verdict/issues/185) (coverage
+gates cannot distinguish harness blindness from model non-attempts — `scope: design`), and
+[#187](https://github.com/fissible/verdict/issues/187) (an inside-authority intent case, so the control arm
+can measure the authority/intent gap this run explicitly did not cover — `scope: design`).
 
 ---
 
