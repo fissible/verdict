@@ -33,6 +33,7 @@ use Workbench\App\Storefront\ActionLog;
 use Workbench\App\Storefront\Catalog;
 use Workbench\App\Storefront\Order;
 use Workbench\App\Storefront\OrderPolicy;
+use Workbench\App\Storefront\StorefrontLiveSampling;
 use Workbench\App\Storefront\StorefrontLiveSuiteFactory;
 use Workbench\App\Storefront\SupportNoteChannel;
 
@@ -41,6 +42,10 @@ final class WorkbenchServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(Catalog::class);
+        // Singleton, not scoped: decoding is configuration, and both arms of every trial must run
+        // under the same declaration or TrialSuiteIdentity refuses the run. Greedy is the default
+        // because it is the only mode under which the control arm's 2×2 pairs are matched pairs.
+        $this->app->singleton(StorefrontLiveSampling::class, fn (): StorefrontLiveSampling => StorefrontLiveSampling::greedy());
         $this->app->scoped(ActionLog::class);
         $this->app->scoped(SupportNoteChannel::class);
         $this->app->scoped(InMemoryEvidenceRecorder::class);

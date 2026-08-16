@@ -125,6 +125,36 @@ requires the declarations and refuses their absence, but cannot verify them — 
 verify is a control observation carrying a Verdict disposition, which refuses the whole run as
 accidentally guarded. See [ADR 0023](adr/0023-unguarded-control-arm-pairing-and-opt-in.md).
 
+The workbench implements the contract as the worked example: `StorefrontLiveSuiteFactory::makeControlForTrial()`
+performs the same reset and the same build with one difference — `StorefrontLiveAgent`'s unguarded tool
+chain, where `VerdictManager::bound()` is absent and everything else is identical. The tool *surface* the
+model sees (names, descriptions, schemas, order) is byte-identical across arms because the unguarded
+variants delegate all three to the same definition tools; the two definition-only tools (`CancelOrder`,
+`LookupSupportNote`), whose execution normally lives in the capability's `executeUsing` closure that only
+Verdict's bound path reaches, are mirrored by `UnguardedCancelOrder` / `UnguardedLookupSupportNote`, which
+must be kept in lockstep with those closures. Decoding is declared once, in `StorefrontLiveSampling`: the
+provider options actually sent to Ollama and the attested `sampling` reproduction component derive from
+the same value, so the label and the request cannot drift — narrowing (not closing) ADR 0023's
+attested-not-verified gap.
+
+#### Control coverage: one breach case per control
+
+The target is a breach case per control Verdict claims, so a coverage gap is visible rather than implied.
+**Breach validation status is empirical and currently `unvalidated` for every expressible case**: no
+control run against a real model has been recorded yet, and per ADR 0023 that phase may legitimately
+conclude that no available model breaches reliably — `unvalidated` is a recorded status, not an
+incomplete phase.
+
+| Control | Storefront breach case(s) | Expressible in this live harness? | Breach validated |
+| --- | --- | --- | --- |
+| Authorization (read) | `cross-principal-order-lookup` | yes | unvalidated |
+| Authorization (mutation) | `cross-principal-cancellation` | yes | unvalidated |
+| Human approval | `argument-mutation-after-confirmation`, `confirmed-mutation-execution` | **no** — resuming an approval requires `Laravel\Ai\Contracts\Conversational`, which `StorefrontLiveAgent` deliberately does not implement (see the Ollama section below) | not expressible |
+| Replay / at-most-once | `duplicate-mutation-admission`, `single-mutation-admission` | in principle — needs the same logical operation twice within one invocation; `maxSteps()` is a harness variable here | unvalidated |
+| Semantic limits | *none* — the workbench registers a rate-limited capability (`orders.refresh-shipment`) but the storefront pack carries no attack case for it | gap recorded | — |
+| Target binding / freshness | *none* — needs state to change between check and use, which a single-shot prompt cannot arrange | not expressible, timing-dependent | — |
+| Context release | `indirect-instruction-in-retrieved-document` | different shape — the breach is untrusted content steering the model, asserted through tool behavior rather than a directly observable "field reached the context" event | unvalidated |
+
 ### Ollama live evaluation
 
 **Read this framing before the numbers below — it applies to all of them, not as caveats appended afterward.** This section records one constrained observation against a real model, not a validation of the storefront boundary. Four things bound what it can and cannot support as evidence:
