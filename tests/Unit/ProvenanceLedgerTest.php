@@ -11,6 +11,7 @@ use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\DeclaredUpstream;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
@@ -237,4 +238,115 @@ it('supports the explicit null recorder contract', function (): void {
     );
 
     expect($ledger->forCorrelation('invocation-123'))->toBe([]);
+});
+
+it('refuses to report declared upstream provenance that describes nothing', function (): void {
+    expect(fn (): DeclaredUpstream => DeclaredUpstream::declared([], []))
+        ->toThrow(InvalidArgumentException::class, 'requires an entry or an unresolved content fingerprint');
+});
+
+it('summarises declared upstream entries for a proposal, nearest first', function (): void {
+    $ledger = provenanceLedger(new InMemoryEvidenceRecorder);
+    $retrieved = $ledger->record(
+        correlationId: 'invocation-123',
+        source: Source::external('knowledge-base'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::RetrievedDocument,
+        content: 'untrusted retrieved document',
+    );
+    $summary = $ledger->record(
+        correlationId: 'invocation-123',
+        source: Source::application('rag-pipeline'),
+        trust: Trust::Trusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::ApplicationContext,
+        content: 'summary of the retrieved document',
+    );
+    $proposal = $ledger->record(
+        correlationId: 'invocation-123',
+        source: Source::application('assistant'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::ApplicationContext,
+        content: ['recipient' => 'attacker', 'amount' => 500],
+    );
+    $ledger->declareDerivation('invocation-123', $summary->contentFingerprint, [$retrieved->contentFingerprint], DerivationKind::Summarized);
+    $ledger->declareDerivation('invocation-123', $proposal->contentFingerprint, [$summary->contentFingerprint], DerivationKind::Transformed);
+
+    $upstream = $ledger->declaredUpstreamOf('invocation-123', $proposal->contentFingerprint);
+
+    expect($upstream->isDeclared())->toBeTrue()
+        ->and($upstream->entries)->toBe([$summary, $retrieved])
+        ->and($upstream->unresolvedContentFingerprints)->toBe([]);
+});
+
+it('reports an undeclared proposal as undeclared rather than as empty upstream', function (): void {
+    $ledger = provenanceLedger(new InMemoryEvidenceRecorder);
+    $proposal = $ledger->record(
+        correlationId: 'invocation-123',
+        source: Source::application('assistant'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::ApplicationContext,
+        content: ['recipient' => 'attacker', 'amount' => 500],
+    );
+
+    $upstream = $ledger->declaredUpstreamOf('invocation-123', $proposal->contentFingerprint);
+
+    expect($upstream->isDeclared())->toBeFalse()
+        ->and($upstream->entries)->toBe([])
+        ->and($upstream->unresolvedContentFingerprints)->toBe([]);
+});
+
+it('omits invocation-correlated entries that were never declared upstream', function (): void {
+    $ledger = provenanceLedger(new InMemoryEvidenceRecorder);
+    $declared = $ledger->record(
+        correlationId: 'invocation-123',
+        source: Source::external('knowledge-base'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::RetrievedDocument,
+        content: 'declared upstream document',
+    );
+    $ledger->record(
+        correlationId: 'invocation-123',
+        source: Source::external('knowledge-base'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::RetrievedDocument,
+        content: 'merely correlated document',
+    );
+    $proposal = $ledger->record(
+        correlationId: 'invocation-123',
+        source: Source::application('assistant'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::ApplicationContext,
+        content: ['recipient' => 'attacker', 'amount' => 500],
+    );
+    $ledger->declareDerivation('invocation-123', $proposal->contentFingerprint, [$declared->contentFingerprint], DerivationKind::Summarized);
+
+    expect($ledger->declaredUpstreamOf('invocation-123', $proposal->contentFingerprint)->entries)
+        ->toBe([$declared]);
+});
+
+it('reports a declared parent with no recorded entry as unresolved', function (): void {
+    $ledger = provenanceLedger(new InMemoryEvidenceRecorder);
+    $proposal = $ledger->record(
+        correlationId: 'invocation-123',
+        source: Source::application('assistant'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::ApplicationContext,
+        content: ['recipient' => 'attacker', 'amount' => 500],
+    );
+    $unrecorded = ContentFingerprint::make('a document the application never recorded');
+    $ledger->declareDerivation('invocation-123', $proposal->contentFingerprint, [$unrecorded], DerivationKind::ToolResult);
+
+    $upstream = $ledger->declaredUpstreamOf('invocation-123', $proposal->contentFingerprint);
+
+    expect($upstream->isDeclared())->toBeTrue()
+        ->and($upstream->entries)->toBe([])
+        ->and($upstream->unresolvedContentFingerprints)->toBe([$unrecorded]);
 });

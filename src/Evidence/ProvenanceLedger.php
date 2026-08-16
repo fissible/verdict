@@ -130,6 +130,45 @@ final readonly class ProvenanceLedger
         return $reachable;
     }
 
+    /**
+     * Summarises the provenance declared upstream of one piece of content.
+     *
+     * Traverses declared derivation edges only. Entries that merely share the correlation are never
+     * reported as upstream: sharing an invocation is not evidence of influence.
+     */
+    public function declaredUpstreamOf(string $correlationId, string $contentFingerprint): DeclaredUpstream
+    {
+        $parents = $this->backwardReachableContentFingerprints($correlationId, $contentFingerprint);
+
+        if ($parents === []) {
+            return DeclaredUpstream::undeclared();
+        }
+
+        /** @var array<string, list<ProvenanceEntry>> $recorded */
+        $recorded = [];
+
+        foreach ($this->store->provenanceFor($correlationId) as $entry) {
+            $recorded[$entry->contentFingerprint][] = $entry;
+        }
+
+        $entries = [];
+        $unresolved = [];
+
+        foreach ($parents as $parent) {
+            if (! isset($recorded[$parent])) {
+                $unresolved[] = $parent;
+
+                continue;
+            }
+
+            foreach ($recorded[$parent] as $entry) {
+                $entries[] = $entry;
+            }
+        }
+
+        return DeclaredUpstream::declared($entries, $unresolved);
+    }
+
     /** @param array<string, true> $visited */
     private function reaches(string $correlationId, string $from, string $target, array $visited): bool
     {
