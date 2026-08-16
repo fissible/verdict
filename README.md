@@ -91,7 +91,7 @@ This bounds authority: the action cannot reach a record the actor could not reac
 ## Installation
 
 ```bash
-composer require fissible/verdict:^0.6
+composer require fissible/verdict:^0.7
 php artisan vendor:publish --provider="Fissible\Verdict\VerdictServiceProvider" --tag="verdict-config"
 php artisan migrate
 ```

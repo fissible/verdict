@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-16
+
 - Add an **unguarded control arm** to live evaluation, so a run can show whether an attack would have
   succeeded *without* Verdict rather than only that Verdict denied it. With `--control`, each attack case
   also runs against the same agent, model, and inputs with Verdict's tool wrapping absent — the dangerous
@@ -67,7 +69,6 @@ All notable changes to Verdict will be documented in this file.
   recorder, the pinned instance and the resolved one were the same object. It was found by running
   the guarded arm against two unrelated models and observing identical correlation failure, which
   ruled out a provider quirk. See [#183](https://github.com/fissible/verdict/issues/183).
-
 
 ## [0.6.0] - 2026-08-14
 
@@ -520,7 +521,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/fissible/verdict/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fissible/verdict/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fissible/verdict/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/fissible/verdict/compare/v0.3.0...v0.4.0
