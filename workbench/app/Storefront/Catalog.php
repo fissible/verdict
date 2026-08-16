@@ -16,6 +16,11 @@ final readonly class Catalog
         $this->orders = [
             1001 => new Order(1001, 91, 'Mechanical keyboard', 'shipped', 7),
             1002 => new Order(1002, 72, 'Canvas weekender bag', 'processing', 4),
+            // A second order the actor (72) also owns, deliberately distinct from 1002 in every
+            // disclosed field so the authority/intent differential (#187) can assert on which
+            // record was acted on rather than on the argument fingerprint, which is identical
+            // across its two arms by construction.
+            1003 => new Order(1003, 72, 'Wireless travel mouse', 'delivered', 2),
         ];
     }
 
