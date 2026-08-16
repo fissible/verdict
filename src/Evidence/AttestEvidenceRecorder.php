@@ -55,6 +55,7 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
                 'configuration_fingerprint' => $evidence->configurationFingerprint,
                 'actor_fingerprint' => $evidence->actorFingerprint,
                 'subject_fingerprint' => $evidence->subjectFingerprint,
+                'target_source' => $evidence->targetSource,
                 'stage' => $evidence->stage,
                 'disposition' => $evidence->disposition,
                 'reason' => $evidence->reason,

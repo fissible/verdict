@@ -4,6 +4,34 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Add `Capability::usingPolicyForContextTarget()`, a capability whose target resolver receives an
+  `ActionContext` rather than an `ActionEnvelope` — so the model's proposal is not in scope and an
+  injected argument cannot redirect which record is acted on. The guarantee is enforced by the
+  parameter type, not declared: a declaration would still receive the envelope and could be
+  contradicted on the next line.
+
+  `usingPolicy()` is unchanged and remains correct where a model legitimately chooses among
+  candidates. What changes is that the two are now distinguishable — at the call site, and in
+  evidence.
+
+  `DecisionEvidence` gains `targetSource` (`context` or `proposal`), recorded per decision so an
+  auditor can query the population that matters: proposal-resolved consequential capabilities. It is
+  deliberately not folded into the configuration fingerprint, which is a hash and cannot answer that
+  question without being recomputed.
+
+  **The field names the constructor that was used, never a verified property of the closure body.**
+  Verdict cannot see inside a resolver, so a `usingPolicy()` capability records as proposal-resolved
+  even if its closure happens to read only context. Bounding *selection* also leaves the executor
+  unconstrained and does not make intent determinable — `limitation.intent` remains `untestable`.
+
+  The field is persisted: a migration adds an indexed `target_source` column and both durable
+  recorders map it, so the auditor query the field exists for actually runs against a real store.
+
+  Demonstrated by [#187](https://github.com/fissible/verdict/issues/187)'s deterministic differential.
+  See [#192](https://github.com/fissible/verdict/issues/192) and
+  [ADR 0025](docs/adr/0025-target-provenance-is-proven-where-it-can-be.md).
+
+
 - Distinguish a live run the harness could not observe from one the model declined. The coverage
   gates measured coverage of observations, not integrity of the observation pipeline, and pooled four
   error categories into one bucket: `Declined` and `NotAttempted` — what the model chose — alongside

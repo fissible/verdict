@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Capabilities;
 
 use Closure;
+use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
@@ -18,7 +19,11 @@ use LogicException;
 final readonly class Capability
 {
     /**
-     * @var Closure(ActionEnvelope): mixed
+     * Which shape this closure takes depends on {@see $targetSource}: a context-resolved capability
+     * hands it an ActionContext so the proposal is not in scope, a proposal-resolved one hands it
+     * the whole envelope. See ADR 0025.
+     *
+     * @var (Closure(ActionEnvelope): mixed)|(Closure(ActionContext): mixed)
      */
     private Closure $targetResolver;
 
@@ -48,7 +53,7 @@ final readonly class Capability
     private string $configurationFingerprint;
 
     /**
-     * @param  callable(ActionEnvelope): mixed  $resolveTarget
+     * @param  (callable(ActionEnvelope): mixed)|(callable(ActionContext): mixed)  $resolveTarget
      */
     private function __construct(
         public string $name,
@@ -62,6 +67,7 @@ final readonly class Capability
         private ?ExecutionClaimPolicy $executionClaimPolicy = null,
         private ?ExecutionTargetPolicy $executionTargetPolicy = null,
         private ?string $configurationVersion = null,
+        public TargetSource $targetSource = TargetSource::Proposal,
     ) {
         if (trim($this->name) === '') {
             throw new InvalidArgumentException('A capability must have a name.');
@@ -119,9 +125,31 @@ final readonly class Capability
         return new self($name, $ability, $resolveTarget);
     }
 
+    /**
+     * A capability whose target is resolved from application context, not from the model's proposal.
+     *
+     * `$resolveTarget` receives an {@see ActionContext}, so the proposal is not in scope and cannot
+     * be read. That is the point: an injected instruction can influence *whether* an action is
+     * proposed, but not *which record* it acts on. The guarantee is enforced by the parameter type
+     * rather than declared, because a declaration would still receive the envelope and could be
+     * contradicted on the next line — see
+     * [ADR 0025](../../docs/adr/0025-target-provenance-is-proven-where-it-can-be.md).
+     *
+     * The executor is unaffected and still receives the full `AuthorizedAction`; only target
+     * *selection* is bounded.
+     *
+     * @param  callable(ActionContext): mixed  $resolveTarget
+     */
+    public static function usingPolicyForContextTarget(string $name, string $ability, callable $resolveTarget): self
+    {
+        return new self($name, $ability, $resolveTarget, targetSource: TargetSource::Context);
+    }
+
     public function resolveTarget(ActionEnvelope $envelope): mixed
     {
-        return ($this->targetResolver)($envelope);
+        return $this->targetSource === TargetSource::Context
+            ? ($this->targetResolver)($envelope->context)
+            : ($this->targetResolver)($envelope);
     }
 
     /**
@@ -141,6 +169,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $this->configurationVersion,
+            targetSource: $this->targetSource,
         );
     }
 
@@ -170,6 +199,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $this->configurationVersion,
+            targetSource: $this->targetSource,
         );
     }
 
@@ -187,6 +217,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $this->configurationVersion,
+            targetSource: $this->targetSource,
         );
     }
 
@@ -209,6 +240,7 @@ final readonly class Capability
             executionClaimPolicy: $policy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $this->configurationVersion,
+            targetSource: $this->targetSource,
         );
     }
 
@@ -231,6 +263,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $policy,
             configurationVersion: $this->configurationVersion,
+            targetSource: $this->targetSource,
         );
     }
 
@@ -258,6 +291,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $version,
+            targetSource: $this->targetSource,
         );
     }
 
