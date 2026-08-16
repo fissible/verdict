@@ -4,6 +4,25 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Stop three container bindings pinning an evidence recorder that a trial reset has replaced. The
+  guarded live evaluation arm failed to correlate every captured tool call to its decision evidence,
+  reporting `LiveObservationUnavailable` for each reachable case, so a live run produced
+  `NOT EVALUATED` thresholds regardless of model behaviour.
+
+  `EvidenceWriter`, `ProvenanceLedgerStore`, and `CapabilityConfigurationStore` were bound
+  `singleton` while resolving collaborators an application may bind with a shorter lifetime. The
+  first resolution captured whatever instance existed then and held it for the process, surviving
+  every `Container::forgetScopedInstances()`. Once trial isolation
+  ([ADR 0020](docs/adr/0020-live-trial-isolation-is-application-owned.md)) made that reset routine,
+  writes went to the pinned recorder while reads resolved the current one, and nothing errored. All
+  three are now `scoped`, so a binding never outlives what it captures.
+
+  The defect was invisible before trial isolation existed: with nothing replacing the scoped
+  recorder, the pinned instance and the resolved one were the same object. It was found by running
+  the guarded arm against two unrelated models and observing identical correlation failure, which
+  ruled out a provider quirk. See [#183](https://github.com/fissible/verdict/issues/183).
+
+
 ## [0.6.0] - 2026-08-14
 
 - Gate a live evaluation verdict on coverage before gating it on rate. A threshold previously reported

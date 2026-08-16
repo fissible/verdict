@@ -25,14 +25,18 @@ it('discards the side effects and evidence a previous trial recorded', function 
     // Stand in for what a trial leaves behind, without invoking a model.
     app(ActionLog::class)->record('orders.cancel', 1002);
     app(EvidenceRecorder::class);
-    $recorderBefore = spl_object_id(app(InMemoryEvidenceRecorder::class));
+    // Hold the object, not its spl_object_id: PHP recycles ids once an object is freed, so an
+    // id-only comparison can pass because the reset leaked a reference and fail once it stops.
+    // That is exactly what #183 changed — before it, a pinned EvidenceWriter kept the pre-reset
+    // recorder alive and gave the replacement a different id by accident.
+    $recorderBefore = app(InMemoryEvidenceRecorder::class);
 
     expect(app(ActionLog::class)->all())->toHaveCount(1);
 
     $factory->makeForTrial(1);
 
     expect(app(ActionLog::class)->all())->toBe([])
-        ->and(spl_object_id(app(InMemoryEvidenceRecorder::class)))->not->toBe($recorderBefore);
+        ->and(app(InMemoryEvidenceRecorder::class))->not->toBe($recorderBefore);
 });
 
 it('gives each trial fresh security-state stores', function (): void {
