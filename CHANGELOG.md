@@ -24,6 +24,9 @@ All notable changes to Verdict will be documented in this file.
   even if its closure happens to read only context. Bounding *selection* also leaves the executor
   unconstrained and does not make intent determinable — `limitation.intent` remains `untestable`.
 
+  The field is persisted: a migration adds an indexed `target_source` column and both durable
+  recorders map it, so the auditor query the field exists for actually runs against a real store.
+
   Demonstrated by [#187](https://github.com/fissible/verdict/issues/187)'s deterministic differential.
   See [#192](https://github.com/fissible/verdict/issues/192) and
   [ADR 0025](docs/adr/0025-target-provenance-is-proven-where-it-can-be.md).

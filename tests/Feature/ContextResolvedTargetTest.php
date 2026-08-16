@@ -10,8 +10,11 @@ use Fissible\Verdict\Capabilities\TargetSource;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Decisions\Decision;
+use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\VerdictManager;
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Support\Facades\DB;
 
 /**
  * #192 / ADR 0025. A resolver that receives an `ActionContext` cannot read the proposal, so an
@@ -141,4 +144,73 @@ it('records a proposal-resolved capability as proposal-resolved', function (): v
     // closure body. A usingPolicy() capability reads as proposal-resolved even if its resolver
     // happens to touch only context — Verdict cannot see inside the closure.
     expect($decisions[0]->targetSource)->toBe(TargetSource::Proposal->value);
+});
+
+it('preserves the target source through every builder method', function (): void {
+    // Capability is immutable and every builder returns a new instance. Threading targetSource
+    // through each rebuild by hand missed one — configurationVersion() — because its rebuild sets
+    // a new value rather than copying $this->configurationVersion, so a search for the copied form
+    // did not find it. This guard is reflective so a seventh builder cannot regress the same way.
+    $base = Capability::usingPolicyForContextTarget(
+        name: 'orders.view-target',
+        ability: 'view',
+        resolveTarget: fn (ActionContext $context): ResolvedOrder => new ResolvedOrder(1002),
+    );
+
+    $builders = [
+        'executionTarget' => fn (Capability $c): Capability => $c->executionTarget(acceptTestSnapshot('context-target-snapshot')),
+        'executeUsing' => fn (Capability $c): Capability => $c->executeUsing(fn (): string => 'viewed'),
+        'configurationVersion' => fn (Capability $c): Capability => $c->configurationVersion('deploy-sha'),
+        'requiresConfirmation' => fn (Capability $c): Capability => $c->requiresConfirmation(fn (): array => ['k' => 'v']),
+    ];
+
+    foreach ($builders as $name => $apply) {
+        expect($apply($base)->targetSource)
+            ->toBe(TargetSource::Context, "{$name}() dropped the target source");
+    }
+
+    // And through a chain, since a single-step check would miss a later reset.
+    $chained = $base
+        ->executionTarget(acceptTestSnapshot('context-target-snapshot'))
+        ->configurationVersion('deploy-sha')
+        ->executeUsing(fn (): string => 'viewed');
+
+    expect($chained->targetSource)->toBe(TargetSource::Context);
+});
+
+it('persists the target source to the durable evidence store', function (): void {
+    // The in-memory recorder retains the whole DecisionEvidence object, so a test against it proves
+    // the field is *set* — not that it survives to a store an auditor can query. ADR 0025's stated
+    // purpose is a queryable population, and that claim is only true if the column exists.
+    (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_invocation_id_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_tool_kind_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_configuration_fingerprint_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_actor_and_subject_fingerprints_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_target_source_to_verdict_evidence_table.php.stub')->up();
+
+    $recorder = new DatabaseEvidenceRecorder(
+        connection: app(DatabaseManager::class)->connection(),
+        table: 'verdict_evidence',
+    );
+
+    $this->app->instance(EvidenceRecorder::class, $recorder);
+    $this->app->forgetScopedInstances();
+
+    app(VerdictManager::class)->capability(
+        Capability::usingPolicyForContextTarget(
+            name: 'orders.view-target',
+            ability: 'view',
+            resolveTarget: fn (ActionContext $context): ResolvedOrder => new ResolvedOrder(1002),
+        )->executionTarget(acceptTestSnapshot('context-target-snapshot'))
+            ->executeUsing(fn (): string => 'viewed'),
+    );
+
+    app(VerdictManager::class)->runBound(targetSourceEnvelope(1001, 1002));
+
+    // The query the field exists to support: find decisions by resolution path.
+    $rows = DB::table('verdict_evidence')->where('target_source', TargetSource::Context->value)->get();
+
+    expect($rows)->not->toBeEmpty();
 });

@@ -31,6 +31,7 @@ beforeEach(function (): void {
         $table->char('configuration_fingerprint', 64)->nullable();
         $table->char('actor_fingerprint', 64)->nullable();
         $table->char('subject_fingerprint', 64)->nullable();
+        $table->string('target_source', 16)->nullable();
         $table->string('stage', 32);
         $table->string('disposition', 32);
         $table->text('reason')->nullable();

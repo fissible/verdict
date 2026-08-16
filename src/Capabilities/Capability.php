@@ -53,9 +53,6 @@ final readonly class Capability
     private string $configurationFingerprint;
 
     /**
-     * @param  callable(ActionEnvelope): mixed  $resolveTarget
-     */
-    /**
      * @param  (callable(ActionEnvelope): mixed)|(callable(ActionContext): mixed)  $resolveTarget
      */
     private function __construct(
@@ -294,6 +291,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $version,
+            targetSource: $this->targetSource,
         );
     }
 
