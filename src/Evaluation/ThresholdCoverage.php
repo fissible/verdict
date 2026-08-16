@@ -76,4 +76,15 @@ final readonly class ThresholdCoverage
     {
         return $this->measurableButUnmeasured > $this->evaluated;
     }
+
+    /**
+     * Whether this population could ever produce an observation. A case that is entirely
+     * structurally unavailable has no measurable population, so no coverage rule can oblige it
+     * to be measured — requiring that would make any suite containing one permanently
+     * insufficient. See [ADR 0022](../../docs/adr/0022-coverage-adequacy-applies-per-case.md).
+     */
+    public function hasMeasurablePopulation(): bool
+    {
+        return $this->evaluated + $this->measurableButUnmeasured > 0;
+    }
 }

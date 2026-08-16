@@ -71,6 +71,8 @@ final readonly class LiveEvaluationReport implements JsonSerializable
     /** @return array<string, mixed> */
     private function caseArray(LiveEvaluationCaseResult $case): array
     {
+        $coverage = $case->coverage();
+
         return [
             'id' => $case->id,
             'version' => $case->version,
@@ -78,6 +80,13 @@ final readonly class LiveEvaluationReport implements JsonSerializable
             'trusted_setup_fingerprint' => $case->trustedSetupFingerprint,
             'untrusted_input_fingerprint' => $case->untrustedInputFingerprint,
             'score' => $this->scoreArray($case->score),
+            // Additive to the v1 schema. The purpose-level coverage is exactly the sum of these,
+            // so a reader can see which case a verdict's support came from without arithmetic.
+            'coverage' => [
+                'evaluated' => $coverage->evaluated,
+                'measurable_but_unmeasured' => $coverage->measurableButUnmeasured,
+                'structurally_unavailable' => $coverage->structurallyUnavailable,
+            ],
         ];
     }
 }

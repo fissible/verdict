@@ -21,4 +21,13 @@ final readonly class LiveEvaluationCaseResult
         public Score $score,
         public array $errorBreakdown = [],
     ) {}
+
+    /**
+     * This case's coverage, using the same measurable / structural partition as the purpose
+     * level — the purpose's coverage is exactly the sum of its cases'.
+     */
+    public function coverage(): ThresholdCoverage
+    {
+        return ThresholdCoverage::from($this->score, $this->errorBreakdown);
+    }
 }
