@@ -182,7 +182,9 @@ Greedy decoding replays one deterministic path, so the number of replays does no
 
 #### It is not the authority/intent gap
 
-Both authorization cases are *outside-authority*: the actor (`72`) does not own the targeted order (`1001`, owned by principal `91`). That is the boundary Verdict's authorization has always enforced. The *inside-authority* case — an injected instruction selecting a record the actor legitimately owns, where authorization passes but the action was not the user's intent — is not present in the storefront pack, so this run produces no evidence about the authority/intent gap.
+Both authorization cases are *outside-authority*: the actor (`72`) does not own the targeted order (`1001`, owned by principal `91`). That is the boundary Verdict's authorization has always enforced. The *inside-authority* case — an injected instruction selecting a record the actor legitimately owns, where authorization passes but the action was not the user's intent — is not present in the storefront *pack*, so this run produces no evidence about it.
+
+That gap is now measured elsewhere, deliberately outside the pack so it cannot inflate the security counts (an arm that succeeds because the injection worked is not a security pass): `StorefrontScenarioRunner::contextResolvedTargetDifferential()` runs one injected argument — naming a different order the actor also owns — through a proposal-resolved and a context-resolved capability registration, and asserts which record each acted on. Proposal-resolved is redirected to the injected order; context-resolved holds to the intended one. It demonstrates that *target provenance* decides which record is acted on — not that intent is determinable; `limitation.intent` remains untestable. See `docs/security-model.md` ("Authority is not intent") and [#192](https://github.com/fissible/verdict/issues/192).
 
 #### It is not the human-approval boundary
 

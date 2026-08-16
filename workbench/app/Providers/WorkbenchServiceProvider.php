@@ -149,6 +149,28 @@ final class WorkbenchServiceProvider extends ServiceProvider
             }),
         );
 
+        // A SEPARATE capability registration (resolveTarget is fixed at construction, so this is a
+        // distinct configuration, not orders.view under a different resolver). It reads the target
+        // the *user* intended from the trusted ActionContext metadata — never from the model's
+        // proposal arguments — so an injected argument naming a different owned order cannot
+        // redirect the executor. This is the context-resolved arm of the #187 authority/intent
+        // differential; orders.view above is the proposal-resolved arm. See #192.
+        $verdict->capability(
+            Capability::usingPolicy(
+                name: 'orders.view-by-context',
+                ability: 'view',
+                resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
+                    (int) ($envelope->context->metadata['intended_order_id'] ?? 0),
+                ),
+            )->executionTarget($this->orderTargetPolicy($catalog))->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof Order) {
+                    throw new LogicException('The storefront context-resolved view capability expected an order.');
+                }
+
+                return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
+            }),
+        );
+
         $verdict->capability(
             Capability::usingPolicy(
                 name: 'orders.support-notes',

@@ -53,6 +53,19 @@ Verdict's authorization layer bounds authority on both paths. Only the first bou
 selection. For proposal-resolved targets on consequential operations, the intent
 control is human approval, not the policy.
 
+That distinction is executable, not just prose:
+`StorefrontScenarioRunner::contextResolvedTargetDifferential()` runs one injected argument
+— naming a *different* order the actor also owns — through two capability registrations,
+and records which record each acted on. The proposal-resolved registration is redirected to
+the injected order; the context-resolved one holds to the intended order and ignores the
+injection. This measures a capability property: a context-resolved target is not redirectable
+by an injected argument. It does **not** make intent determinable — Verdict still cannot tell a
+wanted action from an unwanted one, only remove the model's ability to choose the record
+(`limitation.intent` stays untestable). Making the resolution path visible in evidence is a
+separate mechanism, tracked in [#192](https://github.com/fissible/verdict/issues/192).
+
+<!-- @verdict-claim capability.context-resolved-target tested -->
+
 ### Actor and subject evidence
 
 `ActionContext::$actor` is the principal acting and is the value Verdict passes to Laravel's Gate. Its optional `$subject` is the principal on whose behalf that actor acts; when it is `null`, the actor acts for itself. A subject is not a delegator: delegation attenuates an existing authority, while an actor acting for a subject may instead reflect a separately authorized escalation. See [ADR 0015](adr/0015-authority-propagation.md).

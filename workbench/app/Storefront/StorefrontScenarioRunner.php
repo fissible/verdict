@@ -66,6 +66,76 @@ final readonly class StorefrontScenarioRunner
         ];
     }
 
+    /**
+     * The authority/intent differential (#187). The same injection — a proposal argument naming
+     * order B — runs through two capability *registrations* (a capability's resolveTarget is fixed
+     * at construction, so these are distinct configurations, not one capability re-resolved):
+     *
+     *  - `orders.view` resolves the target from the untrusted proposal argument, so it is redirected
+     *    to the injected order B;
+     *  - `orders.view-by-context` resolves it from the trusted ActionContext, so it stays on the
+     *    intended order A and the injection is ignored.
+     *
+     * Both orders belong to the actor, so both arms authorize and both execute — the discriminator
+     * is the acted-on record's identity in the disclosed output, never the argument fingerprint,
+     * which is identical across the arms by construction. This measures a capability property; it
+     * does not make intent determinable (`limitation.intent` stays untestable). See #192 for the
+     * mechanism that makes the resolution path evidence-visible.
+     *
+     * @return array<string, mixed>
+     */
+    public function contextResolvedTargetDifferential(): array
+    {
+        $customer = new Customer(72, 'Avery Customer');
+        $intendedOrderId = 1003;   // A — what the user asked about, carried in trusted context
+        $injectedOrderId = 1002;   // B — a different order the actor also owns, named by the injection
+
+        // Identical for both arms: the injected argument, and a context that also carries the
+        // intended order. Only the resolver each capability was built with differs.
+        $arguments = ['order_id' => $injectedOrderId];
+        $context = new ActionContext($customer, [
+            'tenant_id' => 'storefront-demo',
+            'intended_order_id' => $intendedOrderId,
+        ]);
+
+        $proposalDisclosure = $this->decode(
+            $this->verdict->bound(
+                definition: new LookupOrder($this->catalog),
+                capability: 'orders.view',
+                context: $context,
+            )->handle(new Request($arguments, 'differential-proposal')),
+        );
+
+        $contextDisclosure = $this->decode(
+            $this->verdict->bound(
+                definition: new LookupOrder($this->catalog),
+                capability: 'orders.view-by-context',
+                context: $context,
+            )->handle(new Request($arguments, 'differential-context')),
+        );
+
+        return [
+            'intended_order_id' => $intendedOrderId,
+            'injected_order_id' => $injectedOrderId,
+            'proposal_resolved' => [
+                'capability' => 'orders.view',
+                'acted_on_order_id' => $proposalDisclosure['id'] ?? null,
+                'disclosure' => $proposalDisclosure,
+                // A red proposal-resolved arm is NOT a breach: it means proposal resolution stopped
+                // being redirectable (a behaviour change, possibly an improvement).
+                'failure_means' => 'proposal resolution stopped being redirectable — a behaviour change, possibly an improvement, and specifically not a breach',
+            ],
+            'context_resolved' => [
+                'capability' => 'orders.view-by-context',
+                'acted_on_order_id' => $contextDisclosure['id'] ?? null,
+                'disclosure' => $contextDisclosure,
+                // A red context-resolved arm IS a real defect: an injected argument redirected the
+                // target the mitigation is supposed to hold fixed.
+                'failure_means' => 'the context-resolved mitigation broke — a real defect: an injected argument redirected the target',
+            ],
+        ];
+    }
+
     /** @return array<string, mixed> */
     public function comparison(int $orderId): array
     {
