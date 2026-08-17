@@ -18,6 +18,7 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Foundation\Application;
 use Laravel\Ai\Responses\StreamableAgentResponse;
+use LogicException;
 
 /**
  * Builds the storefront live evaluation suite: `StorefrontAttackPack` — unmodified — driven by a
@@ -104,6 +105,19 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationControl
         $config = $this->config();
         $capture = new LiveToolCapture;
 
+        // Greedy pins the arm by forcing temperature=0 (matched pairs, #170); a target whose API
+        // rejects `temperature` (Anthropic's Claude 5) cannot be pinned, so a greedy run against it
+        // would attest a determinism it never had. Refuse it loudly rather than degrade silently —
+        // sampled decoding is the mode for such a model. See ADR 0023 / StorefrontLiveTarget.
+        $target = StorefrontLiveTarget::fromEnv();
+
+        if ($this->sampling->mode === ControlSamplingMode::Greedy && ! $target->acceptsTemperature()) {
+            throw new LogicException(
+                "greedy decoding cannot be pinned on [{$target->model}] — its API rejects the "
+                .'temperature parameter. Use VERDICT_SAMPLING=sampled for this model.'
+            );
+        }
+
         // Resolved after the reset, never captured in a property: these are exactly the instances a
         // reset replaces.
         $recorder = $this->app->make(InMemoryEvidenceRecorder::class);
@@ -138,7 +152,7 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationControl
             reproduction: new ReproductionMetadata([
                 'provider' => $agent->provider(),
                 'model' => $agent->model(),
-                'sampling' => $this->sampling->component(),
+                'sampling' => $this->sampling->component($target),
             ]),
         );
     }

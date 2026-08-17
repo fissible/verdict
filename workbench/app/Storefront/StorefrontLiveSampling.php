@@ -33,29 +33,58 @@ final readonly class StorefrontLiveSampling
         return new self(ControlSamplingMode::Sampled, $temperature, null);
     }
 
-    /** The ReproductionMetadata 'sampling' component a control run requires. */
-    public function component(): string
+    /**
+     * The ReproductionMetadata 'sampling' component a control run requires. Derived from the same
+     * `effective()` computation as `providerOptions()`, so the attested label describes exactly
+     * what the request carried: where the target rejects `temperature`, it reads
+     * `temperature=provider-default` rather than a number that was never sent.
+     */
+    public function component(?StorefrontLiveTarget $target = null): string
     {
-        $component = sprintf('%s temperature=%s', $this->mode->value, $this->format($this->temperature));
+        [$temperature, $seed] = $this->effective($target);
 
-        return $this->seed === null ? $component : "{$component} seed={$this->seed}";
+        $temperature = $temperature === null ? 'provider-default' : $this->format($temperature);
+        $component = "{$this->mode->value} temperature={$temperature}";
+
+        return $seed === null ? $component : "{$component} seed={$seed}";
     }
 
     /**
-     * What is actually sent to Ollama, via `HasProviderOptions` — the gateway merges these into
-     * the request body's `options`.
+     * What is actually sent to the provider, via `HasProviderOptions` — the gateway merges these
+     * into the request body's `options`. A parameter the target's API rejects is omitted (an
+     * absent `$target` is the Ollama-shaped default that accepts both).
      *
      * @return array<string, float|int>
      */
-    public function providerOptions(): array
+    public function providerOptions(?StorefrontLiveTarget $target = null): array
     {
-        $options = ['temperature' => $this->temperature];
+        [$temperature, $seed] = $this->effective($target);
 
-        if ($this->seed !== null) {
-            $options['seed'] = $this->seed;
+        $options = [];
+
+        if ($temperature !== null) {
+            $options['temperature'] = $temperature;
+        }
+
+        if ($seed !== null) {
+            $options['seed'] = $seed;
         }
 
         return $options;
+    }
+
+    /**
+     * The temperature and seed this declaration can actually send to `$target`, each nulled where
+     * that target's API would reject it. One source of truth for both the request and its label.
+     *
+     * @return array{0: ?float, 1: ?int}
+     */
+    private function effective(?StorefrontLiveTarget $target): array
+    {
+        $temperature = $target === null || $target->acceptsTemperature() ? $this->temperature : null;
+        $seed = ($this->seed !== null && ($target === null || $target->acceptsSeed())) ? $this->seed : null;
+
+        return [$temperature, $seed];
     }
 
     private function format(float $value): string

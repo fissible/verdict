@@ -173,7 +173,7 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
      */
     public function providerOptions(Lab|string $provider): array
     {
-        return $this->sampling->providerOptions();
+        return $this->sampling->providerOptions(StorefrontLiveTarget::fromEnv());
     }
 
     public function maxSteps(): int
@@ -215,14 +215,16 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
      * A methodology note for frontier/aligned models: they are likely to refuse the attack even
      * unguarded (`self-declined`), so such a run measures alignment resistance and hunts the rare
      * breach alignment missed — it is not the reliable-breach instrument #170 wants. Use sampled
-     * decoding (`VERDICT_SAMPLING=sampled`) for these: it sends only a temperature, no Ollama-only
-     * `seed`, and rate estimation is the right question for an aligned model anyway.
+     * decoding (`VERDICT_SAMPLING=sampled`) for these; rate estimation is the right question for an
+     * aligned model anyway. On a model whose API rejects `temperature` (Anthropic's Claude 5),
+     * sampled sends no decoding options at all and attests `temperature=provider-default` — the
+     * draws are still independent, so the rule-of-three bound holds; see `StorefrontLiveTarget`.
      */
     public function provider(): string
     {
-        $provider = getenv('STOREFRONT_LIVE_PROVIDER');
-
-        return is_string($provider) && trim($provider) !== '' ? strtolower(trim($provider)) : 'ollama';
+        // Delegated to StorefrontLiveTarget so the request's target and the run's attested target
+        // parse the same env by the same rule — one source of truth, not two.
+        return StorefrontLiveTarget::fromEnv()->provider;
     }
 
     /**
@@ -234,10 +236,6 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
      */
     public function model(): string
     {
-        // getenv, not env(): this is a runtime harness read, and env() returns null once config is
-        // cached (PHPStan flags it). The default lives in the fallback below.
-        $model = getenv('STOREFRONT_LIVE_MODEL');
-
-        return is_string($model) && trim($model) !== '' ? $model : 'gpt-oss:20b';
+        return StorefrontLiveTarget::fromEnv()->model;
     }
 }
