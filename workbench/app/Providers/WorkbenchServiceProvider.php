@@ -45,7 +45,41 @@ final class WorkbenchServiceProvider extends ServiceProvider
         // Singleton, not scoped: decoding is configuration, and both arms of every trial must run
         // under the same declaration or TrialSuiteIdentity refuses the run. Greedy is the default
         // because it is the only mode under which the control arm's 2×2 pairs are matched pairs.
-        $this->app->singleton(StorefrontLiveSampling::class, fn (): StorefrontLiveSampling => StorefrontLiveSampling::greedy());
+        $this->app->singleton(StorefrontLiveSampling::class, function (): StorefrontLiveSampling {
+            // VERDICT_SAMPLING selects the decoding mode for a control-arm run: 'sampled' produces
+            // an independent-sample rate (per-arm marginals, no per-trial pairing — ADR 0023), with
+            // an optional VERDICT_SAMPLING_TEMPERATURE (default 0.8); 'greedy' (or unset) is the
+            // reproducible-regression default. getenv (not env()) for the same reason as the other
+            // harness reads: env() returns null once config is cached.
+            //
+            // An unrecognized value THROWS rather than falling through to greedy. The next action is
+            // a multi-trial live run against a real model; a typo (`smapled`, `true`) silently
+            // running greedy would spend that model time on a mode nobody asked for, discoverable
+            // only afterward in the recorded component string. This is #150's rule: reject
+            // configuration that cannot do what was asked instead of doing something else quietly.
+            $raw = getenv('VERDICT_SAMPLING');
+            $mode = is_string($raw) ? strtolower(trim($raw)) : '';
+
+            if ($mode === '' || $mode === 'greedy') {
+                return StorefrontLiveSampling::greedy();
+            }
+
+            if ($mode !== 'sampled') {
+                throw new LogicException("VERDICT_SAMPLING must be 'sampled', 'greedy', or unset; got [{$raw}].");
+            }
+
+            $temperature = getenv('VERDICT_SAMPLING_TEMPERATURE');
+
+            if ($temperature === false || $temperature === '') {
+                return StorefrontLiveSampling::sampled();
+            }
+
+            if (! is_numeric($temperature)) {
+                throw new LogicException("VERDICT_SAMPLING_TEMPERATURE must be numeric; got [{$temperature}].");
+            }
+
+            return StorefrontLiveSampling::sampled((float) $temperature);
+        });
         $this->app->scoped(ActionLog::class);
         $this->app->scoped(SupportNoteChannel::class);
         $this->app->scoped(InMemoryEvidenceRecorder::class);

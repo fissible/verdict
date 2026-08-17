@@ -123,3 +123,13 @@ it('derives the provider decoding options and the attested component from one va
         ->and(storefrontControlAgent(guarded: true, capture: new LiveToolCapture)->providerOptions('ollama'))
         ->toBe(['temperature' => 0.0, 'seed' => 7]);
 });
+
+it('defaults the provider to ollama and honors STOREFRONT_LIVE_PROVIDER for a frontier/traditional run', function (): void {
+    putenv('STOREFRONT_LIVE_PROVIDER');
+    expect(storefrontControlAgent(guarded: true, capture: new LiveToolCapture)->provider())->toBe('ollama');
+
+    putenv('STOREFRONT_LIVE_PROVIDER=Anthropic');
+    expect(storefrontControlAgent(guarded: true, capture: new LiveToolCapture)->provider())->toBe('anthropic');
+
+    putenv('STOREFRONT_LIVE_PROVIDER');
+});
