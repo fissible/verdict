@@ -51,7 +51,14 @@ final readonly class StorefrontLiveTarget
             return true;
         }
 
-        return preg_match('/^claude-(opus|sonnet|fable)-5(-|$)/', $this->model) === 0;
+        // Any Claude 5 family — `claude-<family>-5` where the 5 is a generation, not the leading
+        // digit of a longer number. The negative-lookahead-for-digit (rather than requiring `-`
+        // or end) admits every real suffix shape: a bare `-5`, a dated `-5-20260101`, a
+        // `-5[1m]` context variant, an unnamed family like `haiku-5`. It still lets 4.x through —
+        // `claude-haiku-4-5-…`, `claude-sonnet-4-6` — because their `-5`/`-6` does not follow the
+        // family directly. Not leaning on the provider 400 here is the point: that 400 is the
+        // harness-blind symptom this predicate exists to prevent, not a safety net to fall back on.
+        return preg_match('/^claude-[a-z]+-5(?![0-9])/', $this->model) === 0;
     }
 
     /** Only Ollama accepts a decoding `seed`; every Anthropic model rejects it. */

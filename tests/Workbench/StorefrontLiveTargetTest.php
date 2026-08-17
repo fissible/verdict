@@ -30,6 +30,10 @@ it('reports that Claude 5 rejects temperature and never accepts seed', function 
     'sonnet-5' => 'claude-sonnet-5',
     'fable-5' => 'claude-fable-5',
     'dated sonnet-5' => 'claude-sonnet-5-20260101',
+    // A model family the enumerated predicate did not name, and a 5-with-suffix shape that is
+    // neither a dash nor end-of-string — both are gen 5, both reject temperature.
+    'haiku-5' => 'claude-haiku-5',
+    'opus-5 1m-context' => 'claude-opus-5[1m]',
 ]);
 
 it('reports that pre-5 Anthropic models accept temperature but still reject seed', function (string $model): void {

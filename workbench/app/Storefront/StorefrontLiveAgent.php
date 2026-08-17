@@ -67,6 +67,7 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
         private readonly StorefrontAttackPackConfig $config,
         private readonly ActionLog $actions,
         private readonly StorefrontLiveSampling $sampling,
+        private readonly StorefrontLiveTarget $target,
         private readonly bool $guarded = true,
     ) {}
 
@@ -173,7 +174,7 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
      */
     public function providerOptions(Lab|string $provider): array
     {
-        return $this->sampling->providerOptions(StorefrontLiveTarget::fromEnv());
+        return $this->sampling->providerOptions($this->target);
     }
 
     public function maxSteps(): int
@@ -222,9 +223,11 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
      */
     public function provider(): string
     {
-        // Delegated to StorefrontLiveTarget so the request's target and the run's attested target
-        // parse the same env by the same rule — one source of truth, not two.
-        return StorefrontLiveTarget::fromEnv()->provider;
+        // The injected target, not a re-read of the env: the factory resolves it once and hands
+        // the same value to the agent, the greedy guard, and the attested component — so the
+        // request's target and the run's attested target are one value, not one rule read four
+        // times. See StorefrontLiveSuiteFactory.
+        return $this->target->provider;
     }
 
     /**
@@ -236,6 +239,6 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
      */
     public function model(): string
     {
-        return StorefrontLiveTarget::fromEnv()->model;
+        return $this->target->model;
     }
 }

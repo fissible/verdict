@@ -125,7 +125,7 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationControl
         $actions = $this->app->make(ActionLog::class);
         $verdict = $this->app->make(VerdictManager::class);
 
-        $agent = new StorefrontLiveAgent($this->catalog, $capture, $verdict, $config, $actions, $this->sampling, $guarded);
+        $agent = new StorefrontLiveAgent($this->catalog, $capture, $verdict, $config, $actions, $this->sampling, $target, $guarded);
 
         $agentInvoker = function (CaseInput $input) use ($agent, $noteChannel): StreamableAgentResponse {
             // Sets (or clears) the shared channel `orders.support-notes`' executor reads,

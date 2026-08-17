@@ -39,7 +39,7 @@ final readonly class StorefrontLiveSampling
      * what the request carried: where the target rejects `temperature`, it reads
      * `temperature=provider-default` rather than a number that was never sent.
      */
-    public function component(?StorefrontLiveTarget $target = null): string
+    public function component(StorefrontLiveTarget $target): string
     {
         [$temperature, $seed] = $this->effective($target);
 
@@ -56,7 +56,7 @@ final readonly class StorefrontLiveSampling
      *
      * @return array<string, float|int>
      */
-    public function providerOptions(?StorefrontLiveTarget $target = null): array
+    public function providerOptions(StorefrontLiveTarget $target): array
     {
         [$temperature, $seed] = $this->effective($target);
 
@@ -79,10 +79,10 @@ final readonly class StorefrontLiveSampling
      *
      * @return array{0: ?float, 1: ?int}
      */
-    private function effective(?StorefrontLiveTarget $target): array
+    private function effective(StorefrontLiveTarget $target): array
     {
-        $temperature = $target === null || $target->acceptsTemperature() ? $this->temperature : null;
-        $seed = ($this->seed !== null && ($target === null || $target->acceptsSeed())) ? $this->seed : null;
+        $temperature = $target->acceptsTemperature() ? $this->temperature : null;
+        $seed = ($this->seed !== null && $target->acceptsSeed()) ? $this->seed : null;
 
         return [$temperature, $seed];
     }
