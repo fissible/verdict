@@ -4,6 +4,42 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Register a capability by affirming it, not by wiring it. A class in `app/Capabilities/` that implements
+  the new `Fissible\Verdict\Contracts\DefinesCapability` contract — one token added to a class the
+  generator already wrote — is discovered and registered at boot, through the same path
+  `Verdict::capability()` uses. Discovered and hand-registered capabilities are the same object everywhere
+  downstream. Provider registration still works and is still supported. See
+  [ADR 0027](docs/adr/0027-a-capability-definition-is-a-declaration.md) and
+  [#210](https://github.com/fissible/verdict/issues/210).
+
+  **No upgrade break, and that is structural rather than lucky.** The contract gates discovery, so an
+  existing `app/Capabilities/` full of classes generated before this release implements nothing, registers
+  nothing, and fails nothing. Discovery is on by default only because that is true.
+
+  **The interface is an affirmation, not a proof.** Verdict cannot see inside your closures and does not
+  pretend to — it cannot tell a finished capability from one whose TODOs still throw. A false affirmation
+  still fails closed: at boot if the definition throws while building, at first invocation otherwise.
+  Removing the interface is the supported way to park unfinished work; the class goes inert and
+  `verdict:validate` names it.
+
+  **A definition is a declaration, not a service.** The contract is `static make(): Capability`, so
+  discovery never resolves a definition from the container. An instance contract would resolve a
+  definition's collaborators at boot and hold them for the worker's life — the binding-lifetime defect
+  [#183](https://github.com/fissible/verdict/issues/183) already cost this codebase once. Closures calling
+  `app()` in their bodies resolve in the request scope they belong to, which is the correct pattern rather
+  than a workaround.
+
+  **Failures are reported together.** A definition that affirms the contract and cannot be built fails the
+  boot with every other such failure listed at once — class, cause, and both ways to resolve it, per entry.
+  Registration is all-or-nothing, so a boot that is going to die never leaves a partial security surface
+  registered. `verdict:validate` in a deploy pipeline still fails with the complete list before production
+  boots the same code; it surfaces during the command's own bootstrap, which is the pipeline working rather
+  than the tooling breaking.
+
+  New config key `verdict.capabilities.discovery.paths`, defaulting to `app_path('Capabilities')` — where
+  the generator has always written. An empty array disables discovery. `verdict:make-capability` now emits
+  the contract import and a TODO directing you to affirm once the other TODOs are replaced; it never
+  affirms for you.
 - Record the tool description a model was actually shown. Verdict already fingerprinted the
   description at wiring time and recomputed it on every `description()` call — a divergence between
   the two is precisely the signal that a tool's advertised description changed after binding — and

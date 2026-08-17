@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Console\Commands;
 
 use Fissible\Verdict\Approvals\ApproverAudience;
+use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Capabilities\UnaffirmedDefinition;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
@@ -35,6 +37,7 @@ final class ValidateVerdictCommand extends Command
         CapabilityRegistry $capabilities,
         Container $container,
         ReleasePolicyRegistry $releasePolicies,
+        CapabilityDiscovery $discovery,
     ): int {
         $errors = [];
         $warnings = [];
@@ -86,6 +89,31 @@ final class ValidateVerdictCommand extends Command
             );
         }
 
+        // Advisory: a class sitting in a discovery path that never affirmed the contract is inert,
+        // which is safe, and invisible, which is not legible. Verdict cannot tell "unfinished" from
+        // "finished and never affirmed" — it cannot see inside the closures (ADR 0017) — so it names
+        // the class and lets a human tell the difference. Prints on every run; --strict changes only
+        // the exit code.
+        //
+        // Rendered as a short component line plus a detail line, because components truncate to the
+        // terminal width and the reason is the half an operator needs.
+        $unaffirmed = [];
+
+        foreach ($discovery->discover()->unaffirmed as $definition) {
+            $unaffirmed[] = [
+                'class' => $definition->class,
+                'detail' => match ($definition->reason) {
+                    UnaffirmedDefinition::NO_CONTRACT => 'It does not implement DefinesCapability: unfinished, or finished but never affirmed. '
+                        .'Verdict will not register it. Add the contract once every TODO in it is replaced.',
+                    UnaffirmedDefinition::NOT_INSTANTIABLE => 'It is abstract or otherwise not instantiable, so it can never be registered. '
+                        .'A base class or interface does not belong in a discovery path.',
+                    UnaffirmedDefinition::NO_CLASS => 'It does not declare the class its path implies, so it cannot be autoloaded. '
+                        .'Check the namespace against the file location.',
+                    default => 'It cannot be registered.',
+                },
+            ];
+        }
+
         // Advisory: a confirmation gate with no approver release policy asks a human to authorize an
         // action while telling them nothing about where the proposal came from. It is legal — Verdict
         // ships no default policy, because a default would be Verdict authorizing a release on the
@@ -116,15 +144,21 @@ final class ValidateVerdictCommand extends Command
             $this->components->warn($warning);
         }
 
+        foreach ($unaffirmed as $finding) {
+            $this->components->warn("[{$finding['class']}] is an unaffirmed capability definition.");
+            $this->line("   {$finding['detail']}");
+        }
+
         foreach ($information as $item) {
             $this->components->info($item);
         }
 
-        if ($errors === [] && $warnings === [] && $information === []) {
+        if ($errors === [] && $warnings === [] && $unaffirmed === [] && $information === []) {
             $this->components->info('Verdict wiring audit found no applicable capability configuration.');
         }
 
-        $failed = $errors !== [] || ((bool) $this->option('strict') && $warnings !== []);
+        $failed = $errors !== []
+            || ((bool) $this->option('strict') && ($warnings !== [] || $unaffirmed !== []));
 
         return $failed ? self::FAILURE : self::SUCCESS;
     }

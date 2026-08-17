@@ -8,7 +8,25 @@ use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 
 return [
+    'capabilities' => [
+        // Discovers capability *definition classes* in your application — classes implementing
+        // Fissible\Verdict\Contracts\DefinesCapability. Implementing that contract is what makes a
+        // generated capability discoverable; until then it sits here inert, and verdict:validate
+        // names it. Not to be confused with `capability_configurations` below, which is the durable
+        // registry of recorded capability configuration. See ADR 0027.
+        //
+        // An empty paths array disables discovery entirely.
+        'discovery' => [
+            'paths' => [
+                app_path('Capabilities'),
+            ],
+        ],
+    ],
+
     'capability_configurations' => [
+        // Not to be confused with `capabilities.discovery` above, which finds definition classes in
+        // your application. This is the durable registry that expands a configuration fingerprint
+        // back into the declared configuration that produced it.
         // This durable, content-addressed registry expands configuration_fingerprint values in
         // evidence into readable declared policy configuration. Null selects the database store
         // automatically for Verdict's DatabaseEvidenceRecorder and AttestEvidenceRecorder, and a

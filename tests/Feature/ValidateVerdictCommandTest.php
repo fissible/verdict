@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\ReleasePolicy;
@@ -152,5 +153,45 @@ it('does not warn about the recorder when a real one is configured', function ()
 
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('no-op evidence recorder')
+        ->assertExitCode(0);
+});
+
+function bindUnaffirmedDiscovery(string $directory): void
+{
+    app()->instance(CapabilityDiscovery::class, new CapabilityDiscovery(
+        rootPath: dirname(__DIR__).'/Fixtures',
+        rootNamespace: 'Fissible\\Verdict\\Tests\\Fixtures\\',
+        paths: [dirname(__DIR__).'/Fixtures/'.$directory],
+    ));
+}
+
+/**
+ * Inert is safe; silent is not legible. A generated capability sitting in the discovery path,
+ * finished or unfinished but never affirmed, is the one state discovery leaves invisible — so it
+ * prints on every run, the way the no-op recorder warning does.
+ */
+it('names a capability class that never affirmed the contract, without being asked twice', function (): void {
+    bindUnaffirmedDiscovery('LegacyCapabilities');
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('LegacyOrderCapability')
+        ->expectsOutputToContain('never affirmed')
+        ->assertExitCode(0);
+});
+
+it('lets --strict fail on an unaffirmed class without changing what is printed', function (): void {
+    bindUnaffirmedDiscovery('LegacyCapabilities');
+
+    $this->artisan('verdict:validate', ['--strict' => true])
+        ->expectsOutputToContain('LegacyOrderCapability')
+        ->assertExitCode(1);
+});
+
+it('names an abstract class in a discovery path as never registerable', function (): void {
+    bindUnaffirmedDiscovery('Capabilities');
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('AbstractAffirmedCapability')
+        ->expectsOutputToContain('abstract')
         ->assertExitCode(0);
 });

@@ -160,7 +160,9 @@ $capability = Capability::usingPolicy(
     ->executeUsing($issueRefund);
 ```
 
-Register it with `Verdict::capability($capability)`, then use `Verdict::bound(...)` instead of exposing the underlying Laravel AI tool directly. The [architecture guide](docs/architecture.md) explains the lifecycle and extension points.
+Register it by adding `implements DefinesCapability` to a class in `app/Capabilities/` — Verdict discovers and registers it at boot, so there is no provider wiring. Adding the interface is an affirmation that the capability is finished; leave it off and the class stays inert, with `verdict:validate` naming it. `Verdict::capability($capability)` still works for capabilities you would rather register by hand.
+
+Then use `Verdict::bound(...)` instead of exposing the underlying Laravel AI tool directly. The [architecture guide](docs/architecture.md) explains the lifecycle and extension points, and [ADR 0027](docs/adr/0027-a-capability-definition-is-a-declaration.md) explains why a definition is discovered statically rather than resolved from the container.
 
 ## Core security checklist
 
