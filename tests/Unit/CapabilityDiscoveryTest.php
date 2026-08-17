@@ -106,3 +106,23 @@ it('finds nothing when no paths are configured', function (): void {
     expect($found->affirmed)->toBe([])
         ->and($found->unaffirmed)->toBe([]);
 });
+
+/**
+ * The root path is configuration — `app_path('Capabilities')`, a value from a config file, a value
+ * built by concatenation — so it is not reliably a literal prefix of the paths the filesystem hands
+ * back. On Windows it never is: SplFileInfo returns backslashes while a concatenated root carries
+ * whatever separator the caller wrote. Deriving a class name by string-subtracting one from the
+ * other therefore has to normalise both sides first.
+ *
+ * This is a regression test for 18 Windows CI failures where every class derived a wrong name,
+ * failed class_exists, and landed in unaffirmed — discovery silently finding nothing at all.
+ */
+it('derives class names when the configured root is not a literal prefix of the file path', function (): void {
+    $discovery = new CapabilityDiscovery(
+        rootPath: dirname(__DIR__).'/./Fixtures/',
+        rootNamespace: 'Fissible\\Verdict\\Tests\\Fixtures\\',
+        paths: [dirname(__DIR__).'/Fixtures/Capabilities'],
+    );
+
+    expect($discovery->discover()->affirmed)->toContain(AffirmedCapability::class);
+});

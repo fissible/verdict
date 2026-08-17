@@ -92,14 +92,31 @@ final readonly class CapabilityDiscovery
         return $classes;
     }
 
+    /**
+     * Both sides are normalised before subtracting one from the other.
+     *
+     * The root is configuration — `app_path('Capabilities')`, a config value, something built by
+     * concatenation — so it is not reliably a literal prefix of what the filesystem returns. On
+     * Windows it never is: SplFileInfo yields backslashes while a concatenated root carries whatever
+     * separator the caller wrote. realpath() resolves both to the platform's canonical form, and the
+     * separators are then folded so the remainder can become a namespace.
+     */
     private function classFor(string $file): string
     {
-        $relative = trim(str_replace($this->rootPath, '', $file), DIRECTORY_SEPARATOR);
+        $root = $this->normalize((string) realpath($this->rootPath));
+        $resolved = $this->normalize((string) realpath($file));
 
-        return $this->rootNamespace.str_replace(
-            [DIRECTORY_SEPARATOR, '.php'],
-            ['\\', ''],
-            $relative,
-        );
+        // A path outside the root cannot yield a class name; fall back to the raw remainder so the
+        // caller reports it as unloadable rather than guessing.
+        $relative = str_starts_with($resolved, $root.'/')
+            ? substr($resolved, strlen($root) + 1)
+            : basename($file);
+
+        return $this->rootNamespace.str_replace('/', '\\', preg_replace('/\.php$/', '', $relative) ?? $relative);
+    }
+
+    private function normalize(string $path): string
+    {
+        return rtrim(str_replace('\\', '/', $path), '/');
     }
 }
