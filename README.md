@@ -22,9 +22,19 @@ Without an application-controlled boundary, a model can influence which order is
 
 Verdict puts an authorization pipeline before that application code executes. The model can recommend an action; your Laravel policies and configured safeguards remain the authority.
 
+### Why not just call a Policy inside the tool?
+
+You can — and the check might still be skipped in the next tool someone writes. Verdict's difference is not the check; it is where the check lives:
+
+- **It cannot be forgotten.** Every action wired through `Verdict::bound()` passes the full pipeline. There is no code path to the executor that skips it.
+- **It is re-checked at the moment it matters.** The target is refreshed and re-authorized immediately before execution, so no decision is made against stale state.
+- **`can()` has no vocabulary for the rest.** Human approval bound to canonical facts, strict at-most-once admission, and semantic rate limits are controls a policy method cannot express.
+- **It leaves evidence.** Each decision can be recorded with actor and subject identity, the configuration that produced it, and how the target was resolved.
+- **It is testable as a unit.** The [capability security test kit](docs/testing.md) drives your real capability through the real protected path and asserts that denials produce no side effects.
+
 ## Quick example
 
-Register a capability with the Laravel authorization ability and a trusted resource resolver. Resolve the target from application context, then expose the capability to Laravel AI through a secure `BoundTool`.
+Register a capability in a service provider's `boot()` method (an `AppServiceProvider` works). Give it the Laravel authorization ability and a trusted resolver, then expose it to Laravel AI through a secure `BoundTool`.
 
 ```php
 use Fissible\Verdict\Actions\ActionContext;
@@ -36,12 +46,13 @@ use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Laravel\Ai\Tools\Request;
 
 Verdict::capability(
-    Capability::usingPolicy(
+    Capability::usingPolicyForContextTarget(
         name: 'orders.refund',
         ability: 'refund',
-        // The target comes from application context, not from the proposal.
-        resolveTarget: fn (ActionEnvelope $envelope): Order => Order::findOrFail(
-            $envelope->context->metadata['order_id'],
+        // The resolver receives only application context — the proposal is not in
+        // scope, so an injected argument cannot redirect which order is refunded.
+        resolveTarget: fn (ActionContext $context): Order => Order::findOrFail(
+            $context->metadata['order_id'],
         ),
     )
         ->executionTarget(ExecutionTargetPolicy::refresh(
@@ -65,7 +76,9 @@ $tool = Verdict::bound(
     capability: 'orders.refund',
     context: function (Request $request): ActionContext {
         // $request carries model-supplied arguments. Build context from
-        // application state the model cannot influence.
+        // application state the model cannot influence. SupportSession stands in
+        // for your own source of truth about this conversation — session state, a
+        // conversation record, a database row — anything the model never writes.
         return new ActionContext(
             actor: auth()->user(),
             metadata: ['order_id' => app(SupportSession::class)->activeOrderId()],
@@ -74,11 +87,11 @@ $tool = Verdict::bound(
 );
 ```
 
-The `refund` Laravel policy decides whether the authenticated actor can refund the resolved order. Because the order was selected by the application rather than by the proposal, an injected instruction cannot redirect the refund at a different record, even one the actor owns.
+The `refund` Laravel policy decides whether the authenticated actor can refund the resolved order. Because the order was selected by the application rather than by the proposal, an injected instruction cannot redirect the refund at a different record, even one the actor owns. The resolver's `ActionContext` parameter type makes that structural rather than conventional: the proposal is not available to read.
 
 ### When the model legitimately selects the target
 
-Some capabilities exist precisely so a model can choose among candidates. Resolve from the proposal, and scope the lookup to the actor so an argument cannot reach outside their records:
+Some capabilities exist precisely so a model can choose among candidates. Use `Capability::usingPolicy()` — its resolver receives the full envelope. Resolve from the proposal, and scope the lookup to the actor so an argument cannot reach outside their records:
 
 ```php
 resolveTarget: fn (ActionEnvelope $envelope): Order => $envelope->context->actor
@@ -86,7 +99,22 @@ resolveTarget: fn (ActionEnvelope $envelope): Order => $envelope->context->actor
     ->findOrFail($envelope->proposal->arguments['order_id']),
 ```
 
-This bounds authority: the action cannot reach a record the actor could not reach themselves. It does not bound intent. If injected content selects one of the actor's own orders, the policy will permit it. For consequential operations, pair argument-resolved targets with `requiresConfirmation()` and treat the approval, not the authorization, as the control. See [authority is not intent](docs/security-model.md#authority-is-not-intent).
+This bounds authority: the action cannot reach a record the actor could not reach themselves. It does not bound intent. If injected content selects one of the actor's own orders, the policy will permit it. For consequential operations, pair argument-resolved targets with `requiresConfirmation()` and treat the approval, not the authorization, as the control. Decision evidence records which resolution path every capability uses, so these remain auditable. See [authority is not intent](docs/security-model.md#authority-is-not-intent).
+
+## What the model sees when Verdict says no
+
+A denial is a result, not an exception. The tool call completes, the agent loop continues, and the model receives a structured refusal it can explain to the user or recover from:
+
+```json
+{
+    "status": "not_executed",
+    "capability": "orders.refund",
+    "decision": "deny",
+    "message": "This action was not authorized."
+}
+```
+
+`decision` carries the disposition — `deny`, `require_confirmation`, `require_review`, or `throttle` — and the message comes from `verdict.ai.denied_message`, so you control what the model is told. Nothing else about the denial reaches the model: no policy internals, no target state. If the model retries, every retry re-enters the same pipeline; a denial cannot be worn down. When an evidence recorder is configured, the denial is recorded like any other decision.
 
 ## Installation
 
@@ -99,6 +127,14 @@ php artisan migrate
 Verdict requires PHP 8.3+, Laravel 12 or 13, and Laravel AI `^0.10.2`.
 
 See the [architecture guide](docs/architecture.md) for wiring tools into an agent and the [security model](docs/security-model.md) before protecting production-changing operations.
+
+### Fastest way to start
+
+```bash
+php artisan verdict:make-capability
+```
+
+The generator asks for the capability's name, model, and controls, then writes a fail-closed skeleton and its test — every security decision is an explicit TODO that throws until you supply it. Details and flags are in [the generator section](#generate-a-fail-closed-capability-skeleton).
 
 ## Basic usage
 
