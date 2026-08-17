@@ -189,6 +189,7 @@ it('persists the target source to the durable evidence store', function (): void
     (require __DIR__.'/../../database/migrations/add_configuration_fingerprint_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_actor_and_subject_fingerprints_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_target_source_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_tool_description_fingerprints_to_verdict_evidence_table.php.stub')->up();
 
     $recorder = new DatabaseEvidenceRecorder(
         connection: app(DatabaseManager::class)->connection(),

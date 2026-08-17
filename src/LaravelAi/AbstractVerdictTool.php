@@ -194,7 +194,18 @@ abstract class AbstractVerdictTool implements Approvable, Tool
                 capability: $this->capability,
                 arguments: $request->all(),
                 idempotencyKey: $request->toolCallId(),
-                metadata: ['transport' => 'laravel-ai', 'tool_kind' => $this->toolKind()],
+                metadata: [
+                    'transport' => 'laravel-ai',
+                    'tool_kind' => $this->toolKind(),
+                    // The description this tool was wired with, and the one it last advertised to
+                    // the model. A divergence is the signal that a tool's advertised description
+                    // changed between wiring and invocation; Verdict computed it already and kept
+                    // it nowhere. See #163. The invocation value is null until Laravel AI reads
+                    // description() to build a prompt — never advertised is not advertised
+                    // unchanged.
+                    'tool_description_fingerprint' => $this->configuredDescriptionFingerprint,
+                    'invocation_tool_description_fingerprint' => $this->invocationDescriptionFingerprint,
+                ],
             ),
             context: $context,
         );

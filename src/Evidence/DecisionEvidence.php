@@ -53,6 +53,15 @@ final readonly class DecisionEvidence
          * [ADR 0025](../../docs/adr/0025-target-provenance-is-proven-where-it-can-be.md).
          */
         public ?string $targetSource = null,
+        /**
+         * The tool description fingerprinted at wiring time, and the one last advertised to the
+         * model. `toolDescriptionMatched` is the comparison made explicit, so an operator reading
+         * evidence after an incident does not have to know it was worth making — and is null, not
+         * false, when the description was never advertised. See #163.
+         */
+        public ?string $toolDescriptionFingerprint = null,
+        public ?string $invocationToolDescriptionFingerprint = null,
+        public ?bool $toolDescriptionMatched = null,
     ) {
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
@@ -136,9 +145,33 @@ final readonly class DecisionEvidence
             // so this is null exactly when $evaluation->capability is null.
             configurationFingerprint: $evaluation->capability?->configurationFingerprint(),
             targetSource: $evaluation->capability?->targetSource->value,
+            toolDescriptionFingerprint: self::metadataString($evaluation, 'tool_description_fingerprint'),
+            invocationToolDescriptionFingerprint: self::metadataString($evaluation, 'invocation_tool_description_fingerprint'),
+            toolDescriptionMatched: self::toolDescriptionMatched($evaluation),
             actorFingerprint: self::identityFingerprint($evaluation->envelope->context->actor),
             subjectFingerprint: self::identityFingerprint($evaluation->envelope->context->subject),
         );
+    }
+
+    private static function metadataString(Evaluation $evaluation, string $key): ?string
+    {
+        $value = $evaluation->envelope->proposal->metadata[$key] ?? null;
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
+     * Null when the description was never advertised: that is an absent observation, and reporting
+     * it as a match would claim one nobody made.
+     */
+    private static function toolDescriptionMatched(Evaluation $evaluation): ?bool
+    {
+        $configured = self::metadataString($evaluation, 'tool_description_fingerprint');
+        $advertised = self::metadataString($evaluation, 'invocation_tool_description_fingerprint');
+
+        return $configured === null || $advertised === null
+            ? null
+            : $configured === $advertised;
     }
 
     private static function identityFingerprint(mixed $identity): ?string
