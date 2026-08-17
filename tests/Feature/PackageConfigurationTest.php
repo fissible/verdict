@@ -30,7 +30,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(13)
+    expect($migrations)->toHaveCount(14)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -41,7 +41,7 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(8)
+    expect($migrations)->toHaveCount(9)
         ->and(array_keys($migrations)[0])->toEndWith('create_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php.stub')
