@@ -16,6 +16,48 @@ Complete and record each item before exposing a protected capability to pilot us
 - [ ] **Exercise failure and recovery.** Test denied authorization, expired/rejected approval, duplicate admission, exhausted limits, an executor with an indeterminate external outcome, and the application's reconciliation path. The application owns domain idempotency keys, transactional outboxes, reconciliation, and compensating operations. See [downstream-side-effect limits](limitations.md#no-guarantee-of-downstream-side-effects).
 - [ ] **Set operational ownership.** Name owners for authentication and tenancy, policy/domain-rule changes, evidence access and retention, provider/data governance, incident response, and alerts. Protect controller, scheduler, queue, and service paths that can bypass Verdict with their own equivalent controls.
 
+## Registering capabilities: affirm, don't wire
+
+`verdict:make-capability` writes a class to `app/Capabilities/` with a `make(): Capability` method and a
+TODO for every security question it cannot answer for you. Replacing those TODOs is the work. When they are
+all replaced, add one token:
+
+```php
+final class RefundCapability implements DefinesCapability
+```
+
+That is the registration. Verdict discovers definition classes implementing `DefinesCapability` under
+`verdict.capabilities.discovery.paths` and registers them at boot, through the same path
+`Verdict::capability()` uses — a discovered capability and a hand-registered one are the same object
+everywhere downstream. Provider wiring still works and is still supported; it is no longer necessary.
+
+**Implementing the contract is an affirmation, not a proof.** Verdict cannot see inside your closures, so it
+cannot check that you replaced the TODOs. It says so plainly rather than implying a guarantee: a definition
+that affirms while still unfinished fails at boot if its TODO throws while building, and at first invocation
+otherwise. Both are fail-closed.
+
+**To ship a deploy with a capability mid-work, remove the interface.** An unaffirmed class is inert —
+nothing registers it, nothing fails — and `verdict:validate` names it on every run so it cannot be
+forgotten. Un-affirming is the supported way to park unfinished work; deleting the file or hacking out a
+TODO are not.
+
+### What `verdict:validate` tells you, and what boot tells you
+
+Run `php artisan verdict:validate` in your deploy pipeline. Two different things can happen, and the
+difference is worth understanding before you meet it:
+
+- **Unaffirmed classes are reported by the command.** Advisory, printed on every run, never blocking. Add
+  `--strict` to make CI fail on them; that changes the exit code only, never what is printed.
+- **A broken definition fails the command's own bootstrap, before the command runs.** Artisan boots the
+  application before dispatching, so a capability that affirms the contract and then throws while building
+  takes the process down during startup — with *every* such failure listed at once, each naming its class,
+  its cause, and both ways to resolve it.
+
+**That second case is the pipeline working, not the tooling breaking.** The guarantee you want from
+`verdict:validate` in CI — *this deploy fails with the full list before production ever boots this code* —
+holds either way. What differs is only which layer prints it. Fix the listed definitions, or remove
+`implements DefinesCapability` from the ones that are not ready, and re-run.
+
 ## Independent security-state connection
 
 The database approval, rate-limit, and execution-claim stores must commit independently of an application transaction. If an application wraps a Verdict invocation in a transaction, configure those stores with a different **named Laravel connection**, even when it points to the same physical MySQL or PostgreSQL database. A different connection name gives Laravel a separate PDO and transaction scope; merely reusing the default connection does not. This does not create an atomic transaction with the executor or an external provider: the application still needs an outbox and reconciliation. See [ADR 0004](adr/0004-independent-security-state-transactions.md).

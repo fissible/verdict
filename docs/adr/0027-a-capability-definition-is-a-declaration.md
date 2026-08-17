@@ -116,6 +116,11 @@ fails with the complete list before production boots the same code — the aggre
 the command's own bootstrap, non-zero exit, full list in the output. What changed is which layer reports it,
 not whether the pipeline catches it.
 
+**Registration is all-or-nothing.** If any definition fails, none registers. This is an invariant rather
+than an implementation detail: a boot that is going to die must not leave a partial security surface behind
+first, which matters wherever a boot failure does not immediately end the process — test harnesses, and
+anything Octane-shaped.
+
 **Collecting means continuing past a failure**, which is safe precisely because of §2: a definition is a
 declaration, so `make()` composes closures and must not have side effects. A definition that threw poisons
 nothing that follows it. That framing is now a behavioural dependency, not only vocabulary.
