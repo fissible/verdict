@@ -115,6 +115,52 @@ Do not batch requests. “Approve these 20 refunds” approves a category, not o
 
 Prefer `rateLimit()` and `atMostOnce()` where they fit: both bound risk without consuming human attention. Instrument the flow as well. `approvalOutcome` is already recorded in decision evidence, so the approval-to-denial ratio is a useful check; an approval flow that has never produced a denial may not be read.
 
+### What an approver is shown about a proposal's origin
+
+<!-- @verdict-claim approval.provenance-declared-only tested -->
+An `ApprovalChallenge` carries a `ProposalProvenance` payload describing where the proposal came from: for each declared upstream source, its identity, trust, data class, and channel — never the content, and never a fingerprint of it. It is assembled from **declared derivations only**. Everything in an invocation shares a correlation id, so *what was retrieved during this invocation* is trivially answerable, but Verdict does not present that as *what caused this proposal*; sharing an invocation is not evidence of influence. See [ADR 0026](adr/0026-what-an-approver-is-shown.md).
+
+<!-- @verdict-claim approval.provenance-absence-visible tested -->
+Absence is reported, never implied. `ProvenanceDisclosure` has three cases, and the distinction between them is the point: `Declared` means edges were found; `Unknown` means the ledger was consulted and nothing was declared; `Unreleased` means the application has registered no release policy for the approver route, so nothing was disclosed at all. An empty source list would read as "no untrusted sources," which is exactly the inference [limitations.md](limitations.md) forbids. Sources that were declared but could not be described are counted rather than dropped — `undescribedSourceCount` for a declared parent the ledger never recorded, `withheldSourceCount` for one the release policy did not permit.
+
+<!-- @verdict-claim approval.provenance-redacted tested -->
+The payload is a **context release to a new audience**, not an exemption from one. It travels the same allowlist path as any other release ([ADR 0008](adr/0008-evidence-privacy-model.md)), and Verdict registers no default policy for it — a default would be Verdict authorizing a release on the application's behalf. Register one explicitly:
+
+```php
+use Fissible\Verdict\Approvals\ApproverAudience;
+
+Verdict::releasePolicy(
+    ReleasePolicy::between(ApproverAudience::source(), ApproverAudience::destination())
+        ->allow(DataClass::Internal, DataClass::Public)
+        ->whenTrustIs(Trust::Untrusted, Trust::Trusted),
+);
+```
+
+Each upstream source is offered with its own trust and data class, so the policy above discloses internal and public sources and withholds PII and sensitive ones from the same payload. Until a policy exists, every challenge reports `Unreleased`; `php artisan verdict:validate` warns when confirmation-gated capabilities are registered and this route is not.
+
+### Declaring where a proposal came from
+
+The payload is only as good as the declarations an application makes, and declaration is opt-in. A deployment that declares nothing sees `Unknown` everywhere — that is a measurement of its declaration coverage, not a defect in the payload. One declaration at the tool-result boundary is enough to start:
+
+```php
+use Fissible\Verdict\Approvals\ProposalAnchor;
+
+// The retrieved document was already recorded in the ledger; declare that the arguments the model
+// proposed derive from it.
+$ledger->declareDerivation(
+    correlationId: $invocationId,
+    childContentFingerprint: ProposalAnchor::for($proposedArguments),
+    parentContentFingerprints: [$retrieved->contentFingerprint],
+    kind: DerivationKind::Summarized,
+);
+```
+
+**Always compute the anchor with `ProposalAnchor::for()`.** A hand-rolled `hash('sha256', json_encode($arguments))` differs on key order and encoding flags, and a declaration made against that hash is unreachable by construction: nothing errors, it simply never matches, and every approver is told the origin is unknown. The rule in one sentence — *the argument fingerprint of the tool call, computed with Verdict's helper, attributed within the invocation that carried it.*
+
+### Denying unattributable proposals
+
+`verdict.approvals.strict_provenance` denies a consequential proposal whose provenance is unknown, at the confirmation gate, before a receipt is issued. It is **off by default and meant to stay off** until an application's declarations are thorough enough to trust: enabling it before adopting declaration converts a documented incompleteness into a refusal at the worst possible moment, and the pressure that creates is to declare something rather than to declare accurately. Verdict ships the visibility; the adopter sets the policy. Enabling strict mode without a registered approver release policy is a contradiction — it demands a control while making the provenance that control serves undeliverable — and refuses at boot.
+
 ### Sizing approval TTLs
 
 Separate the human **approve → execute** interval from the machine **validate → execute** interval. The first can be minutes or hours; expiry races only with the second, which begins when Verdict revalidates the approved receipt against the refreshed execution target and ends when it consumes that receipt. Set `ttlSeconds` well above the worst-case validate → execute latency—not the median or p99—including queue depth, a slow executor, claim retries, and paused-stream resumption. A practical starting point is the measured worst case with generous operational headroom, then review it whenever those paths change.

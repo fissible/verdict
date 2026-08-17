@@ -104,6 +104,20 @@ lifetime is shorter than the work that depends on it. A payload assembled at cha
 is the same shape of fix, and it means an approver sees the same payload regardless of how the
 response was produced.
 
+### Update: where "challenge creation" turned out to be
+
+Implementation moved the materialization point from challenge creation to **receipt issuance,
+persisted on the receipt**. `ApprovalChallenge` is not built when the approval is requested — it is
+built by `challengeForToolCall()` when an approver's controller asks for it, in a separate request
+with no invocation frame, so assembling there would report unknown for every proposal.
+
+The payload is therefore assembled in `ApprovalManager::issue()`, inside the frame, and stored in a
+nullable `provenance` column on the approval receipt. §6's intent is unchanged and is what the
+durable form delivers: one payload, assembled while the invocation is in scope, identical regardless
+of how the response was produced. A null column means a receipt issued before Verdict captured this
+at all — a storage era, not a disclosure state, which is why it is not a case of
+`ProvenanceDisclosure`.
+
 ## Consequences
 
 An approver gains a decision-relevant signal that Verdict already had and was discarding at the only

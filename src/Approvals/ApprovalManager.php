@@ -10,6 +10,7 @@ use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Laravel\Ai\Approvals\Decisions;
@@ -25,6 +26,8 @@ final readonly class ApprovalManager
         private ApprovalReceiptStore $receipts,
         private ApprovalExecutionContext $executionContext,
         private Clock $clock,
+        private ApproverProvenanceRelease $approverProvenance,
+        private InvocationContext $invocations,
         private int $defaultTtlSeconds,
     ) {
         if ($this->defaultTtlSeconds < 1) {
@@ -48,6 +51,7 @@ final readonly class ApprovalManager
             toolCallId: $toolCallId,
             capability: $capability->name,
             bindingFingerprint: $this->fingerprint($evaluation),
+            provenance: $this->provenance($evaluation),
             status: ApprovalReceiptStatus::Pending,
             reason: $capability->confirmationReason(),
             expiresAt: $now->add(new DateInterval("PT{$ttl}S")),
@@ -155,6 +159,22 @@ final readonly class ApprovalManager
         }
 
         return null;
+    }
+
+    /**
+     * Assembled here, while the invocation is still in scope, and carried on the receipt.
+     *
+     * The challenge an approver reads is built later by challengeForToolCall(), typically in the
+     * approval controller's own request — a different process, with no invocation frame and no way
+     * to reach the ledger entries this describes. Resolving it there would report unknown for every
+     * proposal. See ADR 0026 §6.
+     */
+    private function provenance(Evaluation $evaluation): ProposalProvenance
+    {
+        return $this->approverProvenance->disclose(
+            $this->invocations->current(),
+            ProposalAnchor::for($evaluation->envelope->proposal->arguments),
+        );
     }
 
     private function fingerprint(Evaluation $evaluation): string

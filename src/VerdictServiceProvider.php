@@ -7,7 +7,9 @@ namespace Fissible\Verdict;
 use Fissible\AttestLaravel\Support\AttestRegistry;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Approvals\StrictProvenanceGuard;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
@@ -146,9 +148,17 @@ final class VerdictServiceProvider extends ServiceProvider
                 receipts: $app->make(ApprovalReceiptStore::class),
                 executionContext: $app->make(ApprovalExecutionContext::class),
                 clock: $app->make(Clock::class),
+                approverProvenance: $app->make(ApproverProvenanceRelease::class),
+                invocations: $app->make(InvocationContext::class),
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
             );
         });
+
+        $this->app->scoped(ApproverProvenanceRelease::class, fn (Container $app): ApproverProvenanceRelease => new ApproverProvenanceRelease(
+            provenance: $app->make(ProvenanceLedger::class),
+            releases: $app->make(ContextReleaseManager::class),
+            policies: $app->make(ReleasePolicyRegistry::class),
+        ));
 
         $this->app->singleton(EvidenceRecorder::class, function (Container $app): EvidenceRecorder {
             $recorder = config('verdict.evidence.recorder', NullEvidenceRecorder::class);
@@ -417,6 +427,13 @@ final class VerdictServiceProvider extends ServiceProvider
         // VerdictManager (which is rebuilt per live-evaluation trial). See NullRecorderWarning.
         $this->app->singleton(NullRecorderWarning::class);
 
+        // Bound rather than scoped: the guard is a thin read of configuration, and caching an
+        // instance would pin whatever the config said the first time anything resolved it.
+        $this->app->bind(StrictProvenanceGuard::class, fn (Container $app): StrictProvenanceGuard => new StrictProvenanceGuard(
+            enabled: (bool) config('verdict.approvals.strict_provenance', false),
+            policies: $app->make(ReleasePolicyRegistry::class),
+        ));
+
         $this->app->scoped(VerdictManager::class, function (Container $app): VerdictManager {
             $message = config('verdict.ai.denied_message', 'This action was not authorized.');
 
@@ -431,6 +448,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 executionClaims: $app->make(ExecutionClaimManager::class),
                 provenance: $app->make(ProvenanceLedger::class),
                 invocations: $app->make(InvocationContext::class),
+                strictProvenance: $app->make(StrictProvenanceGuard::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
                 events: $app->make(Dispatcher::class),
                 nullRecorderWarning: $app->make(NullRecorderWarning::class),
@@ -444,6 +462,14 @@ final class VerdictServiceProvider extends ServiceProvider
         $events->listen(PromptingAgent::class, RecordAgentPromptProvenance::class);
         $events->listen(StreamingAgent::class, RecordAgentPromptProvenance::class);
         $events->listen(ToolInvoked::class, RecordToolResultProvenance::class);
+
+        // Deferred to booted() so that application providers have registered their release policies
+        // first — this asks whether an approver route exists, and at boot() time it would not yet.
+        // Refusing here rather than at first use means a self-defeating configuration fails the
+        // deploy, not the first request that reaches a confirmation gate.
+        $this->app->booted(function (): void {
+            $this->app->make(StrictProvenanceGuard::class)->assertSatisfiable();
+        });
 
         if (! $this->app->runningInConsole()) {
             return;
@@ -467,6 +493,7 @@ final class VerdictServiceProvider extends ServiceProvider
 
         $approvalMigration = [
             __DIR__.'/../database/migrations/create_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_01_000000_create_verdict_approval_receipts_table.php'),
+            __DIR__.'/../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_16_000012_add_proposal_provenance_to_verdict_approval_receipts_table.php'),
         ];
         $evidenceMigration = [
             __DIR__.'/../database/migrations/create_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000001_create_verdict_evidence_table.php'),

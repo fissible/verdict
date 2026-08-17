@@ -45,6 +45,7 @@ try {
         toolCallId: $payload['tool_call_id'],
         capability: 'concurrency-test.approval',
         bindingFingerprint: $payload['binding_fingerprint'],
+        provenance: null,
         status: ApprovalReceiptStatus::Pending,
         reason: null,
         expiresAt: $at->modify('+1 hour'),
