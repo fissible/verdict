@@ -28,6 +28,15 @@ return [
         'connection' => null,
         'table' => 'verdict_approval_receipts',
         'ttl_seconds' => 900,
+        // Deny a consequential proposal whose declared provenance is unknown, rather than asking a
+        // human to approve an action whose origin nobody can describe. OFF BY DEFAULT AND MEANT TO
+        // STAY OFF until an application's derivation declarations are thorough enough to trust:
+        // derivation declaration is opt-in, so enabling this before adopting it converts a
+        // documented incompleteness into a refusal at the worst possible moment, and the pressure
+        // that creates is to declare something rather than to declare accurately. Verdict ships the
+        // visibility; the adopter sets the policy. Enabling this without a registered approver
+        // release policy is a contradiction and refuses at boot. See ADR 0026 §5.
+        'strict_provenance' => false,
     ],
 
     'evidence' => [

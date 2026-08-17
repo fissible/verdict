@@ -1026,3 +1026,37 @@ it('reports unknown to an approver when no derivation was declared for the propo
     expect(app(ApprovalManager::class)->challengeForToolCall('call-undeclared-provenance')?->provenance?->disclosure)
         ->toBe(ProvenanceDisclosure::Unknown);
 });
+
+it('renders a receipt issued before provenance was recorded as an absent payload, not as unknown', function (): void {
+    $now = new DateTimeImmutable('2026-08-01 12:00:00', new DateTimeZone('UTC'));
+    $this->app->instance(Clock::class, new ApprovalTestClock($now));
+    $store = new InMemoryApprovalReceiptStore;
+    $this->app->instance(ApprovalReceiptStore::class, $store);
+
+    // A receipt as an upgrading deployment already has it: written before the column existed.
+    $store->issue(new ApprovalReceipt(
+        id: str_repeat('r', 64),
+        toolCallId: 'call-legacy-receipt',
+        capability: 'orders.cancel',
+        bindingFingerprint: str_repeat('a', 64),
+        provenance: null,
+        status: ApprovalReceiptStatus::Pending,
+        reason: 'Confirm cancellation of this order.',
+        expiresAt: $now->modify('+15 minutes'),
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        consumedAt: null,
+        createdAt: $now,
+        updatedAt: $now,
+    ));
+
+    $challenge = app(ApprovalManager::class)->challengeForToolCall('call-legacy-receipt');
+
+    // Null, never Unknown: Unknown claims the ledger was consulted and had nothing declared, and
+    // nothing consulted it for this receipt.
+    expect($challenge)->not->toBeNull()
+        ->and($challenge?->provenance)->toBeNull()
+        ->and($challenge?->receiptId)->toBe(str_repeat('r', 64));
+});

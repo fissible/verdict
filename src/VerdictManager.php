@@ -12,6 +12,8 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalTransition;
+use Fissible\Verdict\Approvals\ProposalAnchor;
+use Fissible\Verdict\Approvals\StrictProvenanceGuard;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Context\ContextReleaseManager;
@@ -64,6 +66,7 @@ final readonly class VerdictManager
         private ExecutionClaimManager $executionClaims,
         private ProvenanceLedger $provenance,
         private InvocationContext $invocations,
+        private StrictProvenanceGuard $strictProvenance,
         private string $deniedMessage,
         private Dispatcher $events,
         private NullRecorderWarning $nullRecorderWarning,
@@ -133,7 +136,8 @@ final readonly class VerdictManager
         $decision = $this->authorizer->decide($capability, $envelope, $target);
 
         if ($decision->permitsExecution() && $capability->confirmationRequired()) {
-            $decision = Decision::requireConfirmation($capability->confirmationReason());
+            $decision = $this->strictProvenanceDenial($capability, $envelope)
+                ?? Decision::requireConfirmation($capability->confirmationReason());
         }
 
         return $this->record(new Evaluation(
@@ -143,6 +147,31 @@ final readonly class VerdictManager
             decision: $decision,
             stage: EvaluationStage::Proposal,
         ));
+    }
+
+    /**
+     * Under opt-in strict mode, a consequential proposal nobody declared an origin for is denied
+     * here — at the confirmation gate, before a receipt is issued or any other state is consumed.
+     *
+     * Asks the ledger directly rather than assembling the approver payload: the question is whether
+     * a derivation was declared, and there is no approver to release anything to on a path that
+     * ends in a denial. See ADR 0026 §5.
+     */
+    private function strictProvenanceDenial(Capability $capability, ActionEnvelope $envelope): ?Decision
+    {
+        if (! $this->strictProvenance->enabled() || ! $capability->isConsequential()) {
+            return null;
+        }
+
+        $correlationId = $this->invocations->current();
+        $declared = $correlationId !== null && $this->provenance->declaredUpstreamOf(
+            $correlationId,
+            ProposalAnchor::for($envelope->proposal->arguments),
+        )->isDeclared();
+
+        return $declared
+            ? null
+            : Decision::deny('No declared provenance for this proposal, and strict provenance is enabled.');
     }
 
     /**
