@@ -331,6 +331,37 @@ it('omits invocation-correlated entries that were never declared upstream', func
         ->toBe([$declared]);
 });
 
+it('does not report a derivation declared in another invocation as upstream of identical arguments', function (): void {
+    $recorder = new InMemoryEvidenceRecorder;
+    $ledger = provenanceLedger($recorder);
+    $proposedArguments = ['order_id' => 7, 'amount' => 250.0];
+    $retrieved = $ledger->record(
+        correlationId: 'invocation-tuesday',
+        source: Source::external('knowledge-base'),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::RetrievedDocument,
+        content: 'untrusted retrieved document',
+    );
+
+    foreach (['invocation-tuesday', 'invocation-thursday'] as $correlationId) {
+        $ledger->record(
+            correlationId: $correlationId,
+            source: Source::application('assistant'),
+            trust: Trust::Untrusted,
+            dataClass: DataClass::Internal,
+            channel: ContextChannel::ApplicationContext,
+            content: $proposedArguments,
+        );
+    }
+
+    $anchor = ContentFingerprint::make($proposedArguments);
+    $ledger->declareDerivation('invocation-tuesday', $anchor, [$retrieved->contentFingerprint], DerivationKind::Summarized);
+
+    expect($ledger->declaredUpstreamOf('invocation-tuesday', $anchor)->entries)->toBe([$retrieved])
+        ->and($ledger->declaredUpstreamOf('invocation-thursday', $anchor)->isDeclared())->toBeFalse();
+});
+
 it('reports a declared parent with no recorded entry as unresolved', function (): void {
     $ledger = provenanceLedger(new InMemoryEvidenceRecorder);
     $proposal = $ledger->record(

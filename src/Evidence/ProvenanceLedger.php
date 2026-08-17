@@ -135,6 +135,11 @@ final readonly class ProvenanceLedger
      *
      * Traverses declared derivation edges only. Entries that merely share the correlation are never
      * reported as upstream: sharing an invocation is not evidence of influence.
+     *
+     * The traversal is scoped to one invocation at every hop, which matters because the anchor is
+     * content-addressed: identical tool-call arguments in two invocations are the same node, and an
+     * unscoped walk would let a derivation declared for Tuesday's proposal surface as Thursday's
+     * provenance. Nobody declared that, and it would be right often enough to be trusted.
      */
     public function declaredUpstreamOf(string $correlationId, string $contentFingerprint): DeclaredUpstream
     {
