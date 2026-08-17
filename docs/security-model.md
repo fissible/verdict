@@ -196,6 +196,14 @@ Context-release controls govern what application data may be supplied to an AI. 
 
 That is not a PII detector and it does not classify arbitrary provider payloads. Applications remain responsible for their data classification, provider agreements, logging configuration, and retention obligations. See [ADR 0007](adr/0007-evidence-layering.md) and [ADR 0008](adr/0008-evidence-privacy-model.md).
 
+### A tool description that changed between wiring and invocation
+
+Decision evidence records the fingerprint of the tool description Verdict was wired with (`tool_description_fingerprint`), the fingerprint of the description last advertised to the model (`invocation_tool_description_fingerprint`), and the comparison itself (`tool_description_matched`). A divergence is the signal that a tool's advertised description changed after binding — description poisoning, or an accidental mutation of a shared tool instance.
+
+`tool_description_matched` is stored rather than left to be recomputed, and it is indexed, because an operator reviewing an incident should be able to *find* divergences without knowing to compare two columns. It is **null when the description was never advertised** — a tool invoked without a prompt build was not observed, and reporting that as a match would claim an observation nobody made.
+
+**This is a forensic signal, not an authorization control.** A poisoned description cannot redirect execution: the capability is passed explicitly to `Verdict::bound($tool, 'orders.view', $context)` and is never derived from description text, so authorization, target resolution, and approval binding are unaffected. Recording a divergence does not deny, warn, or dispatch an event — whether it should is a separate decision, deliberately not made here.
+
 ### Redaction paths are validated against the allowlist, not the payload
 
 A redaction path that no allowed path can ever match is rejected when the release runs, because a redaction that silently scrubs nothing leaves the field it was meant to protect released in full. Naming `user.social_security` when the allowlist permits `user.socialSecurity` raises `UnreachableTransformerFieldPath` and names the offending path.

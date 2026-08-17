@@ -247,8 +247,12 @@ authorization.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#185](https://github.com/fissible/verdict/issues/185) Distinguish harness blindness from model non-attempts in the coverage gates | M | #183 ✅ | In progress — PR #189 |
-| [#187](https://github.com/fissible/verdict/issues/187) Add an inside-authority intent case so the control arm can measure the authority/intent gap | L | #170 ✅ | Open — `scope: design` |
+| [#185](https://github.com/fissible/verdict/issues/185) Distinguish harness blindness from model non-attempts in the coverage gates | M | #183 ✅ | ✅ Shipped — PR #189 |
+| [#187](https://github.com/fissible/verdict/issues/187) Add an inside-authority intent case so the control arm can measure the authority/intent gap | L | #170 ✅ | ✅ Shipped |
+| [#192](https://github.com/fissible/verdict/issues/192) Make context-resolved targets a first-class, evidence-visible choice | M | #187 ✅ | ✅ Shipped |
+| [#195](https://github.com/fissible/verdict/issues/195) Surface proposal provenance at the moment of decision | XL | #192 ✅ | ✅ Shipped — PR #205, ADR 0026 |
+| [#152](https://github.com/fissible/verdict/issues/152) Decide and enforce the binding fingerprint canonicalization contract | M | — | In progress |
+| [#163](https://github.com/fissible/verdict/issues/163) Record the tool description fingerprints instead of discarding them | S | — | In progress |
 
 **#185 first — it makes every future recorded run trustworthy.** v0.7.0's own recorded run was nearly
 published against a silently-blind guarded arm ([#183](https://github.com/fissible/verdict/issues/183)): the
@@ -264,6 +268,19 @@ distinct from #170's guarded/unguarded control arm, which refuses a guarded cont
 defensive mechanism it measures against — target provenance, so a proposal-resolved argument cannot redirect
 the executor — is being scoped separately (its ADR takes 0025, since #185 took 0024) and pairs with this
 issue rather than blocking it.
+
+**#192 and #195 are the defend-half of the same theme.** #187 made the authority/intent gap measurable;
+#192 made the resolution path a first-class, evidence-visible choice, so an auditor can query the population
+that matters rather than recompute a hash to find it; and #195 surfaced declared provenance to the human the
+boundary defers to, which is the intent control for a consequential capability. Together they close the loop
+the theme names: measure the gap, then give the approver the one fact that lets them act on it.
+
+Two design-scope follow-ups were filed from #195's work rather than absorbed into it, and are **deliberately
+not in this milestone**: [#201](https://github.com/fissible/verdict/issues/201) (cross-invocation content
+lineage does not reach an approver) and [#204](https://github.com/fissible/verdict/issues/204) (approval
+challenge facts are not observable to the live attack packs, so #195's claims are proven deterministically
+rather than measured per-case). Both contain decisions that belong in front of an ADR, not at the end of an
+implementation branch.
 
 **Scope is a starting point.** These are the follow-ups v0.7.0 surfaced; the milestone accretes `scope: ready`
 work that lands before the tag, exactly as prior milestones did.

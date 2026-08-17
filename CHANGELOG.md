@@ -4,6 +4,23 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Record the tool description a model was actually shown. Verdict already fingerprinted the
+  description at wiring time and recomputed it on every `description()` call — a divergence between
+  the two is precisely the signal that a tool's advertised description changed after binding — and
+  then discarded both. Decision evidence now carries `tool_description_fingerprint`,
+  `invocation_tool_description_fingerprint`, and an indexed `tool_description_matched`, so an
+  operator can find divergences rather than having to suspect them. A migration adds the columns and
+  both durable recorders map them. See [#163](https://github.com/fissible/verdict/issues/163).
+
+  `tool_description_matched` is null, not false, when the description was never advertised: a tool
+  invoked without a prompt build was not observed, and reporting that as a match would claim an
+  observation nobody made.
+
+  **This is a forensic gap being closed, not an authorization one.** A poisoned description cannot
+  redirect execution — the capability is passed explicitly to `Verdict::bound()` and never derived
+  from description text. Recording a divergence does not deny, warn, or dispatch an event; whether it
+  should is a separate decision and is not made here.
+
 - State and enforce what may enter a binding fingerprint. `ArgumentFingerprint` decides when two
   requests are the same request — it is the approval receipt's `bindingFingerprint`, the execution
   claim's, the rate-limit bucket identity, the evidence `argument_fingerprint`, and the context
