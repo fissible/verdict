@@ -205,10 +205,24 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
         return new Customer($this->config->actorId, 'Avery Customer');
     }
 
-    /** The workbench's model choice — not a package default. */
+    /**
+     * Default: ollama (local, free, the mode the recorded runs used). `STOREFRONT_LIVE_PROVIDER`
+     * points the same suite at any Laravel AI provider — `anthropic`, `openai`, `gemini`, … — for
+     * a run against a traditional or frontier model. Credentials come from that provider's own env
+     * (e.g. `ANTHROPIC_API_KEY`), read by Laravel AI, not by this harness. Constant per process, so
+     * `TrialSuiteIdentity` holds; the reproduction metadata records whichever provider ran.
+     *
+     * A methodology note for frontier/aligned models: they are likely to refuse the attack even
+     * unguarded (`self-declined`), so such a run measures alignment resistance and hunts the rare
+     * breach alignment missed — it is not the reliable-breach instrument #170 wants. Use sampled
+     * decoding (`VERDICT_SAMPLING=sampled`) for these: it sends only a temperature, no Ollama-only
+     * `seed`, and rate estimation is the right question for an aligned model anyway.
+     */
     public function provider(): string
     {
-        return 'ollama';
+        $provider = getenv('STOREFRONT_LIVE_PROVIDER');
+
+        return is_string($provider) && trim($provider) !== '' ? strtolower(trim($provider)) : 'ollama';
     }
 
     /**
