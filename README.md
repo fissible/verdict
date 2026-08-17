@@ -147,20 +147,33 @@ Each protected operation is a named capability. A capability begins with two app
 
 For a `BoundTool`, also select an `ExecutionTargetPolicy`. `refresh()` re-loads the resource before execution, which is usually the safer choice for mutable records. The policy can then add safeguards appropriate to this particular action:
 
+A capability lives in a class under `app/Capabilities/`, which `php artisan verdict:make-capability` generates for you:
+
 ```php
-$capability = Capability::usingPolicy(
-    name: 'orders.refund',
-    ability: 'refund',
-    resolveTarget: $resolveOrder,
-)
-    ->executionTarget($currentOrder)
-    ->requiresConfirmation($approvalBinding, reason: 'Refund an order')
-    ->atMostOnce($refundClaim)
-    ->rateLimit($refundLimit)
-    ->executeUsing($issueRefund);
+namespace App\Capabilities\Orders;
+
+use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Contracts\DefinesCapability;
+
+final class RefundCapability implements DefinesCapability
+{
+    public static function make(): Capability
+    {
+        return Capability::usingPolicy(
+            name: 'orders.refund',
+            ability: 'refund',
+            resolveTarget: $resolveOrder,
+        )
+            ->executionTarget($currentOrder)
+            ->requiresConfirmation($approvalBinding, reason: 'Refund an order')
+            ->atMostOnce($refundClaim)
+            ->rateLimit($refundLimit)
+            ->executeUsing($issueRefund);
+    }
+}
 ```
 
-Register it by adding `implements DefinesCapability` to a class in `app/Capabilities/` — Verdict discovers and registers it at boot, so there is no provider wiring. Adding the interface is an affirmation that the capability is finished; leave it off and the class stays inert, with `verdict:validate` naming it. `Verdict::capability($capability)` still works for capabilities you would rather register by hand.
+**`implements DefinesCapability` is the registration.** Verdict discovers definition classes that implement it and registers them at boot, so there is no provider wiring. The generator deliberately leaves the interface off: adding it is an affirmation that you have replaced every TODO in the file. Until then the class is inert, and `php artisan verdict:validate` names it. `Verdict::capability($capability)` still works for capabilities you would rather register by hand.
 
 Then use `Verdict::bound(...)` instead of exposing the underlying Laravel AI tool directly. The [architecture guide](docs/architecture.md) explains the lifecycle and extension points, and [ADR 0027](docs/adr/0027-a-capability-definition-is-a-declaration.md) explains why a definition is discovered statically rather than resolved from the container.
 

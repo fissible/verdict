@@ -43,7 +43,8 @@ $deniedRefund = ActionEnvelope::wrap(
     new ActionContext(actor: $customer),
 );
 
-// In an application this normally happens in a service provider.
+// In an application a definition class implementing DefinesCapability registers this at boot.
+// Registering directly keeps the test self-contained and independent of discovery.
 app(VerdictManager::class)->capability($capability);
 
 CapabilitySecurityTestKit::for(app(VerdictManager::class), 'orders.refund')
