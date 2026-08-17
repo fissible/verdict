@@ -8,6 +8,8 @@ Verdict makes an AI ask your application for permission before it performs an im
 
 It sits between an AI tool call and your application code. Before a protected action runs, Verdict applies the policies you configure. Your application—not the model—decides whether the actor is allowed, which resource is safe to use, whether a person must approve the operation, and which safety limits apply.
 
+Verdict is deterministic application code: your Laravel policies decide, and no model judges anything. It is unrelated to the LLM-as-a-judge evaluation libraries that share the name.
+
 ## Why Verdict exists
 
 AI frameworks let models call functions. That is useful, but it means a model can influence real business operations.
