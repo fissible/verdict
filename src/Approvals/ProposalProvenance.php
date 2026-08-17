@@ -56,4 +56,46 @@ final readonly class ProposalProvenance
             withheldSourceCount: $withheldSourceCount,
         );
     }
+
+    /**
+     * Persisted on the receipt so that the challenge an approver reads — often in another process,
+     * long after the invocation ended — carries the payload assembled while the invocation was in
+     * scope. See ADR 0026 §6.
+     *
+     * @return array{disclosure: string, sources: list<array<string, string>>, undescribed_source_count: int, withheld_source_count: int}
+     */
+    public function toArray(): array
+    {
+        return [
+            'disclosure' => $this->disclosure->value,
+            'sources' => array_map(static fn (UpstreamSource $source): array => $source->toArray(), $this->sources),
+            'undescribed_source_count' => $this->undescribedSourceCount,
+            'withheld_source_count' => $this->withheldSourceCount,
+        ];
+    }
+
+    /** @param array<string, mixed> $attributes */
+    public static function fromArray(array $attributes): self
+    {
+        $disclosure = ProvenanceDisclosure::from((string) ($attributes['disclosure'] ?? ''));
+
+        if ($disclosure !== ProvenanceDisclosure::Declared) {
+            return $disclosure === ProvenanceDisclosure::Unknown ? self::unknown() : self::unreleased();
+        }
+
+        $sources = $attributes['sources'] ?? [];
+
+        if (! is_array($sources)) {
+            throw new InvalidArgumentException('Stored proposal provenance sources must be an array.');
+        }
+
+        return self::declared(
+            sources: array_values(array_map(
+                static fn (mixed $source): UpstreamSource => UpstreamSource::fromArray(is_array($source) ? $source : []),
+                $sources,
+            )),
+            undescribedSourceCount: (int) ($attributes['undescribed_source_count'] ?? 0),
+            withheldSourceCount: (int) ($attributes['withheld_source_count'] ?? 0),
+        );
+    }
 }

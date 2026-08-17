@@ -6,6 +6,13 @@ use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Approvals\ProposalProvenance;
+use Fissible\Verdict\Approvals\ProvenanceDisclosure;
+use Fissible\Verdict\Approvals\UpstreamSource;
+use Fissible\Verdict\Context\ContextChannel;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Source;
+use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Exceptions\UnsafeOuterTransaction;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
@@ -26,6 +33,7 @@ beforeEach(function (): void {
         $table->string('rejected_by')->nullable();
         $table->timestamp('rejected_at')->nullable();
         $table->timestamp('consumed_at')->nullable();
+        $table->text('provenance')->nullable();
         $table->timestamps();
         $table->unique(['tool_call_id', 'capability', 'binding_fingerprint'], 'verdict_approval_receipts_binding_unique');
     });
@@ -46,6 +54,7 @@ function databaseReceipt(
         toolCallId: 'call-database-receipt',
         capability: 'orders.cancel',
         bindingFingerprint: $fingerprint,
+        provenance: null,
         status: ApprovalReceiptStatus::Pending,
         reason: 'Confirm cancellation.',
         expiresAt: $now->modify('+15 minutes'),
@@ -189,4 +198,55 @@ it('rejects every receipt mutation inside an outer transaction on the store conn
     expect($connection->transactionLevel())->toBe(0)
         ->and($connection->table('verdict_approval_receipts')->count())->toBe(1)
         ->and($store->findForToolCall($receipt->toolCallId)?->status)->toBe(ApprovalReceiptStatus::Pending);
+});
+
+it('round-trips the approver provenance payload through the durable receipt store', function (): void {
+    $store = databaseReceiptStore();
+    $receipt = databaseReceipt();
+    $provenance = ProposalProvenance::declared(
+        sources: [new UpstreamSource(
+            source: Source::external('knowledge-base'),
+            trust: Trust::Untrusted,
+            dataClass: DataClass::Internal,
+            channel: ContextChannel::RetrievedDocument,
+        )],
+        undescribedSourceCount: 2,
+        withheldSourceCount: 1,
+    );
+
+    $store->issue(new ApprovalReceipt(
+        id: $receipt->id,
+        toolCallId: $receipt->toolCallId,
+        capability: $receipt->capability,
+        bindingFingerprint: $receipt->bindingFingerprint,
+        provenance: $provenance,
+        status: $receipt->status,
+        reason: $receipt->reason,
+        expiresAt: $receipt->expiresAt,
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        consumedAt: null,
+        createdAt: $receipt->createdAt,
+        updatedAt: $receipt->updatedAt,
+    ));
+
+    $stored = $store->findForToolCall($receipt->toolCallId)?->provenance;
+
+    expect($stored?->disclosure)->toBe(ProvenanceDisclosure::Declared)
+        ->and($stored?->sources)->toHaveCount(1)
+        ->and($stored?->sources[0]->source->identity())->toBe('external:knowledge-base')
+        ->and($stored?->sources[0]->trust)->toBe(Trust::Untrusted)
+        ->and($stored?->sources[0]->dataClass)->toBe(DataClass::Internal)
+        ->and($stored?->sources[0]->channel)->toBe(ContextChannel::RetrievedDocument)
+        ->and($stored?->undescribedSourceCount)->toBe(2)
+        ->and($stored?->withheldSourceCount)->toBe(1);
+});
+
+it('reads a receipt issued before provenance was recorded as never captured', function (): void {
+    $store = databaseReceiptStore();
+    $store->issue(databaseReceipt());
+
+    expect($store->findForToolCall('call-database-receipt')?->provenance)->toBeNull();
 });

@@ -14,6 +14,7 @@ final readonly class ApprovalChallenge
         public string $capability,
         public ?string $reason,
         public DateTimeImmutable $expiresAt,
+        public ?ProposalProvenance $provenance = null,
     ) {}
 
     public static function fromReceipt(ApprovalReceipt $receipt): self
@@ -24,6 +25,7 @@ final readonly class ApprovalChallenge
             capability: $receipt->capability,
             reason: $receipt->reason,
             expiresAt: $receipt->expiresAt,
+            provenance: $receipt->provenance,
         );
     }
 }

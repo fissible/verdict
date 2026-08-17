@@ -134,6 +134,7 @@ function concurrencyApprovalReceipt(string $bindingFingerprint, string $toolCall
         toolCallId: $toolCallId,
         capability: 'concurrency-test.approval',
         bindingFingerprint: $bindingFingerprint,
+        provenance: null,
         status: ApprovalReceiptStatus::Pending,
         reason: null,
         expiresAt: $createdAt->modify('+1 hour'),
@@ -167,6 +168,7 @@ function concurrencySeededExecutionClaim(string $at, bool $indeterminate = false
         capability: 'concurrency-test.execution-claim',
         policy: 'concurrency-test-policy',
         bindingFingerprint: hash('sha256', random_bytes(16)),
+        provenance: null,
         status: ExecutionClaimStatus::Claimed,
         attemptCount: 1,
         claimedAt: $claimedAt,
@@ -227,6 +229,7 @@ beforeEach(function (): void {
             'create_verdict_rate_limit_buckets_table.php.stub',
             'create_verdict_execution_claims_table.php.stub',
             'create_verdict_approval_receipts_table.php.stub',
+            'add_proposal_provenance_to_verdict_approval_receipts_table.php.stub',
         ] as $stub
     ) {
         (require __DIR__.'/../../database/migrations/'.$stub)->up();

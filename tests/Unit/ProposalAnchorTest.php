@@ -35,7 +35,15 @@ it('anchors a proposal on the fingerprint the ledger records for the same argume
         content: $arguments,
     );
 
-    expect(ProposalAnchor::for($arguments))->toBe($recorded->contentFingerprint);
+    expect(ProposalAnchor::for($arguments))->toBe(
+        $recorded->contentFingerprint,
+        'ProposalAnchor must follow the ledger digest. These agree today because ArgumentFingerprint '
+        .'and ContentFingerprint share a normalization, which is a coincidence this test converts into '
+        .'a contract. If this fails, either restore the shared canonicalization or split the anchor '
+        .'deliberately — do not relax the assertion. A declaration made against an anchor the ledger '
+        .'does not recognise is unreachable by construction: it never errors, it silently never '
+        .'matches, and every approver is told the proposal origin is unknown.',
+    );
 });
 
 it('anchors identical arguments identically regardless of key order', function (): void {

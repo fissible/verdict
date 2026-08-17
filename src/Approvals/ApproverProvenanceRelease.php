@@ -37,13 +37,21 @@ final readonly class ApproverProvenanceRelease
         private ReleasePolicyRegistry $policies,
     ) {}
 
-    public function disclose(string $correlationId, string $proposalContentFingerprint): ProposalProvenance
+    /**
+     * @param  ?string  $correlationId  the invocation that carried the proposal; null outside one,
+     *                                  where there is no scope to read declared derivations in
+     */
+    public function disclose(?string $correlationId, string $proposalContentFingerprint): ProposalProvenance
     {
         // Asked before the ledger is read, and answered as its own disclosure state: with no
         // registered policy there is no audience to release to, and reporting "unknown" would
         // describe the ledger when the fact is about configuration.
         if (! $this->policies->hasRoute(ApproverAudience::source(), ApproverAudience::destination())) {
             return ProposalProvenance::unreleased();
+        }
+
+        if ($correlationId === null) {
+            return ProposalProvenance::unknown();
         }
 
         $upstream = $this->provenance->declaredUpstreamOf($correlationId, $proposalContentFingerprint);

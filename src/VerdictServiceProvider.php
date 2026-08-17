@@ -147,6 +147,8 @@ final class VerdictServiceProvider extends ServiceProvider
                 receipts: $app->make(ApprovalReceiptStore::class),
                 executionContext: $app->make(ApprovalExecutionContext::class),
                 clock: $app->make(Clock::class),
+                approverProvenance: $app->make(ApproverProvenanceRelease::class),
+                invocations: $app->make(InvocationContext::class),
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
             );
         });
@@ -474,6 +476,7 @@ final class VerdictServiceProvider extends ServiceProvider
 
         $approvalMigration = [
             __DIR__.'/../database/migrations/create_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_01_000000_create_verdict_approval_receipts_table.php'),
+            __DIR__.'/../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_16_000012_add_proposal_provenance_to_verdict_approval_receipts_table.php'),
         ];
         $evidenceMigration = [
             __DIR__.'/../database/migrations/create_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000001_create_verdict_evidence_table.php'),
