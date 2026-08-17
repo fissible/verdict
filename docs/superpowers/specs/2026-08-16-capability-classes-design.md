@@ -33,7 +33,11 @@ registration are separate so `verdict:validate` can consume the same classificat
 final readonly class CapabilityDiscovery
 {
     /** @param list<string> $paths */
-    public function __construct(private array $paths, private string $applicationNamespace) {}
+    public function __construct(
+        private string $rootPath,
+        private string $rootNamespace,
+        private array $paths,
+    ) {}
 
     public function discover(): DiscoveredCapabilities;
 }
@@ -66,16 +70,22 @@ both ways yields a deterministic collision rather than an ordering-dependent rac
 result to `CapabilityRegistry::register()` — the same method a provider calls. Discovered and manually
 registered capabilities are the same objects downstream.
 
-**It catches nothing.** A throwing `make()` propagates and the deploy fails.
+**It builds everything, then registers only if everything built.** Failures are collected and thrown as one
+exception listing each; a lone failure is rethrown unwrapped, so the common case reads exactly as it did.
+Continuing past a failure is safe because a definition is a declaration — `make()` composes closures and has
+no side effects, so a failed one poisons nothing after it (ADR 0027 §2). All-or-nothing registration keeps a
+boot that is going to die from leaving half a security surface behind.
 
 ### 4. `verdict:validate`
 
-Runs the same discovery with the opposite reporting discipline: collect everything, report once.
+Reports the unaffirmed, and only the unaffirmed. Broken definitions cannot reach it: `Kernel::handle()`
+bootstraps before dispatching, so the aggregated boot exception is thrown during the command's own
+bootstrap. The pipeline guarantee is unchanged — validate still fails with the full list pre-deploy — but
+boot is what reports it.
 
-- Each affirmed class is constructed in a `try`/`catch`; every failure is collected with its cause. These
-  are **errors** (exit 1) — they will fail at boot, the command's existing bar for a non-zero exit.
-- Every unaffirmed class prints as an advisory on **every run**. `--strict` changes only the exit code,
-  never the visibility.
+Every unaffirmed class prints as an advisory on **every run**; `--strict` changes only the exit code, never
+the visibility. Rendered as a short component line plus a detail line, because console components truncate
+to the terminal width and the reason is the half an operator needs.
 
 ## Configuration
 
@@ -98,9 +108,9 @@ discovers nothing until someone affirms. An empty `paths` array disables discove
 | No contract | inert | advisory |
 | Contract, not instantiable | inert | advisory |
 | No loadable class for the file | inert | advisory |
-| Contract, `make()` throws | **fails**, cause chained | error, aggregated with all others |
-| Contract, name already registered manually | **fails**, names the provider registration | error |
-| Two discovered classes, same capability name | **fails**, names both classes | error |
+| Contract, `make()` throws | **fails**, cause chained, aggregated with every other failure | thrown by the command's own bootstrap |
+| Contract, name already registered manually | **fails**, names the provider registration | same |
+| Two discovered classes, same capability name | **fails**, names both classes | same |
 
 ### Error message shape
 
@@ -130,7 +140,7 @@ unchanged — changing it would orphan every capability generated since v0.4.0.
 |---|---|
 | `CapabilityDiscovery` over a temp directory | classification of all six states, including nested directories |
 | Abstract class implementing the contract | lands in `unaffirmed`, never reaches `make()` |
-| `CapabilityRegistrar` | a throwing `make()` propagates rather than being swallowed |
+| `CapabilityRegistrar` | a throwing `make()` fails the boot; every failure is reported in one pass; a single failure's message is unchanged by aggregation; nothing registers when any definition fails |
 | Registrar collision | discovered-vs-manual and discovered-vs-discovered both fail, naming the participants |
 | Feature: booted registration | a discovered capability is indistinguishable from a manual one through `registeredCapability()`, evidence, and `CapabilitySecurityTestKit` |
 | Feature: `verdict:validate` | advisories print without `--strict`; `--strict` changes only the exit code; multiple broken classes are reported in one pass |

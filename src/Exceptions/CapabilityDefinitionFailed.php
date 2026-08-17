@@ -25,6 +25,29 @@ final class CapabilityDefinitionFailed extends RuntimeException
         );
     }
 
+    /**
+     * Every failure from one discovery pass, listed under a count.
+     *
+     * Boot is the only place these can be reported: `php artisan verdict:validate` bootstraps the
+     * application before dispatching a command, so a throwing definition kills the command before it
+     * can report anything. Fix-all-at-once therefore has to live here or nowhere.
+     *
+     * Each entry keeps the single-failure contract — class, cause, both exits — and a lone failure is
+     * rethrown as itself rather than wrapped, so aggregation costs the common case nothing.
+     *
+     * @param  list<self>  $failures
+     */
+    public static function aggregate(array $failures): self
+    {
+        $count = count($failures);
+        $messages = array_map(static fn (self $failure): string => $failure->getMessage(), $failures);
+
+        return new self(
+            "{$count} capability definitions could not be registered.\n\n".implode("\n\n", $messages),
+            previous: $failures[0] ?? null,
+        );
+    }
+
     public static function alreadyRegistered(string $class, string $capability): self
     {
         return new self(

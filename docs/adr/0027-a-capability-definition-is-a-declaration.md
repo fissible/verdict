@@ -94,23 +94,44 @@ registered both ways produces a deterministic collision rather than an ordering-
 | Two discovered classes producing the same capability name | Boot fails, naming both classes. |
 
 The throw is not caught. A falsely-affirmed capability failing at boot is the earliest possible moment —
-before any request, before any tool call — and `verdict:validate` in the deploy pipeline catches it before
-boot ever does.
+before any request, before any tool call.
+
+**Boot reports every failure, not the first.** This corrects an earlier version of this decision, which
+split the reporting: boot dying on the first failure, `verdict:validate` collecting them all. That split
+cannot exist. Artisan bootstraps the application *before* dispatching a command:
+
+```php
+// Illuminate\Foundation\Console\Kernel::handle()
+$this->bootstrap();                               // BootProviders → $app->boot() → booted() callbacks
+return $this->getArtisan()->run($input, $output); // dispatch, after
+```
+
+So a throwing definition kills `php artisan verdict:validate` during its own bootstrap, before the command
+runs. There is no artisan context after a throwing `booted()` callback. Fix-all-at-once therefore lives at
+boot or nowhere, and it lives at boot: the registrar builds every affirmed definition, collects each
+failure, and throws one exception listing all of them under a count.
+
+**The pipeline guarantee survives, by a different mechanism.** `verdict:validate` in a deploy pipeline still
+fails with the complete list before production boots the same code — the aggregated exception is thrown by
+the command's own bootstrap, non-zero exit, full list in the output. What changed is which layer reports it,
+not whether the pipeline catches it.
+
+**Collecting means continuing past a failure**, which is safe precisely because of §2: a definition is a
+declaration, so `make()` composes closures and must not have side effects. A definition that threw poisons
+nothing that follows it. That framing is now a behavioural dependency, not only vocabulary.
 
 The boot failure message names **both** legitimate exits: finish the TODOs, or remove
 `implements DefinesCapability` until the capability is finished. Un-affirming is the honest way to ship a
 deploy with a capability mid-work. An error that omits it pushes a developer toward deleting the file or
 hacking out the TODO, both worse.
 
-### 5. `verdict:validate` runs the same discovery with the opposite reporting discipline
+### 5. `verdict:validate` reports the unaffirmed, and only the unaffirmed
 
-Boot correctly dies on the first broken capability. Validate collects every broken class in one pass:
-fix-all-at-once beats fix-one-redeploy-repeat, and completeness is the point of an audit surface. Same
-check, two disciplines, each right for its context.
+Broken definitions are reported by boot (§4), including during validate's own bootstrap, so the command
+itself reports the one state that never blocks a boot: classes sitting in a discovery path that never
+affirmed the contract.
 
-Classes that throw are **errors** — they will fail at boot, which is the command's existing bar for a
-non-zero exit. Unaffirmed classes are advisories that **print on every run**; `--strict` changes only the
-exit code, never the visibility. This is the `NullEvidenceRecorder` pattern: never blocks, always visible.
+Those advisories **print on every run**; `--strict` changes only the exit code, never the visibility. This is the `NullEvidenceRecorder` pattern: never blocks, always visible.
 An unaffirmed generated file is otherwise the one state discovery leaves invisible — safe, because inert,
 but not legible.
 
@@ -146,6 +167,11 @@ capability silently absent, which surfaces later as a confusing unregistered-cap
 time with the cause hidden. Worse, a capability that denies everything reads like a policy bug, and the fix
 someone reaches for under pressure is a permissive path — the one failure mode this package exists to
 prevent.
+
+**Skipping discovery while `verdict:validate` runs**, so the command could aggregate failures itself.
+Rejected on integrity grounds rather than brittleness: it would make validate audit a configuration the
+application never actually boots with, which is worse than useless in an audit surface. The objection
+generalizes — any future "skip X while command Y runs" has the same defect.
 
 **Introspecting closures to detect unfinished TODOs.** Verdict cannot see inside a closure
 ([ADR 0017](0017-configuration-identity-in-evidence.md)), and invoking one to find out has side effects.

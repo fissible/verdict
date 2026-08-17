@@ -8,6 +8,8 @@ use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Exceptions\CapabilityDefinitionFailed;
 use Fissible\Verdict\Tests\Fixtures\Capabilities\AffirmedCapability;
 use Fissible\Verdict\Tests\Fixtures\DuplicateCapabilities\DuplicateOneCapability;
+use Fissible\Verdict\Tests\Fixtures\ManyBrokenCapabilities\BrokenClaimCapability;
+use Fissible\Verdict\Tests\Fixtures\ManyBrokenCapabilities\BrokenLimitCapability;
 use Fissible\Verdict\Tests\Fixtures\ThrowingCapabilities\ThrowingRateLimitCapability;
 
 function registrarFor(CapabilityRegistry $registry, string ...$directories): CapabilityRegistrar
@@ -93,4 +95,58 @@ it('fails when two discovered definitions produce the same capability name, nami
     expect($failure?->getMessage())->toContain(DuplicateOneCapability::class)
         ->and($failure?->getMessage())->toContain('DuplicateTwoCapability')
         ->and($failure?->getMessage())->toContain('fixtures.duplicate');
+});
+
+/**
+ * Boot is the only context that can report these: `php artisan verdict:validate` bootstraps the
+ * application before dispatching, so a throwing definition kills the command before it can report.
+ * Aggregating here is what preserves fix-all-at-once — see ADR 0027 §4.
+ */
+it('reports every broken definition in one pass rather than only the first', function (): void {
+    $failure = null;
+
+    try {
+        registrarFor(new CapabilityRegistry, 'ManyBrokenCapabilities')->registerDiscovered();
+    } catch (CapabilityDefinitionFailed $exception) {
+        $failure = $exception;
+    }
+
+    $message = (string) $failure?->getMessage();
+
+    expect($message)->toContain('2 capability definitions')
+        ->and($message)->toContain(BrokenClaimCapability::class)
+        ->and($message)->toContain(BrokenLimitCapability::class)
+        // Each entry keeps the per-entry contract: cause, and both legitimate exits.
+        ->and($message)->toContain('TODO: bind duplicate admission to canonical application-owned identity.')
+        ->and($message)->toContain('TODO: choose application-owned rate-limit scope, limit, window, and binding.')
+        ->and(substr_count($message, 'Finish the TODOs'))->toBe(2)
+        ->and(substr_count($message, 'remove `implements DefinesCapability`'))->toBe(2);
+});
+
+/** Aggregation must cost the common case nothing: one failure still reads exactly as it did. */
+it('leaves a single failure message unchanged by aggregation', function (): void {
+    $failure = null;
+
+    try {
+        registrarFor(new CapabilityRegistry, 'ThrowingCapabilities')->registerDiscovered();
+    } catch (CapabilityDefinitionFailed $exception) {
+        $failure = $exception;
+    }
+
+    expect($failure?->getMessage())
+        ->toBe(CapabilityDefinitionFailed::forClass(
+            ThrowingRateLimitCapability::class,
+            new LogicException('TODO: choose application-owned rate-limit scope, limit, window, and binding.'),
+        )->getMessage())
+        ->and($failure?->getMessage())->not->toContain('capability definitions could not be registered');
+});
+
+it('registers nothing when any discovered definition fails', function (): void {
+    $registry = new CapabilityRegistry;
+
+    expect(fn (): mixed => registrarFor($registry, 'MixedCapabilities')->registerDiscovered())
+        ->toThrow(CapabilityDefinitionFailed::class);
+
+    // All-or-nothing: a boot that is going to die must not leave half a security surface behind.
+    expect($registry->all())->toBe([]);
 });

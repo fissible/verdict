@@ -27,30 +27,59 @@ final readonly class CapabilityRegistrar
     ) {}
 
     /**
-     * Registers every affirmed definition, and stops at the first one that cannot be registered.
+     * Builds every affirmed definition, then registers them only if all of them built.
      *
-     * Dying here is the decision, not an oversight: a falsely affirmed capability failing at boot is
-     * the earliest possible moment, before any request and before any tool call. `verdict:validate`
-     * runs the same work with the opposite discipline, collecting every failure in one pass, because
-     * an audit surface wants completeness where a boot wants immediacy. See ADR 0027 §4 and §5.
+     * Continuing past a failure to collect the rest is safe because of what a definition is: ADR 0027
+     * settles that it is a *declaration*, so `make()` composes closures and must not have side
+     * effects. A definition that threw poisons nothing that follows it. That framing is now a
+     * behavioural dependency, not just vocabulary.
+     *
+     * Dying here is the decision. A falsely affirmed capability failing at boot is the earliest
+     * possible moment, before any request and before any tool call — and boot is the only place it
+     * *can* be reported, because `Illuminate\Foundation\Console\Kernel::handle()` bootstraps the
+     * application before dispatching a command. `verdict:validate` cannot report a broken definition;
+     * its own bootstrap throws first. See ADR 0027 §4.
      */
     public function registerDiscovered(): void
     {
         /** @var array<string, string> $definedBy capability name => the class that defined it */
         $definedBy = [];
+        /** @var list<Capability> $built */
+        $built = [];
+        /** @var list<CapabilityDefinitionFailed> $failures */
+        $failures = [];
 
         foreach ($this->discovery->discover()->affirmed as $class) {
-            $capability = $this->build($class);
+            try {
+                $capability = $this->build($class);
+            } catch (CapabilityDefinitionFailed $failure) {
+                $failures[] = $failure;
+
+                continue;
+            }
 
             if (isset($definedBy[$capability->name])) {
-                throw CapabilityDefinitionFailed::duplicateName($class, $definedBy[$capability->name], $capability->name);
+                $failures[] = CapabilityDefinitionFailed::duplicateName($class, $definedBy[$capability->name], $capability->name);
+
+                continue;
             }
 
             if ($this->capabilities->has($capability->name)) {
-                throw CapabilityDefinitionFailed::alreadyRegistered($class, $capability->name);
+                $failures[] = CapabilityDefinitionFailed::alreadyRegistered($class, $capability->name);
+
+                continue;
             }
 
             $definedBy[$capability->name] = $class;
+            $built[] = $capability;
+        }
+
+        // All or nothing: a boot that is going to die must not leave half a security surface behind.
+        if ($failures !== []) {
+            throw count($failures) === 1 ? $failures[0] : CapabilityDefinitionFailed::aggregate($failures);
+        }
+
+        foreach ($built as $capability) {
             $this->capabilities->register($capability);
         }
     }
