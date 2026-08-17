@@ -4,6 +4,48 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Surface a proposal's declared provenance to a human approver. `ApprovalChallenge` gains a
+  `ProposalProvenance` payload describing each declared upstream source by identity, trust, data
+  class, and channel — never content, and never a fingerprint of it. An approver clicking through a
+  tenth identical-looking refund challenge now has a signal that the tenth one came from an injected
+  document. Verdict already recorded this; it was only ever available for post-hoc audit, never at
+  the one moment a human could act on it. See
+  [ADR 0026](docs/adr/0026-what-an-approver-is-shown.md) and
+  [#195](https://github.com/fissible/verdict/issues/195).
+
+  **Declared derivations only.** Everything in an invocation shares a correlation id, so what was
+  retrieved during it is trivially answerable — but that is not what caused *this* proposal, and
+  presenting it as such would manufacture a causal claim the ledger deliberately refuses to make.
+
+  **Absence is reported, never implied.** `ProvenanceDisclosure` distinguishes `Declared` from
+  `Unknown` (the ledger was consulted; nothing was declared) from `Unreleased` (no approver release
+  policy is registered, so nothing was disclosed at all). Sources that were declared but could not be
+  described are counted rather than dropped.
+
+  **The payload is a context release, not an exemption from one.** It travels the ADR 0008 allowlist
+  path, and Verdict registers no default policy for the approver route — a default would be Verdict
+  authorizing a release on the application's behalf. Register a `ReleasePolicy` between
+  `ApproverAudience::source()` and `ApproverAudience::destination()`; until then every challenge
+  reports `Unreleased`, and `verdict:validate` warns when confirmation-gated capabilities exist
+  without it.
+
+  Applications declare a proposal's origin against `ProposalAnchor::for($arguments)` — the one
+  supported way to compute the anchor, because a hand-rolled hash of the same arguments is
+  unreachable by construction and fails silently.
+
+  `verdict.approvals.strict_provenance` (default `false`) denies an unattributable consequential
+  proposal at the confirmation gate. It is meant to stay off until an application's declarations are
+  thorough enough to trust; enabling it with no approver route registered is self-defeating and
+  refuses at boot.
+
+  A migration adds a nullable `provenance` column to `verdict_approval_receipts`: the payload is
+  assembled when the receipt is issued, inside the invocation, because the challenge is rendered
+  later in a request that has no invocation frame. Receipts issued before this column existed read
+  as an absent payload — not as `Unknown`, which would claim the ledger was consulted.
+
+  Known gap: lineage declared in a different invocation (ingestion-time `chunk ← uploaded PDF`) does
+  not reach the approver. Tracked in [#201](https://github.com/fissible/verdict/issues/201).
+
 - Add `Capability::usingPolicyForContextTarget()`, a capability whose target resolver receives an
   `ActionContext` rather than an `ActionEnvelope` — so the model's proposal is not in scope and an
   injected argument cannot redirect which record is acted on. The guarantee is enforced by the

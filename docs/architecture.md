@@ -141,6 +141,11 @@ $challenge = Verdict::approvals()->challengeForToolCall($pendingApproval->id);
 
 abort_if($challenge === null, 409);
 
+// What the approver should see about where this proposal came from. The payload was assembled when
+// the receipt was issued, inside the invocation — this request has no invocation frame, and could
+// not have resolved it. `null` means the receipt predates Verdict capturing provenance.
+$provenance = $challenge->provenance;
+
 $transition = Verdict::approvals()->approve(
     receiptId: $challenge->receiptId,
     toolCallId: $challenge->toolCallId,

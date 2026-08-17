@@ -106,6 +106,13 @@ it('records the disclosure to an approver as a context release like any other', 
         ->and($release->releasedPathFingerprints)->toBe($release->requestedPathFingerprints);
 });
 
+/**
+ * The payload is a release to a new audience, not an exemption from one: an upstream source the
+ * application's allowlist does not cover does not reach the approver, and what was withheld stays
+ * countable rather than vanishing.
+ *
+ * @verdict-claim approval.provenance-redacted
+ */
 it('withholds an upstream source the release policy does not permit', function (): void {
     registerApproverPolicy(DataClass::Internal);
     $permitted = recordUpstream(content: 'an internal retrieved document');
@@ -130,6 +137,12 @@ it('reports provenance as unreleased when the application registered no approver
         ->and($provenance->sources)->toBe([]);
 });
 
+/**
+ * Absence is reported as absence. An empty source list would read as "no untrusted sources," which
+ * is the inference docs/limitations.md forbids.
+ *
+ * @verdict-claim approval.provenance-absence-visible
+ */
 it('reports unknown when a registered policy would have released a provenance nobody declared', function (): void {
     registerApproverPolicy();
     $proposal = recordProposalDerivedFrom();

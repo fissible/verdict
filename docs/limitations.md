@@ -157,6 +157,13 @@ Verdict records a derivation edge only when it observed a transformation directl
 
 The evidence store may also contain highly sensitive information. Configurable evidence levels, retention, tenant isolation, access authorization, pruning, and encryption remain application responsibilities.
 
+<!-- @verdict-claim limitation.cross-invocation-lineage follow-up:#201 -->
+### Lineage declared in another invocation does not reach an approver
+
+Reading declared provenance back is scoped to one invocation at every hop, so an approver is shown only what was declared **within the invocation that carried the proposal**. This is deliberate: the proposal is anchored on a content fingerprint of the tool call's arguments, so identical arguments in two invocations are the same node, and an unscoped read would present Tuesday's declaration as Thursday's provenance — a causal claim nobody made, and one that would be right often enough to be trusted.
+
+The cost is ingestion-time lineage. A pipeline that declares `chunk ← uploaded PDF` once at indexing time, in the ingestion invocation, gives the approver *"retrieved chunk, untrusted"* days later but never *"…derived from an untrusted upload."* Declare lineage within the invocation whose approver should see it. Relaxing this for content-to-content hops, while keeping the proposal hop scoped, is tracked in [#201](https://github.com/fissible/verdict/issues/201).
+
 <!-- @verdict-claim limitation.content-moderation untestable reason="This is an intentional absence of a moderation product surface." -->
 ### No content moderation or factual review
 
