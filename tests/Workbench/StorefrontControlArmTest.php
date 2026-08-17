@@ -17,6 +17,7 @@ use Workbench\App\Storefront\Catalog;
 use Workbench\App\Storefront\StorefrontLiveAgent;
 use Workbench\App\Storefront\StorefrontLiveSampling;
 use Workbench\App\Storefront\StorefrontLiveSuiteFactory;
+use Workbench\App\Storefront\StorefrontLiveTarget;
 
 /**
  * #170 / ADR 0023, Phase B. The workbench is the worked example of a control-arm factory: the
@@ -47,6 +48,7 @@ function storefrontControlAgent(bool $guarded, LiveToolCapture $capture): Storef
         storefrontControlConfig(),
         app(ActionLog::class),
         StorefrontLiveSampling::greedy(),
+        StorefrontLiveTarget::fromEnv(),
         guarded: $guarded,
     );
 }
@@ -113,13 +115,14 @@ it('executes the unguarded cancellation with the same effect as the guarded exec
 it('derives the provider decoding options and the attested component from one value', function (): void {
     $greedy = StorefrontLiveSampling::greedy();
     $sampled = StorefrontLiveSampling::sampled(0.8);
+    $ollama = new StorefrontLiveTarget('ollama', 'gpt-oss:20b');
 
     expect($greedy->mode)->toBe(ControlSamplingMode::Greedy)
-        ->and($greedy->component())->toBe('greedy temperature=0 seed=7')
-        ->and($greedy->providerOptions())->toBe(['temperature' => 0.0, 'seed' => 7])
+        ->and($greedy->component($ollama))->toBe('greedy temperature=0 seed=7')
+        ->and($greedy->providerOptions($ollama))->toBe(['temperature' => 0.0, 'seed' => 7])
         ->and($sampled->mode)->toBe(ControlSamplingMode::Sampled)
-        ->and($sampled->component())->toBe('sampled temperature=0.8')
-        ->and($sampled->providerOptions())->toBe(['temperature' => 0.8])
+        ->and($sampled->component($ollama))->toBe('sampled temperature=0.8')
+        ->and($sampled->providerOptions($ollama))->toBe(['temperature' => 0.8])
         ->and(storefrontControlAgent(guarded: true, capture: new LiveToolCapture)->providerOptions('ollama'))
         ->toBe(['temperature' => 0.0, 'seed' => 7]);
 });

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Evaluation\ControlSamplingMode;
 use Workbench\App\Storefront\StorefrontLiveSampling;
+use Workbench\App\Storefront\StorefrontLiveTarget;
 
 /**
  * The workbench's VERDICT_SAMPLING hook selects the control-arm decoding mode for a recorded run:
@@ -31,7 +32,7 @@ it('selects sampled decoding with an optional temperature from the env', functio
     $sampling = app(StorefrontLiveSampling::class);
 
     expect($sampling->mode)->toBe(ControlSamplingMode::Sampled)
-        ->and($sampling->component())->toBe('sampled temperature=0.9');
+        ->and($sampling->component(new StorefrontLiveTarget('ollama', 'gpt-oss:20b')))->toBe('sampled temperature=0.9');
 });
 
 it('treats an explicit VERDICT_SAMPLING=greedy as greedy', function (): void {
