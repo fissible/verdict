@@ -178,10 +178,23 @@ it('preserves the target source through every builder method', function (): void
     expect($chained->targetSource)->toBe(TargetSource::Context);
 });
 
+afterEach(function (): void {
+    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+    $schema->dropIfExists('verdict_evidence');
+    $schema->dropIfExists('verdict_provenance_derivations');
+});
+
 it('persists the target source to the durable evidence store', function (): void {
     // The in-memory recorder retains the whole DecisionEvidence object, so a test against it proves
     // the field is *set* — not that it survives to a store an auditor can query. ADR 0025's stated
     // purpose is a queryable population, and that claim is only true if the column exists.
+    // Dropped first, and dropped again afterwards: this builds the table in the test body, so
+    // without both halves the file both inherits and leaves behind state, and which of those bites
+    // depends on the random test order.
+    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+    $schema->dropIfExists('verdict_evidence');
+    $schema->dropIfExists('verdict_provenance_derivations');
+
     (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_invocation_id_to_verdict_evidence_table.php.stub')->up();
