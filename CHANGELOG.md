@@ -4,6 +4,39 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- State and enforce what may enter a binding fingerprint. `ArgumentFingerprint` decides when two
+  requests are the same request — it is the approval receipt's `bindingFingerprint`, the execution
+  claim's, the rate-limit bucket identity, the evidence `argument_fingerprint`, and the context
+  release's `payload_fingerprint` — so it now refuses what it cannot canonicalize reliably instead of
+  hashing it and hoping. The contract is scalars, `null`, and arrays of those, stated in
+  [ADR 0013](docs/adr/0013-authorization-binding-layers.md) and enforced identically by
+  `ContentFingerprint`. See [#152](https://github.com/fissible/verdict/issues/152).
+
+  **Upgrade note — objects are now refused.** Passing an object into a fingerprinted structure throws
+  `InvalidArgumentException`. This affects applications that return domain objects from
+  `requiresConfirmation(bindUsing:)` or `atMostOnce(binding:)` callbacks, or that release a payload
+  containing an object such as a `DateTimeInterface`. Convert to an array of scalars at that point
+  (`$order->id`, `$at->format(DATE_ATOM)`).
+
+  The previous behavior was not a working feature: `JsonSerializable` put an application-defined
+  method inside the binding computation, non-public properties were dropped silently, and
+  `(object) ['a' => 1]` collided with `['a' => 1]` — a different PHP type treated as the same
+  authorized request. The failure mode it replaces is an approval that silently stops matching the
+  action it authorized when an unrelated private property is added.
+
+  **Upgrade note — float rendering.** `json_encode` renders floats according to
+  `serialize_precision`, so the same value fingerprinted differently across deployments, and across
+  one deployment either side of an ini change — leaving an already-issued approval impossible to
+  consume. The encoder now pins that setting to PHP's default for the duration of the call and
+  restores the caller's afterwards. **Deployments running the default (`-1`, unchanged since PHP 7.1)
+  see no digest change at all.** A deployment that has set `serialize_precision` to something else
+  will see fingerprints containing floats change once: in-flight approval receipts and open execution
+  claims with float bindings will not match after the upgrade and must be re-approved or re-claimed.
+  The failure is fail-closed.
+
+  A test pins the digest of a fixed structure, so any future change to canonicalization breaks the
+  build rather than silently invalidating persisted receipts.
+
 - Surface a proposal's declared provenance to a human approver. `ApprovalChallenge` gains a
   `ProposalProvenance` payload describing each declared upstream source by identity, trust, data
   class, and channel — never content, and never a fingerprint of it. An approver clicking through a

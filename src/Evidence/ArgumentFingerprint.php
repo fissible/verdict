@@ -16,22 +16,6 @@ final class ArgumentFingerprint
 
     public static function canonicalJson(mixed $value): string
     {
-        return json_encode(
-            self::normalize($value),
-            JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION,
-        );
-    }
-
-    private static function normalize(mixed $value): mixed
-    {
-        if (! is_array($value)) {
-            return $value;
-        }
-
-        if (! array_is_list($value)) {
-            ksort($value);
-        }
-
-        return array_map(self::normalize(...), $value);
+        return CanonicalJson::encode($value, 'A fingerprinted binding');
     }
 }
