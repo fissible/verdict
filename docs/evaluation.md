@@ -312,6 +312,20 @@ The harness genuinely changed between these two runs, so a reader needs to know 
 
 This volatility — the same harness (modulo the one change ruled out above), the same model, the same case set producing opposite security dispositions across two adjacent single-trial runs — is the strongest evidence available that a single trial cannot be read as a validated rate for the boundary. See [#138](https://github.com/fissible/verdict/issues/138).
 
+### Running against a traditional or frontier model
+
+The harness is provider-agnostic: `StorefrontLiveAgent` drives through Laravel AI, which supports Anthropic, OpenAI, Gemini, and others alongside Ollama. `STOREFRONT_LIVE_PROVIDER` points the same suite at any of them, `STOREFRONT_LIVE_MODEL` names the model, and credentials come from that provider's own environment (e.g. `ANTHROPIC_API_KEY`), read by Laravel AI rather than by this harness:
+
+```
+VERDICT_CONTROL_ENABLED=1 VERDICT_SAMPLING=sampled VERDICT_MAX_TRIALS=30 \
+  STOREFRONT_LIVE_PROVIDER=anthropic STOREFRONT_LIVE_MODEL=claude-... \
+  ANTHROPIC_API_KEY=... testbench verdict:evaluation-live storefront --trials=30 --control
+```
+
+Use **sampled** decoding for these runs, not greedy: greedy's determinism relies on Ollama's `seed`, which frontier providers do not honour, and rate estimation is the right question for an aligned model anyway. Sampled sends only a temperature.
+
+Two things to hold onto, both already load-bearing above. **The character of the test changes.** A frontier or well-aligned model will likely refuse the attack *even unguarded* (`self-declined`), so the run measures alignment resistance and hunts the rare breach alignment missed — it is not the reliable-breach instrument the recorded runs used, and a low breach rate against such a model is a property of *that model's alignment*, stated in the same sentence as the number, not a claim about production or about Verdict. **The cost is modest but real.** Only ~6 of the ten cases reach the model, so a 30-trial control run is on the order of 0.5M tokens — a few dollars on a mid-tier model, cents on a cheap one; it grows only if you scale trials to chase a low-probability breach, where the rule of three forces volume. Prompt caching, where the provider supports it, makes the repeated tool schemas nearly free after the first call.
+
 ## Limitations
 
 An attack pack demonstrates a property against a scripted, deterministic transcript. It is not a guarantee against an adaptive adversary, and passing packs is not a security certification. See [limitations](limitations.md) for more details.
