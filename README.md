@@ -143,6 +143,8 @@ Each protected operation is a named capability. A capability begins with two app
 1. Resolve the requested resource from trusted application data.
 2. Authorize the actor with a Laravel policy or gate ability.
 
+Authorization goes through Laravel's Gate, so it composes with whatever your application already uses — policy classes, Gate abilities, or packages such as [spatie/laravel-permission](https://github.com/spatie/laravel-permission): a permission named `refund` authorizes a capability with `ability: 'refund'`, and the `Gate::before` super-admin pattern applies, with no adapter and no parallel permission system to maintain.
+
 For a `BoundTool`, also select an `ExecutionTargetPolicy`. `refresh()` re-loads the resource before execution, which is usually the safer choice for mutable records. The policy can then add safeguards appropriate to this particular action:
 
 ```php
