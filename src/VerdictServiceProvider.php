@@ -10,6 +10,8 @@ use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\StrictProvenanceGuard;
+use Fissible\Verdict\Capabilities\CapabilityDiscovery;
+use Fissible\Verdict\Capabilities\CapabilityRegistrar;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
@@ -107,6 +109,21 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->singleton(CapabilityRegistry::class, fn (Container $app): CapabilityRegistry => new CapabilityRegistry(
             $app->make(CapabilityConfigurationStore::class),
         ));
+        $this->app->singleton(CapabilityDiscovery::class, function (Container $app): CapabilityDiscovery {
+            $paths = config('verdict.capabilities.discovery.paths', []);
+
+            return new CapabilityDiscovery(
+                rootPath: $app->path(),
+                rootNamespace: $app->getNamespace(),
+                paths: is_array($paths) ? array_values(array_filter($paths, is_string(...))) : [],
+            );
+        });
+
+        $this->app->singleton(CapabilityRegistrar::class, fn (Container $app): CapabilityRegistrar => new CapabilityRegistrar(
+            discovery: $app->make(CapabilityDiscovery::class),
+            capabilities: $app->make(CapabilityRegistry::class),
+        ));
+
         $this->app->singleton(ReleasePolicyRegistry::class);
         $this->app->singleton(FieldProjector::class);
         $this->app->singleton(CapabilityAuthorizer::class, LaravelPolicyAuthorizer::class);
@@ -467,6 +484,14 @@ final class VerdictServiceProvider extends ServiceProvider
         // first — this asks whether an approver route exists, and at boot() time it would not yet.
         // Refusing here rather than at first use means a self-defeating configuration fails the
         // deploy, not the first request that reaches a confirmation gate.
+        // booted(), not boot(): application providers register their capabilities first, so a
+        // capability registered both ways collides deterministically rather than depending on
+        // provider order. Nothing is caught — a definition that affirms the contract and cannot be
+        // built fails the deploy, which is the earliest moment it can fail. See ADR 0027 §4.
+        $this->app->booted(function (): void {
+            $this->app->make(CapabilityRegistrar::class)->registerDiscovered();
+        });
+
         $this->app->booted(function (): void {
             $this->app->make(StrictProvenanceGuard::class)->assertSatisfiable();
         });
