@@ -25,13 +25,24 @@ capability executor
 The tool definition describes the model-facing contract. The capability defines application authority: the Laravel authorization ability, trusted target resolution, optional safeguards, and the code that performs the side effect.
 
 ```php
-Verdict::capability(
-    Capability::usingPolicy('orders.refund', 'refund', $resolveOrder)
-        ->executionTarget($currentOrder)
-        ->requiresConfirmation($refundApprovalBinding)
-        ->executeUsing($issueRefund),
-);
+final class RefundCapability implements DefinesCapability
+{
+    public static function make(): Capability
+    {
+        return Capability::usingPolicy('orders.refund', 'refund', $resolveOrder)
+            ->executionTarget($currentOrder)
+            ->requiresConfirmation($refundApprovalBinding)
+            ->executeUsing($issueRefund);
+    }
+}
+```
 
+Implementing `DefinesCapability` is what registers it: Verdict discovers such classes under
+`verdict.capabilities.discovery.paths` and registers them at boot, through the same path
+`Verdict::capability()` uses. A discovered capability and a hand-registered one are the same object
+everywhere downstream. See [ADR 0027](adr/0027-a-capability-definition-is-a-declaration.md).
+
+```php
 return Verdict::bound(
     definition: new RefundOrder,
     capability: 'orders.refund',
