@@ -168,7 +168,6 @@ function concurrencySeededExecutionClaim(string $at, bool $indeterminate = false
         capability: 'concurrency-test.execution-claim',
         policy: 'concurrency-test-policy',
         bindingFingerprint: hash('sha256', random_bytes(16)),
-        provenance: null,
         status: ExecutionClaimStatus::Claimed,
         attemptCount: 1,
         claimedAt: $claimedAt,
