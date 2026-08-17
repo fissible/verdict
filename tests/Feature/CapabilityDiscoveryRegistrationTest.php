@@ -31,7 +31,9 @@ function bootDiscovery(string ...$directories): void
     ));
 
     // The registrar the application already booted captured the real discovery, so replacing the
-    // discovery alone would not reach it.
+    // discovery alone would not reach it. Rebinding after first resolution is a test-only lifetime:
+    // in production the registrar first resolves in booted(), after every provider has had its say,
+    // and nothing re-binds discovery mid-process. This is not a papered-over production bug.
     app()->forgetInstance(CapabilityRegistrar::class);
 
     (new VerdictServiceProvider(app()))->boot();

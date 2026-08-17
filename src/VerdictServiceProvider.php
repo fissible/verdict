@@ -119,6 +119,10 @@ final class VerdictServiceProvider extends ServiceProvider
             );
         });
 
+        // Singleton capturing singleton — coterminous lifetimes, which is ADR 0027 §2's rule
+        // followed rather than risked: nothing here outlives what it captures. If either binding
+        // ever becomes scoped, this capture must become lazy. That change is the tripwire, not this
+        // line.
         $this->app->singleton(CapabilityRegistrar::class, fn (Container $app): CapabilityRegistrar => new CapabilityRegistrar(
             discovery: $app->make(CapabilityDiscovery::class),
             capabilities: $app->make(CapabilityRegistry::class),
