@@ -70,6 +70,28 @@ function issueStateFrom(int $exitCode, array $output): string
     return trim(implode("\n", $output)) === 'OPEN' ? 'open' : 'closed';
 }
 
+/**
+ * Enforce a follow-up claim's resolved state. A definitively closed issue is a hard error; an
+ * 'unknown' state (gh unavailable / offline) degrades to a warning so the deterministic suite is
+ * never blocked by the network; an open issue passes silently.
+ */
+function enforceFollowUpState(string $id, string $state): void
+{
+    if ($state === 'closed') {
+        throw new RuntimeException("Follow-up for claim [{$id}] references a closed issue; point it at an open fissible/verdict issue.");
+    }
+
+    if ($state === 'unknown') {
+        fwrite(STDERR, "Notice: could not verify the follow-up issue for claim [{$id}] (gh unavailable or offline); skipping the open-issue freshness check.\n");
+    }
+}
+
+// A test requires this file to exercise the pure helpers above; return before the verifier runs so
+// loading it never reads the docs or shells out. Absent the constant (the real `@php` run), proceed.
+if (defined('VERIFY_CLAIMS_TESTING')) {
+    return;
+}
+
 $root = dirname(__DIR__);
 $claims = documentedClaims($root.'/docs/limitations.md', true);
 
@@ -106,15 +128,7 @@ foreach ($claims as $id => $claim) {
     }
 
     if (str_starts_with($claim['outcome'], 'follow-up:')) {
-        $state = followUpIssueState($claim['outcome']);
-
-        if ($state === 'closed') {
-            throw new RuntimeException("Follow-up for claim [{$id}] references a closed issue; point it at an open fissible/verdict issue.");
-        }
-
-        if ($state === 'unknown') {
-            fwrite(STDERR, "Notice: could not verify the follow-up issue for claim [{$id}] (gh unavailable or offline); skipping the open-issue freshness check.\n");
-        }
+        enforceFollowUpState($id, followUpIssueState($claim['outcome']));
     }
 }
 

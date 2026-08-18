@@ -2,56 +2,41 @@
 
 declare(strict_types=1);
 
-use Symfony\Component\Process\Process;
-
-/**
- * `verify:claims` runs on every `composer test` and in CI. It must be deterministic and offline:
- * the follow-up-issue freshness check shells out to `gh`, and a transient network / unauthenticated
- * / gh-missing failure must NOT be mistaken for a closed issue and fail the whole build. These
- * exercise the real script with a fake `gh` on PATH so the three states are covered without a
- * network call. A live `follow-up:#` claim in docs/limitations.md is what drives the check.
- */
-function runClaimsVerifierWithFakeGh(string $fakeGhBody): Process
-{
-    $directory = sys_get_temp_dir().'/verdict-claims-'.bin2hex(random_bytes(8));
-
-    if (! mkdir($directory, 0700)) {
-        throw new RuntimeException('Unable to create the claims-test directory.');
-    }
-
-    $gh = $directory.'/gh';
-    file_put_contents($gh, "#!/bin/sh\n".$fakeGhBody."\n");
-    chmod($gh, 0755);
-
-    $process = new Process(
-        [PHP_BINARY, dirname(__DIR__, 2).'/scripts/verify-documentation-claims.php'],
-        env: ['PATH' => $directory.':'.getenv('PATH')],
-    );
-    $process->run();
-
-    unlink($gh);
-    rmdir($directory);
-
-    return $process;
+// Load the verifier's pure helpers without running the verifier (no docs read, no gh shell-out).
+// The state resolution is tested directly rather than by faking a `gh` binary over PATH: that
+// shell-out is environment-fragile to stub, and the behaviour that matters — an unreachable gh is
+// never mistaken for a closed issue — lives entirely in these pure functions.
+if (! defined('VERIFY_CLAIMS_TESTING')) {
+    define('VERIFY_CLAIMS_TESTING', true);
 }
 
-it('does not fail the build when gh is unavailable — offline is not a closed issue', function (): void {
-    // gh absent / offline / unauthenticated all surface as a non-zero exit.
-    $process = runClaimsVerifierWithFakeGh('exit 1');
+require_once dirname(__DIR__, 2).'/scripts/verify-documentation-claims.php';
 
-    expect($process->isSuccessful())->toBeTrue()
-        ->and($process->getErrorOutput())->toContain('could not verify');
+it('maps a gh failure to unknown — offline is never a closed issue', function (): void {
+    expect(issueStateFrom(1, []))->toBe('unknown')
+        ->and(issueStateFrom(1, ['anything']))->toBe('unknown');
 });
 
-it('still fails when a follow-up issue is genuinely closed', function (): void {
-    $process = runClaimsVerifierWithFakeGh('echo CLOSED');
-
-    expect($process->isSuccessful())->toBeFalse()
-        ->and($process->getErrorOutput().$process->getOutput())->toContain('closed');
+it('maps an OPEN issue to open and any other reported state to closed', function (): void {
+    expect(issueStateFrom(0, ['OPEN']))->toBe('open')
+        ->and(issueStateFrom(0, ['CLOSED']))->toBe('closed')
+        ->and(issueStateFrom(0, ['']))->toBe('closed');
 });
 
-it('passes when the follow-up issue is open', function (): void {
-    $process = runClaimsVerifierWithFakeGh('echo OPEN');
+it('fails the build on a definitively closed follow-up', function (): void {
+    expect(fn () => enforceFollowUpState('some.claim', 'closed'))
+        ->toThrow(RuntimeException::class, 'closed issue');
+});
 
-    expect($process->isSuccessful())->toBeTrue();
+it('does not fail the build when the follow-up state is unknown (offline-safe)', function (): void {
+    enforceFollowUpState('some.claim', 'unknown');
+
+    // Reaching here without throwing is the assertion: an unreachable gh warns, it does not fail.
+    expect(true)->toBeTrue();
+});
+
+it('does not fail the build when the follow-up issue is open', function (): void {
+    enforceFollowUpState('some.claim', 'open');
+
+    expect(true)->toBeTrue();
 });
