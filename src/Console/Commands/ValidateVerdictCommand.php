@@ -152,6 +152,13 @@ final class ValidateVerdictCommand extends Command
         // Rendered as a short component line plus a detail line, for the same reason the unaffirmed
         // findings above are: components truncate to the terminal width, and the config key an
         // operator has to change would be the half that gets cut.
+        //
+        // This compares configuration, not resolved container bindings, and that is the scope rather
+        // than an oversight: a read-only wiring audit reads what the deployment declared. An
+        // application that leaves config durable and rebinds the contract to a non-durable
+        // implementation in a service provider is invisible here, in both directions, and so is a
+        // custom store of the application's own that happens not to be durable. Verdict cannot judge
+        // the durability of an implementation it did not write.
         $nonDurable = [];
 
         if (! $this->laravel->environment(['local', 'testing'])) {

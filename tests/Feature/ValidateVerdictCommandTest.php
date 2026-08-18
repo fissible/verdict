@@ -295,3 +295,26 @@ it('lets --strict fail on a non-durable adapter without changing what is printed
         ->expectsOutputToContain('InMemoryRateLimitStore')
         ->assertExitCode(1);
 });
+
+/**
+ * The stated scope, pinned. `docs/architecture.md` and the command's own comment tell an operator that a
+ * clean run means "nothing declared in configuration is non-durable", not "every store this application
+ * resolves is durable" — and an under-claim nothing guards can quietly become false. If someone improves
+ * this check to resolve container bindings, that is a real improvement and this test is where they learn
+ * both statements of the limitation need deleting.
+ */
+it('reads configuration rather than resolved container bindings, and says so', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    config()->set('verdict.approvals.store', DatabaseApprovalReceiptStore::class);
+    config()->set('verdict.rate_limits.store', DatabaseRateLimitStore::class);
+    config()->set('verdict.execution_claims.store', DatabaseExecutionClaimStore::class);
+    config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
+
+    // Declared durable, resolved non-durable. The audit reads the declaration.
+    $this->app->instance(RateLimitStore::class, new InMemoryRateLimitStore);
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('non-durable')
+        ->assertExitCode(0);
+});

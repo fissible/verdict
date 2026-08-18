@@ -112,6 +112,8 @@ Run `php artisan verdict:validate` in CI after application capabilities have bee
 
 Outside the `local` and `testing` environments it also warns for each non-durable adapter it finds configured — the in-memory evidence recorder and the in-memory approval, rate-limit, execution-claim, and capability-configuration stores — naming the config key that selects each one and the consequence specific to it. A process-local rate limit binds per process, so N workers admit up to N times the configured limit; a process-local claim store degrades at-most-once to at-most-once-per-process. These are **warnings and do not change the exit code**, because Verdict does not decide an application's deployment topology and an ephemeral preview environment may legitimately run one. Pass `--strict` to make CI block on them along with every other advisory finding. The environment test is the framework's own, so an environment named anything other than `local` or `testing` is covered without configuring a list of production names.
 
+**The check compares configuration, not resolved container bindings.** It reads what the deployment declared in `config/verdict.php`. An application that leaves the config durable and rebinds a store contract to a non-durable implementation in a service provider is not seen, in either direction, and neither is a custom store of your own that happens not to be durable — Verdict cannot judge the durability of an implementation it did not write. Treat a clean run as "nothing declared in configuration is non-durable", not as "every store this application resolves is durable".
+
 ## Extension points
 
 Capabilities compose their safeguards fluently:

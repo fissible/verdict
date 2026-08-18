@@ -26,6 +26,13 @@ All notable changes to Verdict will be documented in this file.
   determination rather than a list of production-looking names, so an environment called `staging`,
   `preview`, or anything else is covered without configuration.
 
+  **It compares configuration, not resolved container bindings, and says so.** A read-only wiring audit
+  reads what the deployment declared. An application that leaves config durable and rebinds a store
+  contract to a non-durable implementation in a service provider is invisible to it, in both directions,
+  and so is a custom store of the application's own that happens not to be durable. A clean run means
+  "nothing declared in configuration is non-durable", not "every store this application resolves is
+  durable".
+
 - A worked incident-response walkthrough, [`docs/incident-response.md`](docs/incident-response.md). One
   realistic incident taken from the alert to a written conclusion using only the shipped tables, with SQL
   that is executed against the published migration stubs by `tests/Feature/IncidentResponseQueriesTest.php`
