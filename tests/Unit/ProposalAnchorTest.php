@@ -8,6 +8,7 @@ use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 
@@ -54,4 +55,25 @@ it('anchors identical arguments identically regardless of key order', function (
 it('distinguishes arguments that differ only in value type', function (): void {
     expect(ProposalAnchor::for(['amount' => 250]))
         ->not->toBe(ProposalAnchor::for(['amount' => 250.0]));
+});
+
+/**
+ * The join `docs/incident-response.md` Step 4 documents runs from a decision row's
+ * `argument_fingerprint` — which is `ArgumentFingerprint::make()`, not `ProposalAnchor::for()` — into
+ * `verdict_provenance_derivations.child_content_fingerprint`. The test above pins the anchor to the ledger
+ * digest but never exercises `ArgumentFingerprint`, so that documented query rests on nothing. This pins it.
+ *
+ * @verdict-claim evidence.argument-fingerprint-anchors-provenance
+ */
+it('fingerprints a decision argument identically to the proposal anchor the ledger indexes', function (): void {
+    $arguments = ['order_id' => 7, 'amount' => 250.0, 'reason' => 'duplicate charge'];
+
+    expect(ArgumentFingerprint::make($arguments))->toBe(
+        ProposalAnchor::for($arguments),
+        'A decision row records ArgumentFingerprint::make() in argument_fingerprint, and an incident '
+        .'reconstruction uses that value as a child_content_fingerprint. If these diverge, the documented '
+        .'join returns no rows rather than erroring, and every reconstruction reports the proposal as '
+        .'having no declared upstream. Restore the shared canonicalization, or update '
+        .'docs/incident-response.md to stop documenting the join.',
+    );
 });

@@ -331,6 +331,7 @@ The complete, deliberately specific list is in [limitations](docs/limitations.md
 - [Pilot readiness and production-adoption guide](docs/adoption-guide.md)
 - [Evaluation harness and attack packs](docs/evaluation.md)
 - [Architecture and Laravel AI integration](docs/architecture.md)
+- [Reconstructing an incident from the evidence tables](docs/incident-response.md)
 - [Laravel AI dependency surface and compatibility](docs/laravel-ai-compatibility.md)
 - [Limitations and application responsibilities](docs/limitations.md)
 - [Glossary](docs/glossary.md)
