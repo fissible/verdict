@@ -110,6 +110,8 @@ Neither strategy establishes transaction isolation. Put database locking, versio
 
 Run `php artisan verdict:validate` in CI after application capabilities have been registered. It never resolves targets, authorizes, or executes actions; it reports configuration errors with a non-zero exit code, while warnings (such as an executor-less `GuardedTool` migration capability) do not fail CI. `BoundTool` wiring is not audited here: it already fails immediately at construction for an unknown or non-executable capability.
 
+Outside the `local` and `testing` environments it also warns for each non-durable adapter it finds configured — the in-memory evidence recorder and the in-memory approval, rate-limit, execution-claim, and capability-configuration stores — naming the config key that selects each one and the consequence specific to it. A process-local rate limit binds per process, so N workers admit up to N times the configured limit; a process-local claim store degrades at-most-once to at-most-once-per-process. These are **warnings and do not change the exit code**, because Verdict does not decide an application's deployment topology and an ephemeral preview environment may legitimately run one. Pass `--strict` to make CI block on them along with every other advisory finding. The environment test is the framework's own, so an environment named anything other than `local` or `testing` is covered without configuring a list of production names.
+
 ## Extension points
 
 Capabilities compose their safeguards fluently:

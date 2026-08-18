@@ -5,15 +5,20 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Console\Commands;
 
 use Fissible\Verdict\Approvals\ApproverAudience;
+use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\UnaffirmedDefinition;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
+use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\Targets\ExecutionTargetStrategy;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
@@ -136,6 +141,32 @@ final class ValidateVerdictCommand extends Command
                 .'Configure a durable recorder via verdict.evidence.recorder to retain an audit trail.';
         }
 
+        // Advisory: config/verdict.php states in comments that the in-memory adapters are unsafe
+        // outside local development, and until #146 nothing checked — a comment in a published file
+        // is read once, at vendor:publish, and never again. Gated on the framework's own local and
+        // testing determination rather than on a list of production-looking environment names, so an
+        // environment called anything else is covered by default. Advisory rather than fatal because
+        // Verdict does not decide deployment topology: an ephemeral preview environment or a smoke
+        // test may legitimately run one, and --strict is the opt-in for CI that wants to block.
+        //
+        // Rendered as a short component line plus a detail line, for the same reason the unaffirmed
+        // findings above are: components truncate to the terminal width, and the config key an
+        // operator has to change would be the half that gets cut.
+        $nonDurable = [];
+
+        if (! $this->laravel->environment(['local', 'testing'])) {
+            foreach ($this->nonDurableAdapters() as $adapter) {
+                if (config($adapter['key']) !== $adapter['class']) {
+                    continue;
+                }
+
+                $nonDurable[] = [
+                    'class' => class_basename($adapter['class']),
+                    'detail' => $adapter['detail']." Set {$adapter['key']} to a durable implementation.",
+                ];
+            }
+        }
+
         foreach ($errors as $error) {
             $this->components->error($error);
         }
@@ -149,18 +180,68 @@ final class ValidateVerdictCommand extends Command
             $this->line("   {$finding['detail']}");
         }
 
+        foreach ($nonDurable as $finding) {
+            $this->components->warn("[{$finding['class']}] is a non-durable adapter configured outside local development.");
+            $this->line("   {$finding['detail']}");
+        }
+
         foreach ($information as $item) {
             $this->components->info($item);
         }
 
-        if ($errors === [] && $warnings === [] && $unaffirmed === [] && $information === []) {
+        if ($errors === [] && $warnings === [] && $unaffirmed === [] && $nonDurable === [] && $information === []) {
             $this->components->info('Verdict wiring audit found no applicable capability configuration.');
         }
 
         $failed = $errors !== []
-            || ((bool) $this->option('strict') && ($warnings !== [] || $unaffirmed !== []));
+            || ((bool) $this->option('strict') && ($warnings !== [] || $unaffirmed !== [] || $nonDurable !== []));
 
         return $failed ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * The adapters whose own config comments call them unsafe outside local development, each with the
+     * consequence that is specific to it. One generic sentence repeated five times would tell an operator
+     * which key to change and nothing about why it matters, and the remedies differ in urgency: a
+     * process-local rate limit multiplies a security bound by the worker count, while a process-local
+     * configuration registry only makes retained evidence unreadable later.
+     *
+     * @return list<array{key: string, class: class-string, detail: string}>
+     */
+    private function nonDurableAdapters(): array
+    {
+        return [
+            [
+                'key' => 'verdict.evidence.recorder',
+                'class' => InMemoryEvidenceRecorder::class,
+                'detail' => 'Its state is process-local and unbounded: no record survives the process that wrote it, '
+                    .'and a long-lived one (Octane, a queue worker) grows until it restarts.',
+            ],
+            [
+                'key' => 'verdict.approvals.store',
+                'class' => InMemoryApprovalReceiptStore::class,
+                'detail' => 'A receipt issued in one process is invisible to every other, so a human approval cannot '
+                    .'be consumed by the process that executes the action.',
+            ],
+            [
+                'key' => 'verdict.rate_limits.store',
+                'class' => InMemoryRateLimitStore::class,
+                'detail' => 'Counters do not coordinate across requests, workers, or nodes, so the configured limit '
+                    .'binds per process: N workers admit up to N times the limit you configured.',
+            ],
+            [
+                'key' => 'verdict.execution_claims.store',
+                'class' => InMemoryExecutionClaimStore::class,
+                'detail' => 'Claims are process-local, so at-most-once degrades to at-most-once-per-process and '
+                    .'cannot prevent duplicate execution across workers or nodes.',
+            ],
+            [
+                'key' => 'verdict.capability_configurations.store',
+                'class' => InMemoryCapabilityConfigurationStore::class,
+                'detail' => 'Configuration fingerprints recorded in evidence cannot be expanded back into the '
+                    .'configuration that produced them once the process ends, leaving retained evidence unreadable.',
+            ],
+        ];
     }
 
     /** @param list<string> $errors */

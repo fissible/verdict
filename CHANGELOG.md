@@ -4,6 +4,28 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- `verdict:validate` now warns for each non-durable adapter configured outside `local` and `testing`: the
+  in-memory evidence recorder and the in-memory approval, rate-limit, execution-claim, and
+  capability-configuration stores. `config/verdict.php` has always said in comments that these are unsafe
+  outside local development, and nothing checked — a comment in a published file is read once, at
+  `vendor:publish`, and never again. See [#146](https://github.com/fissible/verdict/issues/146).
+
+  **Warnings, not errors, and deliberately so.** The exit code does not move. Verdict does not decide an
+  application's deployment topology, and an ephemeral preview environment or a smoke test may legitimately
+  run one of these. `--strict` is the opt-in for CI that wants to block, and it already covers every other
+  advisory finding the command reports.
+
+  **Each warning names its own consequence, not a shared one.** The remedies differ in urgency: a
+  process-local rate limit multiplies a security bound by the worker count, a process-local approval store
+  means a receipt issued in one process cannot be consumed by the one that executes, and a process-local
+  configuration registry only makes retained evidence unreadable later. Every warning names the config key
+  to change alongside the hazard, on a separate line from the component warning, because components
+  truncate to the terminal width and the key is the half an operator acts on.
+
+  **Environment detection is the framework's own.** The check keys off Laravel's `local`/`testing`
+  determination rather than a list of production-looking names, so an environment called `staging`,
+  `preview`, or anything else is covered without configuration.
+
 - A worked incident-response walkthrough, [`docs/incident-response.md`](docs/incident-response.md). One
   realistic incident taken from the alert to a written conclusion using only the shipped tables, with SQL
   that is executed against the published migration stubs by `tests/Feature/IncidentResponseQueriesTest.php`
