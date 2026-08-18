@@ -18,6 +18,11 @@ use Illuminate\Database\DatabaseManager;
  * A wrong column, a wrong join, or a CTE that only works on one engine is invisible in prose review and
  * expensive at exactly the wrong moment, so the documented queries run here against the schema the
  * published migration stubs actually produce.
+ *
+ * Run it against a real engine, not only SQLite: the documented recursive CTE casts its anchor term
+ * because PostgreSQL rejects an untyped parameter against the `char(64)` fingerprint columns, and SQLite
+ * is too permissive to notice. Verified on PostgreSQL 16, MySQL 8, MariaDB 11, and SQLite; the
+ * concurrency matrix is what exercises the first three.
  */
 it('runs every query documented in docs/incident-response.md against the published schema', function (): void {
     $connection = app(DatabaseManager::class)->connection();
@@ -109,7 +114,7 @@ it('runs every query documented in docs/incident-response.md against the publish
     // Step 4, the recursive CTE exactly as documented.
     $upstream = $connection->select(
         'WITH RECURSIVE upstream (content_fingerprint, depth) AS (
-            SELECT ?, 0
+            SELECT CAST(? AS char(64)), 0
             UNION
             SELECT d.parent_content_fingerprint, u.depth + 1
               FROM verdict_provenance_derivations d

@@ -138,7 +138,7 @@ Then the full backward-reachable set. The ledger refuses to write a cycle, so th
 
 ```sql
 WITH RECURSIVE upstream (content_fingerprint, depth) AS (
-    SELECT :argument_fingerprint, 0
+    SELECT CAST(:argument_fingerprint AS char(64)), 0
     UNION
     SELECT d.parent_content_fingerprint, u.depth + 1
       FROM verdict_provenance_derivations d
@@ -147,6 +147,11 @@ WITH RECURSIVE upstream (content_fingerprint, depth) AS (
 )
 SELECT content_fingerprint, depth FROM upstream WHERE depth > 0;
 ```
+
+The cast on the anchor term is load-bearing, not decoration. The fingerprint columns are `char(64)`, and
+PostgreSQL rejects a recursive CTE whose non-recursive term is an untyped parameter with
+`recursive query "upstream" column 1 has type text in non-recursive term but type bpchar overall`. The form
+above is verified on PostgreSQL 16, MySQL 8, MariaDB 11, and SQLite.
 
 Fingerprints alone are not an answer. Join them back to the provenance rows to learn what each one *was*:
 
