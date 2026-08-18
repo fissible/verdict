@@ -38,36 +38,44 @@ function documentedClaims(string $path, bool $limitations = false): array
 }
 
 /**
- * Resolve a follow-up issue's state without letting the network fail a deterministic build.
- * `gh` exiting non-zero — absent, unauthenticated, offline, or a transient GitHub error — resolves
- * to 'unknown', never 'closed', so unavailability can never be mistaken for a closed issue. Only a
- * definitive 'closed' is a claim error; 'unknown' degrades to a warning at the call site.
+ * Resolve a follow-up issue's state via `gh`, without a shell. `proc_open` with an argument list
+ * runs the binary directly — no `/bin/sh -c`, no string interpolation, nothing to escape — and gh
+ * being unavailable (absent, unauthenticated, offline, a transient error) resolves to 'unknown',
+ * never 'closed', so unavailability is never mistaken for a closed issue. Only reached when the
+ * online freshness check is enabled (see the run below); default runs make no network call at all.
  */
 function followUpIssueState(string $outcome): string
 {
     preg_match('/^follow-up:#(\d+)$/', $outcome, $match);
 
-    exec(sprintf(
-        'gh issue view %d --repo fissible/verdict --json state --jq .state 2>/dev/null',
-        (int) $match[1],
-    ), $output, $exitCode);
+    $process = @proc_open(
+        ['gh', 'issue', 'view', $match[1], '--repo', 'fissible/verdict', '--json', 'state', '--jq', '.state'],
+        [1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+    );
 
-    return issueStateFrom($exitCode, $output);
+    if (! is_resource($process)) {
+        return 'unknown';
+    }
+
+    $output = stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+
+    return issueStateFrom(proc_close($process), is_string($output) ? $output : '');
 }
 
 /**
- * Map a `gh issue view` result to a claim state. A non-zero exit is 'unknown' (gh could not answer);
- * a zero exit reporting anything other than OPEN is 'closed'.
- *
- * @param  array<int, string>  $output
+ * Map a `gh issue view` result to a claim state. A non-zero (or absent) exit is 'unknown' — gh could
+ * not answer; a zero exit reporting anything other than OPEN is 'closed'.
  */
-function issueStateFrom(int $exitCode, array $output): string
+function issueStateFrom(?int $exitCode, string $output): string
 {
     if ($exitCode !== 0) {
         return 'unknown';
     }
 
-    return trim(implode("\n", $output)) === 'OPEN' ? 'open' : 'closed';
+    return trim($output) === 'OPEN' ? 'open' : 'closed';
 }
 
 /**
@@ -120,6 +128,12 @@ foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root.'/te
     }
 }
 
+// The follow-up-issue freshness check is the only step that touches the network. It is opt-in so a
+// default `composer test` run is fully offline and makes no outbound call — CI enables it (see
+// tests.yml) where gh is present and authenticated.
+$online = filter_var(getenv('VERIFY_CLAIMS_ONLINE'), FILTER_VALIDATE_BOOL);
+$skippedFollowUps = 0;
+
 foreach ($claims as $id => $claim) {
     if ($claim['outcome'] === 'tested' && ! isset($annotations[$id])) {
         throw new RuntimeException("Tested claim [{$id}] has no proving test annotation.");
@@ -130,8 +144,19 @@ foreach ($claims as $id => $claim) {
     }
 
     if (str_starts_with($claim['outcome'], 'follow-up:')) {
-        enforceFollowUpState($id, followUpIssueState($claim['outcome']));
+        if ($online) {
+            enforceFollowUpState($id, followUpIssueState($claim['outcome']));
+        } else {
+            $skippedFollowUps++;
+        }
     }
+}
+
+if ($skippedFollowUps > 0) {
+    fwrite(STDERR, sprintf(
+        "Notice: made no network call — skipped the open-issue freshness check for %d follow-up claim(s). Set VERIFY_CLAIMS_ONLINE=1 (CI does) to enforce it.\n",
+        $skippedFollowUps,
+    ));
 }
 
 foreach (array_keys($annotations) as $id) {
