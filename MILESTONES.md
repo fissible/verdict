@@ -236,7 +236,7 @@ gap, and not the human-approval boundary. Three follow-ups surfaced during the w
 
 ---
 
-## v0.8.0 — Measure and defend intent *(next)*
+## v0.8.0 — Measure and defend intent *(scope complete, untagged)*
 
 **Theme.** v0.7.0 demonstrated the *authorization* boundary is load-bearing — but only that boundary, and
 only against outside-authority attacks. The harder case is inside-authority: an injected instruction
@@ -251,8 +251,11 @@ authorization.
 | [#187](https://github.com/fissible/verdict/issues/187) Add an inside-authority intent case so the control arm can measure the authority/intent gap | L | #170 ✅ | ✅ Shipped |
 | [#192](https://github.com/fissible/verdict/issues/192) Make context-resolved targets a first-class, evidence-visible choice | M | #187 ✅ | ✅ Shipped |
 | [#195](https://github.com/fissible/verdict/issues/195) Surface proposal provenance at the moment of decision | XL | #192 ✅ | ✅ Shipped — PR #205, ADR 0026 |
-| [#152](https://github.com/fissible/verdict/issues/152) Decide and enforce the binding fingerprint canonicalization contract | M | — | In progress |
-| [#163](https://github.com/fissible/verdict/issues/163) Record the tool description fingerprints instead of discarding them | S | — | In progress |
+| [#152](https://github.com/fissible/verdict/issues/152) Decide and enforce the binding fingerprint canonicalization contract | M | — | ✅ Shipped — PR #208 |
+| [#163](https://github.com/fissible/verdict/issues/163) Record the tool description fingerprints instead of discarding them | S | — | ✅ Shipped — PRs #209, #211 |
+| [#210](https://github.com/fissible/verdict/issues/210) Register a capability by affirming it, not by wiring it | L | — | ✅ Shipped — PR #215, ADR 0027 |
+| [#147](https://github.com/fissible/verdict/issues/147) Write a worked incident-response walkthrough over the evidence tables | M | — | ✅ Shipped — PR #220 |
+| [#146](https://github.com/fissible/verdict/issues/146) Warn from `verdict:validate` when a non-durable adapter is configured outside local | S | — | ✅ Shipped — PR #221 |
 
 **#185 first — it makes every future recorded run trustworthy.** v0.7.0's own recorded run was nearly
 published against a silently-blind guarded arm ([#183](https://github.com/fissible/verdict/issues/183)): the
@@ -283,7 +286,18 @@ rather than measured per-case). Both contain decisions that belong in front of a
 implementation branch.
 
 **Scope is a starting point.** These are the follow-ups v0.7.0 surfaced; the milestone accretes `scope: ready`
-work that lands before the tag, exactly as prior milestones did.
+work that lands before the tag, exactly as prior milestones did — which is why #152, #163, #210, #147, and
+#146 appear above without having been in the original plan.
+
+**Every row is shipped and no tag has been cut.** That is a deliberate hold, not an oversight: the tag is cut
+when someone decides to cut it, and `main` carrying released-quality work for a while is not a defect. What
+this section must not do is describe shipped work as pending, which it did until this reconciliation.
+
+**The next thread is [#218](https://github.com/fissible/verdict/issues/218)**, which proves the
+confirmed-mutation allow path completes live end-to-end and is the only thing blocking #204. Its scoping
+established that a two-turn approval resume produces two distinct Laravel AI invocation ids — measured, not
+assumed — so the live harness cannot correlate the proposing turn with the executing one by `invocation_id`.
+It is not scheduled into a milestone here until its design lands.
 
 ---
 
@@ -300,27 +314,23 @@ Ordered by suggested pickup order: defects first, then self-contained work with 
 
 | Issue | Effort | Label | Deps |
 |---|---|---|---|
-| [#163](https://github.com/fissible/verdict/issues/163) Record the tool description fingerprints instead of discarding them | S | `bug` | none |
 | [#165](https://github.com/fissible/verdict/issues/165) Give `verdict:prune-rate-limits` a test that can fail | XS | `good first issue` | none |
 | [#143](https://github.com/fissible/verdict/issues/143) Publish PostgreSQL and MariaDB arms of the security-state benchmark | S | `good first issue` | none — compose services already exist |
 | [#142](https://github.com/fissible/verdict/issues/142) Collapse the repeated store/connection/table triple into a shared value object | XS | `good first issue` | none — carved out of #141 |
-| [#146](https://github.com/fissible/verdict/issues/146) Warn from `verdict:validate` when a non-durable adapter is configured outside local | S | `good first issue` | none |
 | [#166](https://github.com/fissible/verdict/issues/166) Prove a failing `CapabilityConfigurationStore` fails closed | S | `good first issue` | none — template at `SemanticRateLimitTest:194` |
 | [#168](https://github.com/fissible/verdict/issues/168) Assert the schema the migrations produce on MySQL, MariaDB, and PostgreSQL | S/M | `good first issue` | none — the matrix already runs them |
-| [#147](https://github.com/fissible/verdict/issues/147) Write a worked incident-response walkthrough over the evidence tables | M | `help wanted` | none — the v0.4.0 chain is complete |
 | [#144](https://github.com/fissible/verdict/issues/144) Prove the in-memory stores agree with the database stores | M | `help wanted` | none |
 | [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | `help wanted` | none |
 | [#145](https://github.com/fissible/verdict/issues/145) Add a delegation attack pack for actor-versus-subject confusion | M | `help wanted` | #31 ✅ |
 | [#167](https://github.com/fissible/verdict/issues/167) Pin cross-actor approval receipt separation end to end | S | `help wanted` | none |
 | [#151](https://github.com/fissible/verdict/issues/151) Harden field-path handling in the release path | M | `help wanted` | none — #150 shipped in v0.5.0 |
-| [#152](https://github.com/fissible/verdict/issues/152) Decide and enforce the binding fingerprint canonicalization contract | M | `scope: ready` | none |
 | [#164](https://github.com/fissible/verdict/issues/164) Cover rate-limit window boundary, expiry, and cross-window leakage | M | `scope: ready` | none |
 | [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | `scope: ready` | none — precedent in #91 |
 
-**#151 and #152 are the hardening that remained open after the same audit.** #149 and #150 were fixed in
-v0.5.0: neither was an authorization bypass, but both were asymmetries that were cheap to fix and
-expensive to explain later. #151 and #152 continue that hardening around field-path handling and binding
-fingerprint canonicalization.
+**#151 is the hardening that remains open after the same audit.** #149 and #150 were fixed in v0.5.0:
+neither was an authorization bypass, but both were asymmetries that were cheap to fix and expensive to
+explain later. #152 continued that hardening and shipped in v0.8.0's window; #151 is the remaining half,
+around field-path handling.
 
 [#153](https://github.com/fissible/verdict/issues/153) was settled in v0.5.0: a failed evidence write now
 dispatches `EvidenceWriteFailed` and execution continues, leaving the operational gates — rate-limit
@@ -330,24 +340,16 @@ cannot be finalized blocks its binding indefinitely. See ADR 0007 and the v0.5.0
 
 **#163 through #168 came out of a test-coverage audit after v0.5.0.** None is an authorization bypass and
 none makes a released version unsafe; they are places where a guarantee holds today but nothing pins it.
-Two are worth singling out. #163 is the only one that changes shipped behaviour: `AbstractVerdictTool`
-already fingerprints the tool description at wiring time and again at each invocation, so a description
-that changes in between is *detected* — and then discarded, because neither fingerprint reaches evidence.
-The bound capability is passed explicitly and cannot be redirected by description text, so this is a
-forensic gap rather than an authorization one. #165 is the cheapest and the most instructive: the command's
-only test asserts `Pruned 0` against an empty table, so it holds whether pruning works or does nothing at
-all.
+#163 was the only one that changed shipped behaviour — the tool-description fingerprints were computed and
+then discarded — and it shipped in v0.8.0's window. Of what remains, #165 is the cheapest and the most
+instructive: the command's only test asserts `Pruned 0` against an empty table, so it holds whether pruning
+works or does nothing at all.
 
 #167 and #168 are deliberately last. Cross-actor receipt separation already follows from `actor_id`
 participating in the binding, and the migrations already execute against all three engines in the
 concurrency matrix — both issues pin an existing property rather than close a suspected hole, and both say
 so. An earlier draft of the audit claimed migrations only ever run on SQLite and that a poisoned
 description could redirect a capability; neither survived checking, and neither is filed.
-
-**#147 is the one worth finishing soonest.** v0.4.0 completed the forensic chain — invocation correlation,
-derivation edges, actor and subject identity, configuration fingerprints, optional tamper-evidence — and
-every piece is documented where it was built, nowhere end to end. It is the document a prospective adopter
-opens to decide whether any of this is real.
 
 **#143 closes a gap between what is claimed and what is published.** ADR 0018's retry policy exists because
 of how PostgreSQL reports serialization failures at COMMIT. That behavior is tested, but the benchmark table
