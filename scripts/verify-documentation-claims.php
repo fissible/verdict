@@ -37,17 +37,37 @@ function documentedClaims(string $path, bool $limitations = false): array
     return $claims;
 }
 
-function followUpIssueIsOpen(string $outcome): bool
+/**
+ * Resolve a follow-up issue's state without letting the network fail a deterministic build.
+ * `gh` exiting non-zero — absent, unauthenticated, offline, or a transient GitHub error — resolves
+ * to 'unknown', never 'closed', so unavailability can never be mistaken for a closed issue. Only a
+ * definitive 'closed' is a claim error; 'unknown' degrades to a warning at the call site.
+ */
+function followUpIssueState(string $outcome): string
 {
     preg_match('/^follow-up:#(\d+)$/', $outcome, $match);
 
-    $command = sprintf(
+    exec(sprintf(
         'gh issue view %d --repo fissible/verdict --json state --jq .state 2>/dev/null',
         (int) $match[1],
-    );
-    exec($command, $output, $exitCode);
+    ), $output, $exitCode);
 
-    return $exitCode === 0 && trim(implode("\n", $output)) === 'OPEN';
+    return issueStateFrom($exitCode, $output);
+}
+
+/**
+ * Map a `gh issue view` result to a claim state. A non-zero exit is 'unknown' (gh could not answer);
+ * a zero exit reporting anything other than OPEN is 'closed'.
+ *
+ * @param  array<int, string>  $output
+ */
+function issueStateFrom(int $exitCode, array $output): string
+{
+    if ($exitCode !== 0) {
+        return 'unknown';
+    }
+
+    return trim(implode("\n", $output)) === 'OPEN' ? 'open' : 'closed';
 }
 
 $root = dirname(__DIR__);
@@ -85,8 +105,16 @@ foreach ($claims as $id => $claim) {
         throw new RuntimeException("Untestable claim [{$id}] needs an in-document reason.");
     }
 
-    if (str_starts_with($claim['outcome'], 'follow-up:') && ! followUpIssueIsOpen($claim['outcome'])) {
-        throw new RuntimeException("Follow-up for claim [{$id}] must reference an open fissible/verdict issue.");
+    if (str_starts_with($claim['outcome'], 'follow-up:')) {
+        $state = followUpIssueState($claim['outcome']);
+
+        if ($state === 'closed') {
+            throw new RuntimeException("Follow-up for claim [{$id}] references a closed issue; point it at an open fissible/verdict issue.");
+        }
+
+        if ($state === 'unknown') {
+            fwrite(STDERR, "Notice: could not verify the follow-up issue for claim [{$id}] (gh unavailable or offline); skipping the open-issue freshness check.\n");
+        }
     }
 }
 
