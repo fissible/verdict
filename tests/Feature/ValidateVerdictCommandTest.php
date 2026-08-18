@@ -4,17 +4,25 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Approvals\ApproverAudience;
+use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
+use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
+use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\ReleasePolicy;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
+use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\Facades\Verdict;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
+use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitConsumption;
 use Fissible\Verdict\RateLimits\RateLimitOutcome;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
@@ -193,5 +201,120 @@ it('names an abstract class in a discovery path as never registerable', function
     $this->artisan('verdict:validate')
         ->expectsOutputToContain('AbstractAffirmedCapability')
         ->expectsOutputToContain('abstract')
+        ->assertExitCode(0);
+});
+
+/**
+ * #146. `config/verdict.php` warns in comments that the in-memory adapters are unsafe outside local
+ * development, and nothing checked. These are advisory: an ephemeral preview environment or a smoke test
+ * may legitimately run one, so the exit code must not move. `--strict` is the opt-in for CI that wants to
+ * block.
+ */
+it('warns without failing when a non-durable rate-limit store is configured outside local', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config()->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('InMemoryRateLimitStore')
+        ->expectsOutputToContain('verdict.rate_limits.store')
+        ->assertExitCode(0);
+});
+
+it('warns for every non-durable adapter, naming the config key that selects each one', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config()->set('verdict.evidence.recorder', InMemoryEvidenceRecorder::class);
+    config()->set('verdict.approvals.store', InMemoryApprovalReceiptStore::class);
+    config()->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
+    config()->set('verdict.execution_claims.store', InMemoryExecutionClaimStore::class);
+    config()->set('verdict.capability_configurations.store', InMemoryCapabilityConfigurationStore::class);
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('verdict.evidence.recorder')
+        ->expectsOutputToContain('verdict.approvals.store')
+        ->expectsOutputToContain('verdict.rate_limits.store')
+        ->expectsOutputToContain('verdict.execution_claims.store')
+        ->expectsOutputToContain('verdict.capability_configurations.store')
+        ->assertExitCode(0);
+});
+
+/**
+ * The hazard is per-adapter and the wording has to say which one, because the remedy differs. A
+ * process-local rate limit multiplies the configured bound by the worker count; a process-local claim
+ * store degrades at-most-once to at-most-once-per-process. An operator who reads one generic sentence
+ * five times learns neither.
+ */
+it('states the specific failure mode of the adapter it names', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config()->set('verdict.execution_claims.store', InMemoryExecutionClaimStore::class);
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('duplicate execution')
+        ->assertExitCode(0);
+});
+
+it('does not warn about non-durable adapters in the local environment', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'local');
+    config()->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('InMemoryRateLimitStore')
+        ->assertExitCode(0);
+});
+
+it('does not warn about non-durable adapters in the testing environment', function (): void {
+    config()->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('InMemoryRateLimitStore')
+        ->assertExitCode(0);
+});
+
+/**
+ * Every adapter must be overridden here, not just the interesting one: TestCase::defineEnvironment binds
+ * all five to their in-memory implementations, so a partial override leaves the others warning and the
+ * assertion passes or fails for the wrong reason.
+ */
+it('does not warn about durable adapters configured in production', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    config()->set('verdict.approvals.store', DatabaseApprovalReceiptStore::class);
+    config()->set('verdict.rate_limits.store', DatabaseRateLimitStore::class);
+    config()->set('verdict.execution_claims.store', DatabaseExecutionClaimStore::class);
+    config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('non-durable')
+        ->assertExitCode(0);
+});
+
+it('lets --strict fail on a non-durable adapter without changing what is printed', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config()->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
+
+    $this->artisan('verdict:validate', ['--strict' => true])
+        ->expectsOutputToContain('InMemoryRateLimitStore')
+        ->assertExitCode(1);
+});
+
+/**
+ * The stated scope, pinned. `docs/architecture.md` and the command's own comment tell an operator that a
+ * clean run means "nothing declared in configuration is non-durable", not "every store this application
+ * resolves is durable" — and an under-claim nothing guards can quietly become false. If someone improves
+ * this check to resolve container bindings, that is a real improvement and this test is where they learn
+ * both statements of the limitation need deleting.
+ */
+it('reads configuration rather than resolved container bindings, and says so', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    config()->set('verdict.approvals.store', DatabaseApprovalReceiptStore::class);
+    config()->set('verdict.rate_limits.store', DatabaseRateLimitStore::class);
+    config()->set('verdict.execution_claims.store', DatabaseExecutionClaimStore::class);
+    config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
+
+    // Declared durable, resolved non-durable. The audit reads the declaration.
+    $this->app->instance(RateLimitStore::class, new InMemoryRateLimitStore);
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('non-durable')
         ->assertExitCode(0);
 });
