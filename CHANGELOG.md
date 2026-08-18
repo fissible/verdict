@@ -4,6 +4,27 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- A worked incident-response walkthrough, [`docs/incident-response.md`](docs/incident-response.md). One
+  realistic incident taken from the alert to a written conclusion using only the shipped tables, with SQL
+  that is executed against the published migration stubs by `tests/Feature/IncidentResponseQueriesTest.php`
+  rather than reviewed as prose. Every step states what the evidence establishes and what it does not.
+  See [#147](https://github.com/fissible/verdict/issues/147).
+
+  **Two joins that look obvious are wrong, and the document leads with them.** `correlation_id` holds the
+  action envelope id on a `decision` row and the invocation id on a `provenance` row, so joining decisions
+  to provenance on it returns nothing, silently — `invocation_id` is the only column that spans record
+  types. And `approval_receipt_fingerprint`, `execution_claim_fingerprint`, and
+  `idempotency_key_fingerprint` are SHA-256 *of* the corresponding id, not the id, so none of them joins
+  directly to the operational-state tables.
+
+  **The provenance join is now pinned.** An incident reconstruction reaches declared upstream content by
+  using a decision's `argument_fingerprint` as a `child_content_fingerprint`. That works because
+  `ArgumentFingerprint` and `ContentFingerprint` share one canonicalization — which `ProposalAnchorTest`
+  described as a coincidence converted into a contract while only ever asserting it for
+  `ProposalAnchor::for()`. `ArgumentFingerprint::make()`, the value that actually reaches the evidence row,
+  was unguarded: divergence would have returned no rows rather than erroring, reporting every proposal as
+  having no declared upstream. A mutation-checked test now holds it.
+
 - Register a capability by affirming it, not by wiring it. A class in `app/Capabilities/` that implements
   the new `Fissible\Verdict\Contracts\DefinesCapability` contract — one token added to a class the
   generator already wrote — is discovered and registered at boot, through the same path

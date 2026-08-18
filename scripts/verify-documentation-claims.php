@@ -95,12 +95,14 @@ if (defined('VERIFY_CLAIMS_TESTING')) {
 $root = dirname(__DIR__);
 $claims = documentedClaims($root.'/docs/limitations.md', true);
 
-foreach (documentedClaims($root.'/docs/security-model.md') as $id => $claim) {
-    if (isset($claims[$id])) {
-        throw new RuntimeException("Claim [{$id}] is documented in more than one file.");
-    }
+foreach (['/docs/security-model.md', '/docs/incident-response.md'] as $source) {
+    foreach (documentedClaims($root.$source) as $id => $claim) {
+        if (isset($claims[$id])) {
+            throw new RuntimeException("Claim [{$id}] is documented in more than one file.");
+        }
 
-    $claims[$id] = $claim;
+        $claims[$id] = $claim;
+    }
 }
 $annotations = [];
 
