@@ -148,3 +148,50 @@ it('runs every query documented in docs/incident-response.md against the publish
         $connection->getSchemaBuilder()->dropIfExists($table);
     }
 });
+
+/**
+ * The test above executes the documented queries; it does not read the document. So the published SQL and
+ * the executed SQL can drift apart in silence — someone tightens a join in `docs/incident-response.md`, this
+ * file keeps passing against the old shape, and an operator pastes unverified SQL at exactly the moment the
+ * document exists to help.
+ *
+ * Full extraction is impractical: the document uses named placeholders and illustrative literals, the test
+ * uses fixture ids. This pins the decisions instead — the ones the queries would be wrong without — so a
+ * document edit that moves any of them fails here and forces the pair to move together.
+ */
+it('fails when the documented SQL drifts from the SQL this test executes', function (): void {
+    $path = __DIR__.'/../../docs/incident-response.md';
+    $document = file_get_contents($path);
+
+    expect($document)->toBeString();
+
+    $fragments = [
+        // Step 3. invocation_id is the only column spanning record types; joining a decision row to a
+        // provenance row on correlation_id returns nothing and raises nothing.
+        'WHERE invocation_id = :invocation_id',
+        // Step 4. The decision's argument fingerprint is usable as a child content fingerprint, which is
+        // the equivalence ProposalAnchorTest pins.
+        'AND child_content_fingerprint = :argument_fingerprint',
+        // Step 4. PostgreSQL rejects an untyped anchor term against the char(64) fingerprint columns.
+        'SELECT CAST(:argument_fingerprint AS char(64)), 0',
+        // Step 4. The recursive hop, and the per-hop invocation scoping that keeps one invocation's
+        // declarations from being reported as another's.
+        'JOIN upstream u ON d.child_content_fingerprint = u.content_fingerprint',
+        'WHERE d.correlation_id = :invocation_id',
+        // Step 4. Resolving a fingerprint back to what the content actually was.
+        "WHERE record_type = 'provenance'",
+    ];
+
+    $missing = array_values(array_filter(
+        $fragments,
+        static fn (string $fragment): bool => ! str_contains((string) $document, $fragment),
+    ));
+
+    expect($missing)->toBe(
+        [],
+        'docs/incident-response.md no longer contains SQL this test executes. Either the document changed '
+        .'and this test is now proving a query nobody will paste, or the query shape genuinely improved and '
+        .'the executed SQL above must be updated to match. Change both, or neither — a documented query '
+        .'that is never executed is the failure mode this file exists to prevent.',
+    );
+});
