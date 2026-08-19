@@ -17,9 +17,9 @@ All notable changes to Verdict will be documented in this file.
 
   **Measured, not inferred.** Against two live providers from different vendors — Ollama
   `qwen2.5-abliterate:7b` and Anthropic `claude-haiku-4-5`, both of which genuinely called the tool —
-  `AbstractVerdictTool::shouldRequestApproval()` returned `Approval::required` and the framework executed
-  the tool anyway. `hasPendingApprovals` was `false` in both runs, so `stream(Decision::approveAll())` had
-  nothing pending to resume.
+  the tool executed rather than pausing. `hasPendingApprovals` was `false` in both runs, so
+  `stream(Decision::approveAll())` had nothing pending to resume. Where in the chain the pause is lost is
+  not yet established.
 
   **The failure is closed, not open.** Verdict denied at the execution stage in both runs; the protected
   action did not execute. Nothing was less safe than documented — the documentation claimed a capability
