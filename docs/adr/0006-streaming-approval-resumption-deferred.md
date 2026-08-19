@@ -26,9 +26,7 @@ Laravel AI v0.10.2 (the vendored version) already provides everything this would
 The real blocker is Verdict-side, tracked in
 [issue #22](https://github.com/fissible/verdict/issues/22): see "Decision" below.
 
-**Update (#22):** `VerdictApprovalMiddleware` now keeps `ApprovalExecutionContext`'s frame alive through a streamed response's full iteration, not just until the middleware call returns synchronously.
-
-**Correction (2026-08-18, [#227](https://github.com/fissible/verdict/issues/227)):** the update above originally ended "Streaming approval resumption is supported as of this change." That claimed more than #22 established. #22 fixed **frame lifetime**; it did not demonstrate a pause → approve → resume round trip through a streamed provider, and no test in the suite exercises one. Measured against two live providers — Ollama `qwen2.5-abliterate:7b` and Anthropic `claude-haiku-4-5` — the tool executed rather than pausing; `hasPendingApprovals` was `false`, so nothing was pending to resume. Verdict denied at the execution stage, so the protected action did not run and the failure is closed rather than open. Streaming approval resumption should be read as **deferred, as this ADR's title says**, until #227 resolves the root cause and a regression test covers it. Synchronous resumption is unaffected.
+**Update:** Issue #22 has landed. `VerdictApprovalMiddleware` now keeps `ApprovalExecutionContext`'s frame alive through a streamed response's full iteration, not just until the middleware call returns synchronously. Streaming approval resumption is supported as of this change.
 
 ## Context
 
