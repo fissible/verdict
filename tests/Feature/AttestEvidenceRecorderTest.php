@@ -16,6 +16,7 @@ use Fissible\Verdict\Evidence\Events\ChainWriteFailed;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
+use Fissible\Verdict\Evidence\RecordDigest;
 use Fissible\Verdict\Exceptions\EvidenceChainWriteFailed;
 use Fissible\Verdict\Tests\Support\AttestFixture;
 use Fissible\Verdict\Tests\Support\FlakyChainStore;
@@ -155,7 +156,13 @@ it('writes a decision to the attest chain', function (): void {
         ->and($tail->envelope->payload['capability'])->toBe('orders.refund')
         ->and($tail->envelope->payload['actor_fingerprint'])->toBe(hash('sha256', 'support-agent:17'))
         ->and($tail->envelope->payload['subject_fingerprint'])->toBe(hash('sha256', 'customer:72'))
-        ->and($tail->envelope->payload['disposition'])->toBe('permit');
+        ->and($tail->envelope->payload['disposition'])->toBe('permit')
+        // Attest signs its own envelope, not a Verdict-computed hash — so the only way its
+        // signature can cover Verdict's identity for this record is for the identity to travel
+        // inside the payload. See RecordDigest.
+        ->and($tail->envelope->payload['record_digest'])->toBe($this->decision->recordDigest)
+        ->and($tail->envelope->payload['record_digest'])->toStartWith(RecordDigest::SCHEME.':')
+        ->and($tail->envelope->payload['claim_type'])->toBe($this->decision->claimType?->value);
 
     expect(attestChainGapRows())->toBeEmpty();
 });

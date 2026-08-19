@@ -37,6 +37,8 @@ beforeEach(function (): void {
         $table->boolean('tool_description_matched')->nullable();
         $table->string('stage', 32);
         $table->string('disposition', 32);
+        $table->string('claim_type', 64)->nullable();
+        $table->string('record_digest', 96)->nullable();
         $table->text('reason')->nullable();
         $table->string('source')->nullable();
         $table->string('destination')->nullable();

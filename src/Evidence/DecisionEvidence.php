@@ -11,6 +11,24 @@ use InvalidArgumentException;
 
 final readonly class DecisionEvidence
 {
+    /**
+     * What this record asserts, as one stable, namespaced label — the record's *semantic* identity.
+     *
+     * Derived rather than supplied, so a caller cannot mint a claim the evaluation did not make.
+     * Null only when the stage/disposition tuple is outside the vocabulary, which
+     * `ClaimTypeVocabularyTest` prevents for every tuple the state machine can emit.
+     */
+    public ?ClaimType $claimType;
+
+    /**
+     * This record's content-derived, Attest-independent identity: `canonicaljson-sha256:<hash>`.
+     *
+     * Derived in the constructor for the same reason as `claimType`, and because an identity a
+     * caller could pass in is not an identity. See {@see RecordDigest} for the field set, the
+     * exclusions, and why Attest protects this value rather than defining it.
+     */
+    public string $recordDigest;
+
     public function __construct(
         public string $envelopeId,
         public string $capability,
@@ -66,6 +84,17 @@ final readonly class DecisionEvidence
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
         }
+
+        // Both are derived from fields already assigned above. The approval phase and execution-claim
+        // status are passed to the vocabulary because two stages record several distinct events
+        // behind one stage/disposition pair — see ClaimType::discriminatorFor().
+        $this->claimType = ClaimType::for($this->stage, $this->disposition, match ($this->stage) {
+            'approval' => $this->approvalPhase,
+            'execution_claim' => $this->executionClaimStatus,
+            default => null,
+        });
+
+        $this->recordDigest = RecordDigest::for($this);
     }
 
     public static function fromEvaluation(Evaluation $evaluation, ?string $invocationId = null): self

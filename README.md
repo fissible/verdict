@@ -332,6 +332,7 @@ The complete, deliberately specific list is in [limitations](docs/limitations.md
 - [Evaluation harness and attack packs](docs/evaluation.md)
 - [Architecture and Laravel AI integration](docs/architecture.md)
 - [Reconstructing an incident from the evidence tables](docs/incident-response.md)
+- [Evidence record identity: claim types and record digests](docs/evidence-record-identity.md)
 - [Laravel AI dependency surface and compatibility](docs/laravel-ai-compatibility.md)
 - [Limitations and application responsibilities](docs/limitations.md)
 - [Glossary](docs/glossary.md)
