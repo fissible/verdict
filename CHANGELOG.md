@@ -4,6 +4,27 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- The execution-mode compatibility matrix has no unverified cells left: **queued approval resumption is
+  verified through completion.** `QueuedApprovalResumptionTest` dispatches a real `InvokeAgent` job onto
+  the database queue, runs `queue:work --once --force`, and asserts the worker paused on a confirmation
+  gate without executing; then approves the receipt in Verdict, dispatches a second job carrying a specific
+  tool-call decision, and asserts the capability executed exactly once. See
+  [#234](https://github.com/fissible/verdict/issues/234) and
+  [#218](https://github.com/fissible/verdict/issues/218).
+
+  **The previously-stated blocker was wrong, and the footnote now says so.** It claimed `InvokeAgent` does
+  not retain the initial job's pending tool-call response. A resume never reads that response: the pending
+  call is reconstructed from **conversation history**, so a durable `ConversationStore` — not job state — is
+  what carries a paused turn across the boundary. The gap was coverage, not capability.
+
+  **A durable conversation store is therefore a requirement for queued approval flows**, alongside the two
+  the streamed work surfaced: approve the receipt in Verdict, and resume with a specific tool-call decision.
+  The adoption guide's production-gate checklist states all three.
+
+  Two companion cases assert the refusals are real rather than absent — a wildcard-only resume and a resume
+  whose receipt was never approved in Verdict each execute nothing — and both first assert approval-stage
+  evidence exists, so a resume that never ran cannot pass itself off as a refusal.
+
 - Streamed approval resumption is now verified **through completion**, and the compatibility matrix footnote
   says what backs it. `StreamedApprovalResumptionTest` drives a confirmation-gated capability through
   Laravel AI's real `stream()` pipeline and asserts it pauses, does not execute before approval, and
