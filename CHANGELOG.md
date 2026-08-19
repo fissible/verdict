@@ -4,6 +4,25 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Streamed approval resumption is now verified **through completion**, and the compatibility matrix footnote
+  says what backs it. `StreamedApprovalResumptionTest` drives a confirmation-gated capability through
+  Laravel AI's real `stream()` pipeline and asserts it pauses, does not execute before approval, and
+  executes exactly once on an approved resume. See [#218](https://github.com/fissible/verdict/issues/218).
+
+  **Two application requirements are now documented, because getting either wrong fails silently.** The
+  receipt must be approved in Verdict through the application's own authenticated flow, and the resume must
+  carry a *specific* tool-call decision. `Decision::approveAll()` yields a wildcard `'*'` that
+  `ApprovalExecutionContext::push()` deliberately skips — a blanket approval from the agent loop must not
+  authorize a specific consequential action. A resume missing either step executes nothing and looks like a
+  broken feature.
+
+  **The test uses a `StepTextGateway`, not `Agent::fake()`, and that is load-bearing.**
+  `ResumesToolApprovals::resumableApprovalFor()` returns `null` for a faked gateway, so a faked agent never
+  resumes tools and would report non-execution for a reason unrelated to Verdict.
+
+  A recorded live run against Ollama is published in `docs/evaluation.md`, alongside the five instrument
+  defects that produced convincing false negatives before it.
+
 - Documented that a passing tamper-evidence verification does not assert the record is complete, and that
   since `fissible/attest` 1.3.0 the verification output says so itself. `attest.cli.result.v1` carries a
   constant `completeness` block whose `asserted` is always `false`, beside the separate `verified` field, so
