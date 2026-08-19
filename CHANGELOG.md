@@ -44,6 +44,27 @@ All notable changes to Verdict will be documented in this file.
   A recorded live run against Ollama is published in `docs/evaluation.md`, alongside the five instrument
   defects that produced convincing false negatives before it.
 
+- Documented that a passing tamper-evidence verification does not assert the record is complete, and that
+  since `fissible/attest` 1.3.0 the verification output says so itself. `attest.cli.result.v1` carries a
+  constant `completeness` block whose `asserted` is always `false`, beside the separate `verified` field, so
+  a downstream tool can render "integrity verified" and "completeness not asserted" without parsing prose.
+  See [#224](https://github.com/fissible/verdict/issues/224) and
+  [attest#13](https://github.com/fissible/attest/issues/13).
+
+  **Two independent non-assertions, and the second is easy to miss.** Content that bypassed instrumentation
+  never reached the chain to be signed — for Verdict that blind spot has a name, `bypassed paths` — and a
+  verification can be scoped to part of a chain, via `attest:verify --from/--to` or whatever range a
+  bundle's exporter chose.
+
+  **The caveat is in the JSON, not yet in the terminal.** `php artisan attest:verify --json` carries it;
+  the command's human-readable output does not, because `fissible/attest-laravel` renders its own summary
+  lines rather than attest's. Tracked in
+  [attest-laravel#8](https://github.com/fissible/attest-laravel/issues/8); until it lands, an operator
+  reading the terminal relies on `docs/limitations.md`.
+
+  `fissible/attest` moves to 1.3.0 in the lock file. It is a `require-dev` dependency here and optional for
+  adopters, so this changes nothing about what Verdict requires.
+
 - `verdict:validate` now names any capability that declares `requiresConfirmation()` with no
   execution-target policy. That combination looks gated and never pauses: `requestConfirmation()` returns
   `null` without a target policy, so `shouldRequestApproval()` returns `null`, Laravel AI has nothing to
