@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
@@ -317,4 +318,75 @@ it('reads configuration rather than resolved container bindings, and says so', f
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('non-durable')
         ->assertExitCode(0);
+});
+
+/**
+ * #230. A capability that asks for confirmation and declares no execution-target policy never pauses:
+ * `VerdictManager::requestConfirmation()` returns null without one, so no approval is requested and no
+ * human is ever asked. It still fails closed — the action is denied — so this is advisory, but it is the
+ * trap that cost a wrong defect issue and a reverted docs change before it was found.
+ */
+it('warns when a confirmation-gated capability has no execution-target policy', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.ungated-confirm', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->executeUsing(fn (AuthorizedAction $action): string => 'done')
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        // One expectation per rendered line: the component line carries the capability, the detail line
+        // carries the remedy. Two phrases from the same line cannot both match.
+        ->expectsOutputToContain('orders.ungated-confirm')
+        ->expectsOutputToContain('executionTarget')
+        ->assertExitCode(0);
+});
+
+it('does not warn when a confirmation-gated capability declares an execution-target policy', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.gated-confirm', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->executeUsing(fn (AuthorizedAction $action): string => 'done')
+            ->executionTarget(ExecutionTargetPolicy::acceptStaleSnapshot(
+                name: 'gated-confirm-target',
+                identityUsing: fn (ActionEnvelope $envelope, int $target): array => ['id' => $target],
+            ))
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('never requests approval')
+        ->assertExitCode(0);
+});
+
+it('does not warn about pausing for a capability that does not require confirmation', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.no-confirm', 'view', fn (ActionEnvelope $envelope): int => 1)
+            ->executeUsing(fn (AuthorizedAction $action): string => 'done'),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('never requests approval')
+        ->assertExitCode(0);
+});
+
+/**
+ * The approver-route warning also fires for any confirmation-gated capability, so without registering a
+ * release policy this would fail under --strict whether or not the new finding participates — passing for
+ * the wrong reason and pinning nothing.
+ */
+it('lets --strict fail on a confirmation gate that can never pause', function (): void {
+    Verdict::releasePolicy(
+        ReleasePolicy::between(ApproverAudience::source(), ApproverAudience::destination())
+            ->allow(DataClass::Internal)
+            ->whenTrustIs(Trust::Untrusted),
+    );
+
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.ungated-strict', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->executeUsing(fn (AuthorizedAction $action): string => 'done')
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate', ['--strict' => true])
+        ->expectsOutputToContain('orders.ungated-strict')
+        ->assertExitCode(1);
 });

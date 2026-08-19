@@ -47,6 +47,7 @@ final class ValidateVerdictCommand extends Command
         $errors = [];
         $warnings = [];
         $information = [];
+        $unpausable = [];
         $needsApprovals = false;
         $needsRateLimits = false;
         $needsExecutionClaims = false;
@@ -59,6 +60,28 @@ final class ValidateVerdictCommand extends Command
             $needsApprovals = $needsApprovals || $capability->confirmationRequired();
             $needsRateLimits = $needsRateLimits || $capability->rateLimitPolicy() !== null;
             $needsExecutionClaims = $needsExecutionClaims || $capability->executionClaimPolicy() !== null;
+
+            // Advisory (#230): requestConfirmation() returns null without an execution-target policy, so
+            // this capability asks for confirmation and never pauses — no human is ever shown the
+            // proposal. It still fails closed, because execution denies without a receipt, which is why
+            // this warns rather than errors. The guards mirror requestConfirmation()'s own, so this warns
+            // exactly when that method would decline to issue — a broader guard would fire this detail
+            // text at capabilities where the mechanism differs, and a warning whose remedy is wrong for
+            // some recipients teaches people to skim warnings.
+            //
+            // The mirror is an invariant, not a coincidence: StreamedApprovalResumptionTest (#229) pins
+            // the product side of it by asserting shouldRequestApproval() returns null for exactly this
+            // combination. If requestConfirmation()'s guard ever changes, that test fails first and points
+            // whoever changed it at this check.
+            if ($capability->confirmationRequired()
+                && $capability->isExecutable()
+                && $capability->executionTargetPolicy() === null) {
+                $unpausable[] = [
+                    'capability' => $capability->name,
+                    'detail' => 'Add ->executionTarget(...): without one Verdict never requests approval, so the '
+                        .'action is denied at execution and no human is ever asked.',
+                ];
+            }
 
             if ($capability->executionTargetPolicy()?->strategy === ExecutionTargetStrategy::AcceptStaleSnapshot) {
                 $information[] = "Capability [{$capability->name}] deliberately accepts a stale execution-target snapshot.";
@@ -187,6 +210,11 @@ final class ValidateVerdictCommand extends Command
             $this->line("   {$finding['detail']}");
         }
 
+        foreach ($unpausable as $finding) {
+            $this->components->warn("Capability [{$finding['capability']}] can never pause.");
+            $this->line("   {$finding['detail']}");
+        }
+
         foreach ($nonDurable as $finding) {
             $this->components->warn("[{$finding['class']}] is a non-durable adapter configured outside local development.");
             $this->line("   {$finding['detail']}");
@@ -196,12 +224,12 @@ final class ValidateVerdictCommand extends Command
             $this->components->info($item);
         }
 
-        if ($errors === [] && $warnings === [] && $unaffirmed === [] && $nonDurable === [] && $information === []) {
+        if ($errors === [] && $warnings === [] && $unaffirmed === [] && $unpausable === [] && $nonDurable === [] && $information === []) {
             $this->components->info('Verdict wiring audit found no applicable capability configuration.');
         }
 
         $failed = $errors !== []
-            || ((bool) $this->option('strict') && ($warnings !== [] || $unaffirmed !== [] || $nonDurable !== []));
+            || ((bool) $this->option('strict') && ($warnings !== [] || $unaffirmed !== [] || $unpausable !== [] || $nonDurable !== []));
 
         return $failed ? self::FAILURE : self::SUCCESS;
     }
