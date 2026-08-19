@@ -4,6 +4,25 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- `verdict:validate` now names any capability that declares `requiresConfirmation()` with no
+  execution-target policy. That combination looks gated and never pauses: `requestConfirmation()` returns
+  `null` without a target policy, so `shouldRequestApproval()` returns `null`, Laravel AI has nothing to
+  pause on, and the action is denied at execution without a human ever being asked. See
+  [#230](https://github.com/fissible/verdict/issues/230).
+
+  **Advisory, because the failure is closed.** The action does not execute — what is lost is the human
+  decision, not the boundary. The exit code does not move; `--strict` covers it like every other advisory
+  finding. Whether the combination should be *rejected at registration* is a separate, behavior-changing
+  question left open in #230, on the [#150](https://github.com/fissible/verdict/issues/150) precedent that a
+  declaration which can never do what it asks should fail rather than silently do nothing.
+
+  **The guards mirror `requestConfirmation()`'s own**, so the warning fires exactly when that method would
+  decline to issue — not on a superset. A capability with no executor is already reported separately and is
+  not double-warned.
+
+  This trap cost a wrongly-filed defect issue and a reverted documentation change before it was found; the
+  warning exists so the next person meets it at deploy time instead.
+
 - `verdict:validate` now warns for each non-durable adapter configured outside `local` and `testing`: the
   in-memory evidence recorder and the in-memory approval, rate-limit, execution-claim, and
   capability-configuration stores. `config/verdict.php` has always said in comments that these are unsafe
