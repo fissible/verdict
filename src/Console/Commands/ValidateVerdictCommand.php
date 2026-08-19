@@ -65,7 +65,14 @@ final class ValidateVerdictCommand extends Command
             // this capability asks for confirmation and never pauses — no human is ever shown the
             // proposal. It still fails closed, because execution denies without a receipt, which is why
             // this warns rather than errors. The guards mirror requestConfirmation()'s own, so this warns
-            // exactly when that method would decline to issue.
+            // exactly when that method would decline to issue — a broader guard would fire this detail
+            // text at capabilities where the mechanism differs, and a warning whose remedy is wrong for
+            // some recipients teaches people to skim warnings.
+            //
+            // The mirror is an invariant, not a coincidence: StreamedApprovalResumptionTest (#229) pins
+            // the product side of it by asserting shouldRequestApproval() returns null for exactly this
+            // combination. If requestConfirmation()'s guard ever changes, that test fails first and points
+            // whoever changed it at this check.
             if ($capability->confirmationRequired()
                 && $capability->isExecutable()
                 && $capability->executionTargetPolicy() === null) {
