@@ -26,7 +26,9 @@ Laravel AI v0.10.2 (the vendored version) already provides everything this would
 The real blocker is Verdict-side, tracked in
 [issue #22](https://github.com/fissible/verdict/issues/22): see "Decision" below.
 
-**Update:** Issue #22 has landed. `VerdictApprovalMiddleware` now keeps `ApprovalExecutionContext`'s frame alive through a streamed response's full iteration, not just until the middleware call returns synchronously. Streaming approval resumption is supported as of this change.
+**Update (#22):** `VerdictApprovalMiddleware` now keeps `ApprovalExecutionContext`'s frame alive through a streamed response's full iteration, not just until the middleware call returns synchronously.
+
+**Scope of that update, stated precisely.** This sentence originally ended "Streaming approval resumption is supported as of this change," which claimed more than #22 established and more than is verified today. What is exercised — by `StreamedApprovalResumptionTest`, through Laravel AI's real `stream()` pipeline — is that a confirmation-gated capability pauses a streamed run, that the executor does not run before approval, and that resuming an approved run does not raise. Whether the executor runs *after* the resume is not asserted: it does not fire under `Agent::fake()`, and fake-versus-product is unresolved there, so it needs a live provider ([#218](https://github.com/fissible/verdict/issues/218)). Read this ADR's title as still governing the completion half.
 
 ## Context
 
