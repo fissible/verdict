@@ -4,6 +4,33 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Correction: streamed approval resumption is not verified, and the compatibility matrix previously said
+  it was.** The cell is now `⚠️ Not verified` with a bounding footnote matching its neighbours, ADR 0006's
+  Update is narrowed to what [#22](https://github.com/fissible/verdict/issues/22) actually fixed, and the
+  adoption guide warns against selecting streaming for a confirmation-gated capability. See
+  [#227](https://github.com/fissible/verdict/issues/227).
+
+  **What #22 fixed is real and narrower than the claim built on it.** `VerdictApprovalMiddleware` keeps
+  `ApprovalExecutionContext`'s frame alive through a streamed response's full iteration. That is frame
+  lifetime; it is not a demonstrated pause → approve → resume round trip, and no test in the suite
+  exercises one.
+
+  **Measured, not inferred.** Against two live providers from different vendors — Ollama
+  `qwen2.5-abliterate:7b` and Anthropic `claude-haiku-4-5`, both of which genuinely called the tool —
+  the tool executed rather than pausing. `hasPendingApprovals` was `false` in both runs, so
+  `stream(Decision::approveAll())` had nothing pending to resume. Where in the chain the pause is lost is
+  not yet established.
+
+  **The failure is closed, not open.** Verdict denied at the execution stage in both runs; the protected
+  action did not execute. Nothing was less safe than documented — the documentation claimed a capability
+  that does not currently work, rather than hiding a bypass. **The synchronous path is affected too.** An
+  initial draft of this entry said it was unaffected; a `prompt()` run against the same provider produced
+  the identical non-pausing result, so the failure is mode-independent and that claim was the same shape as
+  the one being corrected. Verdict's approval machinery works when driven directly; what is unverified is
+  the integration that turns a required confirmation into an agent-loop pause.
+
+  Root cause — upstream, adapter, or a wiring precondition — is unresolved and tracked in #227.
+
 - `verdict:validate` now warns for each non-durable adapter configured outside `local` and `testing`: the
   in-memory evidence recorder and the in-memory approval, rate-limit, execution-claim, and
   capability-configuration stores. `config/verdict.php` has always said in comments that these are unsafe
