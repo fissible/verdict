@@ -4,6 +4,25 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Streamed approval resumption is now verified **through completion**, and the compatibility matrix footnote
+  says what backs it. `StreamedApprovalResumptionTest` drives a confirmation-gated capability through
+  Laravel AI's real `stream()` pipeline and asserts it pauses, does not execute before approval, and
+  executes exactly once on an approved resume. See [#218](https://github.com/fissible/verdict/issues/218).
+
+  **Two application requirements are now documented, because getting either wrong fails silently.** The
+  receipt must be approved in Verdict through the application's own authenticated flow, and the resume must
+  carry a *specific* tool-call decision. `Decision::approveAll()` yields a wildcard `'*'` that
+  `ApprovalExecutionContext::push()` deliberately skips — a blanket approval from the agent loop must not
+  authorize a specific consequential action. A resume missing either step executes nothing and looks like a
+  broken feature.
+
+  **The test uses a `StepTextGateway`, not `Agent::fake()`, and that is load-bearing.**
+  `ResumesToolApprovals::resumableApprovalFor()` returns `null` for a faked gateway, so a faked agent never
+  resumes tools and would report non-execution for a reason unrelated to Verdict.
+
+  A recorded live run against Ollama is published in `docs/evaluation.md`, alongside the five instrument
+  defects that produced convincing false negatives before it.
+
 - `verdict:validate` now names any capability that declares `requiresConfirmation()` with no
   execution-target policy. That combination looks gated and never pauses: `requestConfirmation()` returns
   `null` without a target policy, so `shouldRequestApproval()` returns `null`, Laravel AI has nothing to
