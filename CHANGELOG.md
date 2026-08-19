@@ -23,8 +23,11 @@ All notable changes to Verdict will be documented in this file.
 
   **The failure is closed, not open.** Verdict denied at the execution stage in both runs; the protected
   action did not execute. Nothing was less safe than documented — the documentation claimed a capability
-  that does not currently work, rather than hiding a bypass. Synchronous approval resumption is unaffected
-  and remains exercised by the suite.
+  that does not currently work, rather than hiding a bypass. **The synchronous path is affected too.** An
+  initial draft of this entry said it was unaffected; a `prompt()` run against the same provider produced
+  the identical non-pausing result, so the failure is mode-independent and that claim was the same shape as
+  the one being corrected. Verdict's approval machinery works when driven directly; what is unverified is
+  the integration that turns a required confirmation into an agent-loop pause.
 
   Root cause — upstream, adapter, or a wiring precondition — is unresolved and tracked in #227.
 
