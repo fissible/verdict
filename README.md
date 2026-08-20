@@ -121,7 +121,7 @@ A denial is a result, not an exception. The tool call completes, the agent loop 
 ## Installation
 
 ```bash
-composer require fissible/verdict:^0.7
+composer require fissible/verdict:^0.8
 php artisan vendor:publish --provider="Fissible\Verdict\VerdictServiceProvider" --tag="verdict-config"
 php artisan migrate
 ```

@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-19
+
 - Decision-evidence records now carry an **Attest-independent identity**: a `claimType` saying what the
   record asserts, and a scheme-tagged `recordDigest` naming which exact record it is. Both are derived,
   additive, and computed with no dependency on `fissible/attest`. See
@@ -869,7 +871,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/fissible/verdict/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/fissible/verdict/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fissible/verdict/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/fissible/verdict/compare/v0.4.0...v0.5.0
