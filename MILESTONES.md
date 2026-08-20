@@ -256,6 +256,10 @@ authorization.
 | [#210](https://github.com/fissible/verdict/issues/210) Register a capability by affirming it, not by wiring it | L | — | ✅ Shipped — PR #215, ADR 0027 |
 | [#147](https://github.com/fissible/verdict/issues/147) Write a worked incident-response walkthrough over the evidence tables | M | — | ✅ Shipped — PR #220 |
 | [#146](https://github.com/fissible/verdict/issues/146) Warn from `verdict:validate` when a non-durable adapter is configured outside local | S | — | ✅ Shipped — PR #221 |
+| [#218](https://github.com/fissible/verdict/issues/218) Prove the confirmed-mutation allow-execute completes live (streamed + queued) | L | — | ✅ Shipped — PRs #233, #235 |
+| [#224](https://github.com/fissible/verdict/issues/224) Surface integrity-vs-completeness in verification output | S | — | ✅ Shipped — PR #232 |
+| [#230](https://github.com/fissible/verdict/issues/230) Name a confirmation gate that can never pause — advisory half | S | — | ✅ Shipped — PR #231; rejection half in v1.0.0 |
+| [#223](https://github.com/fissible/verdict/issues/223) Give evidence records an Attest-independent canonical identity | M | — | ✅ Shipped — PR #236 |
 
 **#185 first — it makes every future recorded run trustworthy.** v0.7.0's own recorded run was nearly
 published against a silently-blind guarded arm ([#183](https://github.com/fissible/verdict/issues/183)): the
@@ -289,26 +293,59 @@ implementation branch.
 work that lands before the tag, exactly as prior milestones did — which is why #152, #163, #210, #147, and
 #146 appear above without having been in the original plan.
 
-**Every row is shipped and no tag has been cut.** That is a deliberate hold, not an oversight: the tag is cut
-when someone decides to cut it, and `main` carrying released-quality work for a while is not a defect. What
-this section must not do is describe shipped work as pending, which it did until this reconciliation.
+This tag's window also absorbed work without a tracking issue: Claude 5 live-harness support and the
+aligned-ceiling control run (#217), and making `verify:claims` offline-safe with the network made opt-in
+(#219, #222).
 
-**The next thread is [#218](https://github.com/fissible/verdict/issues/218)**, which proves the
-confirmed-mutation allow path completes live end-to-end and is the only thing blocking #204. Its scoping
-established that a two-turn approval resume produces two distinct Laravel AI invocation ids — measured, not
-assumed — so the live harness cannot correlate the proposing turn with the executing one by `invocation_id`.
-It is not scheduled into a milestone here until its design lands.
+**#218 closed 2026-08-19** with both transports verified through completion: streamed via a
+`StepTextGateway` (#233) and queued across a real `InvokeAgent` dispatch, executing exactly once after
+approval (#235). The queued cell was the gap external review had named. Its scoping measured that a
+two-turn approval resume produces two distinct Laravel AI invocation ids, so the live harness cannot
+correlate the proposing turn with the executing one by `invocation_id` — that constraint carries into
+[#204](https://github.com/fissible/verdict/issues/204), which #218's closure unblocks and which is
+scheduled into v0.9.0 below.
+
+**Every row is shipped and the tag is ready to cut.**
 
 ---
 
-## Contributor-ready — deliberately unscheduled
+## v0.9.0 — Adoption-grade proof
 
-These carry `scope: ready` and are open to anyone. They are **not** attached to a milestone, and that is a
-decision rather than an oversight: a milestone closes when its issues close, so scheduling unclaimed
-volunteer work would make a release depend on strangers who may never start. Labels are the discovery
-surface — `CONTRIBUTING.md` points contributors at `scope: ready`, and newcomers filter on
-`good first issue`. Whatever lands before a tag ships in that tag, exactly as displaced scope did for
-v0.4.0.
+**Theme.** v0.8.0 finished making the boundary measurable; this milestone makes the proof *continuous*
+and *copyable*. Continuous: the attack packs stop being something that was run once and start being
+something CI re-verifies on every commit. Copyable: the correct wiring stops being prose and becomes an
+application someone can clone. And the remaining unmeasured boundary — the human-approval challenge —
+becomes observable to the live packs.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | none | open |
+| [#225](https://github.com/fissible/verdict/issues/225) Design spike: vendor-neutral EvidenceReference | M | #223 ✅ | open |
+| [#204](https://github.com/fissible/verdict/issues/204) Approval-challenge facts observable to the live attack packs | L | #218 ✅ | open |
+| [#237](https://github.com/fissible/verdict/issues/237) Clone-and-run reference application | XL | v0.8.0 tag | open |
+
+**Ordering.** #148 first: smallest, no dependencies, and it is the substrate #213's realism levers are
+gated behind — every later pack change lands against a committed baseline instead of a rerun. #225 next,
+while #223's decisions are fresh; it is the design half of the cross-system evidence story and should not
+be re-derived cold. #204 is the research thread: v0.7.0 measured authorization, v0.8.0 measured intent,
+this makes the approval boundary measurable the same way. #237 is the milestone's adoption artifact and
+its largest item; its one open design decision (how the demo runs without a paid model key) is stated in
+the issue. The repository it lives in is a portfolio decision made outside this tracker.
+
+**#148 was contributor-pool work and is deliberately pulled out of it.** A milestone must not depend on
+unclaimed volunteer work; scheduling #148 means the maintainer is claiming it.
+
+---
+
+## Contributor-ready
+
+These carry `scope: ready` and are open to anyone. They also now carry the `v1.0.0` milestone — a change
+from the earlier rule that unclaimed work stays unscheduled. The underlying principle is unchanged: a
+release must not depend on strangers who may never start. The milestone states what 1.0 *requires*; it
+does not gate interim tags — whatever lands early ships in whichever tag is open, exactly as displaced
+scope did for v0.4.0, and whatever is still unclaimed at the 1.0 decision point is absorbed by the
+maintainer or explicitly re-triaged (see the v1.0.0 section below). Labels remain the discovery surface —
+`CONTRIBUTING.md` points contributors at `scope: ready`, and newcomers filter on `good first issue`.
 
 Ordered by suggested pickup order: defects first, then self-contained work with a visible result.
 
@@ -320,7 +357,6 @@ Ordered by suggested pickup order: defects first, then self-contained work with 
 | [#166](https://github.com/fissible/verdict/issues/166) Prove a failing `CapabilityConfigurationStore` fails closed | S | `good first issue` | none — template at `SemanticRateLimitTest:194` |
 | [#168](https://github.com/fissible/verdict/issues/168) Assert the schema the migrations produce on MySQL, MariaDB, and PostgreSQL | S/M | `good first issue` | none — the matrix already runs them |
 | [#144](https://github.com/fissible/verdict/issues/144) Prove the in-memory stores agree with the database stores | M | `help wanted` | none |
-| [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | `help wanted` | none |
 | [#145](https://github.com/fissible/verdict/issues/145) Add a delegation attack pack for actor-versus-subject confusion | M | `help wanted` | #31 ✅ |
 | [#167](https://github.com/fissible/verdict/issues/167) Pin cross-actor approval receipt separation end to end | S | `help wanted` | none |
 | [#151](https://github.com/fissible/verdict/issues/151) Harden field-path handling in the release path | M | `help wanted` | none — #150 shipped in v0.5.0 |
@@ -358,26 +394,54 @@ covers SQLite and MySQL only.
 **#142 and #141 must not collide.** #141 owns the `evidence.attest` block, which has real invariants; #142
 owns the four repeated store sections, which have none. Whoever takes the second should rebase on the first.
 
+**Deliberately unscheduled**, each for its own reason rather than by the old blanket rule:
+
+- [#201](https://github.com/fissible/verdict/issues/201) — a recorded, documented limitation; it becomes
+  scheduled work when an adopter hits it, per the v1.0.0 section's argument.
+- [#212](https://github.com/fissible/verdict/issues/212) — on-demand by its own framing; attach it to
+  whichever recorded run next needs a middle-spectrum arm.
+- [#213](https://github.com/fissible/verdict/issues/213) — an epic; its children take milestones (#148
+  opens in v0.9.0), the umbrella does not close with any one tag.
+
 ---
 
-## 1.0 readiness
+## v1.0.0 — the 1.0 bar
 
-Nothing is scheduled, and nothing is listed here on purpose.
+An earlier revision of this section scheduled nothing, on the argument that inventing 1.0 work would
+produce a backlog that measures imagination rather than adoption. That argument held until the backlog
+produced 1.0-shaped work on its own: two decisions now name 1.0 as their natural boundary, one dependency
+question cannot be called settled while upstream sits behind a known unreleased breaking change, and the
+contributor pool's pinning work serves the bar directly. The milestone now exists and carries them.
 
-Every issue this section previously named — the concurrency spike and its tests and benchmarks, the
-extension-contract stability audit, the guarantee-to-test traceability sweep, the ordering and
-compatibility matrix — is closed. Listing closed work as a backlog made the document say the opposite of
-what was true.
+The bar itself is unchanged and stated in [`RELEASES.md`](RELEASES.md): stable documented contracts, an
+explicit Laravel AI compatibility strategy, upgrade-safe migrations, real-application feedback, and no
+known silent bypass within the supported integration paths.
 
-What replaces it is not a shorter list. Verdict's remaining 1.0 questions are the ones only real
-applications can ask: which contracts turn out to be load-bearing in an integration nobody here designed,
-which documented guarantee turns out to be worded more strongly than the implementation supports, and which
-upgrade path hurts. Those become issues when someone hits them, not before. Inventing them now would
-produce a backlog that measures imagination rather than adoption.
+**The decision pair, first:**
 
-The 1.0 bar itself is unchanged and stated in [`RELEASES.md`](RELEASES.md): stable documented contracts, an
-explicit Laravel AI compatibility strategy, upgrade-safe migrations, real-application feedback, and no known
-silent bypass within the supported integration paths.
+| Issue | Effort | Deps |
+|---|---|---|
+| [#159](https://github.com/fissible/verdict/issues/159) Decide whether the capability invariant is structural or only declarative | M | none |
+| [#230](https://github.com/fissible/verdict/issues/230) Reject a pause-less confirmation gate at registration (rejection half) | S | #159 |
+
+These are one question at two layers — whether the boundary is enforced by structure or by advisory — and
+should settle in one ADR. #230's thread already proposes the sequencing: the v0.8.0 advisory (#231) *is*
+the deprecation period, and registration-time rejection lands at the 1.0 boundary.
+
+**Upstream-gated:** [#130](https://github.com/fissible/verdict/issues/130) widens `laravel/ai` to `^0.11`
+when upstream publishes the run-context stack. Blocked on upstream's tag, not on this project; the canary
+and Dependabot are the alarms (see the dependency watch below). The compatibility-strategy criterion is
+not satisfiable while the dependency sits behind a known unreleased breaking change, which is why it
+lives here.
+
+**The pinning pool** is the contributor-ready section above: every guarantee that holds today but is not
+pinned by a test, plus the hardening that makes an allowlist explainable. Suggested pickup order is stated
+there; #156 and #160 carry `scope: design` and need a decision before code.
+
+**What this milestone cannot contain:** the real-application-feedback criterion is not backlog. It arrives
+through adoption — [#237](https://github.com/fissible/verdict/issues/237) is the nearest instrument;
+external contributors and issue reports are the rest. A 1.0 with every issue above closed but no
+integration feedback is not a true 1.0. The tag waits for the evidence, not the checklist.
 
 ---
 
