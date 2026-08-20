@@ -68,6 +68,10 @@ byte-equality that is unreachable anyway.
 A stable, namespaced label saying what the record asserts, so an external reader cannot mistake an
 authorization decision for an execution or a resulting state.
 
+The rules this vocabulary obeys — curated never mechanical, keyed per stage, additive-only, and never
+implying execution — are fixed in
+[ADR 0028](adr/0028-claim-type-is-a-curated-public-vocabulary.md).
+
 **This is a public, versioned, additive-only vocabulary.** The strings are decoupled from the
 internal `stage`/`disposition` names on purpose: an internal rename must not silently break an
 external reference. Cases are added; they are not repurposed or removed.

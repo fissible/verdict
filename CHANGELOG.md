@@ -35,6 +35,12 @@ All notable changes to Verdict will be documented in this file.
   on `execution_claim_status` and `approval_phase` respectively, and `ClaimTypeVocabularyTest` fails until
   every tuple the state machine can emit is mapped or explicitly declared unreachable.
 
+  [ADR 0028](docs/adr/0028-claim-type-is-a-curated-public-vocabulary.md) fixes the rules the vocabulary
+  obeys — curated never mechanical, keyed per stage, additive-only, and never implying that an execution
+  happened — so a future contributor cannot regenerate the map or rename a published label. The table
+  itself lives in `docs/evidence-record-identity.md`, cross-linked from the incident-response runbook and
+  the security model.
+
 - The execution-mode compatibility matrix has no unverified cells left: **queued approval resumption is
   verified through completion.** `QueuedApprovalResumptionTest` dispatches a real `InvokeAgent` job onto
   the database queue, runs `queue:work --once --force`, and asserts the worker paused on a confirmation

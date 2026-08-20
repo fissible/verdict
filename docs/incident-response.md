@@ -58,6 +58,14 @@ ORDER BY recorded_at, id;
 that actually ran ends with a `permit` at the `execution` stage; anything else is a denial you are
 confirming rather than an incident you are investigating.
 
+`claim_type` states what each row asserts in one label, and is the faster read: selecting
+`claim_type = 'verdict.execution.claim-completed'` finds completions without knowing which
+stage/disposition/status tuple produces one, and `verdict.approval.consumption-failed` names a replayed
+single-use receipt directly. Two labels are worth knowing before you rely on them — `claim-admitted` means
+the action was handed to its executor and **nothing has run**, and `claim-completed` is Verdict marking its
+own claim complete around a successful return, never a receipt from the executor. The full table is in
+[evidence record identity](evidence-record-identity.md).
+
 **What this establishes.** That Verdict evaluated this capability, at these stages, and reached these
 dispositions, at these times.
 
@@ -363,3 +371,7 @@ Joins that do not work:
 - [Architecture](architecture.md) — where in the lifecycle each record is written.
 - [ADR 0007](adr/0007-evidence-layering.md) — why receipts are operational state and not evidence.
 - [ADR 0026](adr/0026-what-an-approver-is-shown.md) — what an approver is shown, and why absence is rendered.
+- [Evidence record identity](evidence-record-identity.md) — the `claim_type` vocabulary and the
+  `record_digest` you cite a specific row by.
+- [ADR 0028](adr/0028-claim-type-is-a-curated-public-vocabulary.md) — why a claim type never implies that
+  an execution happened.
