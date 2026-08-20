@@ -4,6 +4,35 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **`laravel/ai` widened to `^0.11.0`, and `0.10.x` is no longer supported.** `0.11.0` released the
+  run-context stack Verdict had been waiting on ([#870](https://github.com/laravel/ai/pull/870),
+  [#872](https://github.com/laravel/ai/pull/872), [#873](https://github.com/laravel/ai/pull/873),
+  [#874](https://github.com/laravel/ai/pull/874), [#875](https://github.com/laravel/ai/pull/875),
+  [#876](https://github.com/laravel/ai/pull/876)). See
+  [#130](https://github.com/fissible/verdict/issues/130).
+
+  **Dropping `0.10.x` is forced, not incidental.** #874 made `float $time` a required seventh argument on
+  `Events\ToolInvoked`; one test construction cannot satisfy both floors, and supporting both would mean
+  version-conditional test code for no adopter benefit. Applications on `laravel/ai 0.10.x` must upgrade
+  before taking this release.
+
+  **An upstream defect Verdict pinned is fixed, and the pin now asserts the fix.** `ToolInvoked` used to
+  report the *inner* tool's id on the *outer* tool's completion event under a sub-agent, because
+  `GeneratesText::$currentToolInvocationId` was one property on a memoized provider. Verdict recorded that
+  id into its evidence trail, so `ToolInvocationCorrelationTest` pinned the broken behaviour on purpose
+  ([#53](https://github.com/fissible/verdict/pull/53)) — an upstream fix would fail loudly rather than
+  change the meaning of recorded evidence in silence. laravel/ai#872 fixed it; the alarm fired; the
+  assertion now states the fixed behaviour.
+
+  **Nothing else in Verdict changed.** PHPStan is clean and the only two failures on the upgrade were the
+  two the compatibility watch had planted. Re-verified explicitly, because each could have shifted
+  evidence correlation without failing a test: a sub-agent run still receives its *own* invocation id
+  rather than inheriting its parent's, so tool-result provenance still correlates to the run that produced
+  it; a two-turn approval resume still mints two invocation ids, so the tool call id remains the
+  boundary-spanning key; and laravel/ai#758's change to conversation-history replay leaves the streamed and
+  queued approval-resumption matrix cells passing unchanged. `docs/laravel-ai-compatibility.md` records
+  what changed and what did not.
+
 ## [0.8.0] - 2026-08-19
 
 - Decision-evidence records now carry an **Attest-independent identity**: a `claimType` saying what the

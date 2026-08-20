@@ -232,7 +232,7 @@ it('isolates provider state under a fake in a way production does not', function
     expect(Ai::textProviderFor($agent))->not->toBe(Ai::textProviderFor($agent));
 });
 
-it('reports the nested tool invocation id on the outer ToolInvoked event', function (): void {
+it('reports each tool invocation id on its own ToolInvoked event, including under a sub-agent', function (): void {
     // Resolving the provider directly and swapping the gateway onto it, rather than going
     // through Ai::fakeAgent(), keeps both agents on the one memoized instance that production
     // uses. A single gateway serves both generations, so the script is in nesting order.
@@ -248,17 +248,34 @@ it('reports the nested tool invocation id on the outer ToolInvoked event', funct
     [$outerInvoking, $innerInvoking] = [CorrelationProbe::$trace[0], CorrelationProbe::$trace[1]];
     [$innerInvoked, $outerInvoked] = [CorrelationProbe::$trace[3], CorrelationProbe::$trace[4]];
 
-    // GeneratesText::$currentToolInvocationId is one property on the provider. The nested
-    // generation overwrites it and never restores it, so the outer tool's completion event
-    // reports the inner tool's id. This is an upstream defect; the test pins it so a future
-    // laravel/ai release that fixes it fails here rather than changing evidence silently.
-    expect($outerInvoked['tool_call_id'])->toBe($innerInvoked['tool_call_id'])
-        ->and($outerInvoked['tool_call_id'])->not->toBe($outerInvoking['tool_call_id']);
+    // This asserted the *defect* until laravel/ai v0.11.0. `GeneratesText::$currentToolInvocationId`
+    // was one property on a per-name-memoized provider, so a nested generation overwrote it and never
+    // restored it, and the outer tool's completion event carried the *inner* tool's id — silently
+    // mis-correlating the evidence Verdict writes from these events. Verdict pinned the broken
+    // behaviour on purpose (#53) so an upstream fix would fail here rather than change the meaning of
+    // recorded evidence without anyone noticing.
+    //
+    // The alarm fired as designed. laravel/ai#872 deleted the shared property and scoped the id
+    // through a RunContext, so the assertion is now the fixed behaviour: each tool's completion event
+    // reports its own id, and the outer one is no longer clobbered by the nested run. Keep asserting
+    // it — this is the correlation guarantee Verdict's provenance depends on, not a historical note.
+    // (The fix arrived via #872, not the superseded draft #848 it was split out of.)
+    expect($outerInvoked['tool_call_id'])->toBe($outerInvoking['tool_call_id'])
+        ->and($outerInvoked['tool_call_id'])->not->toBe($innerInvoked['tool_call_id']);
 
-    // InvokingTool is dispatched in the same frame as the handle() it precedes, so it is
-    // correct at the moment it fires. Only the trailing event is affected.
+    // InvokingTool was always dispatched in the same frame as the handle() it precedes, so it was
+    // correct even while the trailing event was not. It still is.
     expect($innerInvoking['tool_call_id'])->toBe($innerInvoked['tool_call_id']);
 
     // Request::toolCallId() is a parameter, not shared state, so it is never affected.
     expect(CorrelationProbe::$trace[2]['tool_call_id'])->toBe('call_inner');
+
+    // Re-verified against v0.11.0's new contracts, because RecordToolResultProvenance correlates
+    // tool-result provenance by exactly this id. #871 threads one invocation id through an entire
+    // agent run and #875 links a sub-agent back to its parent — but a sub-agent run still gets its
+    // *own* invocation id plus a parent pointer, rather than inheriting the parent's. So a
+    // sub-agent's tool results correlate to the sub-agent's run, which is what Verdict records.
+    expect($outerInvoking['invocation_id'])->toBe($outerInvoked['invocation_id'])
+        ->and($innerInvoking['invocation_id'])->toBe($innerInvoked['invocation_id'])
+        ->and($outerInvoked['invocation_id'])->not->toBe($innerInvoked['invocation_id']);
 });

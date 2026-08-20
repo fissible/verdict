@@ -518,6 +518,10 @@ it('records only classified tool results and correlates them to the invocation',
         tool: $classified,
         arguments: ['secret' => 'do-not-record'],
         result: 'classified tool result',
+        // Required since laravel/ai #874: wall time in the tool's handler, in milliseconds. Verdict
+        // records provenance from the result, never from the duration, so any value serves here —
+        // the argument exists so this construction matches the shipped signature.
+        time: 1.0,
     ));
     event(new ToolInvoked(
         invocationId: 'tool-invocation',
@@ -526,6 +530,7 @@ it('records only classified tool results and correlates them to the invocation',
         tool: $unclassified,
         arguments: [],
         result: 'unclassified result',
+        time: 1.0,
     ));
 
     $recorder = app(EvidenceRecorder::class);

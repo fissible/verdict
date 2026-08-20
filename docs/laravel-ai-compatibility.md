@@ -1,10 +1,10 @@
 # Laravel AI dependency surface
 
-Verdict pins `laravel/ai: ^0.10.2` — pre-1.0, Composer-caret-pinned to `>=0.10.2 <0.11.0`. This document inventories every place Verdict's `src/` depends on that package's surface, classifies each dependency by how likely it is to change without warning, and — for the dependencies that could break silently — names the test that would catch it.
+Verdict pins `laravel/ai: ^0.11.0` — pre-1.0, Composer-caret-pinned to `>=0.11.0 <0.12.0`. **`0.10.x` is no longer supported**, and the range is stated rather than widened by reflex: `0.11.0`'s [#874](https://github.com/laravel/ai/pull/874) made `float $time` a required seventh argument on `Events\ToolInvoked`, so one test construction cannot satisfy both floors. Supporting both would mean version-conditional test code for no adopter benefit. This document inventories every place Verdict's `src/` depends on that package's surface, classifies each dependency by how likely it is to change without warning, and — for the dependencies that could break silently — names the test that would catch it.
 
 ## Methodology and its limit
 
-This is a grep-and-read audit of `src/`, not a promise from upstream. `laravel/ai` carries no `@api`, `@internal`, or `@experimental` annotations anywhere in its contracts, events, or prompt classes (checked directly against the installed `v0.10.3`) — it does not itself declare which parts of its surface are meant to be extended versus which are implementation detail. The classification below is Verdict's own judgment, inferred from shape (formal interface vs. concrete class vs. framework pipeline convention), not an upstream commitment. Treat "stable" below as "the part of the surface a Tool/Agent SDK integration would reasonably have to depend on," not "guaranteed unchanged."
+This is a grep-and-read audit of `src/`, not a promise from upstream. `laravel/ai` carries no `@api`, `@internal`, or `@experimental` annotations anywhere in its contracts, events, or prompt classes (checked directly against the installed `v0.11.0`) — it does not itself declare which parts of its surface are meant to be extended versus which are implementation detail. The classification below is Verdict's own judgment, inferred from shape (formal interface vs. concrete class vs. framework pipeline convention), not an upstream commitment. Treat "stable" below as "the part of the surface a Tool/Agent SDK integration would reasonably have to depend on," not "guaranteed unchanged."
 
 ## Classification legend
 
@@ -26,7 +26,7 @@ Every `Laravel\Ai\*` symbol referenced anywhere in `src/` (verified via `grep -r
 | `Contracts\Agent` | (a) type / (c) assumption | `PromptProvenanceRegistry` (`WeakMap<Agent, …>` key), `VerdictProvenanceMiddleware::handle()` (`$prompt->agent`) | The interface itself is stable documented surface — but Verdict's actual dependency is on an **undocumented behavioral property**: that Laravel AI hands back the *same* `Agent` object instance across the initial prompt and the later `PromptingAgent`/`ToolInvoked` events for one invocation. Nothing in the `Agent` interface promises object identity. See [Category (c) deep dive: Agent identity](#agent-identity-across-the-prompt-lifecycle) below. |
 | `Prompts\AgentPrompt` | (b) | `VerdictApprovalMiddleware::handle()`, `VerdictProvenanceMiddleware::handle()`, `RecordAgentPromptProvenance::handle()` (via `$event->prompt`) | Concrete class (`class AgentPrompt extends Prompt`), no interface at all. Verdict reads `$prompt->invocationId`, `$prompt->prompt`, `$prompt->agent`, `$prompt->approvalDecisions`, and calls `$prompt->hasApprovalDecisions()`. Every one of these is a public/readonly property or method on a concrete class Laravel AI is free to restructure pre-1.0. |
 | `Events\PromptingAgent` | (c) | `VerdictServiceProvider` (`$events->listen(PromptingAgent::class, RecordAgentPromptProvenance::class)`), `RecordAgentPromptProvenance::handle()` | A plain event class (`invocationId`, `prompt`) — the risk isn't the class shape, it's *when* Laravel AI fires it relative to prompt middleware and tool invocation. See the deep dive below. |
-| `Events\ToolInvoked` | (c) | `VerdictServiceProvider`, `RecordToolResultProvenance::handle()` | `invocationId`, `toolInvocationId`, `agent`, `tool`, `arguments`, `result`. This is the event at the center of the known `toolInvocationId` nesting defect — see [Cross-reference](#cross-reference-composerjson-and-the-existing-compatibility-watch) below. |
+| `Events\ToolInvoked` | (c) | `VerdictServiceProvider`, `RecordToolResultProvenance::handle()` | `invocationId`, `agent`, `tool`, `result`. Gained a required `float $time` in `0.11.0` ([#874](https://github.com/laravel/ai/pull/874)) — the change that set this package's floor. Verdict's listener reads neither `time` nor `toolInvocationId`, so it was unaffected; the two hand-constructed events in `LaravelAiProvenanceTest` were not, which is why a breaking change here is loud. The `toolInvocationId` nesting defect this event was previously at the centre of is **fixed** in `0.11.0` — see [What 0.11.0 changed](#what-0110-changed-and-what-it-did-not). |
 | `Approvals\Decisions` | (b) | `ApprovalExecutionContext::within()`, `VerdictApprovalMiddleware`, `AbstractVerdictTool` (docblock) | Concrete class. `->all()` is iterated and each value's `->isApproved()` is called (duck-typed against `Approvals\Decision`, which is never imported in `src/` — see [Corrections](#corrections-to-the-issue-draft) below). |
 
 **`handle(AgentPrompt $prompt, Closure $next): mixed`** — `VerdictApprovalMiddleware` and `VerdictProvenanceMiddleware` both implement this signature as Laravel AI prompt middleware. This is category (c) in its purest form: there is no `Contracts\Middleware` interface to implement or grep for. The signature convention (`handle($passable, Closure $next)`) mirrors Laravel's own HTTP/job middleware idiom, which is a reasonable inference, not a documented Laravel AI promise.
@@ -89,6 +89,45 @@ Issue #18's own "known touch points" list was explicitly a quick grep pass, not 
 - **`Laravel\Ai\Approvals\Decision` (singular)** is not referenced anywhere in `src/`. It appears only in `tests/Feature/ApprovalFlowTest.php`, via `Decision::approveAll()`, as the deliberate wildcard-rejection test described above. `src/` only ever imports `Decisions` (plural).
 - **The quoted README passage** — "Laravel AI is pre-1.0, so Verdict verifies its adapter against released public contracts and should expect compatibility work as that SDK changes," cited at `README.md:1334-1336` — no longer exists anywhere in the repository (`grep -rl` across all `*.md` files returns nothing). Likewise, the "complete compatibility matrix" roadmap gate the issue cites from the old README no longer exists there either. Both were apparently carried over from the README's pre-restructure state. The compatibility-matrix concept survives, just relocated: it's tracked as its own issue, [#19](https://github.com/fissible/verdict/issues/19) ("Add consolidated ordering table and streaming/queued compatibility matrix"), and the day-to-day upstream watch lives in `MILESTONES.md`'s "Upstream dependency watch" section, not README. This audit is the inventory that section assumed existed; #19 remains the separate, not-yet-done deliverable for the matrix itself.
 
+## What `0.11.0` changed, and what it did not
+
+Absorbed in [#130](https://github.com/fissible/verdict/issues/130). Two Verdict tests failed on the
+upgrade and nothing else did; PHPStan was clean, which is the signal that no `src/` consumer of a changed
+contract needed a signature change.
+
+**The `toolInvocationId` nesting defect is fixed.** `GeneratesText::$currentToolInvocationId` was one
+property on a per-name-memoized provider, so a nested generation overwrote it and the *outer* tool's
+`ToolInvoked` carried the *inner* tool's id — silently mis-correlating evidence Verdict writes from these
+events. [#872](https://github.com/laravel/ai/pull/872) deleted the shared property and scoped the id
+through a run context. `ToolInvocationCorrelationTest` pinned the broken behaviour on purpose
+([#53](https://github.com/fissible/verdict/pull/53)) so the fix would fail loudly rather than change the
+meaning of recorded evidence quietly. That alarm fired, and the assertion now states the fixed behaviour.
+The fix shipped as #872; the draft #848 it was split out of was closed as superseded and is **not** the
+fix, despite earlier notes citing it as such.
+
+**Invocation ids remain per-run, which is what Verdict's provenance correlates by.**
+[#871](https://github.com/laravel/ai/pull/871) threads one invocation id through an entire agent run and
+[#875](https://github.com/laravel/ai/pull/875) links a sub-agent back to its parent — but a sub-agent run
+still receives its *own* invocation id plus a parent pointer, rather than inheriting the parent's. So
+`RecordToolResultProvenance` continues to correlate a sub-agent's tool results to the sub-agent's run.
+`ToolInvocationCorrelationTest` asserts this directly rather than leaving it inferred.
+
+**A two-turn approval resume still mints two invocation ids.** Both `Promptable::prompt()` and
+`Promptable::stream()` mint a `Str::uuid7()` unconditionally per call, so the boundary-spanning key across
+an approval pause remains the tool call id, exactly as measured in
+[#218](https://github.com/fissible/verdict/issues/218). Nothing about resumed-approval evidence
+correlation changed.
+
+**The conversation-history replay path changed without breaking anything.**
+[#758](https://github.com/laravel/ai/pull/758) filters partially-orphaned tool calls when replaying
+conversation history — the same reconstruction the streamed and queued approval-resumption cells of the
+[execution-mode matrix](architecture.md#execution-mode-compatibility) depend on. Both suites pass
+unchanged, so those cells' footnotes still hold.
+
+New surface Verdict does **not** consume: `Events\StartingStep`, `Events\StepCompleted`,
+`Events\StepFailed`, and the run-context objects behind them. `ToolFailed` correlation was named as a
+follow-on in #130 and remains unbuilt — nothing here depends on it.
+
 ## Cross-reference: composer.json and the existing compatibility watch
 
 `MILESTONES.md`'s "Upstream dependency watch" section already documents the one *known* incompatibility in play, and this audit defers to it rather than duplicating it:
@@ -97,9 +136,9 @@ Issue #18's own "known touch points" list was explicitly a quick grep pass, not 
 - `tests/Feature/ToolInvocationCorrelationTest.php` deliberately pins the *current, buggy* nested-invocation behavior. Per that file's own framing (restated in `MILESTONES.md`), the test going red when the constraint widens is the designed alarm, not a regression to panic about.
 - This is precisely the "named test that would fail if the underlying behavior changed incompatibly" pattern issue #18 asks category (c) items to have. It already exists for the one dependency where Verdict has hard evidence (not just inference) that the assumption is fragile — `MILESTONES.md` records that this issue was pulled forward specifically because measuring #855/#848 surfaced an undocumented correlation assumption while the findings were fresh.
 
-Nothing found in this audit is used in `src/` but absent from that existing watch list, and no `laravel/ai: ^0.10.2` surface Verdict depends on falls outside what `composer show laravel/ai` reports as installed (`v0.10.3`).
+Nothing found in this audit is used in `src/` but absent from that existing watch list, and no `laravel/ai: ^0.11.0` surface Verdict depends on falls outside what `composer show laravel/ai` reports as installed (`v0.11.0`).
 
-`.github/workflows/laravel-ai-canary.yml` shortens the delay before that alarm can fire. `^0.10.2` is a ceiling — it resolves `>=0.10.2 <0.11.0` — so nothing shipped in `0.11.0` reaches CI until Dependabot's weekly Composer check opens the widening PR, which cannot happen until upstream *publishes*. The canary installs `laravel/ai:0.x-dev` on a weekly schedule and runs PHPStan and the suite against it, reporting when upstream *merges* instead. That lead time is what matters while a stack is still open and reviewable. It is non-blocking by design: a red canary means *upstream changed*, and the response is the checklist in [#130](https://github.com/fissible/verdict/issues/130), not a reflexive constraint bump. Composer normalizes a branch name that already looks like a version, so the constraint is `0.x-dev`; `dev-0.x` does not resolve.
+`.github/workflows/laravel-ai-canary.yml` shortens the delay before that alarm can fire. `^0.11.0` is a ceiling — it resolves `>=0.11.0 <0.12.0` — so nothing shipped in `0.12.0` reaches CI until Dependabot's weekly Composer check opens the widening PR, which cannot happen until upstream *publishes*. The canary installs `laravel/ai:0.x-dev` on a weekly schedule and runs PHPStan and the suite against it, reporting when upstream *merges* instead. That lead time is what matters while a stack is still open and reviewable. It is non-blocking by design: a red canary means *upstream changed*, and the response is the checklist in [#130](https://github.com/fissible/verdict/issues/130), not a reflexive constraint bump. Composer normalizes a branch name that already looks like a version, so the constraint is `0.x-dev`; `dev-0.x` does not resolve.
 
 ## Summary
 
