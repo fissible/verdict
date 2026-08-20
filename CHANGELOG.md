@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-19
+
 - **Every SHA-256 fingerprint validator now anchors with `\z`.** PR [#247](https://github.com/fissible/verdict/pull/247)'s
   review found that `/^[a-f0-9]{64}$/` admits a 65-byte value ending in a newline, because PCRE's `$`
   matches before a trailing `\n`, and closed the hole inside `EvaluationReport`. The three pre-existing
@@ -925,7 +927,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/fissible/verdict/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/fissible/verdict/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/fissible/verdict/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/fissible/verdict/compare/v0.5.0...v0.6.0
