@@ -4,6 +4,43 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Decision-evidence records now carry an **Attest-independent identity**: a `claimType` saying what the
+  record asserts, and a scheme-tagged `recordDigest` naming which exact record it is. Both are derived,
+  additive, and computed with no dependency on `fissible/attest`. See
+  [#223](https://github.com/fissible/verdict/issues/223) and `docs/evidence-record-identity.md`.
+
+  **Why it matters.** A record's only cryptographic identity used to be Attest's hash chain, which coupled
+  "can another system reference this specific decision" to "did you adopt Attest." Identity (semantic,
+  Verdict's) and integrity (cryptographic, Attest's) are now separate: Verdict mints the identity from data
+  it already fingerprints, and `AttestEvidenceRecorder` places `record_digest` in the payload Attest signs,
+  so the signature **covers** it. Attest protects the identity rather than defining it — it cannot sign the
+  value directly, because it hashes its own envelope over its own RFC 8785 encoder.
+
+  **`recordDigest` is `canonicaljson-sha256:<hash>`** over the record's stable fields, reproducible offline
+  from `RecordDigest::stableFields()` and `CanonicalJson` alone — including from a persisted row, which is
+  why `recordedAt` enters as UTC seconds rather than at a precision the `timestamp` column does not keep.
+  `reason` is excluded, so an application cannot change a record's identity by rewording a message, and the
+  idempotency key enters as its fingerprint, never raw. No new raw or sensitive value is introduced.
+  The scheme tag keeps a future canonicalization additive rather than a re-identity of published records.
+
+  **`claimType` is a curated, public, additive-only vocabulary**, not a mechanical
+  `verdict.<stage>.<disposition>` — which would leak internal names into an external contract and mint
+  `verdict.execution.permit`, a string that reads as "execution happened." The strongest execution-adjacent
+  label is `verdict.execution.claim-completed`, documented as an admission-side belief and never a receipt.
+
+  **Two stages needed a third key, and the exhaustiveness test is what found it.** `execution_claim` +
+  `permit` is emitted both when a claim is admitted — before the executor is called — and when it completes;
+  `approval` + `permit` is emitted at three phases, one of which *spends* a single-use receipt. Keying the
+  vocabulary on `stage`+`disposition` alone would have labelled admissions as completions. Those stages key
+  on `execution_claim_status` and `approval_phase` respectively, and `ClaimTypeVocabularyTest` fails until
+  every tuple the state machine can emit is mapped or explicitly declared unreachable.
+
+  [ADR 0028](docs/adr/0028-claim-type-is-a-curated-public-vocabulary.md) fixes the rules the vocabulary
+  obeys — curated never mechanical, keyed per stage, additive-only, and never implying that an execution
+  happened — so a future contributor cannot regenerate the map or rename a published label. The table
+  itself lives in `docs/evidence-record-identity.md`, cross-linked from the incident-response runbook and
+  the security model.
+
 - The execution-mode compatibility matrix has no unverified cells left: **queued approval resumption is
   verified through completion.** `QueuedApprovalResumptionTest` dispatches a real `InvokeAgent` job onto
   the database queue, runs `queue:work --once --force`, and asserts the worker paused on a confirmation

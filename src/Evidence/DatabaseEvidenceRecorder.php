@@ -40,6 +40,8 @@ final readonly class DatabaseEvidenceRecorder implements EvidenceRecorder
             'tool_description_matched' => $evidence->toolDescriptionMatched,
             'stage' => $evidence->stage,
             'disposition' => $evidence->disposition,
+            'claim_type' => $evidence->claimType?->value,
+            'record_digest' => $evidence->recordDigest,
             'reason' => $evidence->reason,
             'source' => null,
             'destination' => null,

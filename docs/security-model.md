@@ -196,6 +196,21 @@ Context-release controls govern what application data may be supplied to an AI. 
 
 That is not a PII detector and it does not classify arbitrary provider payloads. Applications remain responsible for their data classification, provider agreements, logging configuration, and retention obligations. See [ADR 0007](adr/0007-evidence-layering.md) and [ADR 0008](adr/0008-evidence-privacy-model.md).
 
+### What a decision record asserts, and how to cite one
+
+Each decision record carries a `claim_type` — a stable, namespaced label for what it asserts — and a
+`record_digest`, a content-derived identity computed by Verdict with no dependency on `fissible/attest`. The
+labels are a public, additive-only vocabulary bounded by what Verdict actually observes: none of them claims
+an operation happened, that a downstream system committed, or what the resulting state was. The strongest
+execution-adjacent label, `verdict.execution.claim-completed`, is Verdict marking its own claim complete
+around a successful return — an admission-side belief, never a receipt from the executor.
+
+The digest adds no raw or sensitive value; it composes fingerprints and enums the record already carries, so
+[ADR 0008](adr/0008-evidence-privacy-model.md)'s correlation-not-anonymization property applies to it
+unchanged. See [evidence record identity](evidence-record-identity.md) for the vocabulary and the digest's
+field set, and [ADR 0028](adr/0028-claim-type-is-a-curated-public-vocabulary.md) for the rules the
+vocabulary obeys.
+
 ### A tool description that changed between wiring and invocation
 
 Decision evidence records the fingerprint of the tool description Verdict was wired with (`tool_description_fingerprint`), the fingerprint of the description last advertised to the model (`invocation_tool_description_fingerprint`), and the comparison itself (`tool_description_matched`). A divergence is the signal that a tool's advertised description changed after binding — description poisoning, or an accidental mutation of a shared tool instance.

@@ -61,6 +61,12 @@ final class AttestEvidenceRecorder implements EvidenceRecorder
                 'tool_description_matched' => $evidence->toolDescriptionMatched,
                 'stage' => $evidence->stage,
                 'disposition' => $evidence->disposition,
+                // Verdict's own identity for this record travels inside the payload Attest signs.
+                // Attest cannot sign this value directly — it hashes its own envelope over its own
+                // RFC 8785 encoder — so covering it is what makes Attest *protect* the identity
+                // rather than define it. See RecordDigest.
+                'claim_type' => $evidence->claimType?->value,
+                'record_digest' => $evidence->recordDigest,
                 'reason' => $evidence->reason,
                 'argument_fingerprint' => $evidence->argumentFingerprint,
                 'idempotency_key_fingerprint' => $evidence->idempotencyKey === null ? null : hash('sha256', $evidence->idempotencyKey),
