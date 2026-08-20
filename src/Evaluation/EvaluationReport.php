@@ -45,52 +45,13 @@ final readonly class EvaluationReport implements JsonSerializable
             throw new InvalidArgumentException('The evaluation report completed before it started.');
         }
 
-        $reproduction = $report['reproduction'] ?? null;
-        $cases = $report['cases'] ?? null;
-
-        if (! is_array($reproduction) || ($reproduction !== [] && array_is_list($reproduction))) {
-            throw new InvalidArgumentException('The evaluation report reproduction metadata must be an object.');
-        }
-
-        if (! is_array($cases) || ! array_is_list($cases)) {
-            throw new InvalidArgumentException('The evaluation report cases must be a list.');
-        }
-
-        $components = [];
-
-        foreach ($reproduction as $name => $componentVersion) {
-            if (! is_string($name) || ! is_string($componentVersion)) {
-                throw new InvalidArgumentException('Reproduction component names and versions must be strings.');
-            }
-
-            $components[$name] = $componentVersion;
-        }
-
-        $caseResults = [];
-        $caseIds = [];
-
-        foreach ($cases as $case) {
-            if (! is_array($case) || array_is_list($case)) {
-                throw new InvalidArgumentException('Every evaluation report case must be an object.');
-            }
-
-            $caseResult = self::caseResult($case);
-
-            if (isset($caseIds[$caseResult->id])) {
-                throw new InvalidArgumentException("The evaluation report contains duplicate case [{$caseResult->id}].");
-            }
-
-            $caseIds[$caseResult->id] = true;
-            $caseResults[] = $caseResult;
-        }
-
         $result = new SuiteResult(
             suite: $suite,
             version: $version,
-            reproduction: new ReproductionMetadata($components),
+            reproduction: new ReproductionMetadata(self::reproductionComponents($report['reproduction'] ?? null)),
             startedAt: $startedAt,
             completedAt: $completedAt,
-            cases: $caseResults,
+            cases: self::caseResults($report['cases'] ?? null),
         );
 
         self::assertSummary($report, $result);
@@ -197,21 +158,88 @@ final readonly class EvaluationReport implements JsonSerializable
         ];
     }
 
+    /** @return array<string, string> */
+    private static function reproductionComponents(mixed $reproduction): array
+    {
+        if (! is_array($reproduction) || ($reproduction !== [] && array_is_list($reproduction))) {
+            throw new InvalidArgumentException('The evaluation report reproduction metadata must be an object.');
+        }
+
+        $components = [];
+
+        foreach ($reproduction as $name => $componentVersion) {
+            if (! is_string($name) || ! is_string($componentVersion)) {
+                throw new InvalidArgumentException('Reproduction component names and versions must be strings.');
+            }
+
+            $components[$name] = $componentVersion;
+        }
+
+        return $components;
+    }
+
+    /** @return list<CaseResult> */
+    private static function caseResults(mixed $cases): array
+    {
+        if (! is_array($cases) || ! array_is_list($cases)) {
+            throw new InvalidArgumentException('The evaluation report cases must be a list.');
+        }
+
+        $caseResults = [];
+        $caseIds = [];
+
+        foreach ($cases as $case) {
+            if (! is_array($case) || array_is_list($case)) {
+                throw new InvalidArgumentException('Every evaluation report case must be an object.');
+            }
+
+            $caseResult = self::caseResult($case);
+
+            if (isset($caseIds[$caseResult->id])) {
+                throw new InvalidArgumentException("The evaluation report contains duplicate case [{$caseResult->id}].");
+            }
+
+            $caseIds[$caseResult->id] = true;
+            $caseResults[] = $caseResult;
+        }
+
+        return $caseResults;
+    }
+
     /** @param array<string, mixed> $case */
     private static function caseResult(array $case): CaseResult
     {
-        $purpose = self::enumValue(
-            CasePurpose::class,
-            self::requiredString($case, 'purpose', 'case'),
-            'case purpose',
+        return new CaseResult(
+            id: self::requiredString($case, 'id', 'case'),
+            version: self::requiredString($case, 'version', 'case'),
+            purpose: self::enumValue(
+                CasePurpose::class,
+                self::requiredString($case, 'purpose', 'case'),
+                'case purpose',
+            ),
+            status: self::enumValue(
+                CaseStatus::class,
+                self::requiredString($case, 'status', 'case'),
+                'case status',
+            ),
+            trustedSetupFingerprint: self::fingerprint($case, 'trusted_setup_fingerprint'),
+            untrustedInputFingerprint: self::fingerprint($case, 'untrusted_input_fingerprint'),
+            assertions: self::assertionResults($case['assertions'] ?? null),
+            observation: self::observation($case['observation'] ?? null),
+            errorClass: self::nullableString(
+                $case['error_class'] ?? null,
+                'An evaluation case error class must be a string or null.',
+            ),
+            blockedBy: self::nullableString(
+                $case['blocked_by'] ?? null,
+                'An evaluation case blocker must be a string or null.',
+            ),
         );
-        $status = self::enumValue(
-            CaseStatus::class,
-            self::requiredString($case, 'status', 'case'),
-            'case status',
-        );
-        $assertions = $case['assertions'] ?? null;
+    }
 
+    /** @return list<AssertionResult> */
+    private static function assertionResults(mixed $assertions): array
+    {
         if (! is_array($assertions) || ! array_is_list($assertions)) {
             throw new InvalidArgumentException('Every evaluation report case requires an assertions list.');
         }
@@ -237,30 +265,7 @@ final readonly class EvaluationReport implements JsonSerializable
             );
         }
 
-        $observation = $case['observation'] ?? null;
-        $errorClass = $case['error_class'] ?? null;
-        $blockedBy = $case['blocked_by'] ?? null;
-
-        if (! is_string($errorClass) && $errorClass !== null) {
-            throw new InvalidArgumentException('An evaluation case error class must be a string or null.');
-        }
-
-        if (! is_string($blockedBy) && $blockedBy !== null) {
-            throw new InvalidArgumentException('An evaluation case blocker must be a string or null.');
-        }
-
-        return new CaseResult(
-            id: self::requiredString($case, 'id', 'case'),
-            version: self::requiredString($case, 'version', 'case'),
-            purpose: $purpose,
-            status: $status,
-            trustedSetupFingerprint: self::fingerprint($case, 'trusted_setup_fingerprint'),
-            untrustedInputFingerprint: self::fingerprint($case, 'untrusted_input_fingerprint'),
-            assertions: $assertionResults,
-            observation: self::observation($observation),
-            errorClass: $errorClass,
-            blockedBy: $blockedBy,
-        );
+        return $assertionResults;
     }
 
     private static function observation(mixed $observation): ?ObservationEvidence
@@ -273,71 +278,80 @@ final readonly class EvaluationReport implements JsonSerializable
             throw new InvalidArgumentException('An evaluation observation must be an object or null.');
         }
 
-        $dispositionValue = $observation['disposition'] ?? null;
         $executed = $observation['executed'] ?? null;
-        $toolCalls = $observation['tool_calls'] ?? null;
-        $sideEffects = $observation['side_effect_fingerprints'] ?? null;
-        $outputFingerprint = $observation['output_fingerprint'] ?? null;
 
         if (! is_bool($executed)) {
             throw new InvalidArgumentException('An evaluation observation requires an executed flag.');
         }
 
+        return new ObservationEvidence(
+            disposition: self::nullableDisposition($observation['disposition'] ?? null),
+            executed: $executed,
+            toolCalls: self::toolObservations($observation['tool_calls'] ?? null),
+            sideEffectFingerprints: self::sideEffectFingerprints($observation['side_effect_fingerprints'] ?? null),
+            outputFingerprint: self::outputFingerprint($observation['output_fingerprint'] ?? null),
+        );
+    }
+
+    /** @return list<ToolObservation> */
+    private static function toolObservations(mixed $toolCalls): array
+    {
         if (! is_array($toolCalls) || ! array_is_list($toolCalls)) {
             throw new InvalidArgumentException('Evaluation observation tool calls must be a list.');
         }
 
+        return array_map(self::toolObservation(...), $toolCalls);
+    }
+
+    private static function toolObservation(mixed $toolCall): ToolObservation
+    {
+        if (! is_array($toolCall) || array_is_list($toolCall)) {
+            throw new InvalidArgumentException('Every evaluation tool call must be an object.');
+        }
+
+        $executed = $toolCall['executed'] ?? null;
+
+        if (! is_bool($executed)) {
+            throw new InvalidArgumentException('Every evaluation tool call requires an executed flag.');
+        }
+
+        return new ToolObservation(
+            capability: self::requiredString($toolCall, 'capability', 'tool call'),
+            argumentFingerprint: self::fingerprint($toolCall, 'argument_fingerprint'),
+            disposition: self::nullableDisposition($toolCall['disposition'] ?? null),
+            executed: $executed,
+        );
+    }
+
+    /** @return list<string> */
+    private static function sideEffectFingerprints(mixed $sideEffects): array
+    {
         if (! is_array($sideEffects) || ! array_is_list($sideEffects)) {
             throw new InvalidArgumentException('Evaluation observation side effects must be a list.');
         }
 
-        if (! is_string($outputFingerprint) && $outputFingerprint !== null) {
-            throw new InvalidArgumentException('An evaluation output fingerprint must be a string or null.');
-        }
-
-        $parsedToolCalls = [];
-
-        foreach ($toolCalls as $toolCall) {
-            if (! is_array($toolCall) || array_is_list($toolCall)) {
-                throw new InvalidArgumentException('Every evaluation tool call must be an object.');
-            }
-
-            $toolDisposition = $toolCall['disposition'] ?? null;
-            $toolExecuted = $toolCall['executed'] ?? null;
-
-            if (! is_bool($toolExecuted)) {
-                throw new InvalidArgumentException('Every evaluation tool call requires an executed flag.');
-            }
-
-            $parsedToolCalls[] = new ToolObservation(
-                capability: self::requiredString($toolCall, 'capability', 'tool call'),
-                argumentFingerprint: self::fingerprint($toolCall, 'argument_fingerprint'),
-                disposition: self::nullableDisposition($toolDisposition),
-                executed: $toolExecuted,
-            );
-        }
-
-        $parsedSideEffects = [];
+        $parsed = [];
 
         foreach ($sideEffects as $sideEffect) {
             if (! is_string($sideEffect) || preg_match('/^[a-f0-9]{64}$/', $sideEffect) !== 1) {
                 throw new InvalidArgumentException('Every side-effect fingerprint must be a SHA-256 value.');
             }
 
-            $parsedSideEffects[] = $sideEffect;
+            $parsed[] = $sideEffect;
         }
 
-        if ($outputFingerprint !== null && preg_match('/^[a-f0-9]{64}$/', $outputFingerprint) !== 1) {
+        return $parsed;
+    }
+
+    private static function outputFingerprint(mixed $value): ?string
+    {
+        $fingerprint = self::nullableString($value, 'An evaluation output fingerprint must be a string or null.');
+
+        if ($fingerprint !== null && preg_match('/^[a-f0-9]{64}$/', $fingerprint) !== 1) {
             throw new InvalidArgumentException('An evaluation output fingerprint must be a SHA-256 value.');
         }
 
-        return new ObservationEvidence(
-            disposition: self::nullableDisposition($dispositionValue),
-            executed: $executed,
-            toolCalls: $parsedToolCalls,
-            sideEffectFingerprints: $parsedSideEffects,
-            outputFingerprint: $outputFingerprint,
-        );
+        return $fingerprint;
     }
 
     private static function nullableDisposition(mixed $value): ?Disposition
@@ -351,6 +365,15 @@ final readonly class EvaluationReport implements JsonSerializable
         }
 
         return Disposition::from($value);
+    }
+
+    private static function nullableString(mixed $value, string $message): ?string
+    {
+        if (! is_string($value) && $value !== null) {
+            throw new InvalidArgumentException($message);
+        }
+
+        return $value;
     }
 
     /** @param array<string, mixed> $values */
@@ -425,19 +448,31 @@ final readonly class EvaluationReport implements JsonSerializable
                 throw new InvalidArgumentException("The evaluation report is missing the {$purpose->value} score.");
             }
 
-            $score = $result->score($purpose);
-            $passRate = $summary['pass_rate'] ?? null;
-
-            if (($summary['passed'] ?? null) !== $score->passed
-                || ($summary['failed'] ?? null) !== $score->failed
-                || ($summary['errors'] ?? null) !== $score->errors
-                || ($summary['pending'] ?? 0) !== $score->pending
-                || ($summary['evaluated'] ?? null) !== $score->evaluated()
-                || ($summary['total'] ?? null) !== $score->total()
-                || ! self::samePassRate($passRate, $score->passRate())) {
+            if (! self::scoreMatches($summary, $result->score($purpose))) {
                 throw new InvalidArgumentException("The evaluation report {$purpose->value} score does not match its cases.");
             }
         }
+    }
+
+    /** @param array<string, mixed> $summary */
+    private static function scoreMatches(array $summary, Score $score): bool
+    {
+        $expected = [
+            'passed' => $score->passed,
+            'failed' => $score->failed,
+            'errors' => $score->errors,
+            'evaluated' => $score->evaluated(),
+            'total' => $score->total(),
+        ];
+
+        foreach ($expected as $key => $value) {
+            if (($summary[$key] ?? null) !== $value) {
+                return false;
+            }
+        }
+
+        return ($summary['pending'] ?? 0) === $score->pending
+            && self::samePassRate($summary['pass_rate'] ?? null, $score->passRate());
     }
 
     private static function samePassRate(mixed $actual, ?float $expected): bool
