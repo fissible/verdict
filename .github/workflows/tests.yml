@@ -111,6 +111,47 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  evaluation:
+    runs-on: ubuntu-latest
+    name: Attack-pack baselines
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo, sqlite, pdo_sqlite, bcmath, intl, sodium
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:12.*" "orchestra/testbench:10.*" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction --no-progress --no-scripts
+          composer run prepare
+
+      # Deterministic and synthetic: the packs run against their reference runners with no
+      # provider, no network, and no credentials. Live evaluation never runs here.
+      - name: Run the shipped attack packs
+        run: composer evaluation:run
+
+      # Blocking kinds (regression, new failure, harness error, removed or suspended coverage)
+      # fail the job; improvements and added coverage annotate without failing.
+      - name: Compare against committed baselines
+        run: |
+          failed=0
+          for suite in account-recovery-attack-pack rag-borne-injection-attack-pack storefront-attack-pack tool-integrity-attack-pack; do
+            php vendor/bin/testbench verdict:evaluation-compare \
+              "build/evaluation/${suite}.report.json" \
+              "tests/Baselines/${suite}.json" \
+              --format=github || failed=1
+          done
+          echo "After an intentional, reviewed pack change: run [composer evaluation:refresh-baselines] and commit the diff."
+          exit $failed
+
   postgres:
     runs-on: ubuntu-latest
     name: PostgreSQL (READ COMMITTED default)

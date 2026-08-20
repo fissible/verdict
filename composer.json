@@ -90,6 +90,16 @@
     "test:unit": [
       "vendor/bin/pest"
     ],
+    "evaluation:run": [
+      "@php scripts/run-attack-packs.php"
+    ],
+    "evaluation:refresh-baselines": [
+      "@evaluation:run",
+      "@php vendor/bin/testbench verdict:evaluation-baseline build/evaluation/account-recovery-attack-pack.report.json tests/Baselines/account-recovery-attack-pack.json --force",
+      "@php vendor/bin/testbench verdict:evaluation-baseline build/evaluation/rag-borne-injection-attack-pack.report.json tests/Baselines/rag-borne-injection-attack-pack.json --force",
+      "@php vendor/bin/testbench verdict:evaluation-baseline build/evaluation/storefront-attack-pack.report.json tests/Baselines/storefront-attack-pack.json --force",
+      "@php vendor/bin/testbench verdict:evaluation-baseline build/evaluation/tool-integrity-attack-pack.report.json tests/Baselines/tool-integrity-attack-pack.json --force"
+    ],
     "verify:claims": [
       "@php scripts/verify-documentation-claims.php"
     ],
