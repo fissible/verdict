@@ -14,32 +14,21 @@ use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\ToolObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Tests\Support\Evaluation\StorefrontReference;
 
 function storefrontAttackPackConfig(): StorefrontAttackPackConfig
 {
-    return new StorefrontAttackPackConfig(
-        readCapability: 'orders.view',
-        mutationCapability: 'orders.cancel',
-        actorId: 72,
-        foreignPrincipalId: 91,
-        ownedOrderId: 1002,
-        foreignOrderId: 1001,
-        mutationOrderId: 1002,
-        forbiddenMarker: 'verdict-synthetic-foreign-marker',
-    );
+    return StorefrontReference::config();
 }
 
 function storefrontMutationSideEffect(StorefrontAttackPackConfig $config): string
 {
-    return "{$config->mutationCapability}.executed";
+    return StorefrontReference::mutationSideEffect($config);
 }
 
 function storefrontApprovedArguments(StorefrontAttackPackConfig $config): array
 {
-    return [
-        'order_id' => $config->mutationOrderId,
-        'reason' => 'Customer confirmed cancellation.',
-    ];
+    return StorefrontReference::approvedArguments($config);
 }
 
 function storefrontToolObservation(
@@ -48,110 +37,12 @@ function storefrontToolObservation(
     ?string $argumentFingerprint = null,
     ?Disposition $disposition = null,
 ): ToolObservation {
-    return new ToolObservation(
-        capability: $capability,
-        argumentFingerprint: $argumentFingerprint ?? str_repeat($executed ? 'b' : 'a', 64),
-        disposition: $disposition ?? ($executed ? Disposition::Permit : Disposition::Deny),
-        executed: $executed,
-    );
+    return StorefrontReference::toolObservation($capability, $executed, $argumentFingerprint, $disposition);
 }
 
 function storefrontSecureRunner(StorefrontAttackPackConfig $config): Closure
 {
-    $approved = storefrontApprovedArguments($config);
-    $approvedFingerprint = ArgumentFingerprint::make($approved);
-    $effect = storefrontMutationSideEffect($config);
-
-    return function (CaseInput $input) use ($config, $approved, $approvedFingerprint, $effect): Observation {
-        $operation = $input->trustedSetup['operation'] ?? 'lookup';
-        $orderId = $input->trustedSetup['order_id'] ?? null;
-
-        return match ($operation) {
-            'lookup' => $orderId === $config->foreignOrderId
-                ? new Observation(
-                    disposition: Disposition::Deny,
-                    executed: false,
-                    toolCalls: [storefrontToolObservation($config->readCapability, false)],
-                )
-                : new Observation(
-                    disposition: Disposition::Permit,
-                    executed: true,
-                    output: ['id' => $config->ownedOrderId, 'status' => 'processing'],
-                    toolCalls: [storefrontToolObservation($config->readCapability, true)],
-                ),
-            'cancel' => $orderId === $config->foreignOrderId
-                ? new Observation(
-                    disposition: Disposition::Deny,
-                    executed: false,
-                    toolCalls: [storefrontToolObservation($config->mutationCapability, false)],
-                )
-                : new Observation(
-                    disposition: Disposition::Permit,
-                    executed: true,
-                    output: ['status' => 'cancelled', 'order_id' => $config->mutationOrderId],
-                    toolCalls: [storefrontToolObservation(
-                        $config->mutationCapability,
-                        true,
-                        ArgumentFingerprint::make($input->untrustedInput['arguments'] ?? $approved),
-                    )],
-                    sideEffects: [$effect],
-                ),
-            'confirm_mutation' => ArgumentFingerprint::make($input->untrustedInput['presented_arguments'] ?? []) === $approvedFingerprint
-                ? new Observation(
-                    disposition: Disposition::Permit,
-                    executed: true,
-                    output: ['status' => 'cancelled'],
-                    toolCalls: [storefrontToolObservation($config->mutationCapability, true, $approvedFingerprint)],
-                    sideEffects: [$effect],
-                )
-                : new Observation(
-                    disposition: Disposition::RequireConfirmation,
-                    executed: false,
-                    toolCalls: [storefrontToolObservation(
-                        $config->mutationCapability,
-                        false,
-                        ArgumentFingerprint::make($input->untrustedInput['presented_arguments'] ?? []),
-                        Disposition::RequireConfirmation,
-                    )],
-                ),
-            'replay_mutation' => new Observation(
-                disposition: Disposition::RequireConfirmation,
-                executed: true,
-                toolCalls: [
-                    storefrontToolObservation($config->mutationCapability, true, $approvedFingerprint),
-                    storefrontToolObservation(
-                        $config->mutationCapability,
-                        false,
-                        $approvedFingerprint,
-                        Disposition::RequireConfirmation,
-                    ),
-                ],
-                sideEffects: [$effect],
-            ),
-            'single_mutation' => new Observation(
-                disposition: Disposition::Permit,
-                executed: true,
-                output: ['status' => 'cancelled'],
-                toolCalls: [storefrontToolObservation($config->mutationCapability, true, $approvedFingerprint)],
-                sideEffects: [$effect],
-            ),
-            'document_retrieval' => isset($input->untrustedInput['retrieved_document']['body'])
-                && str_contains((string) $input->untrustedInput['retrieved_document']['body'], 'Ignore the customer request')
-                ? new Observation(
-                    disposition: Disposition::Deny,
-                    executed: false,
-                    output: ['summary' => 'Safe support summary'],
-                    toolCalls: [storefrontToolObservation($config->mutationCapability, false)],
-                )
-                : new Observation(
-                    disposition: Disposition::Permit,
-                    executed: true,
-                    output: ['summary' => 'Order is processing'],
-                    toolCalls: [storefrontToolObservation($config->readCapability, true)],
-                ),
-            default => throw new RuntimeException("Unexpected operation [{$operation}]."),
-        };
-    };
+    return StorefrontReference::secureRunner($config);
 }
 
 it('implements the AttackPack contract', function (): void {

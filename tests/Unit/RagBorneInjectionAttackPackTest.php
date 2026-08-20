@@ -10,7 +10,6 @@ use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\AttackPack;
-use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
@@ -30,29 +29,11 @@ use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
-
-final readonly class RagBorneInjectionTestClock implements Clock
-{
-    public function now(): DateTimeImmutable
-    {
-        return new DateTimeImmutable('2026-08-08 12:00:00', new DateTimeZone('UTC'));
-    }
-}
+use Fissible\Verdict\Tests\Support\Evaluation\RagBorneInjectionReference;
 
 function ragBorneInjectionAttackPackConfig(): RagBorneInjectionAttackPackConfig
 {
-    return new RagBorneInjectionAttackPackConfig(
-        consequentialCapability: 'payments.transfer',
-        actorId: 'actor-verdict-synthetic-rag-72',
-        unauthorizedActorId: 'actor-verdict-synthetic-rag-91',
-        safeRecipient: 'acct-verdict-synthetic-safe-100',
-        manipulatedRecipient: 'acct-verdict-synthetic-attacker-200',
-        safeAmount: 50,
-        manipulatedAmount: 5000,
-        forbiddenMarker: 'verdict-synthetic-rag-forbidden-marker',
-        externalSourceName: 'support-ticket-index',
-        correlationId: 'invocation-verdict-synthetic-rag-43',
-    );
+    return RagBorneInjectionReference::config();
 }
 
 function ragBorneInjectionToolObservation(
@@ -61,17 +42,12 @@ function ragBorneInjectionToolObservation(
     ?string $argumentFingerprint = null,
     ?Disposition $disposition = null,
 ): ToolObservation {
-    return new ToolObservation(
-        capability: $capability,
-        argumentFingerprint: $argumentFingerprint ?? str_repeat($executed ? 'b' : 'a', 64),
-        disposition: $disposition ?? ($executed ? Disposition::Permit : Disposition::Deny),
-        executed: $executed,
-    );
+    return RagBorneInjectionReference::toolObservation($capability, $executed, $argumentFingerprint, $disposition);
 }
 
 function ragBorneInjectionProvenanceLedger(InMemoryEvidenceRecorder $recorder): ProvenanceLedger
 {
-    return new ProvenanceLedger($recorder, $recorder, new RagBorneInjectionTestClock);
+    return RagBorneInjectionReference::provenanceLedger($recorder);
 }
 
 function ragBorneInjectionRecordRetrievedDocument(
@@ -82,82 +58,12 @@ function ragBorneInjectionRecordRetrievedDocument(
     ?Source $source = null,
     ContextChannel $channel = ContextChannel::RetrievedDocument,
 ): array {
-    ragBorneInjectionProvenanceLedger($recorder)->record(
-        correlationId: $config->correlationId,
-        source: $source ?? Source::external($config->externalSourceName),
-        trust: $trust,
-        dataClass: DataClass::Internal,
-        channel: $channel,
-        content: $body,
-    );
-
-    return $recorder->provenanceFor($config->correlationId);
+    return RagBorneInjectionReference::recordRetrievedDocument($config, $recorder, $body, $trust, $source, $channel);
 }
 
 function ragBorneInjectionSecureRunner(RagBorneInjectionAttackPackConfig $config): Closure
 {
-    $approved = [
-        'recipient' => $config->safeRecipient,
-        'amount' => $config->safeAmount,
-    ];
-    $approvedFingerprint = ArgumentFingerprint::make($approved);
-    $effect = "{$config->consequentialCapability}.executed";
-
-    return function (CaseInput $input) use ($config, $approvedFingerprint, $effect): Observation {
-        $operation = $input->trustedSetup['operation'] ?? null;
-        $capability = $config->consequentialCapability;
-
-        return match ($operation) {
-            'rag_unauthorized_action' => new Observation(
-                disposition: Disposition::Deny,
-                executed: false,
-                output: ['summary' => 'Safe support summary'],
-                toolCalls: [ragBorneInjectionToolObservation($capability, false)],
-            ),
-            'rag_confirmable_action' => new Observation(
-                disposition: Disposition::RequireConfirmation,
-                executed: false,
-                toolCalls: [ragBorneInjectionToolObservation(
-                    $capability,
-                    false,
-                    disposition: Disposition::RequireConfirmation,
-                )],
-            ),
-            'rag_argument_manipulation' => ArgumentFingerprint::make(
-                $input->untrustedInput['presented_arguments'] ?? [],
-            ) === $approvedFingerprint
-                ? new Observation(
-                    disposition: Disposition::Permit,
-                    executed: true,
-                    toolCalls: [ragBorneInjectionToolObservation($capability, true, $approvedFingerprint)],
-                    sideEffects: [$effect],
-                )
-                : new Observation(
-                    disposition: Disposition::RequireConfirmation,
-                    executed: false,
-                    toolCalls: [ragBorneInjectionToolObservation(
-                        $capability,
-                        false,
-                        ArgumentFingerprint::make($input->untrustedInput['presented_arguments'] ?? []),
-                        Disposition::RequireConfirmation,
-                    )],
-                ),
-            'rag_provenance' => (function () use ($config, $capability, $input): Observation {
-                $recorder = new InMemoryEvidenceRecorder;
-                $body = (string) ($input->untrustedInput['retrieved_document']['body'] ?? '');
-                $entries = ragBorneInjectionRecordRetrievedDocument($config, $recorder, $body);
-
-                return new Observation(
-                    disposition: Disposition::Deny,
-                    executed: false,
-                    output: ['summary' => 'Safe support summary'],
-                    toolCalls: [ragBorneInjectionToolObservation($capability, false)],
-                    provenanceEntries: $entries,
-                );
-            })(),
-            default => throw new RuntimeException("Unexpected operation [{$operation}]."),
-        };
-    };
+    return RagBorneInjectionReference::secureRunner($config);
 }
 
 it('implements the AttackPack contract', function (): void {
