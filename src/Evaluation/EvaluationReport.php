@@ -45,13 +45,27 @@ final readonly class EvaluationReport implements JsonSerializable
             throw new InvalidArgumentException('The evaluation report completed before it started.');
         }
 
+        $reproduction = $report['reproduction'] ?? null;
+        $cases = $report['cases'] ?? null;
+
+        if (! is_array($reproduction) || ($reproduction !== [] && array_is_list($reproduction))) {
+            throw new InvalidArgumentException('The evaluation report reproduction metadata must be an object.');
+        }
+
+        if (! is_array($cases) || ! array_is_list($cases)) {
+            throw new InvalidArgumentException('The evaluation report cases must be a list.');
+        }
+
+        $components = self::reproductionComponents($reproduction);
+        $caseResults = self::caseResults($cases);
+
         $result = new SuiteResult(
             suite: $suite,
             version: $version,
-            reproduction: new ReproductionMetadata(self::reproductionComponents($report['reproduction'] ?? null)),
+            reproduction: new ReproductionMetadata($components),
             startedAt: $startedAt,
             completedAt: $completedAt,
-            cases: self::caseResults($report['cases'] ?? null),
+            cases: $caseResults,
         );
 
         self::assertSummary($report, $result);
@@ -76,10 +90,10 @@ final readonly class EvaluationReport implements JsonSerializable
             'completed_at' => $this->result->completedAt->format(DATE_ATOM),
             'reproduction' => $this->result->reproduction->components,
             'scores' => [
-                CasePurpose::Security->value => $this->scoreArray(
+                CasePurpose::Security->value => self::scoreArray(
                     $this->result->score(CasePurpose::Security),
                 ),
-                CasePurpose::Utility->value => $this->scoreArray(
+                CasePurpose::Utility->value => self::scoreArray(
                     $this->result->score(CasePurpose::Utility),
                 ),
             ],
@@ -99,7 +113,7 @@ final readonly class EvaluationReport implements JsonSerializable
     }
 
     /** @return array<string, int|float|null> */
-    private function scoreArray(Score $score): array
+    private static function scoreArray(Score $score): array
     {
         return [
             'passed' => $score->passed,
@@ -158,13 +172,12 @@ final readonly class EvaluationReport implements JsonSerializable
         ];
     }
 
-    /** @return array<string, string> */
-    private static function reproductionComponents(mixed $reproduction): array
+    /**
+     * @param  array<array-key, mixed>  $reproduction
+     * @return array<string, string>
+     */
+    private static function reproductionComponents(array $reproduction): array
     {
-        if (! is_array($reproduction) || ($reproduction !== [] && array_is_list($reproduction))) {
-            throw new InvalidArgumentException('The evaluation report reproduction metadata must be an object.');
-        }
-
         $components = [];
 
         foreach ($reproduction as $name => $componentVersion) {
@@ -178,13 +191,12 @@ final readonly class EvaluationReport implements JsonSerializable
         return $components;
     }
 
-    /** @return list<CaseResult> */
-    private static function caseResults(mixed $cases): array
+    /**
+     * @param  list<mixed>  $cases
+     * @return list<CaseResult>
+     */
+    private static function caseResults(array $cases): array
     {
-        if (! is_array($cases) || ! array_is_list($cases)) {
-            throw new InvalidArgumentException('The evaluation report cases must be a list.');
-        }
-
         $caseResults = [];
         $caseIds = [];
 
@@ -244,28 +256,27 @@ final readonly class EvaluationReport implements JsonSerializable
             throw new InvalidArgumentException('Every evaluation report case requires an assertions list.');
         }
 
-        $assertionResults = [];
+        return array_map(self::assertionResult(...), $assertions);
+    }
 
-        foreach ($assertions as $assertion) {
-            if (! is_array($assertion) || array_is_list($assertion)) {
-                throw new InvalidArgumentException('Every evaluation assertion must be an object.');
-            }
-
-            $passed = $assertion['passed'] ?? null;
-            $message = $assertion['message'] ?? null;
-
-            if (! is_bool($passed) || (! is_string($message) && $message !== null)) {
-                throw new InvalidArgumentException('Every evaluation assertion requires a boolean result and optional message.');
-            }
-
-            $assertionResults[] = new AssertionResult(
-                assertion: self::requiredString($assertion, 'assertion', 'assertion'),
-                passed: $passed,
-                message: $message,
-            );
+    private static function assertionResult(mixed $assertion): AssertionResult
+    {
+        if (! is_array($assertion) || array_is_list($assertion)) {
+            throw new InvalidArgumentException('Every evaluation assertion must be an object.');
         }
 
-        return $assertionResults;
+        $passed = $assertion['passed'] ?? null;
+        $message = $assertion['message'] ?? null;
+
+        if (! is_bool($passed) || (! is_string($message) && $message !== null)) {
+            throw new InvalidArgumentException('Every evaluation assertion requires a boolean result and optional message.');
+        }
+
+        return new AssertionResult(
+            assertion: self::requiredString($assertion, 'assertion', 'assertion'),
+            passed: $passed,
+            message: $message,
+        );
     }
 
     private static function observation(mixed $observation): ?ObservationEvidence
@@ -333,7 +344,7 @@ final readonly class EvaluationReport implements JsonSerializable
         $parsed = [];
 
         foreach ($sideEffects as $sideEffect) {
-            if (! is_string($sideEffect) || preg_match('/^[a-f0-9]{64}$/', $sideEffect) !== 1) {
+            if (! is_string($sideEffect) || ! self::isSha256($sideEffect)) {
                 throw new InvalidArgumentException('Every side-effect fingerprint must be a SHA-256 value.');
             }
 
@@ -347,11 +358,16 @@ final readonly class EvaluationReport implements JsonSerializable
     {
         $fingerprint = self::nullableString($value, 'An evaluation output fingerprint must be a string or null.');
 
-        if ($fingerprint !== null && preg_match('/^[a-f0-9]{64}$/', $fingerprint) !== 1) {
+        if ($fingerprint !== null && ! self::isSha256($fingerprint)) {
             throw new InvalidArgumentException('An evaluation output fingerprint must be a SHA-256 value.');
         }
 
         return $fingerprint;
+    }
+
+    private static function isSha256(string $value): bool
+    {
+        return preg_match('/^[a-f0-9]{64}\z/', $value) === 1;
     }
 
     private static function nullableDisposition(mixed $value): ?Disposition
@@ -393,7 +409,7 @@ final readonly class EvaluationReport implements JsonSerializable
     {
         $value = $values[$key] ?? null;
 
-        if (! is_string($value) || preg_match('/^[a-f0-9]{64}$/', $value) !== 1) {
+        if (! is_string($value) || ! self::isSha256($value)) {
             throw new InvalidArgumentException("The evaluation report requires a SHA-256 {$key}.");
         }
 
@@ -457,22 +473,20 @@ final readonly class EvaluationReport implements JsonSerializable
     /** @param array<string, mixed> $summary */
     private static function scoreMatches(array $summary, Score $score): bool
     {
-        $expected = [
-            'passed' => $score->passed,
-            'failed' => $score->failed,
-            'errors' => $score->errors,
-            'evaluated' => $score->evaluated(),
-            'total' => $score->total(),
-        ];
+        // Reports written before pending existed omit the key; absence means zero.
+        $summary['pending'] ??= 0;
 
-        foreach ($expected as $key => $value) {
+        foreach (self::scoreArray($score) as $key => $value) {
+            if ($key === 'pass_rate') {
+                continue;
+            }
+
             if (($summary[$key] ?? null) !== $value) {
                 return false;
             }
         }
 
-        return ($summary['pending'] ?? 0) === $score->pending
-            && self::samePassRate($summary['pass_rate'] ?? null, $score->passRate());
+        return self::samePassRate($summary['pass_rate'] ?? null, $score->passRate());
     }
 
     private static function samePassRate(mixed $actual, ?float $expected): bool
@@ -481,6 +495,12 @@ final readonly class EvaluationReport implements JsonSerializable
             return $actual === null;
         }
 
-        return (is_int($actual) || is_float($actual)) && (float) $actual === $expected;
+        if (! is_int($actual) && ! is_float($actual)) {
+            return false;
+        }
+
+        // The rate round-trips through json_encode, which truncates under a
+        // non-default serialize_precision; equality is therefore tolerant.
+        return abs((float) $actual - $expected) <= 1e-9;
     }
 }

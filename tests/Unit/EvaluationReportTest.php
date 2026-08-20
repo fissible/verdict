@@ -368,3 +368,93 @@ it('rejects malformed report shapes', function (callable $mutate, string $messag
         'security score does not match its cases',
     ],
 ]);
+
+it('rejects fingerprints carrying a trailing newline', function (callable $mutate, string $message): void {
+    $sixtyFive = str_repeat('a', 64)."\n";
+    $report = validEvaluationReportArray();
+
+    expect(fn (): EvaluationReport => EvaluationReport::fromArray($mutate($report, $sixtyFive)))
+        ->toThrow(InvalidArgumentException::class, $message);
+})->with([
+    'case fingerprint' => [
+        function (array $r, string $bad): array {
+            $r['cases'][0]['trusted_setup_fingerprint'] = $bad;
+
+            return $r;
+        },
+        'requires a SHA-256 trusted_setup_fingerprint',
+    ],
+    'tool-call argument fingerprint' => [
+        function (array $r, string $bad): array {
+            $r['cases'][0]['observation']['tool_calls'][0]['argument_fingerprint'] = $bad;
+
+            return $r;
+        },
+        'requires a SHA-256 argument_fingerprint',
+    ],
+    'side-effect fingerprint' => [
+        function (array $r, string $bad): array {
+            $r['cases'][0]['observation']['side_effect_fingerprints'] = [$bad];
+
+            return $r;
+        },
+        'side-effect fingerprint must be a SHA-256 value',
+    ],
+    'output fingerprint' => [
+        function (array $r, string $bad): array {
+            $r['cases'][0]['observation']['output_fingerprint'] = $bad;
+
+            return $r;
+        },
+        'output fingerprint must be a SHA-256 value',
+    ],
+]);
+
+it('reports a malformed cases list before a malformed reproduction component', function (): void {
+    $report = validEvaluationReportArray();
+    $report['reproduction'] = ['php' => 8];
+    $report['cases'] = ['a' => []];
+
+    expect(fn (): EvaluationReport => EvaluationReport::fromArray($report))
+        ->toThrow(InvalidArgumentException::class, 'cases must be a list');
+});
+
+it('accepts its own fractional-rate output under a truncating serialize_precision', function (): void {
+    $report = validEvaluationReportArray();
+    $security = array_keys(array_filter(
+        $report['cases'],
+        static fn (array $case): bool => $case['purpose'] === 'security',
+    ));
+    expect(count($security))->toBeGreaterThanOrEqual(3);
+
+    // Two errors shrink `evaluated` to 3, so the rate becomes 2/3 — a value a
+    // truncating serialize_precision cannot round-trip bit-exactly.
+    $report['cases'][$security[0]]['status'] = 'error';
+    $report['cases'][$security[1]]['status'] = 'error';
+    $report['cases'][$security[2]]['status'] = 'failed';
+    $score = &$report['scores']['security'];
+    $score['passed'] -= 3;
+    $score['failed'] += 1;
+    $score['errors'] += 2;
+    $score['evaluated'] -= 2;
+    $score['pass_rate'] = $score['passed'] / $score['evaluated'];
+    unset($score);
+    $report['passed'] = false;
+
+    $previous = ini_set('serialize_precision', '14');
+
+    try {
+        $json = json_encode($report, JSON_THROW_ON_ERROR);
+        expect(EvaluationReport::fromJson($json)->result()->passed())->toBeFalse();
+    } finally {
+        ini_set('serialize_precision', (string) $previous);
+    }
+});
+
+it('rejects a pass rate that differs in value, not only in precision', function (): void {
+    $report = validEvaluationReportArray();
+    $report['scores']['security']['pass_rate'] = 0.25;
+
+    expect(fn (): EvaluationReport => EvaluationReport::fromArray($report))
+        ->toThrow(InvalidArgumentException::class, 'security score does not match its cases');
+});
