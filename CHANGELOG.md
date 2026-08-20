@@ -4,8 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
-- **The recorded guarded-arm claims are scoped to record-keyed tools, in writing.** Every shipped attack case
-  supplies a scalar order ID, so no case can produce a set-shaped breach — a foreign record inside a
+- **The recorded guarded-arm claims are scoped to record-keyed tools, in writing.** Every attack case those
+  runs exercise supplies a scalar order ID, so none can produce a set-shaped breach — a foreign record inside a
   set-returning tool's results — for the control arm to observe. The recorded runs and their rule-of-three
   bounds were always claims about record-keyed tools; `docs/evaluation.md` now says so beside them, and
   `docs/limitations.md` names set-returning tools as an unexercised shape the boundary can express but
