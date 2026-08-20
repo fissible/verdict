@@ -67,11 +67,31 @@ A comparison yields changes of the `BaselineChangeKind` enum:
 | `BehavioralFailure` | A newly added case fails on its first run, or a case that was erroring (`CaseStatus::Error`) in the baseline is now failing instead. A case that was already `Failed` in the baseline and stays `Failed` produces no entry at all. | Known/expected if intentional (e.g. a new pending RAG-provenance case); otherwise investigate. A persistently-`Failed` case won't reappear here each run — track it separately if you need confirmation it hasn't silently changed. |
 | `HarnessError` | The current run errored (`CaseStatus::Error`) regardless of baseline status. | Treat as broken harness/environment first, not a security signal — the case didn't execute meaningfully. |
 | `RemovedCoverage` | A case present in the baseline is missing from the current run, or its purpose changed. | Confirm the removal/reclassification was intentional; this shrinks what's actually being tested. |
+| `SuspendedCoverage` | A case moved into `Pending` from any other baseline status — it now names a blocker and is no longer executed. | Confirm the suspension is intentional; coverage that used to be evaluated no longer is. A case that was already `Pending` in the baseline and stays `Pending` produces no entry. |
 | `Improvement` | A case moved from a non-Error failing/regressed state to `Passed`. | Good news; consider re-baselining. |
 | `Recovered` | A case moved from `Error` to `Passed`. | Confirm the underlying harness issue is actually fixed, not just intermittently green. |
 | `AddedCoverage` | A new case not in the baseline was added, regardless of its status. A newly added case that fails or errors produces a `BehavioralFailure`/`HarnessError` entry alongside this one, not instead of it. | Informational only if the new case passed; re-baseline to lock it in. If it's paired with a `BehavioralFailure`/`HarnessError` entry, treat that entry as the actionable signal instead. |
 
-The command treats `BehavioralRegression`, `BehavioralFailure`, `HarnessError`, and `RemovedCoverage` as blocking in CI. The other three change kinds are not blocking.
+The command treats `BehavioralRegression`, `BehavioralFailure`, `HarnessError`, `RemovedCoverage`, and `SuspendedCoverage` as blocking in CI. The other three change kinds are not blocking.
+
+### Verdict's own committed baselines
+
+The harness is applied to Verdict itself. Baselines for the four shipped packs are committed at `tests/Baselines/`, one file per pack, produced by `verdict:evaluation-baseline` from the reference runners in `tests/Support/Evaluation/` — the same secure runners the pack unit tests assert against, so a baseline pins exactly the behaviour the tests specify.
+
+Two independent guards compare every change against them:
+
+- **In the test suite.** `tests/Unit/CommittedBaselineTest.php` runs each pack against its reference runner and fails on any blocking change, so a regression fails plain `composer test:unit` before it ever reaches CI.
+- **In CI.** The `evaluation` job in `.github/workflows/tests.yml` runs `composer evaluation:run` — deterministic and synthetic, no provider, no network, no credentials; live evaluation never runs there — then compares each report with `verdict:evaluation-compare --format=github`, so blocking changes fail the build as inline annotations.
+
+A case recorded as `Pending` in the baseline (currently the tool-integrity description-drift case, blocked by [#65](https://github.com/fissible/verdict/issues/65)) does not fail either guard: an unchanged `Pending` status produces no comparison entry at all, and the run step names each pending case and its blocker in the job output.
+
+**Refreshing.** The refresh is one command:
+
+```
+composer evaluation:refresh-baselines
+```
+
+Run it only after an intentional, reviewed change — a pack gained or changed a case, a reference runner's behaviour deliberately moved, or an improvement/added coverage should be locked in. Review the refreshed diff before committing it: every changed case status must be explained by the change being shipped, and a security case leaving `passed` must never be refreshed away — that is a regression to fix, not a baseline to update. The run script pins the report clock to a fixed synthetic instant, so a refresh that changes no behaviour rewrites nothing — the diff you review contains only real changes. (The comparison ignores timestamps either way; only the suite identity and each case's purpose and status are compared.)
 
 ## Live evaluation
 

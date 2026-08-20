@@ -90,6 +90,12 @@
     "test:unit": [
       "vendor/bin/pest"
     ],
+    "evaluation:run": [
+      "@php scripts/run-attack-packs.php"
+    ],
+    "evaluation:refresh-baselines": [
+      "@php scripts/refresh-baselines.php"
+    ],
     "verify:claims": [
       "@php scripts/verify-documentation-claims.php"
     ],
