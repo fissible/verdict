@@ -124,9 +124,13 @@ conversation history — the same reconstruction the streamed and queued approva
 [execution-mode matrix](architecture.md#execution-mode-compatibility) depend on. Both suites pass
 unchanged, so those cells' footnotes still hold.
 
-New surface Verdict does **not** consume: `Events\StartingStep`, `Events\StepCompleted`,
-`Events\StepFailed`, and the run-context objects behind them. `ToolFailed` correlation was named as a
-follow-on in #130 and remains unbuilt — nothing here depends on it.
+`Events\ToolFailed` is new in `0.11.0` and Verdict does not listen to it, but
+`ToolInvocationCorrelationTest` asserts its correlation anyway: it occupies the same trailing-event
+position that carried the `ToolInvoked` defect, so if Verdict ever records failure-path evidence, the
+guarantee is already pinned rather than assumed.
+
+New surface Verdict neither consumes nor asserts: `Events\StartingStep`, `Events\StepCompleted`,
+`Events\StepFailed`, and the run-context objects behind them.
 
 ## Cross-reference: composer.json and the existing compatibility watch
 

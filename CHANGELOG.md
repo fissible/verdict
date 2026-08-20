@@ -4,6 +4,24 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Failure-path tool correlation is asserted, not inferred.** `ToolFailed` reaches Verdict in the same
+  trailing-event position that carried the defect `ToolInvoked` used to have — it fires *after* any
+  generation the tool nested, which is exactly when the old shared `GeneratesText::$currentToolInvocationId`
+  was overwritten. laravel/ai#872 made the id a local handed to both events, so the same fix covers both;
+  "covers both for the same reason" is an inference, and failure-path evidence is the last place to leave
+  one unasserted. The deferred half of [#130](https://github.com/fissible/verdict/issues/130).
+
+  Two cases, both written from measured behaviour rather than assumption. A tool that throws **inside a
+  sub-agent** is absorbed and reported as that sub-agent's failed tool result, leaving the outer call to
+  succeed — so the outer completion still lands after a nested run, and must not carry the failed tool's
+  id. A tool that runs a nested generation and **then throws** propagates out of `prompt()`, and its own
+  `ToolFailed` is the trailing event. Both report their own ids, and each run keeps its own invocation id.
+
+  Also corrects a test whose name and comment still described the upstream defect as live in production
+  ("hides the nested clobber", "a defect that exists in production"). It now records what it actually
+  demonstrates: a fake clones providers per resolution, so that arrangement could never have observed the
+  defect and its green was never evidence either way.
+
 - **`laravel/ai` widened to `^0.11.0`, and `0.10.x` is no longer supported.** `0.11.0` released the
   run-context stack Verdict had been waiting on ([#870](https://github.com/laravel/ai/pull/870),
   [#872](https://github.com/laravel/ai/pull/872), [#873](https://github.com/laravel/ai/pull/873),
