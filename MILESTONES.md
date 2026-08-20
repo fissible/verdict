@@ -12,6 +12,24 @@ Effort key: **XS** (<1h) · **S** (1–2h) · **M** (~half day) · **L** (~1 day
 GitHub milestones mirror this document. When they disagree, this document is wrong and should be
 corrected — the issues are the source of truth for scope, this is the source of truth for ordering.
 
+**Milestone membership was backfilled on 2026-08-20**, so GitHub now answers "which tag shipped this?"
+for every closed issue. Expect the per-release tables below to list *fewer* issues than the milestone
+holds — v0.4.0's milestone carries 42 closed issues against the nine rows in its section. That is the
+intended relationship: the tables record what was *planned and why it was ordered that way*; the
+milestone records what the tag *contains*.
+
+The backfill was derived from each issue's close time against the release publication times, not from
+whichever pull request happened to mention the issue last — that heuristic put #65 in an unreleased tag
+nine days after it closed, and misplaced #97, #112, #150, and #153. Every disagreement between the two
+methods was resolved against the code: #65 by finding `configuredDescriptionFingerprint` first present at
+v0.4.0, #150 and #153 by the tags containing their fix commits, #97 and #112 against the statement already
+in the adoption guide.
+
+Two issues carry no milestone on purpose, both closed `not planned`: [#106](https://github.com/fissible/verdict/issues/106)
+(tenant-aware pending-review query seam) and [#227](https://github.com/fissible/verdict/issues/227) (a
+streamed-resumption defect report that a mis-wired probe produced and which no code change answered).
+A milestone states which release shipped the work; neither shipped any.
+
 ---
 
 ## v0.3.0 — Evaluation harness extension *(cut)*
