@@ -28,6 +28,13 @@ which record is in play. Where the model must select, treat `requiresConfirmatio
 as the intent control and size the approval payload so a human can evaluate the
 selection, not merely the operation.
 
+<!-- @verdict-claim limitation.set-shaped-targets follow-up:#251 -->
+### Set-returning tools are an unexercised shape
+
+Every shipped attack case, workbench example, and recorded run resolves a scalar ID to a single record and asks the policy *may this actor touch this record*. A set-returning tool — "recent orders", "find the order for this email address" — has no single record to inspect. Wired naively, the question collapses to *may this actor use search at all*: Verdict records a capability permit while the tenant filter that does the real work lives in ordinary tool code, outside the boundary and absent from the evidence.
+
+The boundary can express the correct shape today. `resolveTarget` may return a scope value object bound to the actor — resolved from `ActionContext`, not the proposal — the policy authorizes the scope, and the executor applies it as the query predicate, which puts the filter inside the boundary and into the evidence. Nothing shipped exercises it: no workbench capability, no pack case, no recorded run. Until one does, read the recorded guarded-arm results in [evaluation](evaluation.md) as claims about record-keyed tools, and treat a search capability's tenant scoping as an application control to test yourself. A set-shaped attack case whose safe outcome is a filtered permit — the tool executes and the foreign record is absent from the results — is tracked in [#251](https://github.com/fissible/verdict/issues/251).
+
 <!-- @verdict-claim limitation.bypassed-paths tested -->
 ### No protection for bypassed paths
 
