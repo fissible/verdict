@@ -19,7 +19,7 @@ final readonly class ToolObservation
             throw new InvalidArgumentException('A tool observation must name a capability.');
         }
 
-        if (preg_match('/^[a-f0-9]{64}$/', $this->argumentFingerprint) !== 1) {
+        if (preg_match('/^[a-f0-9]{64}\z/', $this->argumentFingerprint) !== 1) {
             throw new InvalidArgumentException('A tool observation requires a SHA-256 argument fingerprint.');
         }
     }

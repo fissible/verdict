@@ -4,6 +4,13 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Every SHA-256 fingerprint validator now anchors with `\z`.** PR [#247](https://github.com/fissible/verdict/pull/247)'s
+  review found that `/^[a-f0-9]{64}$/` admits a 65-byte value ending in a newline, because PCRE's `$`
+  matches before a trailing `\n`, and closed the hole inside `EvaluationReport`. The three pre-existing
+  copies of the same pattern — `ProvenanceEntry::assertFingerprint()`, `Assertions::requireFingerprint()`,
+  and `ToolObservation`'s constructor — now anchor the same way, each pinned by a test that rejects the
+  newline-suffixed digest. Closes [#248](https://github.com/fissible/verdict/issues/248).
+
 - **Failure-path tool correlation is asserted, not inferred.** `ToolFailed` reaches Verdict in the same
   trailing-event position that carried the defect `ToolInvoked` used to have — it fires *after* any
   generation the tool nested, which is exactly when the old shared `GeneratesText::$currentToolInvocationId`
