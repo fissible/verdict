@@ -134,3 +134,37 @@ Unreachable tuples are declared from a walk of the code that emits each stage, n
 enums permit. The `proposal` and `execution` stages record an application-supplied
 `CapabilityAuthorizer` decision, so every disposition is reachable there; the other four stages are
 minted by Verdict's own managers and are bounded by what those emit.
+
+## Referencing a Verdict claim from another system
+
+Because the identity is Verdict's own and needs no Attest, another producer — an executor, a
+downstream ledger — can cite a specific Verdict decision across a trust boundary. A reference is
+three fields, all read directly from the record:
+
+| Field | Value | Source |
+| --- | --- | --- |
+| producer | `fissible/verdict` | constant |
+| claim type | e.g. `verdict.execution.claim-admitted` | `claimType` |
+| digest | `canonicaljson-sha256:…` | `recordDigest` |
+
+How far the citing system trusts the digest is its choice:
+
+- **As an opaque id.** Store the string and correlate on it. No recomputation. Enough to link
+  artifacts across systems.
+- **Re-derived offline.** Recompute the digest from the record's stable fields
+  ([`RecordDigest::stableFields()`](../src/Evidence/RecordDigest.php), under the `canonicaljson-sha256`
+  rule) and compare. This detects modification of any stable field and needs neither Attest nor
+  Verdict's recorder — the field list is public precisely so an outside party can do this.
+- **Attest-signed.** Where the deployment enabled Attest, `record_digest` travels inside the signed,
+  hash-chained payload, so a valid chain is tamper-evidence over the digest. This trusts the signing
+  key, and it says nothing about records that never entered the chain — integrity, not completeness.
+
+**Cite the claim type's scope, and no more.** The label carries its own ceiling. A reference to a
+`verdict.execution.claim-admitted` record says Verdict *admitted* the action to its executor — **not
+that it ran**; `verdict.execution.claim-completed` is Verdict's admission-side belief that a return
+succeeded — **not a receipt from the executor, and not a resulting state**. Reading more into a
+reference than the label states overclaims Verdict's boundary, which no field here supports.
+
+None of this asks anything of Verdict beyond the two fields already on every record: the reference
+lives on the *citing* system. Verdict's obligation ends at exposing a stable, honestly scoped
+identity.
