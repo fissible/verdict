@@ -4,6 +4,15 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **The recorded guarded-arm claims are scoped to record-keyed tools, in writing.** Every shipped attack case
+  supplies a scalar order ID, so no case can produce a set-shaped breach — a foreign record inside a
+  set-returning tool's results — for the control arm to observe. The recorded runs and their rule-of-three
+  bounds were always claims about record-keyed tools; `docs/evaluation.md` now says so beside them, and
+  `docs/limitations.md` names set-returning tools as an unexercised shape the boundary can express but
+  nothing shipped exercises. Stated first by an external reader of the published write-up. Closes
+  [#250](https://github.com/fissible/verdict/issues/250); the case that would close the gap is
+  [#251](https://github.com/fissible/verdict/issues/251).
+
 ## [0.9.0] - 2026-08-19
 
 - **Every SHA-256 fingerprint validator now anchors with `\z`.** PR [#247](https://github.com/fissible/verdict/pull/247)'s
