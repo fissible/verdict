@@ -372,7 +372,7 @@ final class Assertions
 
     private static function requireFingerprint(string $fingerprint): void
     {
-        if (preg_match('/^[a-f0-9]{64}$/', $fingerprint) !== 1) {
+        if (preg_match('/^[a-f0-9]{64}\z/', $fingerprint) !== 1) {
             throw new InvalidArgumentException('A tool argument fingerprint assertion requires a SHA-256 fingerprint.');
         }
     }
