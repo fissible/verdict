@@ -303,38 +303,88 @@ approval (#235). The queued cell was the gap external review had named. Its scop
 two-turn approval resume produces two distinct Laravel AI invocation ids, so the live harness cannot
 correlate the proposing turn with the executing one by `invocation_id` — that constraint carries into
 [#204](https://github.com/fissible/verdict/issues/204), which #218's closure unblocks and which is
-scheduled into v0.9.0 below.
+scheduled into v0.10.0 below.
 
 **Every row is shipped and the tag is ready to cut.**
 
 ---
 
-## v0.9.0 — Adoption-grade proof
+## v0.9.0 — Adoption-grade proof, cut on upstream compatibility
 
 **Theme.** v0.8.0 finished making the boundary measurable; this milestone makes the proof *continuous*
 and *copyable*. Continuous: the attack packs stop being something that was run once and start being
 something CI re-verifies on every commit. Copyable: the correct wiring stops being prose and becomes an
-application someone can clone. And the remaining unmeasured boundary — the human-approval challenge —
-becomes observable to the live packs.
+application someone can clone.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | none | open |
-| [#225](https://github.com/fissible/verdict/issues/225) Design spike: vendor-neutral EvidenceReference | M | #223 ✅ | open |
+| [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | none | ✅ merged in #241 |
+| [#237](https://github.com/fissible/verdict/issues/237) Clone-and-run reference application | XL | v0.8.0 tag | ✅ |
+| [#130](https://github.com/fissible/verdict/issues/130) Widen `laravel/ai` to `^0.11` | M | upstream tag ✅ | ✅ merged in #244 — pulled forward from v1.0.0 |
+| [#164](https://github.com/fissible/verdict/issues/164) Rate-limit window boundary, expiry, and cross-window leakage | M | none | ✅ merged in #238 — contributor pool, accreted |
+| [#248](https://github.com/fissible/verdict/issues/248) SHA-256 validators accept a trailing newline in three sites | XS | none | ✅ accreted |
+
+**Both theme items shipped, and then upstream forced the tag.** `laravel/ai 0.11.0` published on
+2026-08-19, hours after v0.8.0 was cut. Every published Verdict requires `^0.10.2`, so an adopter who
+already had `laravel/ai ^0.11` could not install Verdict at all: `composer require fissible/verdict`
+fails outright, and `--with-all-dependencies` does not rescue it because the root constraint blocks the
+downgrade. Since Verdict layers *on top of* Laravel AI, the usual discovery order puts the adopter on the
+newest Laravel AI before they ever reach Verdict — so that failure sits directly on the evaluation path.
+#130 was pulled forward from v1.0.0 and this tag cut on the compatibility fix rather than held for more
+scope. Same reasoning as v0.3.0: a tag is a point in history, and work in flight does not need to wait
+for it.
+
+**#130 drops `laravel/ai 0.10.x`.** That is a breaking change for existing consumers and therefore a
+minor bump per [`RELEASES.md`](RELEASES.md). It is forced rather than chosen: upstream's #874 made
+`float $time` a required argument on `ToolInvoked`, and the correlation assertion Verdict pins *inverts*
+between the two lines — under `0.10.x` the outer event correctly carries the inner tool's id, under
+`0.11.0` it does not. A security-relevant test that asserts opposite things depending on which dependency
+happens to be installed is worth less than the line it would preserve.
+
+**Two items moved out rather than held, so the tag was not delayed by work the theme never promised:**
+
+- [#204](https://github.com/fissible/verdict/issues/204) (approval-challenge facts observable to the live
+  packs) → **v0.10.0**. Research-thread work; see the section below.
+- [#225](https://github.com/fissible/verdict/issues/225) (vendor-neutral `EvidenceReference`) → **no
+  milestone, deliberately**. Its own acceptance criteria gate it on "something outside Verdict actually
+  needs to reference a Verdict claim." Scheduling it into any dated milestone would make that tag hostage
+  to an external consumer who may never appear. It is captured design, not scheduled work.
+
+**#164 and #248 keep their `v1.0.0` milestone on GitHub and are listed here anyway.** That is the rule
+working as designed, not a bookkeeping slip: the 1.0 milestone states what 1.0 *requires*, and it does not
+gate interim tags — whatever lands early ships in whichever tag is open. This table is the record of what
+the tag *contains*; the milestone is the record of what the bar *needs*. They are different questions, and
+prior milestones accreted work the same way (see v0.7.0's #152, #163, #210, #147, #146).
+
+**This tag's window also absorbed work without a tracking issue:** the failure-path tool-correlation
+mirror over `ToolFailed` (#246, the deferred half of #130) and the outbound claim-reference documentation
+(#242).
+
+**#148 was contributor-pool work and was deliberately pulled out of it.** A milestone must not depend on
+unclaimed volunteer work; scheduling #148 meant the maintainer claimed it.
+
+---
+
+## v0.10.0 — Measuring the approval boundary
+
+**Theme.** v0.7.0 measured authorization and v0.8.0 measured intent. This makes the human-approval
+boundary measurable the same way — proven per-case by the live packs rather than deterministically by a
+harness that already knows the answer.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
 | [#204](https://github.com/fissible/verdict/issues/204) Approval-challenge facts observable to the live attack packs | L | #218 ✅ | open |
-| [#237](https://github.com/fissible/verdict/issues/237) Clone-and-run reference application | XL | v0.8.0 tag | open |
 
-**Ordering.** #148 first: smallest, no dependencies, and it is the substrate #213's realism levers are
-gated behind — every later pack change lands against a committed baseline instead of a rerun. #225 next,
-while #223's decisions are fresh; it is the design half of the cross-system evidence story and should not
-be re-derived cold. #204 is the research thread: v0.7.0 measured authorization, v0.8.0 measured intent,
-this makes the approval boundary measurable the same way. #237 is the milestone's adoption artifact and
-its largest item; its one open design decision (how the demo runs without a paid model key) is stated in
-the issue. The repository it lives in is a portfolio decision made outside this tracker.
+**Why this is not in v1.0.0.** The 1.0 milestone states what 1.0 *requires*. #204 makes an existing
+guarantee measurable rather than closing a gap that blocks the bar, so it is scheduled without being a
+release gate. Scope will accrete here the way every prior milestone accreted `scope: ready` work that
+landed before its tag.
 
-**#148 was contributor-pool work and is deliberately pulled out of it.** A milestone must not depend on
-unclaimed volunteer work; scheduling #148 means the maintainer is claiming it.
-
+**One constraint carried in from #218's scoping:** a two-turn approval resume produces two distinct
+Laravel AI invocation ids, and `laravel/ai 0.11.0` did not change that — both `prompt()` and `stream()`
+still mint one unconditionally per call. So the live harness cannot correlate the proposing turn with the
+executing one by `invocation_id`; the tool call id is the boundary-spanning key. #204's design has to
+start from that.
 ---
 
 ## Contributor-ready
@@ -428,11 +478,11 @@ These are one question at two layers — whether the boundary is enforced by str
 should settle in one ADR. #230's thread already proposes the sequencing: the v0.8.0 advisory (#231) *is*
 the deprecation period, and registration-time rejection lands at the 1.0 boundary.
 
-**Upstream-gated:** [#130](https://github.com/fissible/verdict/issues/130) widens `laravel/ai` to `^0.11`
-when upstream publishes the run-context stack. Blocked on upstream's tag, not on this project; the canary
-and Dependabot are the alarms (see the dependency watch below). The compatibility-strategy criterion is
-not satisfiable while the dependency sits behind a known unreleased breaking change, which is why it
-lives here.
+**Upstream compatibility — satisfied, and moved out.** [#130](https://github.com/fissible/verdict/issues/130)
+lived here because the compatibility-strategy criterion could not be called satisfied while the dependency
+sat behind a known unreleased breaking change. Upstream published `0.11.0` on 2026-08-19 and #130 shipped
+in v0.9.0, so the blocker is gone. What the criterion now requires is not an issue but a practice: that
+the strategy keeps being exercised on each upstream minor. The dependency watch below is that practice.
 
 **The pinning pool** is the contributor-ready section above: every guarantee that holds today but is not
 pinned by a test, plus the hardening that makes an allowlist explainable. Suggested pickup order is stated
@@ -451,22 +501,29 @@ See [`docs/laravel-ai-compatibility.md`](docs/laravel-ai-compatibility.md) for t
 Verdict's `src/` actually depends on in Laravel AI's surface, classified by how likely each dependency is
 to change without warning, and which tests would catch it (#18).
 
-Verdict pins `laravel/ai: ^0.10.2`, which in Composer's pre-1.0 caret semantics is `>=0.10.2 <0.11.0`.
+Verdict pins `laravel/ai: ^0.11.0`, which in Composer's pre-1.0 caret semantics is `>=0.11.0 <0.12.0`.
+`0.10.x` is no longer supported — see v0.9.0 above for why that floor move was forced rather than chosen.
 
-- **laravel/ai#848** (open) fixes the nested `toolInvocationId` clobber. It is minor-bump shaped, so it
-  will likely ship in `0.11.0` and will not be picked up automatically. It has since grown into a stack
-  (#870, #872, #873, #874, #875, #876) that adds `RunContext` and `ToolFailed` and makes `float $time` a
-  required argument to `ToolInvoked` — a declared breaking change. **#130** tracks the widening as one
-  reviewed pass, including the two hand-constructed `ToolInvoked` events in
-  `tests/Feature/LaravelAiProvenanceTest.php`.
-- `tests/Feature/ToolInvocationCorrelationTest.php` pins the *current, buggy* behaviour deliberately.
-  When the constraint widens past #848, that test goes red. **That failure is the designed alarm, not a
-  regression** — it means upstream correlation semantics changed and Verdict's evidence path needs review.
+- **The run-context stack shipped in `0.11.0` and was absorbed in one reviewed pass (#130 → #244).**
+  laravel/ai#848, the draft this watch originally tracked, was **closed as superseded**; the work split
+  into #870, #872, #873, #874, #875, and #876. Do not cite #848 as the fix — **#872** is what deleted the
+  shared `toolInvocationId` and scoped it through a `RunContext`.
+- `tests/Feature/ToolInvocationCorrelationTest.php` used to pin the *buggy* behaviour deliberately, so an
+  upstream fix would fail loudly rather than change the meaning of recorded evidence in silence. **The
+  alarm fired as designed**, and the assertion now states the fixed behaviour: each tool's completion
+  event reports its own id. #246 added the failure-path mirror over `ToolFailed`, which occupies the same
+  trailing-event position the defect used to corrupt.
 - Dependabot watches Composer weekly and will open the widening PR. Whichever milestone is open when that
   lands absorbs the compatibility review, per `RELEASES.md`.
 - `.github/workflows/laravel-ai-canary.yml` runs PHPStan and the suite against `laravel/ai:0.x-dev` weekly,
   non-blocking. Dependabot's PR arrives when upstream *publishes*; the canary reports when upstream
   *merges*. That lead time is the point — it is what lets an issue blocked on an in-flight upstream stack
   be scoped against what actually landed rather than against an open draft. A red canary means upstream
-  changed: work **#130**'s checklist, do not widen `composer.json` to make it green. The constraint is
-  `0.x-dev`, not `dev-0.x`; Composer normalizes a branch name that already looks like a version.
+  changed: open a widening issue on #130's pattern — a compatibility review and a release — and do not
+  widen `composer.json` to make it green. The constraint is `0.x-dev`, not `dev-0.x`; Composer normalizes
+  a branch name that already looks like a version.
+- **The canary reports merges, not releases, and that distinction cost real time once.** It ran on
+  schedule the morning after the stack merged and reported exactly the two failures #130 predicted — but
+  `0.11.0` publishing a week later produced no signal of its own, because a published tag outside the
+  constraint is invisible to CI by construction. Dependabot is the alarm for *publication*; the canary is
+  the alarm for *merge*. Neither replaces reading upstream's releases.
