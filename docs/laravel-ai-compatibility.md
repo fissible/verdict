@@ -31,6 +31,12 @@ Every `Laravel\Ai\*` symbol referenced anywhere in `src/` (verified via `grep -r
 
 **`handle(AgentPrompt $prompt, Closure $next): mixed`** — `VerdictApprovalMiddleware` and `VerdictProvenanceMiddleware` both implement this signature as Laravel AI prompt middleware. This is category (c) in its purest form: there is no `Contracts\Middleware` interface to implement or grep for. The signature convention (`handle($passable, Closure $next)`) mirrors Laravel's own HTTP/job middleware idiom, which is a reasonable inference, not a documented Laravel AI promise.
 
+## Test-surface dependency: `Contracts\Gateway\StepTextGateway`
+
+One symbol is deliberately absent from the table above because it appears nowhere in `src/`, yet belongs in this inventory: `Laravel\Ai\Contracts\Gateway\StepTextGateway`, category **(a)** by shape (a documented contract interface). Four test files implement it — `StreamedApprovalResumptionTest`, `QueuedApprovalResumptionTest`, `StreamedExecutionGatesTest`, and `LiveAgentObserverStreamingTest` — because it is the only substitution that drives Laravel AI's real `stream()`/resume pipeline with controlled provider output; `Agent::fake()` never resumes tools ([#233](https://github.com/fissible/verdict/pull/233)).
+
+It is inventoried despite living outside `src/` because two public-facing artifacts rest on its stability: the verified streamed and queued approval-resumption cells in the [execution-mode compatibility matrix](architecture.md#execution-mode-compatibility) ([#233](https://github.com/fissible/verdict/pull/233)/[#235](https://github.com/fissible/verdict/pull/235)), and the reference application's default replay mode ([#237](https://github.com/fissible/verdict/issues/237)), which implements this contract to demonstrate the boundary with no live model. An upstream signature change surfaces through the same watch as everything else here: the four tests fail immediately (the designed alarm), the canary gives lead time, and the response is the [#130](https://github.com/fissible/verdict/issues/130) checklist. The reference application pins tagged releases, so it absorbs such a change at a reviewed version bump, not in the field.
+
 ## Category (c) deep dives
 
 ### Bound-tool preflight and immediate execution
