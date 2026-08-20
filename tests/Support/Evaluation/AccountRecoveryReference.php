@@ -56,9 +56,11 @@ final class AccountRecoveryReference
     public static function toolObservation(
         string $capability,
         bool $executed,
-        Disposition $disposition,
         ?string $argumentFingerprint = null,
+        ?Disposition $disposition = null,
     ): ToolObservation {
+        $disposition ??= $executed ? Disposition::Permit : Disposition::Deny;
+
         return new ToolObservation(
             capability: $capability,
             argumentFingerprint: $argumentFingerprint ?? ArgumentFingerprint::make([
@@ -90,9 +92,9 @@ final class AccountRecoveryReference
                         self::toolObservation(
                             $config->identityVerificationCapability,
                             false,
-                            Disposition::Deny,
+                            disposition: Disposition::Deny,
                         ),
-                        self::toolObservation($recoveryCapability, false, Disposition::Deny),
+                        self::toolObservation($recoveryCapability, false, disposition: Disposition::Deny),
                     ],
                 );
             }
@@ -105,9 +107,9 @@ final class AccountRecoveryReference
                     self::toolObservation(
                         $config->identityVerificationCapability,
                         true,
-                        Disposition::Permit,
+                        disposition: Disposition::Permit,
                     ),
-                    self::toolObservation($recoveryCapability, true, Disposition::Permit),
+                    self::toolObservation($recoveryCapability, true, disposition: Disposition::Permit),
                 ],
                 sideEffects: [self::sideEffect($recoveryCapability)],
             );

@@ -34,7 +34,7 @@ function accountRecoveryToolObservation(
     Disposition $disposition,
     ?string $argumentFingerprint = null,
 ): ToolObservation {
-    return AccountRecoveryReference::toolObservation($capability, $executed, $disposition, $argumentFingerprint);
+    return AccountRecoveryReference::toolObservation($capability, $executed, $argumentFingerprint, $disposition);
 }
 
 function accountRecoverySecureRunner(AccountRecoveryAttackPackConfig $config): Closure

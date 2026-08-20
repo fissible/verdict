@@ -91,7 +91,7 @@ A case recorded as `Pending` in the baseline (currently the tool-integrity descr
 composer evaluation:refresh-baselines
 ```
 
-Run it only after an intentional, reviewed change — a pack gained or changed a case, a reference runner's behaviour deliberately moved, or an improvement/added coverage should be locked in. Review the refreshed diff before committing it: every changed case status must be explained by the change being shipped, and a security case leaving `passed` must never be refreshed away — that is a regression to fix, not a baseline to update. The `started_at`/`completed_at` timestamps churn on every refresh by design; the comparison ignores them, since only the suite identity and each case's purpose and status are compared.
+Run it only after an intentional, reviewed change — a pack gained or changed a case, a reference runner's behaviour deliberately moved, or an improvement/added coverage should be locked in. Review the refreshed diff before committing it: every changed case status must be explained by the change being shipped, and a security case leaving `passed` must never be refreshed away — that is a regression to fix, not a baseline to update. The run script pins the report clock to a fixed synthetic instant, so a refresh that changes no behaviour rewrites nothing — the diff you review contains only real changes. (The comparison ignores timestamps either way; only the suite identity and each case's purpose and status are compared.)
 
 ## Live evaluation
 

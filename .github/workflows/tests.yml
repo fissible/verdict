@@ -139,15 +139,27 @@ jobs:
         run: composer evaluation:run
 
       # Blocking kinds (regression, new failure, harness error, removed or suspended coverage)
-      # fail the job; improvements and added coverage annotate without failing.
+      # fail the job; improvements and added coverage annotate without failing. The roster is
+      # derived from the reports the run step wrote (PackReferences::ALL), so a pack cannot be
+      # skipped silently; a missing baseline is its own failure.
       - name: Compare against committed baselines
         run: |
+          shopt -s nullglob
+          reports=(build/evaluation/*.report.json)
+          if [ ${#reports[@]} -eq 0 ]; then
+            echo "::error title=Verdict evaluation::No evaluation reports were written."
+            exit 1
+          fi
           failed=0
-          for suite in account-recovery-attack-pack rag-borne-injection-attack-pack storefront-attack-pack tool-integrity-attack-pack; do
-            php vendor/bin/testbench verdict:evaluation-compare \
-              "build/evaluation/${suite}.report.json" \
-              "tests/Baselines/${suite}.json" \
-              --format=github || failed=1
+          for report in "${reports[@]}"; do
+            suite=$(basename "$report" .report.json)
+            baseline="tests/Baselines/${suite}.json"
+            if [ ! -f "$baseline" ]; then
+              echo "::error title=Verdict evaluation::No committed baseline for ${suite}. Run [composer evaluation:refresh-baselines] and commit it."
+              failed=1
+              continue
+            fi
+            php vendor/bin/testbench verdict:evaluation-compare "$report" "$baseline" --format=github || failed=1
           done
           echo "After an intentional, reviewed pack change: run [composer evaluation:refresh-baselines] and commit the diff."
           exit $failed

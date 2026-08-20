@@ -2,18 +2,20 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\CaseStatus;
-use Fissible\Verdict\Tests\Support\Evaluation\AccountRecoveryReference;
-use Fissible\Verdict\Tests\Support\Evaluation\RagBorneInjectionReference;
-use Fissible\Verdict\Tests\Support\Evaluation\StorefrontReference;
-use Fissible\Verdict\Tests\Support\Evaluation\ToolIntegrityReference;
+use Fissible\Verdict\Tests\Support\Evaluation\PackReferences;
 
 require __DIR__.'/../vendor/autoload.php';
 
 /**
- * Runs the four shipped deterministic attack packs against their reference
- * runners and writes one evaluation report per pack. No network, no provider,
- * no credentials — the same synthetic execution path the unit tests use.
+ * Runs the shipped deterministic attack packs against their reference runners
+ * and writes one evaluation report per pack. No network, no provider, no
+ * credentials — the same synthetic execution path the unit tests use. The
+ * report clock is pinned, so two runs over unchanged packs produce
+ * byte-identical reports and a baseline refresh that changes no behaviour
+ * produces no diff.
  *
  * Usage: php scripts/run-attack-packs.php [output-dir]
  *
@@ -21,22 +23,23 @@ require __DIR__.'/../vendor/autoload.php';
  * verdict:evaluation-compare; refresh baselines with
  * `composer evaluation:refresh-baselines`.
  */
-const ATTACK_PACK_REFERENCES = [
-    AccountRecoveryReference::class,
-    RagBorneInjectionReference::class,
-    StorefrontReference::class,
-    ToolIntegrityReference::class,
-];
-
-$outDir = rtrim($argv[1] ?? __DIR__.'/../build/evaluation', '/');
+$outDir = rtrim($argv[1] ?? __DIR__.'/../build/evaluation', '/') ?: '/';
 
 if (! is_dir($outDir) && ! mkdir($outDir, 0755, true) && ! is_dir($outDir)) {
     fwrite(STDERR, "Cannot create output directory [{$outDir}].".PHP_EOL);
     exit(1);
 }
 
-foreach (ATTACK_PACK_REFERENCES as $reference) {
-    $result = $reference::suite()->run();
+$clock = new class implements Clock
+{
+    public function now(): DateTimeImmutable
+    {
+        return new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC'));
+    }
+};
+
+foreach (PackReferences::ALL as $reference) {
+    $result = $reference::suite()->run($clock);
     $path = "{$outDir}/".$reference::SUITE.'.report.json';
 
     if (file_put_contents($path, $result->report()->toJson().PHP_EOL) === false) {
@@ -44,19 +47,19 @@ foreach (ATTACK_PACK_REFERENCES as $reference) {
         exit(1);
     }
 
-    $counts = [];
+    $security = $result->score(CasePurpose::Security);
+    $utility = $result->score(CasePurpose::Utility);
 
-    foreach ($result->cases as $case) {
-        $counts[$case->status->value] = ($counts[$case->status->value] ?? 0) + 1;
-    }
-
-    $summary = implode(', ', array_map(
-        static fn (string $status, int $count): string => "{$count} {$status}",
-        array_keys($counts),
-        $counts,
-    ));
-
-    echo $reference::SUITE.': '.count($result->cases)." cases — {$summary}".PHP_EOL;
+    printf(
+        '%s: %d cases — %d passed, %d failed, %d errors, %d pending%s',
+        $reference::SUITE,
+        count($result->cases),
+        $security->passed + $utility->passed,
+        $security->failed + $utility->failed,
+        $security->errors + $utility->errors,
+        $security->pending + $utility->pending,
+        PHP_EOL,
+    );
 
     foreach ($result->cases as $case) {
         if ($case->status === CaseStatus::Pending) {

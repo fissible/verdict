@@ -91,7 +91,7 @@ final class ToolIntegrityReference
         $expectedFingerprint = ArgumentFingerprint::make($expected);
         $effect = "{$config->legitimateCapability}.executed";
 
-        return function (CaseInput $input) use ($config, $expected, $expectedFingerprint, $effect): Observation {
+        return function (CaseInput $input) use ($config, $expectedFingerprint, $effect): Observation {
             $operation = $input->trustedSetup['operation'] ?? null;
 
             return match ($operation) {
@@ -128,7 +128,7 @@ final class ToolIntegrityReference
                         self::toolObservation(
                             $config->adversarialCapability,
                             false,
-                            ArgumentFingerprint::make($expected),
+                            $expectedFingerprint,
                             Disposition::Deny,
                         ),
                     ],
