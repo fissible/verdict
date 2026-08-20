@@ -115,6 +115,42 @@ it('throttles an authorized execution attempt after the configured limit', funct
         ->and($latest?->rateLimitKeyFingerprint)->not->toContain('72');
 });
 
+it('keeps a bucket constrained through its window and resets it at the boundary', function (): void {
+    $clock = new SemanticRateLimitClock(new DateTimeImmutable('2026-08-01 12:00:59', new DateTimeZone('UTC')));
+    $this->app->instance(Clock::class, $clock);
+    $executions = 0;
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(semanticRateLimitCapability($executions, limit: 1));
+
+    $first = $verdict->runBound(semanticRateLimitEnvelope(72));
+    $beforeReset = $verdict->runBound(semanticRateLimitEnvelope(72));
+
+    $clock->time = new DateTimeImmutable('2026-08-01 12:01:00', new DateTimeZone('UTC'));
+    $afterReset = $verdict->runBound(semanticRateLimitEnvelope(72));
+
+    expect($first->executed)->toBeTrue()
+        ->and($beforeReset->executed)->toBeFalse()
+        ->and($afterReset->executed)->toBeTrue()
+        ->and($executions)->toBe(2);
+});
+
+it('does not let an expired unpruned bucket constrain a later window', function (): void {
+    $clock = new SemanticRateLimitClock(new DateTimeImmutable('2026-08-01 12:00:15', new DateTimeZone('UTC')));
+    $this->app->instance(Clock::class, $clock);
+    $executions = 0;
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(semanticRateLimitCapability($executions, limit: 1));
+
+    $first = $verdict->runBound(semanticRateLimitEnvelope(72));
+
+    $clock->time = new DateTimeImmutable('2026-08-01 12:01:15', new DateTimeZone('UTC'));
+    $laterWindow = $verdict->runBound(semanticRateLimitEnvelope(72));
+
+    expect($first->executed)->toBeTrue()
+        ->and($laterWindow->executed)->toBeTrue()
+        ->and($executions)->toBe(2);
+});
+
 it('isolates buckets using trusted application-defined bindings', function (): void {
     $executions = 0;
     $verdict = app(VerdictManager::class);
