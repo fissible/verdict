@@ -4,6 +4,20 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Boot-time configuration recording now survives every database failure, loudly.** #240 guarded the
+  boot-time write against a missing table, but the introspection query that finds that out needs a
+  reachable database — and a fresh clone boots (`package:discover` during `composer install`, then
+  `key:generate`) before its SQLite file exists. `record()` now skips on an unreachable database and
+  on a failing write (read-only filesystem, full disk, unmigrated schema) exactly as it skips on a
+  missing table — and, because those failures can also mean permanent misconfiguration, each skip
+  dispatches a new `CapabilityConfigurationUnrecorded` event (once per store for an unreachable
+  database, per configuration for a failed write) so operators can log what a silent skip would have
+  hidden. `hasTable()` deliberately still throws, so `verdict:validate` keeps reporting "could not
+  inspect its table" — a different remedy than "missing table" — now pinned by tests. Found by the
+  reference app absorbing the v0.9.1 bump
+  ([verdict-storefront#12](https://github.com/fissible/verdict-storefront/issues/12)). Closes
+  [#256](https://github.com/fissible/verdict/issues/256).
+
 ## [0.9.1] - 2026-08-20
 
 - **A fresh database can migrate again.** Boot-time capability registration wrote its configuration

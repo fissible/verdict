@@ -5,8 +5,11 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
+use Fissible\Verdict\Capabilities\Events\CapabilityConfigurationUnrecorded;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Event;
 
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
@@ -83,4 +86,89 @@ it('skips recording while the configuration table has not been migrated', functi
     expect($store->record($capability->configuration()))->toBeTrue();
 
     expect($connection->table('verdict_capability_configurations')->count())->toBe(1);
+});
+
+it('skips recording while the database itself is unreachable', function (): void {
+    config()->set('database.connections.missing-sqlite-file', [
+        'driver' => 'sqlite',
+        'database' => sys_get_temp_dir().'/verdict-nonexistent-dir/missing.sqlite',
+        'prefix' => '',
+    ]);
+
+    $capability = Capability::usingPolicy(
+        name: 'orders.refund',
+        ability: 'refund',
+        resolveTarget: fn (ActionEnvelope $envelope): array => ['raw' => $envelope->proposal->arguments],
+    );
+
+    $store = new DatabaseCapabilityConfigurationStore(
+        app(DatabaseManager::class)->connection('missing-sqlite-file'),
+    );
+
+    expect($store->record($capability->configuration()))->toBeFalse();
+});
+
+it('keeps throwing from hasTable so validate can distinguish unreachable from missing', function (): void {
+    config()->set('database.connections.missing-sqlite-file', [
+        'driver' => 'sqlite',
+        'database' => sys_get_temp_dir().'/verdict-nonexistent-dir/missing.sqlite',
+        'prefix' => '',
+    ]);
+
+    $store = new DatabaseCapabilityConfigurationStore(
+        app(DatabaseManager::class)->connection('missing-sqlite-file'),
+    );
+
+    expect(fn (): bool => $store->hasTable())->toThrow(QueryException::class);
+});
+
+it('announces an exception-skipped recording once per store instead of failing boot', function (): void {
+    config()->set('database.connections.missing-sqlite-file', [
+        'driver' => 'sqlite',
+        'database' => sys_get_temp_dir().'/verdict-nonexistent-dir/missing.sqlite',
+        'prefix' => '',
+    ]);
+
+    Event::fake([CapabilityConfigurationUnrecorded::class]);
+
+    $capability = Capability::usingPolicy(
+        name: 'orders.refund',
+        ability: 'refund',
+        resolveTarget: fn (ActionEnvelope $envelope): array => ['raw' => $envelope->proposal->arguments],
+    );
+
+    $store = new DatabaseCapabilityConfigurationStore(
+        app(DatabaseManager::class)->connection('missing-sqlite-file'),
+        events: app('events'),
+    );
+
+    expect($store->record($capability->configuration()))->toBeFalse()
+        ->and($store->record($capability->configuration()))->toBeFalse();
+
+    Event::assertDispatchedTimes(
+        CapabilityConfigurationUnrecorded::class,
+        1,
+    );
+});
+
+it('skips and announces when the write itself fails instead of failing boot', function (): void {
+    $connection = app(DatabaseManager::class)->connection();
+    $connection->getSchemaBuilder()->dropColumns('verdict_capability_configurations', ['configuration']);
+
+    Event::fake([CapabilityConfigurationUnrecorded::class]);
+
+    $capability = Capability::usingPolicy(
+        name: 'orders.refund',
+        ability: 'refund',
+        resolveTarget: fn (ActionEnvelope $envelope): array => ['raw' => $envelope->proposal->arguments],
+    );
+
+    $store = new DatabaseCapabilityConfigurationStore($connection, events: app('events'));
+
+    expect($store->record($capability->configuration()))->toBeFalse();
+
+    Event::assertDispatched(
+        CapabilityConfigurationUnrecorded::class,
+        fn ($event): bool => $event->capability === 'orders.refund' && $event->reason !== '',
+    );
 });
