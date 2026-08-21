@@ -15,14 +15,14 @@ All notable changes to Verdict will be documented in this file.
   change:** `CapabilityConfigurationStore::record()` now returns `bool` — whether the store handled the
   configuration — so custom implementers must update their signature. The contract is Experimental per
   `docs/extension-contract-stability.md`, which is why this rides a patch release. Found by the
-  reference app doing its integration-fixture job
-  ([verdict-storefront#2](https://github.com/fissible/verdict-storefront/issues/2)).
+  reference app doing its integration-fixture job during its Wave 2 build; the storefront-side bump
+  work, including deleting its now-unrepresentable workaround store, is
+  [verdict-storefront#12](https://github.com/fissible/verdict-storefront/issues/12).
   Closes [#240](https://github.com/fissible/verdict/issues/240).
 - **`docs/testing.md` explains the `UnsafeOuterTransaction` guard under `RefreshDatabase`** — the
   deliberate refusal to mutate approval state inside an uncommitted outer transaction — with the two
   sanctioned ways to test approval round-trips, and the resume-only-inside-`withinApprovedToolCalls()`
-  behaviour beside it. Found the same way
-  ([verdict-storefront#3](https://github.com/fissible/verdict-storefront/issues/3)). Closes
+  behaviour beside it. Found the same way, building the reference app's approval-flow tests. Closes
   [#243](https://github.com/fissible/verdict/issues/243).
 
 - **The recorded guarded-arm claims are scoped to record-keyed tools, in writing.** Every attack case those
