@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-20
+
 - **A fresh database can migrate again.** Boot-time capability registration wrote its configuration
   fingerprint before `php artisan migrate` could create the table it writes to, so any application with
   an affirmed capability and the database-backed configuration store died during boot on a new clone, in
@@ -957,7 +959,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/fissible/verdict/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/fissible/verdict/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/fissible/verdict/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/fissible/verdict/compare/v0.6.0...v0.7.0
