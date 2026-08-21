@@ -64,3 +64,23 @@ it('stores the declared configuration once without closures or application data'
             ],
         ]);
 });
+
+it('skips recording while the configuration table has not been migrated', function (): void {
+    $connection = app(DatabaseManager::class)->connection();
+    $connection->getSchemaBuilder()->dropIfExists('verdict_capability_configurations');
+
+    $capability = Capability::usingPolicy(
+        name: 'orders.refund',
+        ability: 'refund',
+        resolveTarget: fn (ActionEnvelope $envelope): array => ['raw' => $envelope->proposal->arguments],
+    );
+
+    $store = new DatabaseCapabilityConfigurationStore($connection);
+    $store->record($capability->configuration());
+
+    (require __DIR__.'/../../database/migrations/create_verdict_capability_configurations_table.php.stub')->up();
+
+    $store->record($capability->configuration());
+
+    expect($connection->table('verdict_capability_configurations')->count())->toBe(1);
+});
