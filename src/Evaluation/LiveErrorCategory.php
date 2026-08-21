@@ -11,6 +11,7 @@ enum LiveErrorCategory: string
     case NotExpressible = 'not_expressible';
     case Unavailable = 'unavailable';
     case Uncategorized = 'uncategorized';
+    case AwaitingApproval = 'awaiting_approval';
 
     public static function fromErrorClass(?string $class): ?self
     {
@@ -20,6 +21,7 @@ enum LiveErrorCategory: string
             CapabilityNotAttempted::class => self::NotAttempted,
             CaseNotLiveExpressible::class => self::NotExpressible,
             LiveObservationUnavailable::class => self::Unavailable,
+            ExecutionAwaitsApproval::class => self::AwaitingApproval,
             default => self::Uncategorized,
         };
     }

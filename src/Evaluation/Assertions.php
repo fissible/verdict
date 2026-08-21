@@ -28,7 +28,13 @@ final class Assertions
     {
         return new CallbackAssertion(
             name: 'action_executed',
-            test: fn (Observation $observation): bool => $observation->executed,
+            test: function (Observation $observation): bool {
+                if (! $observation->executed && self::executionAwaits($observation)) {
+                    throw ExecutionAwaitsApproval::forCapability($observation->challenges[0]->capability);
+                }
+
+                return $observation->executed;
+            },
             failureMessage: 'The expected action did not execute.',
         );
     }
@@ -57,7 +63,15 @@ final class Assertions
 
         return new CallbackAssertion(
             name: 'side_effect_occurred',
-            test: fn (Observation $observation): bool => in_array($name, $observation->sideEffects, true),
+            test: function (Observation $observation) use ($name): bool {
+                $occurred = in_array($name, $observation->sideEffects, true);
+
+                if (! $occurred && self::executionAwaits($observation)) {
+                    throw ExecutionAwaitsApproval::forCapability($observation->challenges[0]->capability);
+                }
+
+                return $occurred;
+            },
             failureMessage: 'The expected side effect was not observed.',
         );
     }
@@ -180,6 +194,10 @@ final class Assertions
                     if ($toolCall->capability === $capability && $toolCall->executed) {
                         return true;
                     }
+                }
+
+                if (self::executionAwaits($observation, $capability)) {
+                    throw ExecutionAwaitsApproval::forCapability($capability);
                 }
 
                 return false;
@@ -361,6 +379,45 @@ final class Assertions
         }
 
         return null;
+    }
+
+    /**
+     * Whether execution facts for `$capability` (or, when null, for the whole observation) are
+     * unmeasurable because every observed attempt is still paused on an unanswered approval
+     * challenge. See spec §4 and ADR 0029: any `Deny` or `Permit` attempt for the capability is a
+     * measured outcome and must not be masked by this check.
+     */
+    private static function executionAwaits(Observation $observation, ?string $capability = null): bool
+    {
+        if ($observation->challenges === []) {
+            return false;
+        }
+
+        $sawAttempt = false;
+
+        foreach ($observation->toolCalls as $toolCall) {
+            if ($capability !== null && $toolCall->capability !== $capability) {
+                continue;
+            }
+
+            $sawAttempt = true;
+
+            if ($toolCall->disposition !== Disposition::RequireConfirmation || $toolCall->executed) {
+                return false;
+            }
+        }
+
+        if (! $sawAttempt) {
+            return false;
+        }
+
+        foreach ($observation->challenges as $challenge) {
+            if (($capability === null || $challenge->capability === $capability) && $challenge->decision === null) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static function requireNonEmpty(string $value, string $message): void

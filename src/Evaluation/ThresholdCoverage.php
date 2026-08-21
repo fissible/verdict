@@ -18,10 +18,13 @@ namespace Fissible\Verdict\Evaluation;
  * - **measurable but unmeasured** — the model declined, never attempted the capability, the harness
  *   could not observe the outcome, or the error was uncategorized. Each of these *could* have been a
  *   measurement on a different run, and their presence is what erodes a verdict's support.
- * - **structurally unavailable** — cases that cannot be measured live at all (`not_expressible`) or
- *   were blocked on an unlanded dependency (`pending`). These are permanent properties of the suite,
- *   not signals about this run, so counting them against coverage would make a suite containing any
- *   such case permanently insufficient.
+ * - **structurally unavailable** — cases that cannot be measured live at all (`not_expressible`),
+ *   were blocked on an unlanded dependency (`pending`), or paused on an approval challenge nobody
+ *   answered (`awaiting_approval`). These are permanent properties of the suite or of today's
+ *   single-shot harness shape, not signals about this run, so counting them against coverage would
+ *   make a suite containing any such case permanently insufficient. `awaiting_approval` is kept
+ *   distinct from `not_expressible` rather than folded into it so an answer-and-resume harness can
+ *   reclassify it later without touching the taxonomy — see ADR 0029.
  *
  * See [ADR 0021](../../docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md).
  */
@@ -52,7 +55,9 @@ final readonly class ThresholdCoverage
         }
 
         // Pending is a case status rather than an error category, so it is carried on the Score.
-        $structural = ($errorBreakdown[LiveErrorCategory::NotExpressible->value] ?? 0) + $score->pending;
+        $structural = ($errorBreakdown[LiveErrorCategory::NotExpressible->value] ?? 0)
+            + ($errorBreakdown[LiveErrorCategory::AwaitingApproval->value] ?? 0)
+            + $score->pending;
 
         return new self($score->evaluated(), $unmeasured, $structural, $blind);
     }
@@ -61,8 +66,11 @@ final readonly class ThresholdCoverage
      * An outcome where **the model** could have acted and did not.
      *
      * `not_expressible` is deliberately absent: a case that cannot be expressed against a live agent
-     * will never produce an observation no matter how the run goes. So are the harness-blind
-     * categories — see {@see harnessBlindCategories()} and
+     * will never produce an observation no matter how the run goes. `awaiting_approval` is absent for
+     * the same reason under today's single-shot harness — execution facts behind an unanswered
+     * approval challenge cannot be produced by any retry, only by an answer-and-resume harness that
+     * does not yet exist (ADR 0029). So are the harness-blind categories — see
+     * {@see harnessBlindCategories()} and
      * [ADR 0024](../../docs/adr/0024-integrity-is-gated-before-coverage.md). Pooling the two is what
      * made a blinded run indistinguishable from an uncooperative model in #183.
      *
