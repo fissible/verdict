@@ -55,11 +55,11 @@ The preflight returning an `Approval` with no findable challenge is a harness-in
 ### 4. Rejected alternatives
 
 Auto-deny and answer-and-resume (the latter is a real future feature — confirmation fatigue,
-post-decision behavior — with its own design surface; the vocabulary below is shaped so it slots
-in without change). A core issuance event/observer (approach B): core broadcasting a released
-payload to destinations the release policy never evaluated inverts ADR 0026's model; a
-pending-approval notification for applications is a separate product feature, filed separately if
-wanted. The evidence-phase route (approach C: `ApprovalEvidencePhase::Issuance` + new `ClaimType`,
+post-decision behavior — with its own design surface; the observation vocabulary this decision
+drives is shaped so it slots in without change). A core issuance event/observer (approach B): core
+broadcasting a released payload to destinations the release policy never evaluated inverts ADR
+0026's model; a pending-approval notification for applications is a separate product feature,
+filed separately if wanted. The evidence-phase route (approach C: `ApprovalEvidencePhase::Issuance` + new `ClaimType`,
 read via `LiveEvidenceReader`) is the named cross-process route if the harness ever spans
 processes; not built now.
 
