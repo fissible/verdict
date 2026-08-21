@@ -71,6 +71,12 @@ beforeEach(function (): void {
         $table->timestamps();
         $table->unique(['tool_call_id', 'capability', 'binding_fingerprint'], 'verdict_approval_receipts_binding_unique');
     });
+    // Bound to whatever connection the default testbench configuration resolves to — that
+    // detail doesn't matter to the spec. In production the preflight (writer) and
+    // challengeForToolCall() (reader) both go through this one bound store instance, so
+    // reader and writer always share a connection by construction. The property this test
+    // proves is same-connection visibility at the hook instant, which holds regardless of
+    // which connection that turns out to be.
     $this->app->instance(
         ApprovalReceiptStore::class,
         new DatabaseApprovalReceiptStore(app(DatabaseManager::class)->connection()),

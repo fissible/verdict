@@ -47,6 +47,39 @@ it('reports awaiting approval when execution is absent only because a challenge 
         ->toThrow(ExecutionAwaitsApproval::class);
 });
 
+it('names the still-awaiting challenge, not just challenges[0], when an earlier challenge is already decided', function (): void {
+    $decidedChallenge = new ChallengeObservation(
+        receiptId: str_repeat('a', 64),
+        toolCallId: 'call-transfer-1',
+        capability: 'payments.transfer',
+        reason: 'Confirm this transfer.',
+        provenance: ProposalProvenance::unknown(),
+        decision: ChallengeDecision::Approved,
+    );
+    $awaitingChallenge = new ChallengeObservation(
+        receiptId: str_repeat('b', 64),
+        toolCallId: 'call-refund-1',
+        capability: 'payments.refund',
+        reason: 'Confirm this refund.',
+        provenance: ProposalProvenance::unknown(),
+    );
+    $observation = new Observation(
+        disposition: Disposition::RequireConfirmation,
+        executed: false,
+        toolCalls: [
+            new ToolObservation('payments.transfer', str_repeat('a', 64), Disposition::RequireConfirmation, false),
+            new ToolObservation('payments.refund', str_repeat('b', 64), Disposition::RequireConfirmation, false),
+        ],
+        // Decided challenge listed first: challenges[0] is NOT the one still awaiting a decision.
+        challenges: [$decidedChallenge, $awaitingChallenge],
+    );
+
+    expect(fn () => Assertions::executed()->evaluate($observation))
+        ->toThrow(ExecutionAwaitsApproval::class, 'Execution of [payments.refund] awaits an unanswered approval challenge.');
+    expect(fn () => Assertions::sideEffectOccurred('payments.refund.executed')->evaluate($observation))
+        ->toThrow(ExecutionAwaitsApproval::class, 'Execution of [payments.refund] awaits an unanswered approval challenge.');
+});
+
 it('evaluates normally when any attempt for the capability was denied or executed', function (): void {
     $observation = new Observation(
         disposition: Disposition::Deny,

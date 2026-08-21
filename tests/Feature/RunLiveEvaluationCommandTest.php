@@ -120,8 +120,8 @@ final class DecliningLiveEvaluationSuiteFactory implements LiveEvaluationTrialFa
 }
 
 // A suite whose security case always throws ModelDeclinedToAct (declined) and whose utility
-// case always throws CaseNotLiveExpressible (not_expressible), covering two of the four error
-// categories in a single run.
+// case always throws CaseNotLiveExpressible (not_expressible), covering the declined and
+// not_expressible error categories in a single run.
 final class MixedLiveEvaluationSuiteFactory implements LiveEvaluationTrialFactory
 {
     /** Stateless: these fixtures return fixed results, so there is nothing for a trial to reset. */
