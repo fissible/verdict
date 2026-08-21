@@ -95,6 +95,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 return new DatabaseCapabilityConfigurationStore(
                     connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
                     table: is_string($table) ? $table : 'verdict_capability_configurations',
+                    events: $app->make(Dispatcher::class),
                 );
             }
 

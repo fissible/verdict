@@ -408,3 +408,25 @@ it('fails CI when the capability-configuration table is missing', function (): v
         ->expectsOutputToContain('Configured capability-configuration store requires missing table [verdict_capability_configurations]')
         ->assertExitCode(1);
 });
+
+it('reports an unreachable capability-configuration database as uninspectable, not missing', function (): void {
+    config()->set('database.connections.missing-sqlite-file', [
+        'driver' => 'sqlite',
+        'database' => sys_get_temp_dir().'/verdict-nonexistent-dir/missing.sqlite',
+        'prefix' => '',
+    ]);
+    config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
+    config()->set('verdict.capability_configurations.connection', 'missing-sqlite-file');
+
+    app()->forgetInstance(CapabilityConfigurationStore::class);
+    app()->forgetInstance(CapabilityRegistry::class);
+
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.recorded', 'view', fn (ActionEnvelope $envelope): int => 1),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('Configured capability-configuration store could not inspect its table.')
+        ->doesntExpectOutputToContain('requires missing table')
+        ->assertExitCode(1);
+});
