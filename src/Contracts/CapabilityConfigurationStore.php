@@ -13,6 +13,10 @@ interface CapabilityConfigurationStore
 {
     /**
      * Persist this closure-free, immutable, content-addressed configuration if it is not present.
+     *
+     * @return bool whether the store handled the configuration — true when it was written or is
+     *              deliberately not persisted by design; false when the write was skipped and may
+     *              be retried later (for example, before the backing table has been migrated).
      */
-    public function record(CapabilityConfiguration $configuration): void;
+    public function record(CapabilityConfiguration $configuration): bool;
 }

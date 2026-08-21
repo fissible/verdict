@@ -4,6 +4,27 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **A fresh database can migrate again.** Boot-time capability registration wrote its configuration
+  fingerprint before `php artisan migrate` could create the table it writes to, so any application with
+  an affirmed capability and the database-backed configuration store died during boot on a new clone, in
+  CI, and under `RefreshDatabase`. `DatabaseCapabilityConfigurationStore::record()` now skips while its
+  table is missing — safe because the store is a write-only audit trail nothing in the decision path
+  reads. The next *process* to boot after migration records what was skipped; a long-lived worker
+  (Octane, queues) that booted pre-migration must restart to record, and `verdict:validate` now audits
+  this store's table so a missing migration is named loudly instead of skipped silently. **Contract
+  change:** `CapabilityConfigurationStore::record()` now returns `bool` — whether the store handled the
+  configuration — so custom implementers must update their signature. The contract is Experimental per
+  `docs/extension-contract-stability.md`, which is why this rides a patch release. Found by the
+  reference app doing its integration-fixture job during its Wave 2 build; the storefront-side bump
+  work, including deleting its now-unrepresentable workaround store, is
+  [verdict-storefront#12](https://github.com/fissible/verdict-storefront/issues/12).
+  Closes [#240](https://github.com/fissible/verdict/issues/240).
+- **`docs/testing.md` explains the `UnsafeOuterTransaction` guard under `RefreshDatabase`** — the
+  deliberate refusal to mutate approval state inside an uncommitted outer transaction — with the two
+  sanctioned ways to test approval round-trips, and the resume-only-inside-`withinApprovedToolCalls()`
+  behaviour beside it. Found the same way, building the reference app's approval-flow tests. Closes
+  [#243](https://github.com/fissible/verdict/issues/243).
+
 - **The recorded guarded-arm claims are scoped to record-keyed tools, in writing.** Every attack case those
   runs exercise supplies a scalar order ID, so none can produce a set-shaped breach — a foreign record inside a
   set-returning tool's results — for the control arm to observe. The recorded runs and their rule-of-three

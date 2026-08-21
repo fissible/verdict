@@ -30,8 +30,11 @@ final class CapabilityRegistry
 
         $fingerprint = $capability->configurationFingerprint();
 
-        if (! isset($this->recordedFingerprints[$fingerprint])) {
-            $this->configurations->record($capability->configuration());
+        // Memoized only when the store reports the configuration handled: a store that skipped the
+        // write (an unmigrated table, #240) leaves the fingerprint unmemoized, so any future
+        // in-process registration path may retry. Registration currently runs once per process, so
+        // the durable heal is the next boot after migration — validate names the gap until then.
+        if (! isset($this->recordedFingerprints[$fingerprint]) && $this->configurations->record($capability->configuration())) {
             $this->recordedFingerprints[$fingerprint] = true;
         }
 
