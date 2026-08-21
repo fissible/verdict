@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Evaluation;
 
+use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Approvals\Approval;
@@ -25,6 +27,11 @@ use Stringable;
  * `$tool instanceof Approvable`. If this decorator implemented only `Tool`, every
  * confirmation-required case would silently run with no approval preflight while still appearing
  * to take the real Verdict path.
+ *
+ * The decorator also observes the preflight itself: when the inner tool's `shouldRequestApproval()`
+ * pauses, it looks up the challenge that pause must have issued and records it. ADR 0029 decision 3
+ * treats a pause with no findable challenge as the instrument going blind, not as "no challenge was
+ * issued" — see `shouldRequestApproval()` below.
  */
 final class CapturingTool implements Approvable, Tool
 {
@@ -32,6 +39,8 @@ final class CapturingTool implements Approvable, Tool
         private readonly Approvable&Tool $inner,
         private readonly string $capability,
         private readonly LiveToolCapture $capture,
+        private readonly ApprovalManager $approvals,
+        private readonly InvocationContext $invocations,
     ) {}
 
     public function name(): string
@@ -62,7 +71,7 @@ final class CapturingTool implements Approvable, Tool
 
         $this->capture->record(
             capability: $this->capability,
-            argumentFingerprint: ArgumentFingerprint::make($request->all()),
+            argumentFingerprint: $this->fingerprint($request),
             disposition: $notExecuted
                 ? Disposition::tryFrom($decoded['decision']) ?? throw LiveObservationUnavailable::because(
                     "a bound tool returned an unrecognized decision [{$decoded['decision']}]",
@@ -90,6 +99,42 @@ final class CapturingTool implements Approvable, Tool
 
     public function shouldRequestApproval(Request $request): ?Approval
     {
-        return $this->inner->shouldRequestApproval($request);
+        $approval = $this->inner->shouldRequestApproval($request);
+
+        if ($approval === null) {
+            return null;
+        }
+
+        $invocationId = $this->invocations->current();
+
+        if ($invocationId !== null) {
+            $this->capture->recordInvocationId($invocationId);
+        }
+
+        // ADR 0029 decision 3: a pause with no findable challenge is the instrument going
+        // blind — ambiguous lookup, replay, or a framework-level approval that bypasses
+        // Verdict — never a measured "no challenge was issued".
+        $challenge = $this->approvals->challengeForToolCall((string) $request->toolCallId());
+
+        if ($challenge === null || $challenge->provenance === null) {
+            throw LiveObservationUnavailable::because(
+                "the approval preflight paused [{$this->capability}] but no observable challenge backs it",
+            );
+        }
+
+        $this->capture->recordChallenge(ChallengeObservation::fromChallenge($challenge));
+        $this->capture->record(
+            capability: $this->capability,
+            argumentFingerprint: $this->fingerprint($request),
+            disposition: Disposition::RequireConfirmation,
+            executed: false,
+        );
+
+        return $approval;
+    }
+
+    private function fingerprint(Request $request): string
+    {
+        return ArgumentFingerprint::make($request->all());
     }
 }

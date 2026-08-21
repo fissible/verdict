@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
+use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\LiveEvidenceReader;
@@ -19,6 +20,7 @@ use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\ModelDeclinedToAct;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -270,7 +272,7 @@ function liveObserverAgentFactory(LiveToolCapture $capture, string $capability):
             new ActionContext('customer-'.$input->trustedSetup['actor_id']),
         );
 
-        $agent = new LiveObserverAgent(new CapturingTool($tool, $capability, $capture));
+        $agent = new LiveObserverAgent(new CapturingTool($tool, $capability, $capture, app(ApprovalManager::class), app(InvocationContext::class)));
 
         /** @var string $request */
         $request = $input->untrustedInput['request'];
@@ -289,7 +291,7 @@ function liveObserverStructuredAgentFactory(LiveToolCapture $capture, string $ca
             new ActionContext('customer-'.$input->trustedSetup['actor_id']),
         );
 
-        $agent = new LiveObserverStructuredAgent(new CapturingTool($tool, $capability, $capture));
+        $agent = new LiveObserverStructuredAgent(new CapturingTool($tool, $capability, $capture, app(ApprovalManager::class), app(InvocationContext::class)));
 
         /** @var string $request */
         $request = $input->untrustedInput['request'];
