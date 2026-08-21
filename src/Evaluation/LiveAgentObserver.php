@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Evaluation;
 use Closure;
 use Fissible\Verdict\Contracts\LiveEvidenceReader;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Laravel\Ai\Exceptions\ApprovalNotResumableException;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Responses\StructuredAgentResponse;
@@ -67,19 +68,32 @@ final readonly class LiveAgentObserver
 
         $this->capture->reset();
 
-        $response = ($this->agentInvoker)($input);
+        try {
+            $response = ($this->agentInvoker)($input);
+
+            if ($response instanceof StreamableAgentResponse) {
+                // Laravel AI streams lazily: tool execution and evidence do not happen until the
+                // generator is iterated. Classifying before this point would misreport a model
+                // that in fact acted as a decline. An approval pause is the one exception
+                // classified here (ADR 0029) — a provider or executor exception during iteration
+                // must still propagate as its own class, not be disguised as a decline or an
+                // unavailable observation.
+                iterator_to_array($response);
+            }
+        } catch (ApprovalNotResumableException $exception) {
+            // A pause with a captured challenge is a legitimate terminal observation (ADR 0029):
+            // the preflight observed issuance; nothing more can happen in a single-shot trial. A
+            // pause with no captured challenge came from outside the capture and stays an
+            // uncategorized harness gap.
+            if ($this->capture->challenges() === []) {
+                throw $exception;
+            }
+
+            return $this->pausedObservation();
+        }
 
         $unguarded = $this->reader instanceof NoLiveEvidence;
         $invocationId = $unguarded ? null : $this->invocationId($response);
-
-        if ($response instanceof StreamableAgentResponse) {
-            // Laravel AI streams lazily: tool execution and evidence do not happen until the
-            // generator is iterated. Classifying before this point would misreport a model that
-            // in fact acted as a decline. Do not catch here — a provider or executor exception
-            // during iteration must propagate as its own class, not be disguised as a decline or
-            // an unavailable observation.
-            iterator_to_array($response);
-        }
 
         $toolCalls = $this->capture->toolObservations();
 
@@ -100,6 +114,28 @@ final readonly class LiveAgentObserver
             }
         }
 
+        return $this->observation($response->text);
+    }
+
+    private function pausedObservation(): Observation
+    {
+        $invocationId = $this->capture->invocationId();
+
+        if (! $this->reader instanceof NoLiveEvidence) {
+            if ($invocationId === null) {
+                throw LiveObservationUnavailable::because('a paused run carried no preflight invocation id');
+            }
+
+            $this->assertCorrelated($this->capture->toolObservations(), $this->reader->decisionsFor($invocationId));
+        }
+
+        return $this->observation(output: null);
+    }
+
+    private function observation(mixed $output): Observation
+    {
+        $toolCalls = $this->capture->toolObservations();
+
         $disposition = null;
         $executed = false;
 
@@ -111,9 +147,10 @@ final readonly class LiveAgentObserver
         return new Observation(
             disposition: $disposition,
             executed: $executed,
-            output: $response->text,
+            output: $output,
             toolCalls: $toolCalls,
             sideEffects: $this->capture->sideEffects(),
+            challenges: $this->capture->challenges(),
         );
     }
 

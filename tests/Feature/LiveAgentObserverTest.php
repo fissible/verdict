@@ -6,6 +6,7 @@ use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\LiveEvidenceReader;
@@ -14,6 +15,7 @@ use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CapturingTool;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CaseNotLiveExpressible;
+use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\LiveAgentObserver;
 use Fissible\Verdict\Evaluation\LiveObservationUnavailable;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
@@ -31,6 +33,7 @@ use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Enums\Lab;
+use Laravel\Ai\Exceptions\ApprovalNotResumableException;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\Data\Meta;
@@ -225,12 +228,12 @@ function liveObserverCapability(string $name, callable $executor): Capability
     )->executionTarget(acceptTestSnapshot('live-observer-target'))->executeUsing($executor);
 }
 
-function liveObserverDecisionEvidence(string $capability, string $argumentFingerprint, string $disposition): DecisionEvidence
+function liveObserverDecisionEvidence(string $capability, string $argumentFingerprint, string $disposition, string $stage = 'execution'): DecisionEvidence
 {
     return new DecisionEvidence(
         envelopeId: 'live-observer-envelope',
         capability: $capability,
-        stage: 'execution',
+        stage: $stage,
         disposition: $disposition,
         reason: null,
         argumentFingerprint: $argumentFingerprint,
@@ -463,4 +466,96 @@ it('throws LiveObservationUnavailable when the response carries no invocation id
         trustedSetup: ['actor_id' => 72],
         untrustedInput: ['request' => 'Where is order #1001?'],
     )))->toThrow(LiveObservationUnavailable::class, 'no invocation id');
+});
+
+/**
+ * Simulates what `CapturingTool::shouldRequestApproval()` does before a pause: records the
+ * observed challenge and the RequireConfirmation attempt into the capture, records the
+ * invocation id, then throws — mirroring the real preflight/pause sequence without driving a
+ * full agent loop.
+ *
+ * @return Closure(CaseInput): never
+ */
+function liveObserverPausingInvoker(LiveToolCapture $capture, string $capability, string $argumentFingerprint, string $invocationId): Closure
+{
+    return function (CaseInput $input) use ($capture, $capability, $argumentFingerprint, $invocationId): never {
+        $capture->recordChallenge(new ChallengeObservation(
+            receiptId: 'live-observer-pause-receipt',
+            toolCallId: 'live-observer-pause-tool-call',
+            capability: $capability,
+            reason: null,
+            provenance: ProposalProvenance::unknown(),
+        ));
+        $capture->record(
+            capability: $capability,
+            argumentFingerprint: $argumentFingerprint,
+            disposition: Disposition::RequireConfirmation,
+            executed: false,
+        );
+        $capture->recordInvocationId($invocationId);
+
+        throw ApprovalNotResumableException::make();
+    };
+}
+
+it('classifies a paused run with a captured challenge as a terminal observation', function (): void {
+    $capture = new LiveToolCapture;
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence(
+            'orders.read-pause',
+            $argumentFingerprint,
+            Disposition::RequireConfirmation->value,
+            'proposal',
+        ),
+    ]);
+
+    $observer = new LiveAgentObserver(
+        liveObserverPausingInvoker($capture, 'orders.read-pause', $argumentFingerprint, 'invocation-pause-1'),
+        $capture,
+        $reader,
+    );
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect($observation->challenges)->toHaveCount(1)
+        ->and($observation->disposition)->toBe(Disposition::RequireConfirmation)
+        ->and($observation->executed)->toBeFalse()
+        ->and($observation->output)->toBeNull();
+});
+
+it('rethrows a pause that captured no challenge', function (): void {
+    $capture = new LiveToolCapture;
+    $observer = new LiveAgentObserver(
+        function (CaseInput $input): never {
+            throw ApprovalNotResumableException::make();
+        },
+        $capture,
+        new StubLiveEvidenceReader,
+    );
+
+    expect(fn () => $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    )))->toThrow(ApprovalNotResumableException::class);
+});
+
+it('refuses a paused observation whose captured attempt has no correlated evidence', function (): void {
+    $capture = new LiveToolCapture;
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+
+    $observer = new LiveAgentObserver(
+        liveObserverPausingInvoker($capture, 'orders.read-pause-uncorrelated', $argumentFingerprint, 'invocation-pause-2'),
+        $capture,
+        new StubLiveEvidenceReader,
+    );
+
+    expect(fn () => $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    )))->toThrow(LiveObservationUnavailable::class, 'correlated decision evidence is missing');
 });
