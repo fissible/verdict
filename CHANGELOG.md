@@ -11,7 +11,10 @@ All notable changes to Verdict will be documented in this file.
   table is missing — safe because the store is a write-only audit trail nothing in the decision path
   reads. The next *process* to boot after migration records what was skipped; a long-lived worker
   (Octane, queues) that booted pre-migration must restart to record, and `verdict:validate` now audits
-  this store's table so a missing migration is named loudly instead of skipped silently. Found by the
+  this store's table so a missing migration is named loudly instead of skipped silently. **Contract
+  change:** `CapabilityConfigurationStore::record()` now returns `bool` — whether the store handled the
+  configuration — so custom implementers must update their signature. The contract is Experimental per
+  `docs/extension-contract-stability.md`, which is why this rides a patch release. Found by the
   reference app doing its integration-fixture job
   ([verdict-storefront#2](https://github.com/fissible/verdict-storefront/issues/2)).
   Closes [#240](https://github.com/fissible/verdict/issues/240).
