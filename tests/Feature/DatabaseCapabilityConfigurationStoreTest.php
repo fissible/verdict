@@ -84,3 +84,23 @@ it('skips recording while the configuration table has not been migrated', functi
 
     expect($connection->table('verdict_capability_configurations')->count())->toBe(1);
 });
+
+it('skips recording while the database itself is unreachable', function (): void {
+    config()->set('database.connections.missing-sqlite-file', [
+        'driver' => 'sqlite',
+        'database' => sys_get_temp_dir().'/verdict-nonexistent-dir/missing.sqlite',
+        'prefix' => '',
+    ]);
+
+    $capability = Capability::usingPolicy(
+        name: 'orders.refund',
+        ability: 'refund',
+        resolveTarget: fn (ActionEnvelope $envelope): array => ['raw' => $envelope->proposal->arguments],
+    );
+
+    $store = new DatabaseCapabilityConfigurationStore(
+        app(DatabaseManager::class)->connection('missing-sqlite-file'),
+    );
+
+    expect($store->record($capability->configuration()))->toBeFalse();
+});

@@ -10,6 +10,7 @@ use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
+use Illuminate\Database\QueryException;
 
 final class DatabaseCapabilityConfigurationStore implements CapabilityConfigurationStore, DatabaseTableStore
 {
@@ -29,7 +30,16 @@ final class DatabaseCapabilityConfigurationStore implements CapabilityConfigurat
         // The next process to boot after migration records what this one skipped; a process that
         // booted pre-migration keeps its registrations unrecorded until it restarts, and
         // `verdict:validate` names the missing table so the gap stays visible in the meantime.
-        if (! $this->hasTable()) {
+        try {
+            if (! $this->hasTable()) {
+                return false;
+            }
+        } catch (QueryException) {
+            // A fresh clone boots before its SQLite file even exists (package:discover during
+            // composer install, then key:generate) — an unreachable database defers exactly like a
+            // missing table (#256). hasTable() itself keeps throwing so verdict:validate still
+            // reports "could not inspect its table" for an unreachable database, a different
+            // remedy than "missing table".
             return false;
         }
 
