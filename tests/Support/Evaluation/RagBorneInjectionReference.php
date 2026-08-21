@@ -7,22 +7,42 @@ namespace Fissible\Verdict\Tests\Support\Evaluation;
 use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
+use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\ActionProposal;
+use Fissible\Verdict\Approvals\ApprovalExecutionContext;
+use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ApproverAudience;
+use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
+use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
+use Fissible\Verdict\Approvals\ProposalAnchor;
+use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Context\ContextChannel;
+use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\FieldProjector;
+use Fissible\Verdict\Context\ReleasePolicy;
+use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
+use Fissible\Verdict\Decisions\Evaluation;
+use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Evaluation\CaseInput;
+use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\RagBorneInjectionAttackPack;
 use Fissible\Verdict\Evaluation\RagBorneInjectionAttackPackConfig;
 use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\ToolObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use RuntimeException;
 
 /**
@@ -34,7 +54,7 @@ final class RagBorneInjectionReference
 {
     public const string SUITE = 'rag-borne-injection-attack-pack';
 
-    public const string VERSION = '1';
+    public const string VERSION = '2';
 
     public static function suite(): SecuritySuite
     {
@@ -79,15 +99,18 @@ final class RagBorneInjectionReference
 
     public static function provenanceLedger(InMemoryEvidenceRecorder $recorder): ProvenanceLedger
     {
-        $clock = new class implements Clock
+        return new ProvenanceLedger($recorder, $recorder, self::clock());
+    }
+
+    private static function clock(): Clock
+    {
+        return new class implements Clock
         {
             public function now(): DateTimeImmutable
             {
                 return new DateTimeImmutable('2026-08-08 12:00:00', new DateTimeZone('UTC'));
             }
         };
-
-        return new ProvenanceLedger($recorder, $recorder, $clock);
     }
 
     /** @return list<ProvenanceEntry> */
@@ -172,8 +195,81 @@ final class RagBorneInjectionReference
                         provenanceEntries: $entries,
                     );
                 })(),
+                'rag_challenge_provenance' => self::challengeObservation($config),
                 default => throw new RuntimeException("Unexpected operation [{$operation}]."),
             };
         };
+    }
+
+    private static function challengeObservation(RagBorneInjectionAttackPackConfig $config): Observation
+    {
+        $recorder = new InMemoryEvidenceRecorder;
+        $clock = self::clock();
+        $ledger = new ProvenanceLedger($recorder, $recorder, $clock);
+        $invocations = new InvocationContext;
+
+        $arguments = ['recipient' => $config->safeRecipient, 'amount' => $config->safeAmount];
+        $entry = $ledger->record(
+            correlationId: $config->correlationId,
+            source: Source::external($config->externalSourceName),
+            trust: Trust::Untrusted,
+            dataClass: DataClass::Internal,
+            channel: ContextChannel::RetrievedDocument,
+            content: 'verdict-synthetic-rag challenge-provenance document',
+        );
+        $ledger->declareDerivation(
+            correlationId: $config->correlationId,
+            childContentFingerprint: ProposalAnchor::for($arguments),
+            parentContentFingerprints: [$entry->contentFingerprint],
+            kind: DerivationKind::Summarized,
+        );
+
+        $policies = (new ReleasePolicyRegistry)->register(
+            ReleasePolicy::between(ApproverAudience::source(), ApproverAudience::destination())
+                ->allow(DataClass::Internal)
+                ->whenTrustIs(Trust::Untrusted, Trust::Trusted),
+        );
+        $releases = new ContextReleaseManager($policies, new FieldProjector, $recorder, $clock, $invocations, $ledger);
+        $approvals = new ApprovalManager(
+            new InMemoryApprovalReceiptStore,
+            new ApprovalExecutionContext,
+            $clock,
+            new ApproverProvenanceRelease($ledger, $releases, $policies),
+            $invocations,
+            900,
+        );
+
+        $capability = Capability::usingPolicy($config->consequentialCapability, 'update', fn (ActionEnvelope $envelope): array => $envelope->proposal->arguments)
+            ->requiresConfirmation(
+                bindUsing: fn (ActionEnvelope $envelope, array $target): array => $target,
+                reason: 'Confirm this transfer.',
+            );
+
+        $toolCallId = 'call-verdict-synthetic-rag-challenge-1';
+        $envelope = ActionEnvelope::wrap(
+            new ActionProposal($config->consequentialCapability, $arguments, $toolCallId),
+            new ActionContext(actor: $config->actorId),
+        );
+
+        $invocations->push($config->correlationId);
+        $approvals->issue(new Evaluation($envelope, $capability, $arguments, Decision::requireConfirmation('Confirm this transfer.'), EvaluationStage::Proposal));
+        $challenge = $approvals->challengeForToolCall($toolCallId);
+        $invocations->pop();
+
+        if ($challenge === null) {
+            throw new RuntimeException('Reference issuance failed to produce a readable challenge.');
+        }
+
+        return new Observation(
+            disposition: Disposition::RequireConfirmation,
+            executed: false,
+            toolCalls: [self::toolObservation(
+                $config->consequentialCapability,
+                false,
+                ArgumentFingerprint::make($arguments),
+                Disposition::RequireConfirmation,
+            )],
+            challenges: [ChallengeObservation::fromChallenge($challenge)],
+        );
     }
 }
