@@ -35,6 +35,20 @@ current_branch=$(git rev-parse --abbrev-ref HEAD)
 git diff --quiet && git diff --cached --quiet \
     || die "Working tree is dirty — commit or stash changes first"
 
+# Releasing from a stale main produces a wrong commit list and a wrong-or-empty Unreleased section
+# (v0.9.1 was first attempted from a main three commits behind origin). Verify before doing anything;
+# offer the fast-forward rather than pulling silently, and refuse a divergent main outright.
+git fetch origin main --quiet || die "could not fetch origin/main to verify main is current"
+behind=$(git rev-list --count HEAD..origin/main)
+if (( behind > 0 )); then
+    if confirm "main is $behind commit(s) behind origin/main. Fast-forward now?"; then
+        git merge --ff-only origin/main \
+            || die "fast-forward failed — main has diverged from origin/main; reconcile it first"
+    else
+        die "main is behind origin/main — pull first"
+    fi
+fi
+
 # --- state ---
 
 current=$(cat VERSION)
