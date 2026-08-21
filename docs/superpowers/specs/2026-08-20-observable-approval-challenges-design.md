@@ -1,6 +1,6 @@
 # Observable approval challenges for the live harness
 
-**Issue:** [#204](https://github.com/fissible/verdict/issues/204) · **Milestone:** v0.10.0 · **Status:** approved design, pre-implementation
+**Issue:** [#204](https://github.com/fissible/verdict/issues/204) · **Milestone:** v0.10.0 · **Status:** implemented
 
 ## Problem
 
