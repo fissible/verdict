@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-08-20
+
 - **Boot-time configuration recording now survives every database failure, loudly.** #240 guarded the
   boot-time write against a missing table, but the introspection query that finds that out needs a
   reachable database — and a fresh clone boots (`package:discover` during `composer install`, then
@@ -973,7 +975,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/fissible/verdict/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/fissible/verdict/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/fissible/verdict/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/fissible/verdict/compare/v0.7.0...v0.8.0
