@@ -15,6 +15,7 @@ use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\ReleasePolicy;
 use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
@@ -388,5 +389,22 @@ it('lets --strict fail on a confirmation gate that can never pause', function ()
 
     $this->artisan('verdict:validate', ['--strict' => true])
         ->expectsOutputToContain('orders.ungated-strict')
+        ->assertExitCode(1);
+});
+
+it('fails CI when the capability-configuration table is missing', function (): void {
+    config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
+
+    // The provider already booted and resolved the registry against the default (Null) store; the
+    // rebind below is the same test-only lifetime the discovery tests document.
+    app()->forgetInstance(CapabilityConfigurationStore::class);
+    app()->forgetInstance(CapabilityRegistry::class);
+
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.recorded', 'view', fn (ActionEnvelope $envelope): int => 1),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('Configured capability-configuration store requires missing table [verdict_capability_configurations]')
         ->assertExitCode(1);
 });

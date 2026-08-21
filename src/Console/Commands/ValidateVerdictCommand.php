@@ -13,6 +13,7 @@ use Fissible\Verdict\Capabilities\UnaffirmedDefinition;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
@@ -103,6 +104,14 @@ final class ValidateVerdictCommand extends Command
                 'needed' => $needsExecutionClaims,
                 'contract' => ExecutionClaimStore::class,
                 'label' => 'execution-claim',
+            ],
+            [
+                // Registration records a configuration fingerprint for every registered capability,
+                // and a missing table is a silent permanent skip rather than a boot failure (#240) —
+                // this audit is the loud signal that replaces the crash.
+                'needed' => $capabilities->all() !== [],
+                'contract' => CapabilityConfigurationStore::class,
+                'label' => 'capability-configuration',
             ],
         ] as $store) {
             if (! $store['needed']) {

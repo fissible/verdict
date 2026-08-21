@@ -6,8 +6,6 @@ use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Capabilities\Capability;
-use Fissible\Verdict\Capabilities\CapabilityDiscovery;
-use Fissible\Verdict\Capabilities\CapabilityRegistrar;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Decisions\Decision as VerdictDecision;
@@ -15,29 +13,6 @@ use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Exceptions\CapabilityDefinitionFailed;
 use Fissible\Verdict\Tests\Fixtures\Capabilities\AffirmedCapability;
 use Fissible\Verdict\VerdictManager;
-use Fissible\Verdict\VerdictServiceProvider;
-
-/**
- * Points discovery at fixture directories and re-runs the provider's boot. The app is already
- * booted by the time a test body runs, so the booted() callback the provider registers fires
- * immediately — which is what makes the wiring itself, not just the registrar, the thing under test.
- */
-function bootDiscovery(string ...$directories): void
-{
-    app()->instance(CapabilityDiscovery::class, new CapabilityDiscovery(
-        rootPath: dirname(__DIR__).'/Fixtures',
-        rootNamespace: 'Fissible\\Verdict\\Tests\\Fixtures\\',
-        paths: array_map(static fn (string $d): string => dirname(__DIR__).'/Fixtures/'.$d, $directories),
-    ));
-
-    // The registrar the application already booted captured the real discovery, so replacing the
-    // discovery alone would not reach it. Rebinding after first resolution is a test-only lifetime:
-    // in production the registrar first resolves in booted(), after every provider has had its say,
-    // and nothing re-binds discovery mid-process. This is not a papered-over production bug.
-    app()->forgetInstance(CapabilityRegistrar::class);
-
-    (new VerdictServiceProvider(app()))->boot();
-}
 
 beforeEach(function (): void {
     $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer

@@ -76,11 +76,11 @@ it('skips recording while the configuration table has not been migrated', functi
     );
 
     $store = new DatabaseCapabilityConfigurationStore($connection);
-    $store->record($capability->configuration());
+    expect($store->record($capability->configuration()))->toBeFalse();
 
     (require __DIR__.'/../../database/migrations/create_verdict_capability_configurations_table.php.stub')->up();
 
-    $store->record($capability->configuration());
+    expect($store->record($capability->configuration()))->toBeTrue();
 
     expect($connection->table('verdict_capability_configurations')->count())->toBe(1);
 });

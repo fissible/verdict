@@ -9,8 +9,11 @@ All notable changes to Verdict will be documented in this file.
   an affirmed capability and the database-backed configuration store died during boot on a new clone, in
   CI, and under `RefreshDatabase`. `DatabaseCapabilityConfigurationStore::record()` now skips while its
   table is missing — safe because the store is a write-only audit trail nothing in the decision path
-  reads — and the first boot after migration records what was skipped. Found by the reference app doing
-  its integration-fixture job ([verdict-storefront#2](https://github.com/fissible/verdict-storefront/issues/2)).
+  reads. The next *process* to boot after migration records what was skipped; a long-lived worker
+  (Octane, queues) that booted pre-migration must restart to record, and `verdict:validate` now audits
+  this store's table so a missing migration is named loudly instead of skipped silently. Found by the
+  reference app doing its integration-fixture job
+  ([verdict-storefront#2](https://github.com/fissible/verdict-storefront/issues/2)).
   Closes [#240](https://github.com/fissible/verdict/issues/240).
 - **`docs/testing.md` explains the `UnsafeOuterTransaction` guard under `RefreshDatabase`** — the
   deliberate refusal to mutate approval state inside an uncommitted outer transaction — with the two

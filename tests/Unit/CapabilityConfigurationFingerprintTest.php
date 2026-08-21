@@ -129,9 +129,11 @@ it('passes custom configuration stores only the materialized closure-free value 
     {
         public ?CapabilityConfiguration $recorded = null;
 
-        public function record(CapabilityConfiguration $configuration): void
+        public function record(CapabilityConfiguration $configuration): bool
         {
             $this->recorded = $configuration;
+
+            return true;
         }
     };
     $capability = Capability::usingPolicy(

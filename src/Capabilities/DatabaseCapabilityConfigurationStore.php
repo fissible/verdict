@@ -5,27 +5,32 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Capabilities;
 
 use DateTimeImmutable;
+use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 
-final readonly class DatabaseCapabilityConfigurationStore implements CapabilityConfigurationStore
+final class DatabaseCapabilityConfigurationStore implements CapabilityConfigurationStore, DatabaseTableStore
 {
+    private bool $tableKnownToExist = false;
+
     public function __construct(
-        private ConnectionInterface $connection,
-        private string $table = 'verdict_capability_configurations',
+        private readonly ConnectionInterface $connection,
+        private readonly string $table = 'verdict_capability_configurations',
     ) {}
 
-    public function record(CapabilityConfiguration $configuration): void
+    public function record(CapabilityConfiguration $configuration): bool
     {
         // Artisan boots the application before dispatching any command — including `migrate`, the
         // command that creates this table — so boot-time registration must survive an unmigrated
         // database (#240). Skipping is safe because this store is a write-only audit trail: nothing
         // in the decision path reads it, so a skipped write cannot change an authorization outcome.
-        // The next boot after migration records what this one skipped.
-        if ($this->tableIsMissing()) {
-            return;
+        // The next process to boot after migration records what this one skipped; a process that
+        // booted pre-migration keeps its registrations unrecorded until it restarts, and
+        // `verdict:validate` names the missing table so the gap stays visible in the meantime.
+        if (! $this->hasTable()) {
+            return false;
         }
 
         // The fingerprint is the primary key. insertOrIgnore intentionally makes concurrent
@@ -37,13 +42,29 @@ final readonly class DatabaseCapabilityConfigurationStore implements CapabilityC
             'configuration' => ArgumentFingerprint::canonicalJson($configuration->declared),
             'first_seen_at' => new DateTimeImmutable,
         ]);
+
+        return true;
     }
 
-    private function tableIsMissing(): bool
+    public function hasTable(): bool
     {
+        // A table cannot un-migrate, so a positive answer is memoized and the schema-introspection
+        // query costs one round-trip per store instance, not one per capability per boot.
+        if ($this->tableKnownToExist) {
+            return true;
+        }
+
         // ConnectionInterface carries no schema builder; a substitute connection that is not a real
-        // Illuminate Connection gets no guard and behaves exactly as before this check existed.
-        return $this->connection instanceof Connection
-            && ! $this->connection->getSchemaBuilder()->hasTable($this->table);
+        // Illuminate Connection is assumed migrated and behaves exactly as before this guard existed.
+        if (! $this->connection instanceof Connection) {
+            return true;
+        }
+
+        return $this->tableKnownToExist = $this->connection->getSchemaBuilder()->hasTable($this->table);
+    }
+
+    public function table(): string
+    {
+        return $this->table;
     }
 }
