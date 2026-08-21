@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Decisions\Disposition;
+use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 
 it('records one tool observation per bound-tool call and resets between invocations', function (): void {
@@ -34,4 +36,26 @@ it('records domain side effects independently of tool observations', function ()
     $capture->reset();
 
     expect($capture->sideEffects())->toBe([]);
+});
+
+it('records challenges and the preflight invocation id, and reset clears them', function (): void {
+    $capture = new LiveToolCapture;
+    $challenge = new ChallengeObservation(
+        receiptId: str_repeat('r', 64),
+        toolCallId: 'call-capture-1',
+        capability: 'payments.transfer',
+        reason: null,
+        provenance: ProposalProvenance::unknown(),
+    );
+
+    $capture->recordChallenge($challenge);
+    $capture->recordInvocationId('invocation-capture');
+
+    expect($capture->challenges())->toBe([$challenge])
+        ->and($capture->invocationId())->toBe('invocation-capture');
+
+    $capture->reset();
+
+    expect($capture->challenges())->toBe([])
+        ->and($capture->invocationId())->toBeNull();
 });

@@ -14,6 +14,11 @@ final class LiveToolCapture
     /** @var list<string> */
     private array $sideEffects = [];
 
+    /** @var list<ChallengeObservation> */
+    private array $challenges = [];
+
+    private ?string $invocationId = null;
+
     public function record(string $capability, string $argumentFingerprint, ?Disposition $disposition, bool $executed): void
     {
         $this->calls[] = new ToolObservation($capability, $argumentFingerprint, $disposition, $executed);
@@ -28,6 +33,8 @@ final class LiveToolCapture
     {
         $this->calls = [];
         $this->sideEffects = [];
+        $this->challenges = [];
+        $this->invocationId = null;
     }
 
     public function isEmpty(): bool
@@ -45,5 +52,26 @@ final class LiveToolCapture
     public function sideEffects(): array
     {
         return $this->sideEffects;
+    }
+
+    public function recordChallenge(ChallengeObservation $challenge): void
+    {
+        $this->challenges[] = $challenge;
+    }
+
+    /** @return list<ChallengeObservation> */
+    public function challenges(): array
+    {
+        return $this->challenges;
+    }
+
+    public function recordInvocationId(string $invocationId): void
+    {
+        $this->invocationId = $invocationId;
+    }
+
+    public function invocationId(): ?string
+    {
+        return $this->invocationId;
     }
 }
