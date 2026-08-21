@@ -20,9 +20,33 @@ final readonly class CaseResult
         public ?ObservationEvidence $observation,
         public ?string $errorClass = null,
         public ?string $blockedBy = null,
+        public ?Observation $rawObservation = null,
     ) {
         if ($this->status === CaseStatus::Pending && ($this->blockedBy === null || trim($this->blockedBy) === '')) {
             throw new \InvalidArgumentException('A pending case result must name what blocks it.');
         }
+    }
+
+    /**
+     * Exclude the raw observation from serialization; it contains untranslated sensitive data
+     * (output, provenance, challenges) that should never leak into reports or baselines.
+     * The rawObservation property serves control-arm assertions only.
+     *
+     * @return list<string>
+     */
+    public function __sleep(): array
+    {
+        return [
+            'id',
+            'version',
+            'purpose',
+            'status',
+            'trustedSetupFingerprint',
+            'untrustedInputFingerprint',
+            'assertions',
+            'observation',
+            'errorClass',
+            'blockedBy',
+        ];
     }
 }

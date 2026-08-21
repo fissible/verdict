@@ -106,6 +106,7 @@ final readonly class SecuritySuite
                 status: $passed ? CaseStatus::Passed : CaseStatus::Failed,
                 assertions: $assertions,
                 observation: ObservationEvidence::fromObservation($observation),
+                rawObservation: $observation,
             );
         } catch (Throwable $error) {
             return $this->result(
@@ -126,6 +127,7 @@ final readonly class SecuritySuite
         ?ObservationEvidence $observation,
         ?string $errorClass = null,
         ?string $blockedBy = null,
+        ?Observation $rawObservation = null,
     ): CaseResult {
         return new CaseResult(
             id: $case->id,
@@ -138,6 +140,7 @@ final readonly class SecuritySuite
             observation: $observation,
             errorClass: $errorClass,
             blockedBy: $blockedBy,
+            rawObservation: $rawObservation,
         );
     }
 }

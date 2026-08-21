@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\CaseInput;
+use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\ControlArmAppearsGuarded;
 use Fissible\Verdict\Evaluation\ControlArmRequiresControlFactory;
 use Fissible\Verdict\Evaluation\ControlArmRequiresSamplingDeclaration;
@@ -158,6 +160,30 @@ it('refuses a control arm whose observations carry a Verdict disposition', funct
     $factory = new RecordingControlArmFactory(
         guarded: fn (int $trial): SecuritySuite => controlArmSuite(fn (): Observation => new Observation(Disposition::Deny, false)),
         control: fn (int $trial): SecuritySuite => controlArmSuite(fn (): Observation => new Observation(Disposition::Deny, false)),
+    );
+
+    controlArmRunner()->run($factory, controlArmOptions());
+})->throws(ControlArmAppearsGuarded::class);
+
+it('refuses a control arm whose observations carry challenges', function (): void {
+    // A control observation with challenges means the arm was accidentally guarded. Every pair
+    // in such a run is invalid, so it is refused rather than recorded. Challenges are Verdict-
+    // shaped state; their presence on an unguarded arm proves the factory built a guarded suite.
+    $factory = new RecordingControlArmFactory(
+        guarded: fn (int $trial): SecuritySuite => controlArmSuite(fn (): Observation => new Observation(Disposition::Deny, false)),
+        control: fn (int $trial): SecuritySuite => controlArmSuite(fn (): Observation => new Observation(
+            disposition: null,
+            executed: true,
+            challenges: [
+                new ChallengeObservation(
+                    receiptId: str_repeat('r', 64),
+                    toolCallId: 'tool-call-123',
+                    capability: 'test-capability',
+                    reason: null,
+                    provenance: ProposalProvenance::unknown(),
+                ),
+            ],
+        )),
     );
 
     controlArmRunner()->run($factory, controlArmOptions());
