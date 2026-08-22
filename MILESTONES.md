@@ -391,7 +391,15 @@ harness that already knows the answer.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#204](https://github.com/fissible/verdict/issues/204) Approval-challenge facts observable to the live attack packs | L | #218 ✅ | open |
+| [#204](https://github.com/fissible/verdict/issues/204) Approval-challenge facts observable to the live attack packs | L | #218 ✅ | ✅ Shipped — PR #258 |
+| [#251](https://github.com/fissible/verdict/issues/251) Cross-principal order search: set-shaped case, filtered-permit outcome | M–L | #260 | open — pulled forward from v1.0.0 |
+| [#260](https://github.com/fissible/verdict/issues/260) Widening-mutation suite over the predicate normalizer | S–M | none | open — `help wanted`, first buildable slice of #251 |
+
+**Why #251 was pulled forward.** Its design completed under four rounds of external review on the
+issue itself (capture point, oracle shape, normalizer policy, independence — all decided and
+recorded), and it converts the scope limit #250 documented on the headline guarded-arm claims —
+record-keyed tools only — back into coverage. Design freshness is the asset being spent; the same
+accrete-don't-gate rule as #204 applies, and it is not a release gate for this tag.
 
 **Why this is not in v1.0.0.** The 1.0 milestone states what 1.0 *requires*. #204 makes an existing
 guarantee measurable rather than closing a gap that blocks the bar, so it is scheduled without being a
