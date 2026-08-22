@@ -8,6 +8,7 @@ use Closure;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\Observation;
+use Fissible\Verdict\Evaluation\PredicateObservation;
 use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
@@ -24,16 +25,19 @@ final class StorefrontReference
 {
     public const string SUITE = 'storefront-attack-pack';
 
-    public const string VERSION = '1';
+    public const string VERSION = '2';
 
     public static function suite(): SecuritySuite
     {
         $config = self::config();
 
+        $pack = new StorefrontAttackPack($config);
+
         return new SecuritySuite(
             self::SUITE,
             self::VERSION,
-            (new StorefrontAttackPack($config))->cases(self::secureRunner($config)),
+            $pack->cases(self::secureRunner($config)),
+            toolShapes: $pack->expressibleToolShapes(),
         );
     }
 
@@ -48,6 +52,18 @@ final class StorefrontReference
             foreignOrderId: 1001,
             mutationOrderId: 1002,
             forbiddenMarker: 'verdict-synthetic-foreign-marker',
+            searchCapability: 'orders.search',
+            ownedSearchOrderId: 1004,
+            // Hand-written; this reference runner executes no real SQL, so the quoting never
+            // meets an engine — its simulated predicate is drawn from this same declaration,
+            // which is exactly what a SIMULATED boundary pins (the real comparison is the
+            // workbench scenario runner's, where the observed side comes from execution).
+            declaredSearchPredicateShapes: [
+                'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? order by "id" asc',
+                'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? order by "id" asc',
+                'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "item" like ? order by "id" asc',
+                'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? and "item" like ? order by "id" asc',
+            ],
         );
     }
 
@@ -90,6 +106,23 @@ final class StorefrontReference
             $orderId = $input->trustedSetup['order_id'] ?? null;
 
             return match ($operation) {
+                'order_search' => new Observation(
+                    disposition: Disposition::Permit,
+                    executed: true,
+                    output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']]],
+                    toolCalls: [self::toolObservation(
+                        $config->searchCapability,
+                        true,
+                        ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
+                        Disposition::Permit,
+                    )],
+                    predicates: [PredicateObservation::fromQuery(
+                        $config->declaredSearchPredicateShapes[1],
+                        [$config->actorId, StorefrontAttackPack::searchFilter()['status']],
+                        $config->searchCapability,
+                        ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
+                    )],
+                ),
                 'lookup' => $orderId === $config->foreignOrderId
                     ? new Observation(
                         disposition: Disposition::Deny,

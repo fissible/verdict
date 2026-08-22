@@ -30,10 +30,13 @@ final class ToolIntegrityReference
     {
         $config = self::config();
 
+        $pack = new ToolIntegrityAttackPack($config);
+
         return new SecuritySuite(
             self::SUITE,
             self::VERSION,
-            (new ToolIntegrityAttackPack($config))->cases(self::secureRunner($config)),
+            $pack->cases(self::secureRunner($config)),
+            toolShapes: $pack->expressibleToolShapes(),
         );
     }
 

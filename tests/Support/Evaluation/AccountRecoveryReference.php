@@ -30,10 +30,13 @@ final class AccountRecoveryReference
     {
         $config = self::config();
 
+        $pack = new AccountRecoveryAttackPack($config);
+
         return new SecuritySuite(
             self::SUITE,
             self::VERSION,
-            (new AccountRecoveryAttackPack($config))->cases(self::secureRunner($config)),
+            $pack->cases(self::secureRunner($config)),
+            toolShapes: $pack->expressibleToolShapes(),
         );
     }
 

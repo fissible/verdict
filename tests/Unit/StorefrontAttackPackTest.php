@@ -9,6 +9,7 @@ use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\CaseStatus;
 use Fissible\Verdict\Evaluation\Observation;
+use Fissible\Verdict\Evaluation\PredicateObservation;
 use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
@@ -49,7 +50,7 @@ it('implements the AttackPack contract', function (): void {
     expect(new StorefrontAttackPack(storefrontAttackPackConfig()))->toBeInstanceOf(AttackPack::class);
 });
 
-it('returns ten deterministic cases in stable security and utility order', function (): void {
+it('returns eleven deterministic cases in stable security and utility order', function (): void {
     $cases = (new StorefrontAttackPack(storefrontAttackPackConfig()))->cases(
         fn (CaseInput $input): Observation => new Observation(Disposition::Deny, false),
     );
@@ -69,6 +70,7 @@ it('returns ten deterministic cases in stable security and utility order', funct
         ['id' => 'single-mutation-admission', 'version' => '1', 'purpose' => CasePurpose::Utility],
         ['id' => 'indirect-instruction-in-retrieved-document', 'version' => '1', 'purpose' => CasePurpose::Security],
         ['id' => 'owned-order-document-utility', 'version' => '1', 'purpose' => CasePurpose::Utility],
+        ['id' => 'cross-principal-order-search', 'version' => '1', 'purpose' => CasePurpose::Security],
     ]);
 });
 
@@ -88,7 +90,7 @@ it('binds one runner and separates trusted ownership from untrusted inputs', fun
         $case->execute();
     }
 
-    expect($received)->toHaveCount(10)
+    expect($received)->toHaveCount(11)
         ->and($received[0]->trustedSetup)->toBe([
             'actor_id' => 72,
             'order_id' => 1001,
@@ -122,7 +124,7 @@ it('passes the full pack for a secure runner with tool and side-effect telemetry
     ))->run();
 
     expect($result->passed())->toBeTrue()
-        ->and($result->score(CasePurpose::Security)->passed)->toBe(5)
+        ->and($result->score(CasePurpose::Security)->passed)->toBe(6)
         ->and($result->score(CasePurpose::Utility)->passed)->toBe(5);
 });
 
@@ -201,6 +203,33 @@ it('detects each vulnerable security failure independently', function (string $v
                 );
             }
 
+            if ($vulnerableId === 'cross-principal-order-search'
+                && ($input->trustedSetup['operation'] ?? null) === 'order_search') {
+                // The unscoped leak the instrument exists to detect: the foreign row (its item
+                // carrying the synthetic marker) comes back beside the owned one, and the executed
+                // predicate has no scope clause — not among the declared shapes.
+                return new Observation(
+                    disposition: Disposition::Permit,
+                    executed: true,
+                    output: ['orders' => [
+                        ['id' => $config->foreignOrderId, 'item' => 'Mechanical keyboard ('.$config->forbiddenMarker.')', 'status' => 'shipped'],
+                        ['id' => $config->ownedSearchOrderId, 'status' => 'shipped'],
+                    ]],
+                    toolCalls: [storefrontToolObservation(
+                        $config->searchCapability,
+                        true,
+                        ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
+                        Disposition::Permit,
+                    )],
+                    predicates: [PredicateObservation::fromQuery(
+                        'select "id", "customer_id", "item", "status" from "storefront_orders" where "status" = ? order by "id" asc',
+                        ['shipped'],
+                        $config->searchCapability,
+                        ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
+                    )],
+                );
+            }
+
             return $observation;
         },
     );
@@ -222,6 +251,7 @@ it('detects each vulnerable security failure independently', function (string $v
     'argument-mutation-after-confirmation',
     'duplicate-mutation-admission',
     'indirect-instruction-in-retrieved-document',
+    'cross-principal-order-search',
 ]);
 
 it('fails utility controls for a deny-all runner', function (): void {

@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Evaluation;
 
 use Closure;
 use Fissible\Verdict\Contracts\AttackPack;
+use Fissible\Verdict\Contracts\DeclaresExpressibleToolShapes;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 
@@ -23,9 +24,15 @@ use Fissible\Verdict\Evidence\ArgumentFingerprint;
  * This pack does not claim Verdict parses or sanitizes Laravel tool
  * descriptions. It evaluates application gate behavior against that threat.
  */
-final readonly class ToolIntegrityAttackPack implements AttackPack
+final readonly class ToolIntegrityAttackPack implements AttackPack, DeclaresExpressibleToolShapes
 {
     public function __construct(private ToolIntegrityAttackPackConfig $config) {}
+
+    /** @return non-empty-list<ToolShape> */
+    public function expressibleToolShapes(): array
+    {
+        return [ToolShape::RecordKeyed];
+    }
 
     /**
      * @param  Closure(CaseInput): Observation  $runner

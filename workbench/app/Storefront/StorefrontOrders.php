@@ -39,6 +39,39 @@ final class StorefrontOrders
     }
 
     /**
+     * The declared ADMISSIBLE predicate shapes for the search case — base scope plus each filter
+     * combination, the scope clause present in every one by construction. STRUCTURE is
+     * hand-written here (never generated from the executor's builder path: that would make the
+     * comparison pass by construction); only identifier quoting comes from the active grammar,
+     * because quoting is the engine's spelling, not the predicate's shape.
+     *
+     * @return non-empty-list<string>
+     */
+    public static function declaredSearchPredicateShapes(Connection $connection): array
+    {
+        $wrap = $connection->getQueryGrammar()->wrap(...);
+        $base = sprintf(
+            'select %s, %s, %s, %s from %s where %s = ?',
+            $wrap('id'),
+            $wrap('customer_id'),
+            $wrap('item'),
+            $wrap('status'),
+            $wrap(self::TABLE),
+            $wrap('customer_id'),
+        );
+        $suffix = sprintf(' order by %s asc', $wrap('id'));
+        $status = sprintf(' and %s = ?', $wrap('status'));
+        $item = sprintf(' and %s like ?', $wrap('item'));
+
+        return [
+            $base.$suffix,
+            $base.$status.$suffix,
+            $base.$item.$suffix,
+            $base.$status.$item.$suffix,
+        ];
+    }
+
+    /**
      * The one search implementation both arms run — the guarded executor passes the actor's
      * {@see OrderSearchScope}, the unguarded control mirror passes none, and that argument is the
      * entire difference between the arms. Collapsing the arms onto one body replaces the

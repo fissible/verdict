@@ -23,6 +23,8 @@ final readonly class LiveEvaluationResult
         public LiveEvaluationThreshold $utilityThreshold,
         /** Present only on control-arm runs; the guarded arm's thresholds above are unaffected by it. */
         public ?LiveEvaluationControlResult $control = null,
+        /** @var list<ToolShape>|null the pack's coverage manifest; null when none was declared */
+        public ?array $toolShapes = null,
         /**
          * The trial after which the run stopped because the harness was systematically blind, or
          * null if it ran to completion. `$trials` is the number actually run, not the number

@@ -21,6 +21,7 @@ used by an implementation part of Verdict's public API.
 | `ClassifiesToolResult` | Stable | None | Add provenance classification to an application's Laravel AI tool result. |
 | `Clock` | Stable | `SystemClock` | Supply deterministic or deployment-specific time. |
 | `ContextTransformer` | Stable | `StructuredRedactor` | Transform data before a release or other context-sensitive operation. |
+| `DeclaresExpressibleToolShapes` | Experimental | `AccountRecoveryAttackPack`, `RagBorneInjectionAttackPack`, `StorefrontAttackPack`, `ToolIntegrityAttackPack` | Declare the tool shapes an attack pack can express — the coverage manifest surfaced in run output beside coverage reporting. |
 | `EvidenceWriter` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Send Verdict evidence to a project-specific durable, attestable, or external backend. |
 | `ProvenanceLedgerStore` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Query a provenance and derivation ledger without taking on evidence writes. |
 | `EvidenceRecorder` | Experimental, deprecated pre-1.0 | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Legacy mixed write/query compatibility bridge; use `EvidenceWriter` and/or `ProvenanceLedgerStore` for new adapters. |

@@ -399,6 +399,14 @@ it('keeps tool-integrity fixtures structurally distinct from conversational IDOR
         foreignOrderId: 1001,
         mutationOrderId: 1002,
         forbiddenMarker: 'verdict-synthetic-foreign-marker',
+        searchCapability: 'orders.search',
+        ownedSearchOrderId: 1004,
+        declaredSearchPredicateShapes: [
+            'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? order by "id" asc',
+            'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? order by "id" asc',
+            'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "item" like ? order by "id" asc',
+            'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? and "item" like ? order by "id" asc',
+        ],
     )))->cases(
         fn (CaseInput $input): Observation => new Observation(Disposition::Deny, false),
     )[0]->input;

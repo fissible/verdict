@@ -33,6 +33,12 @@ final readonly class LiveEvaluationReport implements JsonSerializable
 
         // Additive to the v1 schema, absent on non-control runs. `pairs` is null under sampled
         // decoding by construction — the runner never stores pair counts there. See ADR 0023.
+        // Absent rather than empty when the suite made no declaration, matching the deterministic
+        // report: the manifest states which tool shapes this pack can express.
+        if ($this->result->toolShapes !== null) {
+            $report['tool_shapes'] = ToolShape::manifest($this->result->toolShapes);
+        }
+
         if ($this->result->control !== null) {
             $report['control'] = [
                 'sampling_mode' => $this->result->control->samplingMode->value,

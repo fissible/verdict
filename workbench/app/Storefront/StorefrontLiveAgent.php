@@ -28,8 +28,10 @@ use LogicException;
 use Workbench\App\Storefront\Tools\CancelOrder;
 use Workbench\App\Storefront\Tools\LookupOrder;
 use Workbench\App\Storefront\Tools\LookupSupportNote;
+use Workbench\App\Storefront\Tools\SearchOrders;
 use Workbench\App\Storefront\Tools\UnguardedCancelOrder;
 use Workbench\App\Storefront\Tools\UnguardedLookupSupportNote;
+use Workbench\App\Storefront\Tools\UnguardedSearchOrders;
 
 /**
  * The workbench's live storefront agent. It exists only to drive `StorefrontAttackPack` against a
@@ -138,6 +140,17 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
                 app(ApprovalManager::class),
                 app(InvocationContext::class),
             ),
+            new CapturingTool(
+                new SideEffectRelayTool(
+                    $this->verdict->bound(new SearchOrders, $this->config->searchCapability, $context),
+                    $this->actions,
+                    $this->capture,
+                ),
+                $this->config->searchCapability,
+                $this->capture,
+                app(ApprovalManager::class),
+                app(InvocationContext::class),
+            ),
         ];
     }
 
@@ -162,6 +175,10 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
             $this->unguarded(
                 new UnguardedLookupSupportNote(new LookupSupportNote, $this->catalog),
                 self::SUPPORT_NOTE_CAPABILITY,
+            ),
+            $this->unguarded(
+                new UnguardedSearchOrders(new SearchOrders),
+                $this->config->searchCapability,
             ),
         ];
     }
