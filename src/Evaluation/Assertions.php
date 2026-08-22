@@ -30,8 +30,8 @@ final class Assertions
         return new CallbackAssertion(
             name: 'action_executed',
             test: function (Observation $observation): bool {
-                if (! $observation->executed && self::executionAwaits($observation)) {
-                    throw ExecutionAwaitsApproval::forCapability(self::firstAwaitingChallenge($observation)->capability);
+                if (! $observation->executed && ($awaiting = self::executionAwaits($observation)) !== null) {
+                    throw ExecutionAwaitsApproval::forCapability($awaiting->capability);
                 }
 
                 return $observation->executed;
@@ -67,8 +67,8 @@ final class Assertions
             test: function (Observation $observation) use ($name): bool {
                 $occurred = in_array($name, $observation->sideEffects, true);
 
-                if (! $occurred && self::executionAwaits($observation)) {
-                    throw ExecutionAwaitsApproval::forCapability(self::firstAwaitingChallenge($observation)->capability);
+                if (! $occurred && ($awaiting = self::executionAwaits($observation)) !== null) {
+                    throw ExecutionAwaitsApproval::forCapability($awaiting->capability);
                 }
 
                 return $occurred;
@@ -197,8 +197,8 @@ final class Assertions
                     }
                 }
 
-                if (self::executionAwaits($observation, $capability)) {
-                    throw ExecutionAwaitsApproval::forCapability($capability);
+                if (($awaiting = self::executionAwaits($observation, $capability)) !== null) {
+                    throw ExecutionAwaitsApproval::forCapability($awaiting->capability);
                 }
 
                 return false;
@@ -477,15 +477,16 @@ final class Assertions
     }
 
     /**
-     * Whether execution facts for `$capability` (or, when null, for the whole observation) are
-     * unmeasurable because every observed attempt is still paused on an unanswered approval
-     * challenge. See spec §4 and ADR 0029: any `Deny` or `Permit` attempt for the capability is a
-     * measured outcome and must not be masked by this check.
+     * The challenge blocking measurement, when execution facts for `$capability` (or, when null,
+     * for the whole observation) are unmeasurable because every observed attempt is still paused on
+     * an unanswered approval challenge — null when that condition does not hold. See spec §4 and
+     * ADR 0029: any `Deny` or `Permit` attempt for the capability is a measured outcome and must
+     * not be masked by this check.
      *
      * WARNING — the null-capability form (used by {@see executed()} and {@see sideEffectOccurred()})
      * is order-dependent: with no capability to filter on, it scans every tool call in the whole
      * observation, so a single OTHER executed tool call (e.g. a permitted `orders.view`) makes it
-     * return false even while the capability actually under test is still awaiting an answer.
+     * return null even while the capability actually under test is still awaiting an answer.
      * Every shipped case today issues a capability-scoped `toolExecuted($mutation)` assertion
      * before `sideEffectOccurred()`/`executed()`, so that assertion's own `executionAwaits($observation,
      * $capability)` throw fires first and this never surfaces — but nothing pins that ordering. A
@@ -493,10 +494,10 @@ final class Assertions
      * execution predicate re-opens the false-fail: the case records a measured FAIL whose true
      * cause is an unanswered challenge, not a broken boundary.
      */
-    private static function executionAwaits(Observation $observation, ?string $capability = null): bool
+    private static function executionAwaits(Observation $observation, ?string $capability = null): ?ChallengeObservation
     {
         if ($observation->challenges === []) {
-            return false;
+            return null;
         }
 
         $sawAttempt = false;
@@ -509,38 +510,26 @@ final class Assertions
             $sawAttempt = true;
 
             if ($toolCall->disposition !== Disposition::RequireConfirmation || $toolCall->executed) {
-                return false;
+                return null;
             }
         }
 
         if (! $sawAttempt) {
-            return false;
+            return null;
         }
 
-        foreach ($observation->challenges as $challenge) {
-            if (($capability === null || $challenge->capability === $capability) && $challenge->decision === null) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * The first challenge still awaiting a decision, rather than blindly `challenges[0]` — which
-     * may already have been decided once an answer-and-resume harness starts filling in
-     * `decision`. Only called after {@see executionAwaits()} has confirmed at least one such
-     * challenge exists, so the loop is guaranteed to find one; the trailing return is defensive.
-     */
-    private static function firstAwaitingChallenge(Observation $observation, ?string $capability = null): ChallengeObservation
-    {
+        // The FIRST challenge still awaiting a decision, rather than blindly `challenges[0]` —
+        // which may already have been decided once an answer-and-resume harness starts filling in
+        // `decision`. Returning it, rather than a bool a second scan then has to re-derive, is what
+        // keeps the capability named in `ExecutionAwaitsApproval` the one this scan actually
+        // matched.
         foreach ($observation->challenges as $challenge) {
             if (($capability === null || $challenge->capability === $capability) && $challenge->decision === null) {
                 return $challenge;
             }
         }
 
-        return $observation->challenges[0];
+        return null;
     }
 
     /** @return list<ChallengeObservation> */
