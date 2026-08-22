@@ -331,6 +331,8 @@ The complete, deliberately specific list is in [limitations](docs/limitations.md
 
 ## Deeper documentation
 
+The full documentation is published at **[docs.fissible.dev/verdict](https://docs.fissible.dev/verdict)**. The source pages:
+
 - [Security model and threat model](docs/security-model.md)
 - [Pilot readiness and production-adoption guide](docs/adoption-guide.md)
 - [Evaluation harness and attack packs](docs/evaluation.md)
