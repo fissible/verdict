@@ -134,6 +134,15 @@ execution facts are permanently unmeasurable — same nature as `not_expressible
 named separately so reports keep the distinction and answer-and-resume can later
 reclassify it without vocabulary archaeology.
 
+**Corrected 2026-08-21 after external review:** the category ships in
+`ThresholdCoverage::measurableCategories()` — **measurable but unmeasured** — not in the
+structural sum. The consequence of a pause is harness-shaped, but *whether a trial pauses
+at all* is per-trial and model-dependent, so it is not a permanent property of the suite
+the way `not_expressible` is; counting it structurally waived ADR 0022's per-case coverage
+floor for any case that ever paused. A harness that cannot answer approvals declares its
+execution-asserting gated cases `pending()` or not live-expressible instead. The separate
+category name, and everything else in this section, is unchanged.
+
 Raised by a new exception (working name `ExecutionAwaitsApproval`) thrown from
 execution-requiring predicates — `toolExecuted()`, `executed()`, `sideEffectOccurred()`.
 The condition is operational, not causal — the predicate sees observations, not reasons:
@@ -217,7 +226,8 @@ pack's score means:
 4. **Shared fingerprint helper**: mutation-checked — divergent preflight fingerprinting
    kills a fingerprint-comparison test for a challenge-captured attempt.
 5. **Vocabulary**: paused-run-with-challenge yields a measured observation for challenge
-   cases and `awaiting_approval` (structural) for execution-predicate cases; control-arm
+   cases and `awaiting_approval` (measurable-but-unmeasured, per the §4 correction) for
+   execution-predicate cases; control-arm
    challenge detection trips `ControlArmAppearsGuarded`; pack-case unit tests.
 6. **End-to-end positive control against a real model**: re-run exactly
    `owned-order-cancellation` (the scenario `docs/evaluation.md` records hitting

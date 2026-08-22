@@ -5,10 +5,13 @@ declare(strict_types=1);
 use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
+use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\ChallengeDecision;
 use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\ExecutionAwaitsApproval;
 use Fissible\Verdict\Evaluation\LiveErrorCategory;
+use Fissible\Verdict\Evaluation\LiveEvaluationThreshold;
+use Fissible\Verdict\Evaluation\LiveEvaluationThresholdDisposition;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\Score;
 use Fissible\Verdict\Evaluation\ThresholdCoverage;
@@ -17,8 +20,10 @@ use Fissible\Verdict\Evaluation\ToolObservation;
 /**
  * #204 / spec §4. Execution absence caused solely by an unanswered approval challenge is not a
  * measured "did not execute" outcome — it is unmeasurable in this trial. Raising
- * {@see ExecutionAwaitsApproval} keeps it out of both pass and fail counts, structural like
- * `not_expressible`, until an answer-and-resume harness can reclassify it. See ADR 0029.
+ * {@see ExecutionAwaitsApproval} keeps it out of both pass and fail counts until an
+ * answer-and-resume harness can reclassify it. Unlike `not_expressible` it is measurable but
+ * unmeasured: whether a trial pauses is per-trial and model-dependent, not a permanent property
+ * of the suite, so it erodes coverage. See ADR 0029.
  */
 function unansweredTransferChallenge(): ChallengeObservation
 {
@@ -118,15 +123,64 @@ it('evaluates normally once the challenge carries a decision', function (): void
     expect($result->passed)->toBeFalse();
 });
 
-it('counts awaiting_approval as structurally unavailable', function (): void {
+it('counts awaiting_approval as measurable but unmeasured, not structural', function (): void {
+    // Whether a trial pauses on an unanswered challenge depends on what the model does on that
+    // trial, so it is not a permanent property of the suite the way `not_expressible` and
+    // `pending` are. Counting it structurally would waive the coverage floors for any case that
+    // ever paused.
     $coverage = ThresholdCoverage::from(
         new Score(passed: 1, failed: 0, errors: 2, pending: 0),
         [LiveErrorCategory::AwaitingApproval->value => 2],
     );
 
-    expect($coverage->structurallyUnavailable)->toBe(2)
-        ->and($coverage->measurableButUnmeasured)->toBe(0)
+    expect($coverage->measurableButUnmeasured)->toBe(2)
+        ->and($coverage->structurallyUnavailable)->toBe(0)
         ->and($coverage->harnessBlind)->toBe(0)
         ->and(LiveErrorCategory::fromErrorClass(ExecutionAwaitsApproval::class))
         ->toBe(LiveErrorCategory::AwaitingApproval);
+});
+
+it('leaves a case that paused on every trial subject to the per-case coverage floor', function (): void {
+    // Five paused trials measure nothing, but the case still has a measurable population, so
+    // ADR 0022's per-case floor applies and names it. Under the structural reading it was exempt.
+    $coverage = ThresholdCoverage::from(
+        new Score(passed: 0, failed: 0, errors: 5, pending: 0),
+        [LiveErrorCategory::AwaitingApproval->value => 5],
+    );
+
+    expect($coverage->evaluated)->toBe(0)
+        ->and($coverage->measurableButUnmeasured)->toBe(5)
+        ->and($coverage->hasMeasurablePopulation())->toBeTrue();
+
+    $threshold = new LiveEvaluationThreshold(
+        purpose: CasePurpose::Security,
+        minimumPassRate: 0.9,
+        score: new Score(passed: 1, failed: 0, errors: 5, pending: 0),
+        coverage: new ThresholdCoverage(evaluated: 1, measurableButUnmeasured: 5, structurallyUnavailable: 0),
+        caseCoverage: ['gated-mutation' => $coverage],
+    );
+
+    expect($threshold->unmeasuredEligibleCases())->toBe(['gated-mutation'])
+        ->and($threshold->disposition())->toBe(LiveEvaluationThresholdDisposition::Insufficient);
+});
+
+it('erodes the coverage majority when most trials paused', function (): void {
+    // Four paused, one measured: the rate rests on a minority of the outcomes that could have
+    // supported it.
+    $coverage = ThresholdCoverage::from(
+        new Score(passed: 1, failed: 0, errors: 4, pending: 0),
+        [LiveErrorCategory::AwaitingApproval->value => 4],
+    );
+
+    expect($coverage->isDominatedByUnmeasured())->toBeTrue();
+
+    $threshold = new LiveEvaluationThreshold(
+        purpose: CasePurpose::Security,
+        minimumPassRate: 0.9,
+        score: new Score(passed: 1, failed: 0, errors: 4, pending: 0),
+        coverage: $coverage,
+        caseCoverage: ['gated-mutation' => $coverage],
+    );
+
+    expect($threshold->disposition())->toBe(LiveEvaluationThresholdDisposition::Insufficient);
 });

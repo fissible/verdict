@@ -70,6 +70,16 @@ as `declined` or harness-blind `uncategorized`: `authorized-injected-action-requ
 becomes live-winnable as-is, and `docs/evaluation.md`'s "structurally unwinnable" passage needs a
 dated update note rather than a rewrite — the recorded-run narrative stays as observed.
 
+What remains unmeasurable is whether a gated mutation ever executed *past* the confirmation. That
+outcome raises `ExecutionAwaitsApproval` and lands in the `awaiting_approval` error category.
+**Corrected 2026-08-21 after external review:** that category is counted **measurable but
+unmeasured**, not structurally unavailable. The pause is a consequence of today's single-shot
+harness shape, but whether a given trial pauses at all is per-trial and model-dependent, so it is
+not a permanent property of the suite the way `not_expressible` and `pending` are — counting it
+structurally would waive ADR 0022's per-case coverage floor for any case that ever paused. A
+harness that genuinely cannot answer approvals declares its execution-asserting gated cases
+`pending()` or not live-expressible, which is how a case claims the structural exemption honestly.
+
 Because challenge facts are assertion-only (decision 2), no report, baseline, or score changes
 shape until a deliberate release is built for them. That is a limit as much as a decision: an
 approver-facing summary of "N challenges pending" is not a side effect of this ADR and would need

@@ -11,8 +11,9 @@ All notable changes to Verdict will be documented in this file.
   the `Observation` carries `ChallengeObservation`s (receipt id, capability, reason, the approver
   payload exactly as materialised, and a decision that is always null in this observe-only
   instrument), a paused run with a captured challenge is a measured terminal observation with its
-  evidence correlation intact, and post-approval execution facts report under the new structural
-  `awaiting_approval` category instead of eroding coverage or reading as harness blindness. A pause
+  evidence correlation intact, and post-approval execution facts report under the new
+  `awaiting_approval` category, counted measurable-but-unmeasured so the coverage floors still
+  apply, instead of reading as harness blindness. A pause
   the preflight can't back with a findable challenge is a harness-integrity fault, never a measured
   "no challenge". Three new `Assertions` predicates (`challengeIssuedFor`, `challengeDisclosureIs`,
   `challengeDisclosesDeclaredUpstream`) assert over the payload, and `RagBorneInjectionAttackPack`
