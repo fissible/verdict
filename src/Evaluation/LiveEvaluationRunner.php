@@ -36,6 +36,8 @@ final readonly class LiveEvaluationRunner
         $controlCounters = [];
         /** @var array<string,array<string,int>> $pairCounts per security case id, greedy runs only */
         $pairCounts = [];
+        /** @var array<string, SafeOutcome> $safeOutcomes */
+        $safeOutcomes = [];
         $classifyPairs = $controlFactory !== null && $controlFactory->samplingMode() === ControlSamplingMode::Greedy;
         $identity = null;
         $suite = null;
@@ -68,6 +70,9 @@ final readonly class LiveEvaluationRunner
                             array_map(static fn (ControlPairOutcome $outcome): string => $outcome->value, ControlPairOutcome::cases()),
                             0,
                         );
+                        // The identity check every later trial passes covers this too: the safe
+                        // outcome read from trial 0's case declaration is the one every trial ran.
+                        $safeOutcomes[$case->id] = $case->safeOutcome;
                     }
                 }
             } else {
@@ -101,7 +106,15 @@ final readonly class LiveEvaluationRunner
 
                     if ($classifyPairs && isset($pairCounts[$case->id], $guardedByCase[$case->id])) {
                         $guarded = $guardedByCase[$case->id];
-                        $pair = ControlPairOutcome::classify($guarded->status, $guarded->errorClass, $case->status, $case->errorClass);
+                        $pair = ControlPairOutcome::classify(
+                            $guarded->status,
+                            $guarded->errorClass,
+                            $case->status,
+                            $case->errorClass,
+                            $safeOutcomes[$case->id] ?? SafeOutcome::Blocked,
+                            self::failedFacets($guarded),
+                            self::failedFacets($case),
+                        );
                         $pairCounts[$case->id][$pair->value]++;
                     }
                 }
@@ -135,6 +148,7 @@ final readonly class LiveEvaluationRunner
                 untrustedInputFingerprint: $case->input->untrustedInputFingerprint(),
                 score: $counters[$case->id]->score(),
                 errorBreakdown: $counters[$case->id]->errorBreakdown(),
+                safeOutcome: $case->safeOutcome,
             ),
             $suite->cases,
         );
@@ -151,6 +165,7 @@ final readonly class LiveEvaluationRunner
                         score: $controlCounters[$case->id]->score(),
                         errorBreakdown: $controlCounters[$case->id]->errorBreakdown(),
                         pairCounts: $pairCounts[$case->id] ?? null,
+                        safeOutcome: $case->safeOutcome,
                     ),
                     $suite->cases,
                 ),
@@ -218,6 +233,26 @@ final readonly class LiveEvaluationRunner
      * reaches this check. The count is all the evidence carries; challenge content stays
      * assertion-only per ADR 0029 decision 2.
      */
+    /**
+     * The facets of an arm's failed assertions, deduplicated — what tells the classifier which
+     * side of a filtered-permit case's two-sided oracle failed. An errored arm has no assertion
+     * results and yields an empty list, which the classifier reads conservatively.
+     *
+     * @return list<AssertionFacet>
+     */
+    private static function failedFacets(CaseResult $case): array
+    {
+        $facets = [];
+
+        foreach ($case->assertions as $assertion) {
+            if (! $assertion->passed) {
+                $facets[$assertion->facet->value] = $assertion->facet;
+            }
+        }
+
+        return array_values($facets);
+    }
+
     private function assertCaseRanUnguarded(CaseResult $case, int $trial): void
     {
         $observation = $case->observation;

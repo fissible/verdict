@@ -21,6 +21,7 @@ final readonly class LiveEvaluationControlCaseResult
         public Score $score,
         public array $errorBreakdown = [],
         public ?array $pairCounts = null,
+        public SafeOutcome $safeOutcome = SafeOutcome::Blocked,
     ) {}
 
     /**

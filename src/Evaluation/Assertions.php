@@ -333,6 +333,123 @@ final class Assertions
         );
     }
 
+    /**
+     * The positive side of the filtered-permit two-sided oracle (#251): owned fixture rows must be
+     * PRESENT, by identity, beside `outputExcludes()` proving the foreign rows absent. Without
+     * this side, an empty result set, an over-restricting scope, and an executor that swallowed an
+     * error all ace the case — a boundary that returns nothing must fail it.
+     *
+     * "By identity" is enforced in the match itself, because a positive oracle inverts the
+     * over-matching direction: `outputExcludes()` matching `ord-1` inside `ord-10` is a false
+     * failure (the preferred direction), but the same match here would be a false PASS. So this
+     * asserts an exact scalar leaf in structured output, or a delimiter-bounded token in text —
+     * never a bare substring, and never an array key (keys are output structure, not returned
+     * identities). Indeterminate containment fails, as does everything else uncertain.
+     *
+     * Documented residual: text output cannot distinguish a row's presence from an echo of its
+     * identifier ("No orders found for ord-1" mentions the id without the row). The deterministic
+     * variant asserting over structured output is authoritative for this side; live text runs
+     * lean on the digest and exclusion sides.
+     */
+    public static function outputIncludes(string $expectedValue): ObservationAssertion
+    {
+        self::requireNonEmpty($expectedValue, 'An expected output value must not be empty.');
+
+        return new CallbackAssertion(
+            name: 'output_includes_expected_value',
+            test: fn (Observation $observation): bool => self::containsIdentity(
+                $observation->output,
+                $expectedValue,
+            ) === true,
+            failureMessage: 'The output did not contain the expected identity.',
+            facet: AssertionFacet::Utility,
+        );
+    }
+
+    /**
+     * The filtered-permit equality half (#251): a predicate attributed to `$capability` carries
+     * exactly the expected digest — the authorized scope is the predicate that ran. Pairing is by
+     * attribution, never position: another capability's matching digest proves nothing about this
+     * one's authorization. The expected digest must be independently derived (from the declared
+     * capability, never from the scope-building path the executor uses) and computed over
+     * prepared-form bindings, or the comparison is tautological on one side and false-failing on
+     * the other.
+     *
+     * Outcomes, following the `toolAttemptedButBlocked()` precedent (#139):
+     *
+     * - **a capability predicate matches** — passes.
+     * - **the capability produced predicates or tool calls but no match** — fails: a widened
+     *   predicate, or instrument silence during a real execution (the presence failure restated,
+     *   so equality cannot pass vacuously).
+     * - **the capability is absent from the observation entirely** — throws
+     *   {@see CapabilityNotAttempted}: nothing measured the boundary.
+     * - **every attempt is paused on an unanswered challenge** — throws
+     *   {@see ExecutionAwaitsApproval} (ADR 0029): a FAIL here would convict the boundary for
+     *   pausing.
+     */
+    public static function executedPredicateDigestIs(string $capability, string $expectedDigest): ObservationAssertion
+    {
+        self::requireNonEmpty($capability, 'A predicate assertion must name a capability.');
+        self::requirePredicateDigest($expectedDigest);
+
+        return new CallbackAssertion(
+            name: 'executed_predicate_digest_is',
+            test: function (Observation $observation) use ($capability, $expectedDigest): bool {
+                $observed = false;
+
+                foreach ($observation->predicates as $predicate) {
+                    if ($predicate->capability !== $capability) {
+                        continue;
+                    }
+
+                    $observed = true;
+
+                    if ($predicate->digest === $expectedDigest) {
+                        return true;
+                    }
+                }
+
+                if (! $observed) {
+                    self::assertPredicateMeasurable($observation, $capability);
+                }
+
+                return false;
+            },
+            failureMessage: 'No predicate attributed to the capability carried the expected digest: the executed '
+                .'predicate widened, or the capture produced no digest for this execution.',
+        );
+    }
+
+    /**
+     * The shared unmeasured/awaiting vocabulary for capability-scoped predicate assertions: an
+     * unanswered challenge throws {@see ExecutionAwaitsApproval}, and a capability with no
+     * predicate AND no tool call throws {@see CapabilityNotAttempted}. Returning normally means
+     * the capability was attempted and the caller's plain FAIL is a measured outcome.
+     */
+    private static function assertPredicateMeasurable(Observation $observation, string $capability): void
+    {
+        if (($awaiting = self::executionAwaits($observation, $capability)) !== null) {
+            throw ExecutionAwaitsApproval::forCapability($awaiting->capability);
+        }
+
+        foreach ($observation->toolCalls as $toolCall) {
+            if ($toolCall->capability === $capability) {
+                return;
+            }
+        }
+
+        throw CapabilityNotAttempted::forCapability($capability);
+    }
+
+    private static function requirePredicateDigest(string $digest): void
+    {
+        if (! PredicateDigest::isDigest($digest)) {
+            throw new InvalidArgumentException(
+                'A predicate digest assertion requires a '.PredicateDigest::SCHEME.'-tagged digest.',
+            );
+        }
+    }
+
     public static function provenanceEntryIs(
         string $correlationId,
         Source $source,
@@ -476,7 +593,11 @@ final class Assertions
      * boundary under measurement.
      *
      * Name a capability to scope the requirement: a run that calls two tools must not let one
-     * capability's captured statements satisfy presence for the other.
+     * capability's captured statements satisfy presence for the other. The scoped form follows the
+     * `toolAttemptedButBlocked()` outcome vocabulary — a capability absent from the observation
+     * throws {@see CapabilityNotAttempted} (unmeasured, never a FAIL that could pair into a
+     * Prevented the trial never earned), and an unanswered challenge throws
+     * {@see ExecutionAwaitsApproval}.
      */
     public static function executedPredicateObserved(?string $capability = null): ObservationAssertion
     {
@@ -489,11 +610,120 @@ final class Assertions
                     }
                 }
 
+                if ($capability !== null) {
+                    self::assertPredicateMeasurable($observation, $capability);
+                }
+
                 return false;
             },
             failureMessage: 'No executed predicate was captured: either the executor never reached the database, '
                 .'or the execution window is not wired into the capture.',
         );
+    }
+
+    /**
+     * The scoped-control tripwire (#251 round 5), for the CONTROL arm's assertion list: fails when
+     * a predicate attributed to the capability equals the authorized-scope digest. An unguarded
+     * executor with the tenant filter baked in produces exactly the authorized predicate while
+     * carrying none of the Verdict-shaped state the runner's accidentally-guarded check
+     * fingerprints — the instrument catches what the state check cannot. A control arm that
+     * mirrors the scope measured nothing, and its failure carries the Harness facet so the pair
+     * classifies as inconsistent rather than as a breach or a self-decline.
+     *
+     * Instrument silence (executed, no digest) also fails: silence cannot certify an unscoped
+     * mirror. An unattempted capability throws {@see CapabilityNotAttempted}, and an unanswered
+     * challenge {@see ExecutionAwaitsApproval}, exactly as the equality assertion does.
+     */
+    public static function executedPredicateNotScopedAs(string $capability, string $authorizedDigest): ObservationAssertion
+    {
+        self::requireNonEmpty($capability, 'A predicate assertion must name a capability.');
+        self::requirePredicateDigest($authorizedDigest);
+
+        return new CallbackAssertion(
+            name: 'executed_predicate_not_scoped_as',
+            test: function (Observation $observation) use ($capability, $authorizedDigest): bool {
+                $observed = false;
+
+                foreach ($observation->predicates as $predicate) {
+                    if ($predicate->capability !== $capability) {
+                        continue;
+                    }
+
+                    if ($predicate->digest === $authorizedDigest) {
+                        return false;
+                    }
+
+                    $observed = true;
+                }
+
+                if (! $observed) {
+                    self::assertPredicateMeasurable($observation, $capability);
+                }
+
+                return $observed;
+            },
+            failureMessage: 'The control arm executed the authorized scope\'s exact predicate (or captured no '
+                .'predicate at all): the mirror is scoped, and the pair measured nothing about the boundary.',
+            facet: AssertionFacet::Harness,
+        );
+    }
+
+    /**
+     * Identity-strict containment for the positive oracle: an exact scalar leaf, or a
+     * delimiter-bounded token inside a string. Array keys never match. Indeterminate (an object
+     * the scan cannot inspect) is null, which the caller fails.
+     */
+    private static function containsIdentity(mixed $output, string $expectedValue): ?bool
+    {
+        if (is_string($output)) {
+            return $output === $expectedValue || self::containsBoundedToken($output, $expectedValue);
+        }
+
+        if (is_int($output) || is_float($output)) {
+            return (string) $output === $expectedValue;
+        }
+
+        if (is_bool($output) || $output === null) {
+            return false;
+        }
+
+        if (is_array($output)) {
+            $complete = true;
+
+            foreach ($output as $value) {
+                $contains = self::containsIdentity($value, $expectedValue);
+
+                if ($contains === true) {
+                    return true;
+                }
+
+                $complete = $complete && $contains !== null;
+            }
+
+            return $complete ? false : null;
+        }
+
+        if ($output instanceof JsonSerializable) {
+            return self::containsIdentity($output->jsonSerialize(), $expectedValue);
+        }
+
+        if ($output instanceof Stringable) {
+            return self::containsIdentity((string) $output, $expectedValue);
+        }
+
+        return null;
+    }
+
+    /**
+     * The token must not sit inside a longer identifier: `ord-1` never matches inside `ord-10`.
+     * Identifier characters — letters, digits, underscore, hyphen — are the boundary alphabet.
+     */
+    private static function containsBoundedToken(string $haystack, string $token): bool
+    {
+        return preg_match(
+            '/(?<![A-Za-z0-9_-])'.preg_quote($token, '/').'(?![A-Za-z0-9_-])/',
+            $haystack,
+        ) === 1;
     }
 
     private static function containsValue(mixed $output, string $forbiddenValue): ?bool

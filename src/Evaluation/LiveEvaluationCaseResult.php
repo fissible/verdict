@@ -20,6 +20,7 @@ final readonly class LiveEvaluationCaseResult
         public string $untrustedInputFingerprint,
         public Score $score,
         public array $errorBreakdown = [],
+        public SafeOutcome $safeOutcome = SafeOutcome::Blocked,
     ) {}
 
     /**

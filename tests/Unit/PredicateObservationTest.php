@@ -7,6 +7,7 @@ use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\PredicateDigest;
 use Fissible\Verdict\Evaluation\PredicateObservation;
+use Fissible\Verdict\Evaluation\ToolObservation;
 
 /**
  * The observed side of the filtered-permit comparison (#251): each statement the execution window
@@ -120,10 +121,15 @@ it('fails executedPredicateObserved when the execution produced no captured dige
 it('scopes executedPredicateObserved to a capability when one is named', function (): void {
     // A run that calls two tools must not let one capability's captured statements satisfy the
     // presence requirement for the other — the attribution exists so digests can be paired with
-    // the authorization that produced them.
+    // the authorization that produced them. Both capabilities were attempted here, so the scoped
+    // miss is a measured FAIL rather than the CapabilityNotAttempted unmeasured outcome.
     $observation = new Observation(
         disposition: Disposition::Permit,
         executed: true,
+        toolCalls: [
+            new ToolObservation('orders.read', str_repeat('a', 64), Disposition::Permit, true),
+            new ToolObservation('orders.search', str_repeat('b', 64), Disposition::Permit, true),
+        ],
         predicates: [anObservedPredicate(capability: 'orders.read')],
     );
 

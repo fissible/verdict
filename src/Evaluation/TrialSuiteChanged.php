@@ -60,7 +60,7 @@ final class TrialSuiteChanged extends RuntimeException
     public static function caseMetadata(int $trial, string $caseId): self
     {
         return new self(
-            "Trial {$trial} changed case [{$caseId}]: its version, purpose, or input fingerprints ".
+            "Trial {$trial} changed case [{$caseId}]: its version, purpose, safe outcome, or input fingerprints ".
             'differ from the trial that started the run. A case that changes mid-run is not the '.
             'same measurement.'
         );

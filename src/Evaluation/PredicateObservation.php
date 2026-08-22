@@ -47,9 +47,7 @@ final readonly class PredicateObservation
             throw new InvalidArgumentException('A predicate observation requires a SHA-256 argument fingerprint.');
         }
 
-        $scheme = preg_quote(PredicateDigest::SCHEME, '/');
-
-        if (preg_match('/^'.$scheme.':[a-f0-9]{64}\z/', $this->digest) !== 1) {
+        if (! PredicateDigest::isDigest($this->digest)) {
             throw new InvalidArgumentException(
                 'A predicate observation requires a '.PredicateDigest::SCHEME.'-tagged digest.',
             );

@@ -64,6 +64,15 @@ final class PredicateDigest
     }
 
     /**
+     * Whether a string is a digest under this scheme — the one shape check, owned here beside the
+     * scheme it validates, so consumers cannot drift apart on what a valid digest looks like.
+     */
+    public static function isDigest(string $value): bool
+    {
+        return preg_match('/^'.preg_quote(self::SCHEME, '/').':[a-f0-9]{64}\z/', $value) === 1;
+    }
+
+    /**
      * The digest when the caller already holds the normalized statement — one normalization pass
      * for a capture that also carries the normalized text. The caller's contract is strict: pass
      * anything but the output of {@see normalize()} and the result is a digest `for()` can never

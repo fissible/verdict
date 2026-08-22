@@ -158,6 +158,7 @@ final readonly class SecuritySuite
             observation: $observation,
             errorClass: $errorClass,
             blockedBy: $blockedBy,
+            safeOutcome: $case->safeOutcome,
         );
     }
 }

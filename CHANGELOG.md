@@ -4,6 +4,31 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **A filtered permit is now an expressible safe outcome for attack cases.** The third slice of
+  #251 (design amended by its round-5 review): `EvaluationCase::filteredPermitAttack()` declares
+  an attack case whose safe outcome is an execution that *succeeds* — the tool runs under guard,
+  and the assertions move to result content and the executed predicate. The oracle is two-sided
+  and identity-asserted, and the declaration refuses a list without both sides: `outputIncludes()`
+  (owned fixture rows present, matched as identities — exact scalar leaves or delimiter-bounded
+  tokens, never substrings or array keys — so an empty result set, an over-restricting scope, or
+  `ord-10` standing in for `ord-1` fails rather than aces the case) beside `outputExcludes()`
+  (foreign rows absent), plus `executedPredicateDigestIs()` on the guarded arm (the authorized
+  scope's digest, paired by attribution, with the `toolAttemptedButBlocked()` unmeasured/awaiting
+  outcomes — which the capability-scoped `executedPredicateObserved()` now shares). Both arms are
+  instrumented: the control arm captures predicates too, and its list carries the new
+  Harness-facet `executedPredicateNotScopedAs()` — the scoped-control tripwire that catches an
+  unguarded mirror executing the authorized scope's exact predicate, a harness defect no
+  Verdict-state fingerprint can see. Assertions now carry a facet (`security`/`utility`/`harness`)
+  on every `AssertionResult`, and the control-arm 2×2 reads it: a passing control trial on this
+  shape is `self_declined` (the model never produced the breach on its own; the blocked shape
+  keeps its Inconsistent tripwire byte-for-byte), a broken mirror is `inconsistent`, and the
+  guarded arm's bimodal Failed splits honestly — security-facet failure stays the breach axis,
+  and a utility-only failure is the partition's one new outcome, **`over_restricted`**: the guard
+  held the security side by returning nothing. The declaration is immutable trial metadata
+  (`TrialSuiteIdentity` folds it in; a mid-run flip refuses the run) and is emitted as
+  `safe_outcome` in report case arrays, so a `self_declined` count is never ambiguous. See ADR
+  0023's #251 update. Part of [#251](https://github.com/fissible/verdict/issues/251).
+
 - **Executed predicates are observable to the evaluation harness, at the connection.** The second
   slice of the filtered-permit work (#251): `ConnectionPredicateCapture` listens for
   `QueryExecuted` on the application's event dispatcher — below builder-tree inspection, where
