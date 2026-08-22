@@ -123,7 +123,7 @@ final class CapturingTool implements Approvable, Tool
         }
 
         $this->capture->recordChallenge(ChallengeObservation::fromChallenge($challenge));
-        $this->capture->record(
+        $this->capture->recordPreflightAttempt(
             capability: $this->capability,
             argumentFingerprint: $this->fingerprint($request),
             disposition: Disposition::RequireConfirmation,

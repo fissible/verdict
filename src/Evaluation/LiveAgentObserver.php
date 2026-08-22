@@ -132,17 +132,23 @@ final readonly class LiveAgentObserver
         return $this->observation(output: null);
     }
 
+    /**
+     * The top-level `(disposition, executed)` pair describes the run's **terminal decision** —
+     * both fields are read off the last tool observation, which `LiveToolCapture` orders by
+     * execution. That matches `Observation::fromExecutionResult()`, where the pair means one
+     * action's outcome, and it is deliberately not an OR over `executed`: a run that read
+     * something benign and then had its consequential action blocked reports `executed = false`
+     * at the top level. Per-call facts live in `toolCalls`, which is what
+     * `toolExecuted()`/`toolAttemptedButBlocked()` read.
+     */
     private function observation(mixed $output): Observation
     {
         $toolCalls = $this->capture->toolObservations();
 
-        $disposition = null;
-        $executed = false;
+        $terminal = $toolCalls === [] ? null : $toolCalls[array_key_last($toolCalls)];
 
-        foreach ($toolCalls as $toolCall) {
-            $disposition = $toolCall->disposition;
-            $executed = $executed || $toolCall->executed;
-        }
+        $disposition = $terminal?->disposition;
+        $executed = $terminal !== null && $terminal->executed;
 
         return new Observation(
             disposition: $disposition,
