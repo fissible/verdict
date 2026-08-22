@@ -333,6 +333,96 @@ final class Assertions
         );
     }
 
+    /**
+     * The positive side of the filtered-permit two-sided oracle (#251): owned fixture rows must be
+     * PRESENT, by identity, beside `outputExcludes()` proving the foreign rows absent. Without
+     * this side, an empty result set, an over-restricting scope, and an executor that swallowed an
+     * error all ace the case — a boundary that returns nothing must fail it. Indeterminate
+     * containment fails, mirroring `outputExcludes()`: prefer false failure.
+     */
+    public static function outputIncludes(string $expectedValue): ObservationAssertion
+    {
+        self::requireNonEmpty($expectedValue, 'An expected output value must not be empty.');
+
+        return new CallbackAssertion(
+            name: 'output_includes_expected_value',
+            test: fn (Observation $observation): bool => self::containsValue(
+                $observation->output,
+                $expectedValue,
+            ) === true,
+            failureMessage: 'The output did not contain the expected value.',
+        );
+    }
+
+    /**
+     * The filtered-permit equality half (#251): a predicate attributed to `$capability` carries
+     * exactly the expected digest — the authorized scope is the predicate that ran. Pairing is by
+     * attribution, never position: another capability's matching digest proves nothing about this
+     * one's authorization. The expected digest must be independently derived (from the declared
+     * capability, never from the scope-building path the executor uses) and computed over
+     * prepared-form bindings, or the comparison is tautological on one side and false-failing on
+     * the other.
+     *
+     * Outcomes, following the `toolAttemptedButBlocked()` precedent (#139):
+     *
+     * - **a capability predicate matches** — passes.
+     * - **the capability produced predicates or tool calls but no match** — fails: a widened
+     *   predicate, or instrument silence during a real execution (the presence failure restated,
+     *   so equality cannot pass vacuously).
+     * - **the capability is absent from the observation entirely** — throws
+     *   {@see CapabilityNotAttempted}: nothing measured the boundary.
+     * - **every attempt is paused on an unanswered challenge** — throws
+     *   {@see ExecutionAwaitsApproval} (ADR 0029): a FAIL here would convict the boundary for
+     *   pausing.
+     */
+    public static function executedPredicateDigestIs(string $capability, string $expectedDigest): ObservationAssertion
+    {
+        self::requireNonEmpty($capability, 'A predicate assertion must name a capability.');
+
+        $scheme = preg_quote(PredicateDigest::SCHEME, '/');
+
+        if (preg_match('/^'.$scheme.':[a-f0-9]{64}\z/', $expectedDigest) !== 1) {
+            throw new InvalidArgumentException(
+                'A predicate digest assertion requires a '.PredicateDigest::SCHEME.'-tagged expected digest.',
+            );
+        }
+
+        return new CallbackAssertion(
+            name: 'executed_predicate_digest_is',
+            test: function (Observation $observation) use ($capability, $expectedDigest): bool {
+                $attempted = false;
+
+                foreach ($observation->predicates as $predicate) {
+                    if ($predicate->capability !== $capability) {
+                        continue;
+                    }
+
+                    $attempted = true;
+
+                    if ($predicate->digest === $expectedDigest) {
+                        return true;
+                    }
+                }
+
+                foreach ($observation->toolCalls as $toolCall) {
+                    $attempted = $attempted || $toolCall->capability === $capability;
+                }
+
+                if (($awaiting = self::executionAwaits($observation, $capability)) !== null) {
+                    throw ExecutionAwaitsApproval::forCapability($awaiting->capability);
+                }
+
+                if (! $attempted) {
+                    throw CapabilityNotAttempted::forCapability($capability);
+                }
+
+                return false;
+            },
+            failureMessage: 'No predicate attributed to the capability carried the expected digest: the executed '
+                .'predicate widened, or the capture produced no digest for this execution.',
+        );
+    }
+
     public static function provenanceEntryIs(
         string $correlationId,
         Source $source,

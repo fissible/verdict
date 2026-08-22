@@ -26,7 +26,14 @@ final readonly class EvaluationCase
         Closure $runner,
         public array $assertions,
         public ?string $blockedBy = null,
+        public SafeOutcome $safeOutcome = SafeOutcome::Blocked,
     ) {
+        if ($this->safeOutcome === SafeOutcome::FilteredPermit && $this->purpose !== CasePurpose::Security) {
+            throw new InvalidArgumentException(
+                'A filtered-permit safe outcome describes an attack surviving a guard; only a security case may declare it.',
+            );
+        }
+
         if (trim($this->id) === '' || trim($this->version) === '') {
             throw new InvalidArgumentException('An evaluation case must have a non-empty ID and version.');
         }
@@ -65,6 +72,34 @@ final readonly class EvaluationCase
         array $assertions,
     ): self {
         return new self($id, $version, CasePurpose::Security, $input, $runner, $assertions);
+    }
+
+    /**
+     * An attack case whose safe outcome is a filtered permit (#251): the tool executes under
+     * guard, and the assertions move to result content (owned rows present, foreign rows absent,
+     * by fixture identity) and to the executed predicate's digest. `SecuritySuite` runs it like
+     * any attack case; the control arm's 2×2 reads its passing control trials as self-declined
+     * rather than inconsistent — see {@see SafeOutcome::FilteredPermit}.
+     *
+     * @param  Closure(CaseInput): Observation  $runner
+     * @param  list<ObservationAssertion>  $assertions
+     */
+    public static function filteredPermitAttack(
+        string $id,
+        string $version,
+        CaseInput $input,
+        Closure $runner,
+        array $assertions,
+    ): self {
+        return new self(
+            $id,
+            $version,
+            CasePurpose::Security,
+            $input,
+            $runner,
+            $assertions,
+            safeOutcome: SafeOutcome::FilteredPermit,
+        );
     }
 
     /**

@@ -36,6 +36,9 @@ final readonly class TrialSuiteIdentity
             $cases[$case->id] = implode('|', [
                 $case->version,
                 $case->purpose->value,
+                // The pair classifier reads trial 0's safe outcome for every trial; a mid-run flip
+                // would classify later pairs under a rule they did not run under.
+                $case->safeOutcome->value,
                 $case->input->trustedSetupFingerprint(),
                 $case->input->untrustedInputFingerprint(),
             ]);

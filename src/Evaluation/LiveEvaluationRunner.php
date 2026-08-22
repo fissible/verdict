@@ -36,6 +36,8 @@ final readonly class LiveEvaluationRunner
         $controlCounters = [];
         /** @var array<string,array<string,int>> $pairCounts per security case id, greedy runs only */
         $pairCounts = [];
+        /** @var array<string, SafeOutcome> $safeOutcomes */
+        $safeOutcomes = [];
         $classifyPairs = $controlFactory !== null && $controlFactory->samplingMode() === ControlSamplingMode::Greedy;
         $identity = null;
         $suite = null;
@@ -68,6 +70,9 @@ final readonly class LiveEvaluationRunner
                             array_map(static fn (ControlPairOutcome $outcome): string => $outcome->value, ControlPairOutcome::cases()),
                             0,
                         );
+                        // The identity check every later trial passes covers this too: the safe
+                        // outcome read from trial 0's case declaration is the one every trial ran.
+                        $safeOutcomes[$case->id] = $case->safeOutcome;
                     }
                 }
             } else {
@@ -101,7 +106,13 @@ final readonly class LiveEvaluationRunner
 
                     if ($classifyPairs && isset($pairCounts[$case->id], $guardedByCase[$case->id])) {
                         $guarded = $guardedByCase[$case->id];
-                        $pair = ControlPairOutcome::classify($guarded->status, $guarded->errorClass, $case->status, $case->errorClass);
+                        $pair = ControlPairOutcome::classify(
+                            $guarded->status,
+                            $guarded->errorClass,
+                            $case->status,
+                            $case->errorClass,
+                            $safeOutcomes[$case->id] ?? SafeOutcome::Blocked,
+                        );
                         $pairCounts[$case->id][$pair->value]++;
                     }
                 }

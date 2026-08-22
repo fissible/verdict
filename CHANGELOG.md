@@ -4,6 +4,24 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **A filtered permit is now an expressible safe outcome for attack cases.** The third slice of
+  #251: `EvaluationCase::filteredPermitAttack()` declares an attack case whose safe outcome is an
+  execution that *succeeds* — the tool runs under guard, and the assertions move to result content
+  and the executed predicate. Two new assertion factories complete the decided oracle:
+  `outputIncludes()` (the positive side of the two-sided identity oracle — owned fixture rows must
+  be present beside `outputExcludes()` proving foreign rows absent, so an empty result set or an
+  over-restricting scope fails rather than aces the case) and `executedPredicateDigestIs()` (a
+  predicate attributed to the capability carries exactly the authorized scope's digest, paired by
+  attribution never position, with the `toolAttemptedButBlocked()` unmeasured/awaiting outcomes).
+  The live four-way partition needs **no fifth outcome**: the case's declared `SafeOutcome`
+  reaches `ControlPairOutcome::classify()`, which branches on it in exactly one cell — a passing
+  control arm, unreachable-and-inconsistent for the blocked shape, honest-and-self-declined for a
+  filtered permit whose guarded arm held (Unmeasured when the guarded arm measured nothing,
+  Inconsistent when the guard leaked what the unguarded mirror did not). The declaration is
+  immutable trial metadata: `TrialSuiteIdentity` now folds it in, so a mid-run flip refuses the
+  run instead of classifying later pairs under a rule they did not run under. Part of
+  [#251](https://github.com/fissible/verdict/issues/251).
+
 - **Executed predicates are observable to the evaluation harness, at the connection.** The second
   slice of the filtered-permit work (#251): `ConnectionPredicateCapture` listens for
   `QueryExecuted` on the application's event dispatcher — below builder-tree inspection, where

@@ -21,23 +21,32 @@ Verdict ships with four attack packs that model specific threats:
 
 ## Writing a pack
 
-Implementing an attack pack means satisfying the `AttackPack` interface, which defines one method: `cases(Closure $runner): array`. A pack generates an array of `EvaluationCase` instances created via `EvaluationCase::attack()`, `EvaluationCase::utility()`, or `EvaluationCase::pending()`. Runnable cases require a non-empty `id`, a `version`, and at least one assertion. Pending cases require a non-empty `blockedBy` string, carry no assertions, and are not executed by `SecuritySuite`.
+Implementing an attack pack means satisfying the `AttackPack` interface, which defines one method: `cases(Closure $runner): array`. A pack generates an array of `EvaluationCase` instances created via `EvaluationCase::attack()`, `EvaluationCase::filteredPermitAttack()`, `EvaluationCase::utility()`, or `EvaluationCase::pending()`. Runnable cases require a non-empty `id`, a `version`, and at least one assertion. Pending cases require a non-empty `blockedBy` string, carry no assertions, and are not executed by `SecuritySuite`.
 
 Cases use a `CaseInput` that holds `trustedSetup` and `untrustedInput` arrays. The framework computes SHA-256 fingerprints of each using `ArgumentFingerprint`.
 
-You write assertions using the 12 static factory methods on `Assertions`:
+**Two safe-outcome shapes.** An `attack()` case's safe outcome is *blocked*: the capability was attempted and refused (`toolAttemptedButBlocked()`, `notExecuted()`), and execution is the failure. A `filteredPermitAttack()` case ([#251](https://github.com/fissible/verdict/issues/251)) declares the other shape, for set-returning tools whose tenant scope lives inside the boundary: the safe outcome is an execution that *succeeds* — the tool runs, and the assertions move to result content and to the executed predicate. Its oracle must be two-sided and identity-asserted: `outputIncludes()` on owned fixture identities **and** `outputExcludes()` on foreign ones (an empty result set fails; a boundary that returns nothing must not ace the case), plus `executedPredicateObserved()` / `executedPredicateDigestIs()` proving the authorized scope is the predicate that actually ran. The declaration also changes how the control arm's 2×2 reads a passing control trial — self-declined (the model never produced the breach on its own) instead of the blocked-shape harness tripwire — so declaring the right shape is part of the case's correctness, not a labeling nicety.
+
+You write assertions using the static factory methods on `Assertions`:
 - `decisionIs`
 - `executed`
 - `notExecuted`
 - `noSideEffects`
 - `sideEffectOccurred`
-- `toolDidNotExecute`
+- `toolAttemptedButBlocked` (with `toolDidNotExecute` as its deprecated alias)
 - `toolDecisionPrecedes`
 - `toolExecuted`
 - `toolArgumentFingerprintIs`
+- `toolObservedArgumentFingerprintIs`
 - `toolCallCount`
 - `outputExcludes`
+- `outputIncludes`
 - `provenanceEntryIs`
+- `challengeIssuedFor`
+- `challengeDisclosureIs`
+- `challengeDisclosesDeclaredUpstream`
+- `executedPredicateObserved`
+- `executedPredicateDigestIs`
 
 For custom assertions, use `CallbackAssertion`, which implements `ObservationAssertion` and wraps a `Closure(Observation): bool`. Assertions run against an `Observation` (or `ToolObservation`), which can be projected to `ObservationEvidence` for reporting.
 
