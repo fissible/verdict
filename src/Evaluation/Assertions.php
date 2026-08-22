@@ -464,6 +464,27 @@ final class Assertions
         );
     }
 
+    /**
+     * At least one executed statement was captured by the connection listener.
+     *
+     * This is the presence half of the filtered-permit comparison (#251): the equality assertion
+     * proves the authorized predicate is the one that ran, but only when a digest exists to
+     * compare. A path that produces no digest is silence, and silence from the instrument is
+     * indistinguishable from nothing having run — the same failure mode as an unvalidated probe's
+     * "no X occurred". So absence fails, structurally: an execution whose capture window recorded
+     * nothing convicts the harness wiring (listener not registered, window not armed), never the
+     * boundary under measurement.
+     */
+    public static function executedPredicateObserved(): ObservationAssertion
+    {
+        return new CallbackAssertion(
+            name: 'executed_predicate_observed',
+            test: fn (Observation $observation): bool => $observation->predicates !== [],
+            failureMessage: 'No executed predicate was captured: either the executor never reached the database, '
+                .'or the connection listener is not wired into the capture window.',
+        );
+    }
+
     private static function containsValue(mixed $output, string $forbiddenValue): ?bool
     {
         if (is_string($output)) {

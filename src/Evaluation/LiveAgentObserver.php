@@ -157,6 +157,7 @@ final readonly class LiveAgentObserver
             toolCalls: $toolCalls,
             sideEffects: $this->capture->sideEffects(),
             challenges: $this->capture->challenges(),
+            predicates: $this->capture->predicates(),
         );
     }
 

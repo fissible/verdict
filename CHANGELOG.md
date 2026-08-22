@@ -4,6 +4,20 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Executed predicates are observable to the evaluation harness, at the connection.** The second
+  slice of the filtered-permit work (#251): `ConnectionPredicateCapture` listens for
+  `QueryExecuted` on the application's event dispatcher — below builder-tree inspection, where
+  global scopes, soft-delete constraints, and raw fragments have already entered — and, inside an
+  explicit window, records each statement as a `PredicateObservation` (the scheme-tagged
+  `PredicateDigest` plus the normalized statement; binding values never ride along).
+  `CapturingTool` arms the window around every inner tool execution and drains the result into
+  `LiveToolCapture`, so `Observation` now carries an assertion-only `predicates` list exactly as it
+  carries challenges. The new `Assertions::executedPredicateObserved()` makes digest *presence*
+  itself an assertion, per the decided design: a path that produces no digest is silence, and
+  silence from the instrument is indistinguishable from nothing having run — so a digest-less
+  execution convicts the harness wiring, never the boundary under measurement. Part of
+  [#251](https://github.com/fissible/verdict/issues/251).
+
 - **A scheme-tagged digest over executed SQL predicates, specified by a widening-mutation suite.**
   The first slice of the filtered-permit work (#251): that case will assert
   `digest(executed predicate) == digest(authorized scope)`, which makes the normalizer the

@@ -19,14 +19,20 @@ use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CapturingTool;
+use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
 use Fissible\Verdict\Evaluation\LiveObservationUnavailable;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
+use Fissible\Verdict\Evaluation\PredicateDigest;
+use Fissible\Verdict\Evaluation\PredicateObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\VerdictManager;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Approvals\Approval;
 use Laravel\Ai\Contracts\Approvable;
@@ -414,4 +420,86 @@ it('treats an approval with no findable challenge as a harness-integrity fault',
 
     expect(fn () => $tool->shouldRequestApproval(new Request([], 'call-no-receipt-1')))
         ->toThrow(LiveObservationUnavailable::class);
+});
+
+it('windows the executor through the connection listener and drains its predicates into the run capture', function (): void {
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+
+    $connection = app(DatabaseManager::class)->connection();
+    $connection->getSchemaBuilder()->dropIfExists('capturing_tool_orders');
+    $connection->statement('create table "capturing_tool_orders" ("id" integer primary key, "customer_id" integer)');
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(
+        Capability::usingPolicy(
+            name: 'orders.search',
+            ability: 'cancel',
+            resolveTarget: fn (ActionEnvelope $envelope): CapturingToolOrder => new CapturingToolOrder(1001, 72),
+        )->executionTarget(acceptTestSnapshot('capturing-tool-window-snapshot'))
+            ->executeUsing(fn (AuthorizedAction $action): string => json_encode(
+                $connection->select('select * from "capturing_tool_orders" where "customer_id" = ?', [72]),
+                JSON_THROW_ON_ERROR,
+            )),
+    );
+
+    $predicates = new ConnectionPredicateCapture;
+    app(Dispatcher::class)->listen(QueryExecuted::class, $predicates);
+
+    // A statement before the tool call must not be attributed to it.
+    $connection->select('select * from "capturing_tool_orders" where "customer_id" = ?', [99]);
+
+    $capture = new LiveToolCapture;
+    $tool = new CapturingTool(
+        $verdict->bound(new CapturingToolDefinition, 'orders.search', new ActionContext('customer-72')),
+        'orders.search',
+        $capture,
+        app(ApprovalManager::class),
+        app(InvocationContext::class),
+        $predicates,
+    );
+
+    $tool->handle(new Request(['order_id' => 1001], 'call-window-1'));
+
+    $digests = array_map(
+        static fn (PredicateObservation $predicate): string => $predicate->digest,
+        $capture->predicates(),
+    );
+
+    expect($digests)
+        ->toContain(PredicateDigest::for('select * from "capturing_tool_orders" where "customer_id" = ?', [72]))
+        ->not->toContain(PredicateDigest::for('select * from "capturing_tool_orders" where "customer_id" = ?', [99]))
+        ->and($predicates->observations())->toBe([]);
+});
+
+it('captures no predicates when constructed without a connection capture', function (): void {
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(capturingToolPassthroughCapability('orders.no-window'));
+
+    $capture = new LiveToolCapture;
+    $tool = new CapturingTool(
+        $verdict->bound(new CapturingToolDefinition, 'orders.no-window', new ActionContext('customer-72')),
+        'orders.no-window',
+        $capture,
+        app(ApprovalManager::class),
+        app(InvocationContext::class),
+    );
+
+    $tool->handle(new Request(['order_id' => 1001], 'call-no-window-1'));
+
+    expect($capture->predicates())->toBe([])
+        ->and($capture->toolObservations())->toHaveCount(1);
 });

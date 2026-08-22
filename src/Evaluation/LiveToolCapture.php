@@ -20,6 +20,9 @@ final class LiveToolCapture
     /** @var list<ChallengeObservation> */
     private array $challenges = [];
 
+    /** @var list<PredicateObservation> */
+    private array $predicates = [];
+
     private ?string $invocationId = null;
 
     /**
@@ -58,12 +61,16 @@ final class LiveToolCapture
         $this->preflightAttempts = [];
         $this->sideEffects = [];
         $this->challenges = [];
+        $this->predicates = [];
         $this->invocationId = null;
     }
 
     /**
      * Both lists count. A run that paused before any tool could execute captured an attempt, not
      * nothing — reading it as empty would report a gate that fired as `ModelDeclinedToAct`.
+     *
+     * Predicate observations deliberately do not count: a captured statement with no captured
+     * tool call means some query ran inside a window, not that the model invoked a bound tool.
      */
     public function isEmpty(): bool
     {
@@ -97,6 +104,20 @@ final class LiveToolCapture
     public function challenges(): array
     {
         return $this->challenges;
+    }
+
+    /**
+     * A statement the connection listener observed during a tool's execution window.
+     */
+    public function recordPredicate(PredicateObservation $predicate): void
+    {
+        $this->predicates[] = $predicate;
+    }
+
+    /** @return list<PredicateObservation> */
+    public function predicates(): array
+    {
+        return $this->predicates;
     }
 
     public function recordInvocationId(string $invocationId): void
