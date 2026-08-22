@@ -28,6 +28,14 @@ replace_in_file() {
 command -v php >/dev/null 2>&1 || die "php not found"
 command -v git >/dev/null 2>&1 || die "git not found"
 
+# Tag signing (ADR 0030): releases are SSH-signed. Refuse rather than cut an unsigned tag that would
+# read as a normal release. One-time setup: git config gpg.format ssh; git config user.signingkey
+# <path-to-ssh-public-key>; then add that key to GitHub as a *signing* key.
+[[ "$(git config --get gpg.format)" == "ssh" ]] \
+    || die "tag signing not configured (ADR 0030): run 'git config gpg.format ssh' and set user.signingkey to your SSH public key"
+[[ -n "$(git config --get user.signingkey)" ]] \
+    || die "no user.signingkey configured for SSH tag signing (ADR 0030)"
+
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 [[ "$current_branch" == "main" ]] \
     || die "Releases must be cut from main (currently on: $current_branch)"
@@ -182,7 +190,7 @@ git add VERSION CHANGELOG.md
 [[ -f package.json ]] && git add package.json
 [[ -f README.md ]] && git add README.md
 git commit -m "chore: release ${new_tag}"
-git tag -a "$new_tag" -m "$new_tag"
+git tag -s "$new_tag" -m "$new_tag"   # SSH-signed per ADR 0030 (preflighted above)
 
 printf '\nTagged %s locally.\n' "$new_tag"
 
