@@ -25,6 +25,7 @@ use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Connection;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Database\Schema\Blueprint;
 
 /**
  * The observed side of the filtered-permit comparison is captured at the connection (#251 round 4):
@@ -46,7 +47,13 @@ function listeningCapture(?LiveToolCapture $sink = null): array
 
     $connection = app(DatabaseManager::class)->connection();
     $connection->getSchemaBuilder()->dropIfExists('capture_orders');
-    $connection->statement('create table "capture_orders" ("id" integer primary key, "customer_id" integer, "created_at" datetime)');
+    // The schema builder renders driver-correct column types: a raw "datetime" column is not a
+    // PostgreSQL type, and the DateTime-binding proof below must run on every engine in the matrix.
+    $connection->getSchemaBuilder()->create('capture_orders', function (Blueprint $table): void {
+        $table->integer('id')->primary();
+        $table->integer('customer_id')->nullable();
+        $table->dateTime('created_at')->nullable();
+    });
 
     return [$capture, $connection];
 }
@@ -59,19 +66,19 @@ function captureEnvelope(string $capability, array $arguments): ActionEnvelope
 it('captures every statement executed inside the window, attributed to its envelope, and nothing outside it', function (): void {
     [$capture, $connection] = listeningCapture();
 
-    $connection->select('select * from "capture_orders" where "customer_id" = ?', [99]);
+    $connection->select('select * from capture_orders where customer_id = ?', [99]);
 
     $capture->around(captureEnvelope('orders.search', ['customer_email' => 'a@example.com']), function () use ($connection): void {
-        $connection->select('select * from "capture_orders" where "customer_id" = ?', [7]);
+        $connection->select('select * from capture_orders where customer_id = ?', [7]);
     });
 
-    $connection->select('select * from "capture_orders" where "customer_id" = ?', [42]);
+    $connection->select('select * from capture_orders where customer_id = ?', [42]);
 
     expect($capture->observations())->toHaveCount(1)
         ->and($capture->observations()[0]->digest)
-        ->toBe(PredicateDigest::for('select * from "capture_orders" where "customer_id" = ?', [7]))
+        ->toBe(PredicateDigest::for('select * from capture_orders where customer_id = ?', [7]))
         ->and($capture->observations()[0]->sql)
-        ->toBe('select * from "capture_orders" where "customer_id" = ?')
+        ->toBe('select * from capture_orders where customer_id = ?')
         ->and($capture->observations()[0]->capability)->toBe('orders.search')
         ->and($capture->observations()[0]->argumentFingerprint)
         ->toBe(ArgumentFingerprint::make(['customer_email' => 'a@example.com']));
@@ -83,13 +90,13 @@ it('digests bindings in prepared form, so object bindings neither crash the disp
     $since = new DateTimeImmutable('2026-08-01 00:00:00');
 
     $capture->around(captureEnvelope('orders.search', []), function () use ($connection, $since): void {
-        $connection->select('select * from "capture_orders" where "created_at" > ? and "id" > ?', [$since, true]);
+        $connection->select('select * from capture_orders where created_at > ? and id > ?', [$since, true]);
     });
 
     expect($capture->observations())->toHaveCount(1)
         ->and($capture->observations()[0]->digest)
         ->toBe(PredicateDigest::for(
-            'select * from "capture_orders" where "created_at" > ? and "id" > ?',
+            'select * from capture_orders where created_at > ? and id > ?',
             $connection->prepareBindings([$since, true]),
         ));
 });
@@ -98,12 +105,12 @@ it('captures at the connection, not per statement kind: writes inside the window
     [$capture, $connection] = listeningCapture();
 
     $capture->around(captureEnvelope('orders.create', []), function () use ($connection): void {
-        $connection->insert('insert into "capture_orders" ("id", "customer_id") values (?, ?)', [1, 7]);
+        $connection->insert('insert into capture_orders (id, customer_id) values (?, ?)', [1, 7]);
     });
 
     expect($capture->observations())->toHaveCount(1)
         ->and($capture->observations()[0]->digest)
-        ->toBe(PredicateDigest::for('insert into "capture_orders" ("id", "customer_id") values (?, ?)', [1, 7]));
+        ->toBe(PredicateDigest::for('insert into capture_orders (id, customer_id) values (?, ?)', [1, 7]));
 });
 
 it('ignores pretended statements, which never executed', function (): void {
@@ -111,7 +118,7 @@ it('ignores pretended statements, which never executed', function (): void {
 
     $capture->around(captureEnvelope('orders.search', []), function () use ($connection): void {
         $connection->pretend(function () use ($connection): void {
-            $connection->select('select * from "capture_orders" where "customer_id" = ?', [7]);
+            $connection->select('select * from capture_orders where customer_id = ?', [7]);
         });
     });
 
@@ -123,7 +130,7 @@ it('returns the window callable result', function (): void {
 
     $rows = $capture->around(
         captureEnvelope('orders.search', []),
-        fn (): array => $connection->select('select * from "capture_orders" where "customer_id" = ?', [7]),
+        fn (): array => $connection->select('select * from capture_orders where customer_id = ?', [7]),
     );
 
     expect($rows)->toBe([]);
@@ -134,7 +141,7 @@ it('keeps the statements that ran before an executor failure, attributed, and th
 
     try {
         $capture->around(captureEnvelope('orders.search', []), function () use ($connection): void {
-            $connection->select('select * from "capture_orders" where "customer_id" = ?', [7]);
+            $connection->select('select * from capture_orders where customer_id = ?', [7]);
 
             throw new RuntimeException('executor failed');
         });
@@ -144,7 +151,7 @@ it('keeps the statements that ran before an executor failure, attributed, and th
         expect($exception->getMessage())->toBe('executor failed');
     }
 
-    $connection->select('select * from "capture_orders" where "customer_id" = ?', [42]);
+    $connection->select('select * from capture_orders where customer_id = ?', [42]);
 
     expect($capture->observations())->toHaveCount(1)
         ->and($capture->observations()[0]->capability)->toBe('orders.search');
@@ -157,13 +164,13 @@ it('attributes nested windows to their own envelopes', function (): void {
     [$capture, $connection] = listeningCapture();
 
     $capture->around(captureEnvelope('orders.outer', []), function () use ($capture, $connection): void {
-        $connection->select('select * from "capture_orders" where "customer_id" = ?', [1]);
+        $connection->select('select * from capture_orders where customer_id = ?', [1]);
 
         $capture->around(captureEnvelope('orders.inner', []), function () use ($connection): void {
-            $connection->select('select * from "capture_orders" where "customer_id" = ?', [2]);
+            $connection->select('select * from capture_orders where customer_id = ?', [2]);
         });
 
-        $connection->select('select * from "capture_orders" where "customer_id" = ?', [3]);
+        $connection->select('select * from capture_orders where customer_id = ?', [3]);
     });
 
     $byCapability = [];
@@ -172,10 +179,10 @@ it('attributes nested windows to their own envelopes', function (): void {
     }
 
     expect($byCapability['orders.inner'])
-        ->toBe([PredicateDigest::for('select * from "capture_orders" where "customer_id" = ?', [2])])
+        ->toBe([PredicateDigest::for('select * from capture_orders where customer_id = ?', [2])])
         ->and($byCapability['orders.outer'])->toBe([
-            PredicateDigest::for('select * from "capture_orders" where "customer_id" = ?', [1]),
-            PredicateDigest::for('select * from "capture_orders" where "customer_id" = ?', [3]),
+            PredicateDigest::for('select * from capture_orders where customer_id = ?', [1]),
+            PredicateDigest::for('select * from capture_orders where customer_id = ?', [3]),
         ]);
 });
 
@@ -184,7 +191,7 @@ it('records into the live tool capture when constructed with one as its sink', f
     [$capture, $connection] = listeningCapture($sink);
 
     $capture->around(captureEnvelope('orders.search', []), function () use ($connection): void {
-        $connection->select('select * from "capture_orders" where "customer_id" = ?', [7]);
+        $connection->select('select * from capture_orders where customer_id = ?', [7]);
     });
 
     expect($sink->predicates())->toHaveCount(1)
@@ -195,8 +202,8 @@ it('records into the live tool capture when constructed with one as its sink', f
 it('accumulates across windows until reset', function (): void {
     [$capture, $connection] = listeningCapture();
 
-    $capture->around(captureEnvelope('orders.search', []), fn (): array => $connection->select('select * from "capture_orders" where "customer_id" = ?', [7]));
-    $capture->around(captureEnvelope('orders.search', []), fn (): array => $connection->select('select * from "capture_orders" where "customer_id" = ?', [8]));
+    $capture->around(captureEnvelope('orders.search', []), fn (): array => $connection->select('select * from capture_orders where customer_id = ?', [7]));
+    $capture->around(captureEnvelope('orders.search', []), fn (): array => $connection->select('select * from capture_orders where customer_id = ?', [8]));
 
     expect($capture->observations())->toHaveCount(2);
 
@@ -236,8 +243,11 @@ it('captures only the executor statements under the real database stores', funct
         (require __DIR__.'/../../database/migrations/'.$name.'.php.stub')->up();
     }
 
-    $connection->statement('create table "capture_orders" ("id" integer primary key, "customer_id" integer)');
-    $connection->insert('insert into "capture_orders" ("id", "customer_id") values (?, ?)', [1, 72]);
+    $connection->getSchemaBuilder()->create('capture_orders', function (Blueprint $table): void {
+        $table->integer('id')->primary();
+        $table->integer('customer_id')->nullable();
+    });
+    $connection->insert('insert into capture_orders (id, customer_id) values (?, ?)', [1, 72]);
 
     // The base TestCase pins the InMemory claim store; this test exists precisely to run under
     // the real database stores, whose DateTimeImmutable bindings crashed the first capture design.
@@ -268,7 +278,7 @@ it('captures only the executor statements under the real database stores', funct
                 fn (ActionEnvelope $envelope, string $target): array => ['customer' => $envelope->context->actor],
             ))
             ->executeUsing(fn (AuthorizedAction $action): string => json_encode(
-                $connection->select('select * from "capture_orders" where "customer_id" = ?', [72]),
+                $connection->select('select * from capture_orders where customer_id = ?', [72]),
                 JSON_THROW_ON_ERROR,
             )),
     );
@@ -282,7 +292,7 @@ it('captures only the executor statements under the real database stores', funct
         // ...and none of that traffic was captured: the window held exactly the executor's query.
         ->and($sink->predicates())->toHaveCount(1)
         ->and($sink->predicates()[0]->digest)
-        ->toBe(PredicateDigest::for('select * from "capture_orders" where "customer_id" = ?', [72]))
+        ->toBe(PredicateDigest::for('select * from capture_orders where customer_id = ?', [72]))
         ->and($sink->predicates()[0]->capability)->toBe('orders.search');
 
     $presence = new Observation(disposition: null, executed: true, predicates: $sink->predicates());
