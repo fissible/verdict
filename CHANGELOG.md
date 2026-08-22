@@ -4,6 +4,21 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **A scheme-tagged digest over executed SQL predicates, specified by a widening-mutation suite.**
+  The first slice of the filtered-permit work (#251): that case will assert
+  `digest(executed predicate) == digest(authorized scope)`, which makes the normalizer the
+  security-bearing component — one clause too forgiving and an authorization-relevant widening maps
+  onto the same digest, silently. `PredicateDigest` normalizes captured SQL text + bindings and
+  digests them through `CanonicalJson` under a `sqlpredicate-v1-canonicaljson-sha256:` scheme tag
+  (the `RecordDigest` precedent — a normalizer revision is a new scheme, never a silent
+  re-identity). By policy the normalizer prefers false failure over false pass: v1 absorbs exactly
+  one variation (whitespace outside quoted regions, escape-aware), and the refusals — binding
+  order, alias choice, appended order-by/limit, binding value types — are written policy in the
+  class docblock and pinned by tests. The widening-mutation suite (append a disjunct, drop a join
+  condition, relax an equality to a range, remove a nested group) is the layer's own oracle: a
+  digest-preserving mutation convicts the normalizer, not the code under measurement. Closes
+  [#260](https://github.com/fissible/verdict/issues/260).
+
 - **Approval challenges are observable to the live evaluation harness.** A live trial that hit a
   confirmation gate used to land as `declined` or harness-blind `uncategorized` — the receipt
   issuance, payload included, was invisible to every attack pack, and confirmation-gated cases were
