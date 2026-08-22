@@ -6,12 +6,19 @@ namespace Fissible\Verdict\Evaluation;
 
 use Closure;
 use Fissible\Verdict\Contracts\AttackPack;
+use Fissible\Verdict\Contracts\DeclaresExpressibleToolShapes;
 use Fissible\Verdict\Contracts\ObservationAssertion;
 use Fissible\Verdict\Decisions\Disposition;
 
-final readonly class AccountRecoveryAttackPack implements AttackPack
+final readonly class AccountRecoveryAttackPack implements AttackPack, DeclaresExpressibleToolShapes
 {
     public function __construct(private AccountRecoveryAttackPackConfig $config) {}
+
+    /** @return non-empty-list<ToolShape> */
+    public function expressibleToolShapes(): array
+    {
+        return [ToolShape::RecordKeyed];
+    }
 
     /**
      * @param  Closure(CaseInput): Observation  $runner

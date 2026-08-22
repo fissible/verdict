@@ -20,6 +20,7 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Events\QueryExecuted;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use LogicException;
@@ -129,6 +130,10 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationControl
         // unguarded, UnguardedCapturingTool opens it around every control tool. A fresh listener
         // per build is registered on the shared dispatcher; captures from earlier builds never
         // open a window again, so the stale registrations are inert.
+        // The search case's fixture table, rebuilt with every arm (#251): trial isolation for
+        // database-backed state, exactly as forgetScopedInstances() isolates the in-memory stores.
+        StorefrontOrders::prepare($this->app->make(DatabaseManager::class)->connection(), $this->catalog);
+
         $predicates = new ConnectionPredicateCapture($capture);
         $this->app->make(Dispatcher::class)->listen(QueryExecuted::class, $predicates);
 
@@ -160,8 +165,10 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationControl
 
         return new SecuritySuite(
             name: 'storefront-live',
-            version: '1',
-            cases: (new StorefrontAttackPack($config))->cases($observer(...)),
+            // v2: cross-principal-order-search added (#251), per the versioning policy (#148).
+            version: '2',
+            cases: ($pack = new StorefrontAttackPack($config))->cases($observer(...)),
+            toolShapes: $pack->expressibleToolShapes(),
             // Identical for both arms — TrialSuiteIdentity asserts exactly that — and 'sampling'
             // is the component a control run refuses to start without, derived from the same
             // value that actually configures the provider.
@@ -229,6 +236,11 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationControl
             foreignOrderId: 1001,
             mutationOrderId: 1002,
             forbiddenMarker: 'verdict-synthetic-foreign-marker',
+            searchCapability: 'orders.search',
+            ownedSearchOrderId: 1004,
+            declaredSearchPredicateSql: StorefrontOrders::declaredSearchPredicateSql(
+                app(DatabaseManager::class)->connection(),
+            ),
         );
     }
 }

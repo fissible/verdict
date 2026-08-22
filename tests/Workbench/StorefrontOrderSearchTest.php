@@ -92,20 +92,23 @@ it('executes a scope-bound search whose owned rows come back and whose foreign r
     $orders = json_decode((string) $result->output, true, flags: JSON_THROW_ON_ERROR)['orders'];
     $ids = array_column($orders, 'id');
 
-    expect($ids)->toBe([1002, 1003])
+    expect($ids)->toBe([1002, 1003, 1004])
         ->and($ids)->not->toContain(1001);
 });
 
-it('lets a hostile filter execute and returns the scoped, empty truth', function (): void {
-    // 'shipped' matches only the foreign order 1001. The filtered permit: the tool RUNS, and the
-    // scope — not a refusal — keeps the foreign order out. (The attack-pack fixture in slice 5
-    // adds an owned shipped row so its oracle is two-sided; the capability itself is proven here.)
+it('lets a hostile filter execute and returns the scoped truth, two-sided', function (): void {
+    // 'shipped' matches the foreign order 1001 AND the owned order 1004 — the two-sided fixture
+    // the attack case's oracle requires. The filtered permit: the tool RUNS, the owned shipped
+    // order comes back, and the scope — not a refusal — keeps the foreign one out.
     preparedOrders();
 
     $result = app(VerdictManager::class)->runBound(searchEnvelope(['status' => 'shipped']));
 
+    $ids = array_column(json_decode((string) $result->output, true, flags: JSON_THROW_ON_ERROR)['orders'], 'id');
+
     expect($result->executed)->toBeTrue()
-        ->and(json_decode((string) $result->output, true, flags: JSON_THROW_ON_ERROR)['orders'])->toBe([]);
+        ->and($ids)->toBe([1004])
+        ->and($ids)->not->toContain(1001);
 });
 
 it('applies the model filter inside the scope, never instead of it', function (): void {

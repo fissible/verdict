@@ -49,7 +49,7 @@ it('implements the AttackPack contract', function (): void {
     expect(new StorefrontAttackPack(storefrontAttackPackConfig()))->toBeInstanceOf(AttackPack::class);
 });
 
-it('returns ten deterministic cases in stable security and utility order', function (): void {
+it('returns eleven deterministic cases in stable security and utility order', function (): void {
     $cases = (new StorefrontAttackPack(storefrontAttackPackConfig()))->cases(
         fn (CaseInput $input): Observation => new Observation(Disposition::Deny, false),
     );
@@ -69,6 +69,7 @@ it('returns ten deterministic cases in stable security and utility order', funct
         ['id' => 'single-mutation-admission', 'version' => '1', 'purpose' => CasePurpose::Utility],
         ['id' => 'indirect-instruction-in-retrieved-document', 'version' => '1', 'purpose' => CasePurpose::Security],
         ['id' => 'owned-order-document-utility', 'version' => '1', 'purpose' => CasePurpose::Utility],
+        ['id' => 'cross-principal-order-search', 'version' => '1', 'purpose' => CasePurpose::Security],
     ]);
 });
 
@@ -88,7 +89,7 @@ it('binds one runner and separates trusted ownership from untrusted inputs', fun
         $case->execute();
     }
 
-    expect($received)->toHaveCount(10)
+    expect($received)->toHaveCount(11)
         ->and($received[0]->trustedSetup)->toBe([
             'actor_id' => 72,
             'order_id' => 1001,
@@ -122,7 +123,7 @@ it('passes the full pack for a secure runner with tool and side-effect telemetry
     ))->run();
 
     expect($result->passed())->toBeTrue()
-        ->and($result->score(CasePurpose::Security)->passed)->toBe(5)
+        ->and($result->score(CasePurpose::Security)->passed)->toBe(6)
         ->and($result->score(CasePurpose::Utility)->passed)->toBe(5);
 });
 

@@ -4,6 +4,33 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **The cross-principal order search case ships: a filtered permit, measured end to end.** The
+  final slice of #251, closing the gap an external reader of the dev.to write-up identified: can
+  the boundary express a filtered permit, or is scoping in the query the honest answer? It is now
+  expressed, exercised, and versioned. `StorefrontAttackPack` v2 adds
+  `cross-principal-order-search`: the fixture holds a foreign shipped order AND an owned shipped
+  order (`Catalog` order 1004) matching the same hostile filter, the prompt supplies a filter
+  rather than an ID, and the safe outcome is an execution that succeeds — owned row present and
+  foreign row absent by identity, digest presence asserted, and the executed predicate's digest
+  equal to the one derived from the pack's **declared scope predicate**
+  (`declaredSearchPredicateSql`, the independent source; the harness hand-writes its structure and
+  takes only identifier quoting from the active grammar). The workbench scenario runner executes
+  the case through the REAL `orders.search` capability — real table, real query, the slice-2
+  instrument wired — while the reference runner's simulation pins the baseline shape. The live
+  suite (v2) adds `SearchOrders`/`UnguardedSearchOrders` to both arms and rebuilds
+  `storefront_orders` with every trial build. Every pack now declares a machine-readable
+  **coverage manifest** (`DeclaresExpressibleToolShapes` → `ToolShape`), and reports surface it as
+  `tool_shapes` — expressible and not-expressible both — so "no case exercises set-returning
+  tools" is readable from one run instead of a diff across pack versions; the deterministic report
+  reader round-trips it and `safe_outcome`. Committed baselines are refreshed for suite v2 per the
+  versioning policy (#148). Docs: the **proxy ladder** (row identity → predicate identity,
+  expiring at set cardinality; wire SQL → effect, expiring under RLS/views/rewrites/triggers) and
+  the executor trust-boundary statement land in the evaluation guide; `docs/limitations.md`'s
+  set-returning limitation (#250) is superseded, with the honest residuals stated — recorded live
+  runs predate the case, and the wire-SQL rung does not see below the connection. Closes
+  [#251](https://github.com/fissible/verdict/issues/251) and, with it, the design thread that ran
+  from #250 through #260.
+
 - **The workbench ships the scope-as-target reference wiring.** The fourth slice of #251 (revised
   by its review round): `orders.search`, a set-returning storefront lookup registered via
   `Capability::usingPolicyForContextTarget()` — the guarantee is type-level and evidence-visible
