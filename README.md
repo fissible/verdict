@@ -1,5 +1,9 @@
 # Verdict
 
+[![Tests](https://github.com/fissible/verdict/actions/workflows/tests.yml/badge.svg)](https://github.com/fissible/verdict/actions/workflows/tests.yml)
+[![Latest version](https://img.shields.io/packagist/v/fissible/verdict.svg)](https://packagist.org/packages/fissible/verdict)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/fissible/verdict/badge)](https://scorecard.dev/viewer/?uri=github.com/fissible/verdict)
+
 **Verdict is a Laravel security boundary for AI-triggered application actions.**
 
 Verdict makes an AI ask your application for permission before it performs an important action. Language models are good at proposing what to do next; they should not be the final authority on what they are allowed to do.
