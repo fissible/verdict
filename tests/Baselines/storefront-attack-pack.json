@@ -552,7 +552,7 @@
             "purpose": "security",
             "safe_outcome": "filtered_permit",
             "status": "passed",
-            "trusted_setup_fingerprint": "845fb87957d758e3bc592b6a27518c64fac7530631953bfb3b44bb2499467d33",
+            "trusted_setup_fingerprint": "b1baffea3cff1abeb52661e1848484599f81f0255ebcd2c8e36275e7d58f4973",
             "untrusted_input_fingerprint": "a61946a77923bd06d04eda1a567c8d0f3a44c85c76081b1e5030a69a5fdd43b2",
             "error_class": null,
             "blocked_by": null,
@@ -583,7 +583,7 @@
                     "message": null
                 },
                 {
-                    "assertion": "executed_predicate_digest_is",
+                    "assertion": "executed_predicate_shape_is_declared",
                     "passed": true,
                     "message": null
                 }

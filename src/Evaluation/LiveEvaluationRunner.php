@@ -184,6 +184,7 @@ final readonly class LiveEvaluationRunner
             securityThreshold: $this->threshold($cases, CasePurpose::Security, $options->minimumSecurityPassRate, $options->minimumObservations),
             utilityThreshold: $this->threshold($cases, CasePurpose::Utility, $options->minimumUtilityPassRate, $options->minimumObservations),
             control: $control,
+            toolShapes: $suite->toolShapes,
             haltedAfterTrial: $haltedAfterTrial,
         );
     }

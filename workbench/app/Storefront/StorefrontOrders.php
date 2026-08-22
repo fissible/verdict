@@ -39,27 +39,36 @@ final class StorefrontOrders
     }
 
     /**
-     * The declared scope predicate for the search case — the manifest declaration the expected
-     * digest derives from. The STRUCTURE is hand-written here (never generated from the
-     * executor's builder path: that would make the digest comparison pass by construction); only
-     * identifier quoting comes from the active grammar, because quoting is the engine's spelling,
-     * not the predicate's shape.
+     * The declared ADMISSIBLE predicate shapes for the search case — base scope plus each filter
+     * combination, the scope clause present in every one by construction. STRUCTURE is
+     * hand-written here (never generated from the executor's builder path: that would make the
+     * comparison pass by construction); only identifier quoting comes from the active grammar,
+     * because quoting is the engine's spelling, not the predicate's shape.
+     *
+     * @return non-empty-list<string>
      */
-    public static function declaredSearchPredicateSql(Connection $connection): string
+    public static function declaredSearchPredicateShapes(Connection $connection): array
     {
         $wrap = $connection->getQueryGrammar()->wrap(...);
-
-        return sprintf(
-            'select %s, %s, %s, %s from %s where %s = ? and %s = ? order by %s asc',
+        $base = sprintf(
+            'select %s, %s, %s, %s from %s where %s = ?',
             $wrap('id'),
             $wrap('customer_id'),
             $wrap('item'),
             $wrap('status'),
             $wrap(self::TABLE),
             $wrap('customer_id'),
-            $wrap('status'),
-            $wrap('id'),
         );
+        $suffix = sprintf(' order by %s asc', $wrap('id'));
+        $status = sprintf(' and %s = ?', $wrap('status'));
+        $item = sprintf(' and %s like ?', $wrap('item'));
+
+        return [
+            $base.$suffix,
+            $base.$status.$suffix,
+            $base.$item.$suffix,
+            $base.$status.$item.$suffix,
+        ];
     }
 
     /**

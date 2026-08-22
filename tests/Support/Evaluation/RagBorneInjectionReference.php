@@ -60,10 +60,13 @@ final class RagBorneInjectionReference
     {
         $config = self::config();
 
+        $pack = new RagBorneInjectionAttackPack($config);
+
         return new SecuritySuite(
             self::SUITE,
             self::VERSION,
-            (new RagBorneInjectionAttackPack($config))->cases(self::secureRunner($config)),
+            $pack->cases(self::secureRunner($config)),
+            toolShapes: $pack->expressibleToolShapes(),
         );
     }
 

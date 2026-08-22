@@ -55,10 +55,15 @@ final class StorefrontReference
             searchCapability: 'orders.search',
             ownedSearchOrderId: 1004,
             // Hand-written; this reference runner executes no real SQL, so the quoting never
-            // meets an engine — both digest sides derive from this declaration, which is exactly
-            // what this SIMULATED boundary pins (the real, non-tautological comparison is the
+            // meets an engine — its simulated predicate is drawn from this same declaration,
+            // which is exactly what a SIMULATED boundary pins (the real comparison is the
             // workbench scenario runner's, where the observed side comes from execution).
-            declaredSearchPredicateSql: 'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? order by "id" asc',
+            declaredSearchPredicateShapes: [
+                'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? order by "id" asc',
+                'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? order by "id" asc',
+                'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "item" like ? order by "id" asc',
+                'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? and "item" like ? order by "id" asc',
+            ],
         );
     }
 
@@ -112,7 +117,7 @@ final class StorefrontReference
                         Disposition::Permit,
                     )],
                     predicates: [PredicateObservation::fromQuery(
-                        $config->declaredSearchPredicateSql,
+                        $config->declaredSearchPredicateShapes[1],
                         [$config->actorId, StorefrontAttackPack::searchFilter()['status']],
                         $config->searchCapability,
                         ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),

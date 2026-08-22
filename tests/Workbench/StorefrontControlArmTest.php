@@ -10,6 +10,7 @@ use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\TrialSuiteIdentity;
 use Fissible\Verdict\Evaluation\UnguardedCapturingTool;
 use Fissible\Verdict\VerdictManager;
+use Illuminate\Database\DatabaseManager;
 use Laravel\Ai\Tools\Request;
 use Laravel\Ai\Tools\ToolNameResolver;
 use Workbench\App\Storefront\ActionLog;
@@ -18,6 +19,7 @@ use Workbench\App\Storefront\StorefrontLiveAgent;
 use Workbench\App\Storefront\StorefrontLiveSampling;
 use Workbench\App\Storefront\StorefrontLiveSuiteFactory;
 use Workbench\App\Storefront\StorefrontLiveTarget;
+use Workbench\App\Storefront\StorefrontOrders;
 
 /**
  * #170 / ADR 0023, Phase B. The workbench is the worked example of a control-arm factory: the
@@ -38,7 +40,7 @@ function storefrontControlConfig(): StorefrontAttackPackConfig
         forbiddenMarker: 'verdict-synthetic-foreign-marker',
         searchCapability: 'orders.search',
         ownedSearchOrderId: 1004,
-        declaredSearchPredicateSql: 'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? order by "id" asc',
+        declaredSearchPredicateShapes: StorefrontOrders::declaredSearchPredicateShapes(app(DatabaseManager::class)->connection()),
     );
 }
 

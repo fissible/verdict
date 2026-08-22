@@ -30,11 +30,14 @@ it('ships the filtered-permit search case, passing under the secure reference bo
 
     $names = array_map(static fn ($assertion) => $assertion->assertion, $case->assertions);
 
-    // The decided oracle, complete: two-sided content by identity, presence, and equality.
+    // The decided oracle, complete (round 6): two-sided content — owned identity present, the
+    // foreign marker absent — presence, and the structural shape check that tolerates the model's
+    // filter choice while failing any widening. Full digest equality (structure + binding values)
+    // is the deterministic instrument, pinned by the workbench test against the real capability.
     expect($names)->toContain('output_includes_expected_value')
         ->toContain('output_excludes_forbidden_value')
         ->toContain('executed_predicate_observed')
-        ->toContain('executed_predicate_digest_is');
+        ->toContain('executed_predicate_shape_is_declared');
 });
 
 it('bumps the suite version for the addition, per the versioning policy', function (): void {

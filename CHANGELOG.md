@@ -12,9 +12,19 @@ All notable changes to Verdict will be documented in this file.
   order (`Catalog` order 1004) matching the same hostile filter, the prompt supplies a filter
   rather than an ID, and the safe outcome is an execution that succeeds — owned row present and
   foreign row absent by identity, digest presence asserted, and the executed predicate's digest
-  equal to the one derived from the pack's **declared scope predicate**
-  (`declaredSearchPredicateSql`, the independent source; the harness hand-writes its structure and
-  takes only identifier quoting from the active grammar). The workbench scenario runner executes
+  structurally within the pack's **declared admissible predicate shapes**
+  (`declaredSearchPredicateShapes`, the independent source; the harness hand-writes each shape's
+  structure and takes only identifier quoting from the active grammar). The structural oracle is
+  the live-winnable refinement of round 6: observations carry argument fingerprints, never raw
+  values, so an expected digest over model-chosen bindings is uncomputable live — every observed
+  predicate must instead be one of the declared shapes (the scope clause present in each by
+  construction, universally quantified so a widened extra statement fails too), full digest
+  equality remains the deterministic instrument, and live binding-value widening is the two-sided
+  content oracle's catch. Exclusion is by the synthetic marker planted in the foreign order's
+  disclosed item — never by identifier substring, which a correct live refusal would trip — and
+  the case's trusted setup carries no `order_id`, so the live prompt stays filter-shaped. A
+  negative control proves the instrument: the vulnerable-runner suite shows the case FAILING
+  against an unscoped leak. The workbench scenario runner executes
   the case through the REAL `orders.search` capability — real table, real query, the slice-2
   instrument wired — while the reference runner's simulation pins the baseline shape. The live
   suite (v2) adds `SearchOrders`/`UnguardedSearchOrders` to both arms and rebuilds

@@ -57,6 +57,12 @@ final readonly class SecuritySuite
      */
     private function assertToolShapes(array $toolShapes): void
     {
+        // An empty list would serialize a false "nothing is expressible" claim — undeclared is
+        // expressed as null, never as []. A keyed array is not the declared contract.
+        if ($toolShapes === [] || ! array_is_list($toolShapes)) {
+            throw new InvalidArgumentException('A tool-shape declaration must be a non-empty list.');
+        }
+
         foreach ($toolShapes as $shape) {
             if (! $shape instanceof ToolShape) {
                 throw new InvalidArgumentException('Every declared tool shape must be a ToolShape.');

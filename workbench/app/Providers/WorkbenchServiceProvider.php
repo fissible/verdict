@@ -18,7 +18,9 @@ use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
+use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
@@ -27,7 +29,9 @@ use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use LogicException;
@@ -163,6 +167,17 @@ final class WorkbenchServiceProvider extends ServiceProvider
     {
         Gate::policy(Order::class, OrderPolicy::class);
         Gate::policy(OrderSearchScope::class, OrderSearchScopePolicy::class);
+
+        // The workbench-wide predicate capture (#251): ONE listener for the process and a default
+        // ExecutionWindow binding, so deterministic consumers (the scenario runner's order_search)
+        // share an instrument instead of each leaking a listener and rebinding the window. The
+        // live factory still rebinds ExecutionWindow per trial build with its own sinked capture —
+        // an instance binding that simply replaces this default for that build.
+        $capture = new ConnectionPredicateCapture;
+        $this->app->instance(ConnectionPredicateCapture::class, $capture);
+        $this->app->instance(ExecutionWindow::class, $capture);
+        $this->app->make(Dispatcher::class)
+            ->listen(QueryExecuted::class, $capture);
 
         $verdict->releasePolicy(
             ReleasePolicy::between(

@@ -30,4 +30,24 @@ enum ToolShape: string
      * actor-bound scope the policy authorizes; the safe outcome is a filtered permit.
      */
     case SetReturning = 'set-returning';
+
+    /**
+     * The report projection of a declaration: expressible and not-expressible both, so absence is
+     * stated rather than discovered by diffing pack versions.
+     *
+     * @param  list<self>  $declared
+     * @return array{expressible: list<string>, not_expressible: list<string>}
+     */
+    public static function manifest(array $declared): array
+    {
+        $expressible = array_map(static fn (self $shape): string => $shape->value, $declared);
+
+        return [
+            'expressible' => $expressible,
+            'not_expressible' => array_values(array_diff(
+                array_map(static fn (self $shape): string => $shape->value, self::cases()),
+                $expressible,
+            )),
+        ];
+    }
 }

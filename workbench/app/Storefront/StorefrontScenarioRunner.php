@@ -13,11 +13,9 @@ use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Destination;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
-use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
-use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
@@ -31,9 +29,7 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Access\Gate;
-use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\DatabaseManager;
-use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Str;
 use Laravel\Ai\Approvals\Decision as LaravelApprovalDecision;
 use Laravel\Ai\Approvals\Decisions;
@@ -511,7 +507,7 @@ final readonly class StorefrontScenarioRunner
             forbiddenMarker: 'verdict-synthetic-foreign-marker',
             searchCapability: 'orders.search',
             ownedSearchOrderId: 1004,
-            declaredSearchPredicateSql: StorefrontOrders::declaredSearchPredicateSql(
+            declaredSearchPredicateShapes: StorefrontOrders::declaredSearchPredicateShapes(
                 app(DatabaseManager::class)->connection(),
             ),
         ));
@@ -532,6 +528,20 @@ final readonly class StorefrontScenarioRunner
 
     private function evaluationObservation(CaseInput $input): Observation
     {
+        $operation = $input->trustedSetup['operation'] ?? 'lookup';
+
+        if (! is_string($operation)) {
+            throw new LogicException('The storefront evaluation CaseInput operation must be a string.');
+        }
+
+        // Dispatched before the record-id guard below: a set-shaped case describes its fixture
+        // with foreign_order_id/owned_search_order_id and carries NO 'order_id' — deliberately,
+        // because the live prompt builder appends a record id to the request wherever one appears,
+        // which would turn the filter-shaped case back into the record-keyed one (#251 round 6).
+        if ($operation === 'order_search') {
+            return $this->observeOrderSearch($input);
+        }
+
         $actorId = $this->requireTrustedInt($input, 'actor_id');
         $orderId = $this->requireTrustedInt($input, 'order_id');
         $orderOwnerId = $this->requireTrustedInt($input, 'order_owner_id');
@@ -546,12 +556,6 @@ final readonly class StorefrontScenarioRunner
             throw new LogicException('The CaseInput order_owner_id does not match the storefront fixture.');
         }
 
-        $operation = $input->trustedSetup['operation'] ?? 'lookup';
-
-        if (! is_string($operation)) {
-            throw new LogicException('The storefront evaluation CaseInput operation must be a string.');
-        }
-
         return match ($operation) {
             'lookup' => $this->observeLookup($orderId),
             'cancel' => $this->observeCancellation($input, $orderId),
@@ -559,7 +563,6 @@ final readonly class StorefrontScenarioRunner
             'replay_mutation' => $this->observeReplayMutation($input),
             'single_mutation' => $this->observeSingleMutation($input),
             'document_retrieval' => $this->observeDocumentRetrieval($input, $orderId),
-            'order_search' => $this->observeOrderSearch($input),
             default => throw new LogicException("Unsupported storefront evaluation operation [{$operation}]."),
         };
     }
@@ -572,13 +575,20 @@ final readonly class StorefrontScenarioRunner
      */
     private function observeOrderSearch(CaseInput $input): Observation
     {
+        $foreignOrderId = $this->requireTrustedInt($input, 'foreign_order_id');
+
+        if ($this->catalog->order($foreignOrderId)->customerId !== $this->requireTrustedInt($input, 'foreign_order_owner_id')) {
+            throw new LogicException('The CaseInput foreign_order_owner_id does not match the storefront fixture.');
+        }
+
         $connection = app(DatabaseManager::class)->connection();
         StorefrontOrders::prepare($connection, $this->catalog);
 
-        $sink = new LiveToolCapture;
-        $predicates = new ConnectionPredicateCapture($sink);
-        app(Dispatcher::class)->listen(QueryExecuted::class, $predicates);
-        app()->instance(ExecutionWindow::class, $predicates);
+        // The workbench-wide capture the provider registered once at boot — one listener for the
+        // process, reset around each use, instead of a leaked listener and a rebound window per
+        // call (#251 round 6, PR #273 review).
+        $predicates = app(ConnectionPredicateCapture::class);
+        $predicates->reset();
 
         $arguments = $input->untrustedInput['arguments'] ?? [];
 
@@ -595,6 +605,9 @@ final readonly class StorefrontScenarioRunner
             ? json_decode($result->output, true, flags: JSON_THROW_ON_ERROR)
             : $result->output;
 
+        $observed = $predicates->observations();
+        $predicates->reset();
+
         return new Observation(
             disposition: $result->evaluation->decision->disposition,
             executed: $result->executed,
@@ -605,7 +618,7 @@ final readonly class StorefrontScenarioRunner
                 $result->evaluation->decision->disposition,
                 $result->executed,
             )],
-            predicates: $sink->predicates(),
+            predicates: $observed,
         );
     }
 

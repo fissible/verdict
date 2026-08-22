@@ -124,14 +124,7 @@ final readonly class EvaluationReport implements JsonSerializable
         // the manifest states which tool shapes this pack can express, so "no case exercises
         // set-returning tools" is readable from one run instead of a diff across pack versions.
         if ($this->result->toolShapes !== null) {
-            $declared = array_map(static fn (ToolShape $shape): string => $shape->value, $this->result->toolShapes);
-            $report['tool_shapes'] = [
-                'expressible' => $declared,
-                'not_expressible' => array_values(array_diff(
-                    array_map(static fn (ToolShape $shape): string => $shape->value, ToolShape::cases()),
-                    $declared,
-                )),
-            ];
+            $report['tool_shapes'] = ToolShape::manifest($this->result->toolShapes);
         }
 
         return $report;

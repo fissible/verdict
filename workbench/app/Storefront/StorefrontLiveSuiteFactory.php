@@ -238,7 +238,7 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationControl
             forbiddenMarker: 'verdict-synthetic-foreign-marker',
             searchCapability: 'orders.search',
             ownedSearchOrderId: 1004,
-            declaredSearchPredicateSql: StorefrontOrders::declaredSearchPredicateSql(
+            declaredSearchPredicateShapes: StorefrontOrders::declaredSearchPredicateShapes(
                 app(DatabaseManager::class)->connection(),
             ),
         );

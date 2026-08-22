@@ -293,5 +293,14 @@
                 ]
             }
         }
-    ]
+    ],
+    "tool_shapes": {
+        "expressible": [
+            "record-keyed"
+        ],
+        "not_expressible": [
+            "single-scalar-target",
+            "set-returning"
+        ]
+    }
 }
