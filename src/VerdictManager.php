@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict;
 
+use Closure;
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
@@ -71,7 +72,14 @@ final readonly class VerdictManager
         private string $deniedMessage,
         private Dispatcher $events,
         private NullRecorderWarning $nullRecorderWarning,
-        private ?ExecutionWindow $executionWindow = null,
+        /**
+         * Resolved per execution, never at construction: a provider that type-hints this manager
+         * in boot() constructs it before any evaluation harness runs, and an eagerly-captured
+         * window would freeze as null — every filtered-permit trial silently unmeasured.
+         *
+         * @var (Closure(): ?ExecutionWindow)|null
+         */
+        private ?Closure $executionWindow = null,
     ) {}
 
     public function capability(Capability $capability): self
@@ -422,9 +430,10 @@ final readonly class VerdictManager
             // traffic before this line (claims, rate limits, evidence) and after it (finalization)
             // stays outside, which is what lets the evaluation harness treat a captured statement
             // as the executor's. See Contracts\ExecutionWindow.
-            $output = $this->executionWindow === null
+            $window = $this->executionWindow === null ? null : ($this->executionWindow)();
+            $output = $window === null
                 ? $executor($admission)
-                : $this->executionWindow->around(
+                : $window->around(
                     $evaluation->envelope,
                     static fn (): mixed => $executor($admission),
                 );

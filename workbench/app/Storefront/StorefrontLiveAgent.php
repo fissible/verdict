@@ -9,6 +9,7 @@ use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Evaluation\CapturingTool;
+use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\UnguardedCapturingTool;
@@ -71,6 +72,7 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
         private readonly StorefrontLiveSampling $sampling,
         private readonly StorefrontLiveTarget $target,
         private readonly bool $guarded = true,
+        private readonly ?ConnectionPredicateCapture $predicates = null,
     ) {}
 
     /**
@@ -170,6 +172,9 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
             new SideEffectRelayTool($tool, $this->actions, $this->capture),
             $capability,
             $this->capture,
+            // The control arm's execution window (#251 round 5), wired here so every control tool
+            // gets it — a per-tool opt-in would leave a forgotten tool structurally unmeasurable.
+            $this->predicates,
         );
     }
 

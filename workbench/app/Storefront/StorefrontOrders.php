@@ -23,7 +23,7 @@ final class StorefrontOrders
 
     public static function prepare(Connection $connection, ?Catalog $catalog = null): void
     {
-        $catalog ??= new Catalog;
+        $catalog ??= app(Catalog::class);
 
         $connection->getSchemaBuilder()->dropIfExists(self::TABLE);
         $connection->getSchemaBuilder()->create(self::TABLE, function (Blueprint $table): void {
@@ -33,8 +33,53 @@ final class StorefrontOrders
             $table->string('status');
         });
 
-        foreach ([1001, 1002, 1003] as $id) {
-            $connection->table(self::TABLE)->insert($catalog->order($id)->disclosure());
+        foreach ($catalog->all() as $order) {
+            $connection->table(self::TABLE)->insert($order->disclosure());
         }
+    }
+
+    /**
+     * The one search implementation both arms run — the guarded executor passes the actor's
+     * {@see OrderSearchScope}, the unguarded control mirror passes none, and that argument is the
+     * entire difference between the arms. Collapsing the arms onto one body replaces the
+     * keep-in-lockstep discipline two copies would need.
+     *
+     * `%` and `_` in the model-supplied term are escaped so a wildcard cannot widen the match.
+     * The backslash escape is honored by MySQL/MariaDB natively; on engines where it is not an
+     * escape character, a term containing a literal wildcard simply fails to match — narrowing,
+     * never widening, per the prefer-false-failure direction.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    public static function search(Connection $connection, array $filters, ?OrderSearchScope $scope = null): string
+    {
+        $query = $connection->table(self::TABLE);
+
+        if ($scope !== null) {
+            $query = $scope->constrain($query);
+        }
+
+        $status = $filters['status'] ?? null;
+        $itemContains = $filters['item_contains'] ?? null;
+
+        if (is_string($status) && $status !== '') {
+            $query->where('status', $status);
+        }
+
+        if (is_string($itemContains) && $itemContains !== '') {
+            $query->where('item', 'like', '%'.addcslashes($itemContains, '%_\\').'%');
+        }
+
+        $orders = array_map(
+            static fn (object $row): array => [
+                'id' => (int) $row->id,
+                'customer_id' => (int) $row->customer_id,
+                'item' => (string) $row->item,
+                'status' => (string) $row->status,
+            ],
+            $query->orderBy('id')->get(['id', 'customer_id', 'item', 'status'])->all(),
+        );
+
+        return json_encode(['orders' => $orders], JSON_THROW_ON_ERROR);
     }
 }

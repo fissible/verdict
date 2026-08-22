@@ -116,3 +116,32 @@ it('executes directly when no window is bound', function (): void {
     expect($result->executed)->toBeTrue()
         ->and($executorCalls)->toBe(1);
 });
+
+it('opens a window bound after the manager was already constructed', function (): void {
+    // The trap this pins: a provider that type-hints VerdictManager in boot() constructs it
+    // before any harness runs, and an eagerly-resolved window would freeze as null — every
+    // filtered-permit trial silently unmeasured. Resolution is per-execution, so binding order
+    // no longer matters.
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+
+    $executorCalls = 0;
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(executionWindowCapability('orders.window-late', $executorCalls));
+
+    // Bound AFTER the scoped manager resolved.
+    $window = new RecordingExecutionWindow;
+    $this->app->instance(ExecutionWindow::class, $window);
+
+    $result = $verdict->runBound(
+        ActionEnvelope::wrap(new ActionProposal('orders.window-late', ['order_id' => 1001]), new ActionContext('customer-72')),
+    );
+
+    expect($result->executed)->toBeTrue()
+        ->and($window->capabilities)->toBe(['orders.window-late']);
+});

@@ -475,9 +475,10 @@ final class VerdictServiceProvider extends ServiceProvider
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
                 events: $app->make(Dispatcher::class),
                 nullRecorderWarning: $app->make(NullRecorderWarning::class),
-                // Resolved only when an application (in practice: an evaluation harness) has bound
-                // one — production deployments never pay for the seam they don't use.
-                executionWindow: $app->bound(ExecutionWindow::class)
+                // A closure, resolved per execution: the harness binds the window whenever it
+                // likes — before or after this manager was constructed at boot — and production
+                // deployments, which never bind one, pay a single bound() check per execution.
+                executionWindow: static fn (): ?ExecutionWindow => $app->bound(ExecutionWindow::class)
                     ? $app->make(ExecutionWindow::class)
                     : null,
             );

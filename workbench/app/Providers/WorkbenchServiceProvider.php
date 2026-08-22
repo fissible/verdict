@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Workbench\App\Providers;
 
+use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
@@ -210,17 +211,20 @@ final class WorkbenchServiceProvider extends ServiceProvider
             }),
         );
 
-        // The set-returning arm (#251): a search has no single record for the policy to inspect, so
-        // the CONTEXT-RESOLVED resolver returns a scope value object bound to the actor — the
-        // model's arguments are the filter, applied inside the scope by the executor, never
-        // consulted here — and the policy authorizes the scope. The tenant filter thereby lives
-        // inside the boundary: resolver code, carried in evidence, and observable at the
-        // connection (the executor's real query is what the predicate capture digests).
+        // The set-returning arm (#251): a search has no single record for the policy to inspect,
+        // so the resolver returns a scope value object bound to the actor and the policy
+        // authorizes the scope. Registered via usingPolicyForContextTarget so the guarantee is
+        // type-level and evidence-visible (ADR 0025): the resolver receives only the trusted
+        // ActionContext — the model's arguments, which are the filter the executor applies INSIDE
+        // the scope, are not even in scope here — and every evidence row records
+        // target_source=context. The tenant filter thereby lives inside the boundary: resolver
+        // code, carried in evidence, and observable at the connection (the executor's real query
+        // is what the predicate capture digests).
         $verdict->capability(
-            Capability::usingPolicy(
+            Capability::usingPolicyForContextTarget(
                 name: 'orders.search',
                 ability: 'search',
-                resolveTarget: fn (ActionEnvelope $envelope): OrderSearchScope => OrderSearchScope::forContext($envelope->context),
+                resolveTarget: fn (ActionContext $context): OrderSearchScope => OrderSearchScope::forContext($context),
             )->executionTarget(ExecutionTargetPolicy::refresh(
                 name: 'storefront-order-search-scope',
                 identityUsing: fn (ActionEnvelope $envelope, OrderSearchScope $scope): array => [
@@ -236,34 +240,12 @@ final class WorkbenchServiceProvider extends ServiceProvider
                     throw new LogicException('The storefront search capability expected an order-search scope.');
                 }
 
-                $query = $action->target->constrain(
-                    app(DatabaseManager::class)->connection()->table(StorefrontOrders::TABLE),
+                // One shared body for both arms; the scope argument is the arms' entire difference.
+                return StorefrontOrders::search(
+                    app(DatabaseManager::class)->connection(),
+                    $action->envelope->proposal->arguments,
+                    $action->target,
                 );
-
-                // KEEP IN LOCKSTEP with UnguardedSearchOrders::search(), plus the scope above.
-                $arguments = $action->envelope->proposal->arguments;
-                $status = $arguments['status'] ?? null;
-                $itemContains = $arguments['item_contains'] ?? null;
-
-                if (is_string($status) && $status !== '') {
-                    $query->where('status', $status);
-                }
-
-                if (is_string($itemContains) && $itemContains !== '') {
-                    $query->where('item', 'like', '%'.$itemContains.'%');
-                }
-
-                $orders = array_map(
-                    static fn (object $row): array => [
-                        'id' => (int) $row->id,
-                        'customer_id' => (int) $row->customer_id,
-                        'item' => (string) $row->item,
-                        'status' => (string) $row->status,
-                    ],
-                    $query->orderBy('id')->get(['id', 'customer_id', 'item', 'status'])->all(),
-                );
-
-                return json_encode(['orders' => $orders], JSON_THROW_ON_ERROR);
             }),
         );
 
