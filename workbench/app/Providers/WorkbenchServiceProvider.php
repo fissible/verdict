@@ -26,6 +26,7 @@ use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use LogicException;
@@ -33,8 +34,11 @@ use Workbench\App\Storefront\ActionLog;
 use Workbench\App\Storefront\Catalog;
 use Workbench\App\Storefront\Order;
 use Workbench\App\Storefront\OrderPolicy;
+use Workbench\App\Storefront\OrderSearchScope;
+use Workbench\App\Storefront\OrderSearchScopePolicy;
 use Workbench\App\Storefront\StorefrontLiveSampling;
 use Workbench\App\Storefront\StorefrontLiveSuiteFactory;
+use Workbench\App\Storefront\StorefrontOrders;
 use Workbench\App\Storefront\SupportNoteChannel;
 
 final class WorkbenchServiceProvider extends ServiceProvider
@@ -157,6 +161,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
     public function boot(VerdictManager $verdict, Catalog $catalog): void
     {
         Gate::policy(Order::class, OrderPolicy::class);
+        Gate::policy(OrderSearchScope::class, OrderSearchScopePolicy::class);
 
         $verdict->releasePolicy(
             ReleasePolicy::between(
@@ -202,6 +207,63 @@ final class WorkbenchServiceProvider extends ServiceProvider
                 }
 
                 return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
+            }),
+        );
+
+        // The set-returning arm (#251): a search has no single record for the policy to inspect, so
+        // the CONTEXT-RESOLVED resolver returns a scope value object bound to the actor — the
+        // model's arguments are the filter, applied inside the scope by the executor, never
+        // consulted here — and the policy authorizes the scope. The tenant filter thereby lives
+        // inside the boundary: resolver code, carried in evidence, and observable at the
+        // connection (the executor's real query is what the predicate capture digests).
+        $verdict->capability(
+            Capability::usingPolicy(
+                name: 'orders.search',
+                ability: 'search',
+                resolveTarget: fn (ActionEnvelope $envelope): OrderSearchScope => OrderSearchScope::forContext($envelope->context),
+            )->executionTarget(ExecutionTargetPolicy::refresh(
+                name: 'storefront-order-search-scope',
+                identityUsing: fn (ActionEnvelope $envelope, OrderSearchScope $scope): array => [
+                    'tenant_id' => $envelope->context->metadata['tenant_id'] ?? null,
+                    'resource_type' => 'order-search-scope',
+                    'customer_id' => $scope->customerId,
+                ],
+                // Deterministic by construction: re-resolving from the same trusted context yields
+                // the same scope, so a mismatch here can only mean the context itself changed.
+                refreshUsing: fn (ActionEnvelope $envelope, OrderSearchScope $scope): OrderSearchScope => OrderSearchScope::forContext($envelope->context),
+            ))->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof OrderSearchScope) {
+                    throw new LogicException('The storefront search capability expected an order-search scope.');
+                }
+
+                $query = $action->target->constrain(
+                    app(DatabaseManager::class)->connection()->table(StorefrontOrders::TABLE),
+                );
+
+                // KEEP IN LOCKSTEP with UnguardedSearchOrders::search(), plus the scope above.
+                $arguments = $action->envelope->proposal->arguments;
+                $status = $arguments['status'] ?? null;
+                $itemContains = $arguments['item_contains'] ?? null;
+
+                if (is_string($status) && $status !== '') {
+                    $query->where('status', $status);
+                }
+
+                if (is_string($itemContains) && $itemContains !== '') {
+                    $query->where('item', 'like', '%'.$itemContains.'%');
+                }
+
+                $orders = array_map(
+                    static fn (object $row): array => [
+                        'id' => (int) $row->id,
+                        'customer_id' => (int) $row->customer_id,
+                        'item' => (string) $row->item,
+                        'status' => (string) $row->status,
+                    ],
+                    $query->orderBy('id')->get(['id', 'customer_id', 'item', 'status'])->all(),
+                );
+
+                return json_encode(['orders' => $orders], JSON_THROW_ON_ERROR);
             }),
         );
 

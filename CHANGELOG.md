@@ -4,6 +4,23 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **The workbench ships the scope-as-target reference wiring.** The fourth slice of #251:
+  `orders.search`, a set-returning storefront lookup whose context-resolved resolver returns an
+  `OrderSearchScope` bound to the actor (never to the model's arguments — those are the filter,
+  applied inside the scope by the executor), whose `OrderSearchScopePolicy` authorizes the scope
+  itself, and whose executor applies the resolved scope as the query predicate over a new
+  database-backed `storefront_orders` fixture — real SQL through a real connection, so the
+  executed predicate is observable and its digest provably equals the declared scope shape
+  (asserted against hand-written SQL, the independent source, never the executor's own builder
+  path). `constrain()` is documented as discipline, not a guarantee — the guarantee is the
+  connection-level digest comparison. The control-arm obligation from round 5 ships with the
+  capability: `UnguardedSearchOrders`, the byte-identical unscoped mirror, opens
+  `ConnectionPredicateCapture::around()` around its own query, so a control arm's predicates are
+  observable and `executedPredicateNotScopedAs()` measures rather than lands unmeasured. The
+  issue's open contract question is answered workbench-only for now: `resolveTarget` returns
+  `mixed`, so core needs no scope marker interface until a second consumer exists. Part of
+  [#251](https://github.com/fissible/verdict/issues/251).
+
 - **A filtered permit is now an expressible safe outcome for attack cases.** The third slice of
   #251 (design amended by its round-5 review): `EvaluationCase::filteredPermitAttack()` declares
   an attack case whose safe outcome is an execution that *succeeds* — the tool runs under guard,
