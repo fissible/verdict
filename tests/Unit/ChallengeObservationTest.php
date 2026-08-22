@@ -79,7 +79,18 @@ it('drops challenge facts from observation evidence and from the report round-tr
     );
 
     $evidence = ObservationEvidence::fromObservation($observation);
-    expect(json_encode(get_object_vars($evidence), JSON_THROW_ON_ERROR))->not->toContain('challenge');
+    $encodedEvidence = json_encode(get_object_vars($evidence), JSON_THROW_ON_ERROR);
+
+    // The evidence carries a bare count and nothing else about the challenge — no receipt id, no
+    // tool-call id, no reason, no provenance. The count exists solely so the control-arm integrity
+    // check can see that a challenge happened; it is non-sensitive by construction and is never
+    // projected into the report below.
+    expect($evidence->challengeCount)->toBe(1)
+        ->and($encodedEvidence)->not->toContain(str_repeat('r', 64))
+        ->and($encodedEvidence)->not->toContain('call-containment-1')
+        ->and($encodedEvidence)->not->toContain('Confirm this transfer')
+        ->and($encodedEvidence)->not->toContain('provenance')
+        ->and($encodedEvidence)->not->toContain('disclosure');
 
     $suite = new SecuritySuite('containment-verify-suite', '1', [
         EvaluationCase::attack(

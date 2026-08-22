@@ -86,28 +86,14 @@ final readonly class SecuritySuite
             );
         }
 
+        // Two try blocks, not one. A throw from `execute()` means there is no observation to
+        // record, so the result carries none. A throw from an ASSERTION — `ExecutionAwaitsApproval`
+        // and `CapabilityNotAttempted` are both routine — is a different thing: the run produced a
+        // real observation and only the verdict on it is missing. Folding both into one catch
+        // discarded the evidence for exactly the errored cases whose evidence matters most, which
+        // is what made `LiveEvaluationRunner`'s control-arm challenge check unreachable.
         try {
             $observation = $case->execute();
-            $assertions = array_map(
-                static fn (ObservationAssertion $assertion): AssertionResult => $assertion->evaluate($observation),
-                $case->assertions,
-            );
-            $passed = true;
-
-            foreach ($assertions as $assertion) {
-                if (! $assertion->passed) {
-                    $passed = false;
-                    break;
-                }
-            }
-
-            return $this->result(
-                $case,
-                status: $passed ? CaseStatus::Passed : CaseStatus::Failed,
-                assertions: $assertions,
-                observation: ObservationEvidence::fromObservation($observation),
-                rawObservation: $observation,
-            );
         } catch (Throwable $error) {
             return $this->result(
                 $case,
@@ -117,6 +103,39 @@ final readonly class SecuritySuite
                 errorClass: $error::class,
             );
         }
+
+        $evidence = ObservationEvidence::fromObservation($observation);
+
+        try {
+            $assertions = array_map(
+                static fn (ObservationAssertion $assertion): AssertionResult => $assertion->evaluate($observation),
+                $case->assertions,
+            );
+        } catch (Throwable $error) {
+            return $this->result(
+                $case,
+                status: CaseStatus::Error,
+                assertions: [],
+                observation: $evidence,
+                errorClass: $error::class,
+            );
+        }
+
+        $passed = true;
+
+        foreach ($assertions as $assertion) {
+            if (! $assertion->passed) {
+                $passed = false;
+                break;
+            }
+        }
+
+        return $this->result(
+            $case,
+            status: $passed ? CaseStatus::Passed : CaseStatus::Failed,
+            assertions: $assertions,
+            observation: $evidence,
+        );
     }
 
     /** @param list<AssertionResult> $assertions */
@@ -127,7 +146,6 @@ final readonly class SecuritySuite
         ?ObservationEvidence $observation,
         ?string $errorClass = null,
         ?string $blockedBy = null,
-        ?Observation $rawObservation = null,
     ): CaseResult {
         return new CaseResult(
             id: $case->id,
@@ -140,7 +158,6 @@ final readonly class SecuritySuite
             observation: $observation,
             errorClass: $errorClass,
             blockedBy: $blockedBy,
-            rawObservation: $rawObservation,
         );
     }
 }

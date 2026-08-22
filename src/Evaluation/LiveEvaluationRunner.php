@@ -211,6 +211,12 @@ final readonly class LiveEvaluationRunner
      * built a guarded suite and every pair in the run is invalid. Likewise, a challenge is
      * Verdict-shaped state; its presence on an unguarded arm proves the factory built a guarded
      * suite. See ADR 0023, ADR 0029.
+     *
+     * Errored cases are checked too, and deliberately: `SecuritySuite::runCase()` keeps the
+     * observation evidence when an ASSERTION throws, so a control case that errored on
+     * `ExecutionAwaitsApproval` — the outcome most likely to have a challenge behind it — still
+     * reaches this check. The count is all the evidence carries; challenge content stays
+     * assertion-only per ADR 0029 decision 2.
      */
     private function assertCaseRanUnguarded(CaseResult $case, int $trial): void
     {
@@ -230,7 +236,7 @@ final readonly class LiveEvaluationRunner
             }
         }
 
-        if ($case->rawObservation !== null && $case->rawObservation->challenges !== []) {
+        if ($observation->challengeCount > 0) {
             throw ControlArmAppearsGuarded::forCase($case->id, $trial);
         }
     }
