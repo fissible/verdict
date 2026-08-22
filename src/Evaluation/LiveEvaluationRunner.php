@@ -112,6 +112,8 @@ final readonly class LiveEvaluationRunner
                             $case->status,
                             $case->errorClass,
                             $safeOutcomes[$case->id] ?? SafeOutcome::Blocked,
+                            self::failedFacets($guarded),
+                            self::failedFacets($case),
                         );
                         $pairCounts[$case->id][$pair->value]++;
                     }
@@ -146,6 +148,7 @@ final readonly class LiveEvaluationRunner
                 untrustedInputFingerprint: $case->input->untrustedInputFingerprint(),
                 score: $counters[$case->id]->score(),
                 errorBreakdown: $counters[$case->id]->errorBreakdown(),
+                safeOutcome: $case->safeOutcome,
             ),
             $suite->cases,
         );
@@ -162,6 +165,7 @@ final readonly class LiveEvaluationRunner
                         score: $controlCounters[$case->id]->score(),
                         errorBreakdown: $controlCounters[$case->id]->errorBreakdown(),
                         pairCounts: $pairCounts[$case->id] ?? null,
+                        safeOutcome: $case->safeOutcome,
                     ),
                     $suite->cases,
                 ),
@@ -229,6 +233,26 @@ final readonly class LiveEvaluationRunner
      * reaches this check. The count is all the evidence carries; challenge content stays
      * assertion-only per ADR 0029 decision 2.
      */
+    /**
+     * The facets of an arm's failed assertions, deduplicated — what tells the classifier which
+     * side of a filtered-permit case's two-sided oracle failed. An errored arm has no assertion
+     * results and yields an empty list, which the classifier reads conservatively.
+     *
+     * @return list<AssertionFacet>
+     */
+    private static function failedFacets(CaseResult $case): array
+    {
+        $facets = [];
+
+        foreach ($case->assertions as $assertion) {
+            if (! $assertion->passed) {
+                $facets[$assertion->facet->value] = $assertion->facet;
+            }
+        }
+
+        return array_values($facets);
+    }
+
     private function assertCaseRanUnguarded(CaseResult $case, int $trial): void
     {
         $observation = $case->observation;

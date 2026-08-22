@@ -51,6 +51,7 @@ final readonly class LiveEvaluationReport implements JsonSerializable
         return [
             'id' => $case->id,
             'purpose' => $case->purpose->value,
+            'safe_outcome' => $case->safeOutcome->value,
             'score' => $this->scoreArray($case->score),
             'coverage' => [
                 'evaluated' => $coverage->evaluated,
@@ -108,6 +109,7 @@ final readonly class LiveEvaluationReport implements JsonSerializable
             'id' => $case->id,
             'version' => $case->version,
             'purpose' => $case->purpose->value,
+            'safe_outcome' => $case->safeOutcome->value,
             'trusted_setup_fingerprint' => $case->trustedSetupFingerprint,
             'untrusted_input_fingerprint' => $case->untrustedInputFingerprint,
             'score' => $this->scoreArray($case->score),

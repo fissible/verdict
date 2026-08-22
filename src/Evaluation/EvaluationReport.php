@@ -133,6 +133,9 @@ final readonly class EvaluationReport implements JsonSerializable
             'id' => $case->id,
             'version' => $case->version,
             'purpose' => $case->purpose->value,
+            // Additive to the v1 schema: the declared safe-outcome shape determines how a pair
+            // classifies, so a report that omitted it would leave a self_declined count ambiguous.
+            'safe_outcome' => $case->safeOutcome->value,
             'status' => $case->status->value,
             'trusted_setup_fingerprint' => $case->trustedSetupFingerprint,
             'untrusted_input_fingerprint' => $case->untrustedInputFingerprint,
