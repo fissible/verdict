@@ -5,6 +5,8 @@ name: Scorecard supply-chain security
 # pinned by commit SHA like every other workflow in this repo.
 
 on:
+  # Manual re-run from the Actions tab or `gh workflow run scorecard.yml`.
+  workflow_dispatch:
   # Re-run when branch-protection settings change, since Scorecard scores them.
   branch_protection_rule:
   schedule:
