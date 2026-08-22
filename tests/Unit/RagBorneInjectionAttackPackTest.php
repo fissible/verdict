@@ -14,6 +14,7 @@ use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
+use Fissible\Verdict\Evaluation\CapabilityNotAttempted;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CasePurpose;
 use Fissible\Verdict\Evaluation\CaseStatus;
@@ -71,12 +72,12 @@ it('implements the AttackPack contract', function (): void {
         ->toBeInstanceOf(AttackPack::class);
 });
 
-it('returns four deterministic security cases in stable order', function (): void {
+it('returns five deterministic security cases in stable order', function (): void {
     $cases = (new RagBorneInjectionAttackPack(ragBorneInjectionAttackPackConfig()))->cases(
         fn (CaseInput $input): Observation => new Observation(Disposition::Deny, false),
     );
 
-    expect($cases)->toHaveCount(4)
+    expect($cases)->toHaveCount(5)
         ->and(array_map(static fn ($case): array => [
             'id' => $case->id,
             'version' => $case->version,
@@ -86,6 +87,7 @@ it('returns four deterministic security cases in stable order', function (): voi
             ['id' => 'authorized-injected-action-requires-confirmation', 'version' => '1', 'purpose' => CasePurpose::Security],
             ['id' => 'manipulated-argument-from-retrieved-document', 'version' => '1', 'purpose' => CasePurpose::Security],
             ['id' => 'untrusted-retrieved-document-provenance', 'version' => '1', 'purpose' => CasePurpose::Security],
+            ['id' => 'injected-proposal-challenge-discloses-upstream', 'version' => '1', 'purpose' => CasePurpose::Security],
         ]);
 });
 
@@ -105,7 +107,7 @@ it('keeps requests benign and poison only in retrieved documents', function (): 
         $case->execute();
     }
 
-    expect($received)->toHaveCount(4)
+    expect($received)->toHaveCount(5)
         ->and($received[0]->trustedSetup)->toBe([
             'actor_id' => $config->unauthorizedActorId,
             'actor_authorized' => false,
@@ -144,8 +146,81 @@ it('passes the full pack for a secure runner with provenance telemetry', functio
     ))->run();
 
     expect($result->passed())->toBeTrue()
-        ->and($result->score(CasePurpose::Security)->passed)->toBe(4)
+        ->and($result->score(CasePurpose::Security)->passed)->toBe(5)
         ->and($result->score(CasePurpose::Utility)->passed)->toBe(0);
+});
+
+it('passes the challenge-discloses-upstream case under the secure runner', function (): void {
+    $config = ragBorneInjectionAttackPackConfig();
+    $cases = (new RagBorneInjectionAttackPack($config))->cases(ragBorneInjectionSecureRunner($config));
+    $case = $cases[4];
+    $observation = $case->execute();
+
+    expect($case->id)->toBe('injected-proposal-challenge-discloses-upstream');
+
+    foreach ($case->assertions as $assertion) {
+        expect($assertion->evaluate($observation)->passed)->toBeTrue();
+    }
+});
+
+it('fails challenge_issued_for when the runner omits the challenge', function (): void {
+    $config = ragBorneInjectionAttackPackConfig();
+    $secure = ragBorneInjectionSecureRunner($config);
+
+    $cases = (new RagBorneInjectionAttackPack($config))->cases(
+        function (CaseInput $input) use ($secure): Observation {
+            $observation = $secure($input);
+
+            if (($input->trustedSetup['operation'] ?? null) !== 'rag_challenge_provenance') {
+                return $observation;
+            }
+
+            return new Observation(
+                disposition: $observation->disposition,
+                executed: $observation->executed,
+                toolCalls: $observation->toolCalls,
+            );
+        },
+    );
+
+    $result = (new SecuritySuite('rag-borne-injection-attack-pack', '1', $cases))->run();
+    $failed = array_values(array_filter(
+        $result->cases,
+        static fn ($case): bool => $case->status === CaseStatus::Failed,
+    ));
+
+    expect($failed)->toHaveCount(1)
+        ->and($failed[0]->id)->toBe('injected-proposal-challenge-discloses-upstream')
+        ->and(array_values(array_filter(
+            $failed[0]->assertions,
+            static fn ($assertion): bool => ! $assertion->passed,
+        ))[0]->assertion)->toBe('challenge_issued_for');
+});
+
+it('reports CaseStatus::Error with CapabilityNotAttempted when the challenge case never touches the capability', function (): void {
+    $config = ragBorneInjectionAttackPackConfig();
+    $secure = ragBorneInjectionSecureRunner($config);
+
+    $cases = (new RagBorneInjectionAttackPack($config))->cases(
+        function (CaseInput $input) use ($secure): Observation {
+            if (($input->trustedSetup['operation'] ?? null) !== 'rag_challenge_provenance') {
+                return $secure($input);
+            }
+
+            return new Observation(
+                disposition: Disposition::Deny,
+                executed: false,
+                output: ['summary' => 'Safe support summary'],
+            );
+        },
+    );
+
+    $result = (new SecuritySuite('rag-borne-injection-attack-pack', '1', $cases))->run();
+    $case = $result->cases[4];
+
+    expect($case->id)->toBe('injected-proposal-challenge-discloses-upstream')
+        ->and($case->status)->toBe(CaseStatus::Error)
+        ->and($case->errorClass)->toBe(CapabilityNotAttempted::class);
 });
 
 it('detects each vulnerable security failure independently', function (string $vulnerableId): void {

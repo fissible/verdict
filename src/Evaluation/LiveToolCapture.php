@@ -11,12 +11,40 @@ final class LiveToolCapture
     /** @var list<ToolObservation> */
     private array $calls = [];
 
+    /** @var list<ToolObservation> */
+    private array $preflightAttempts = [];
+
     /** @var list<string> */
     private array $sideEffects = [];
 
+    /** @var list<ChallengeObservation> */
+    private array $challenges = [];
+
+    private ?string $invocationId = null;
+
+    /**
+     * A tool call that reached `handle()`. Recorded in the order the tools actually ran.
+     */
     public function record(string $capability, string $argumentFingerprint, ?Disposition $disposition, bool $executed): void
     {
         $this->calls[] = new ToolObservation($capability, $argumentFingerprint, $disposition, $executed);
+    }
+
+    /**
+     * A tool call observed at the approval preflight — it never reached `handle()`, because the
+     * challenge it issued paused the run.
+     *
+     * Kept in its own list rather than appended to the handle-path records because the two are
+     * written in the opposite order to the one they happen in.
+     * `TextGenerationLoop::approvalAwareToolResults()` runs `approvalForTool()` — and therefore
+     * this preflight — for EVERY tool call in a step before executing any of the step's non-gated
+     * tools. So a gated attempt is always captured before the same step's executions, even though
+     * the pause it produced is what ends the step and, in a single-shot trial, the run.
+     * {@see toolObservations()} restores execution order.
+     */
+    public function recordPreflightAttempt(string $capability, string $argumentFingerprint, ?Disposition $disposition, bool $executed): void
+    {
+        $this->preflightAttempts[] = new ToolObservation($capability, $argumentFingerprint, $disposition, $executed);
     }
 
     public function recordSideEffect(string $effect): void
@@ -27,23 +55,57 @@ final class LiveToolCapture
     public function reset(): void
     {
         $this->calls = [];
+        $this->preflightAttempts = [];
         $this->sideEffects = [];
+        $this->challenges = [];
+        $this->invocationId = null;
     }
 
+    /**
+     * Both lists count. A run that paused before any tool could execute captured an attempt, not
+     * nothing — reading it as empty would report a gate that fired as `ModelDeclinedToAct`.
+     */
     public function isEmpty(): bool
     {
-        return $this->calls === [];
+        return $this->calls === [] && $this->preflightAttempts === [];
     }
 
-    /** @return list<ToolObservation> */
+    /**
+     * Every observed tool call, in execution order: the handle-path records first, then the
+     * preflight attempts. A challenge-backed attempt is terminal in execution order even though
+     * it was captured first — see {@see recordPreflightAttempt()}.
+     *
+     * @return list<ToolObservation>
+     */
     public function toolObservations(): array
     {
-        return $this->calls;
+        return [...$this->calls, ...$this->preflightAttempts];
     }
 
     /** @return list<string> */
     public function sideEffects(): array
     {
         return $this->sideEffects;
+    }
+
+    public function recordChallenge(ChallengeObservation $challenge): void
+    {
+        $this->challenges[] = $challenge;
+    }
+
+    /** @return list<ChallengeObservation> */
+    public function challenges(): array
+    {
+        return $this->challenges;
+    }
+
+    public function recordInvocationId(string $invocationId): void
+    {
+        $this->invocationId = $invocationId;
+    }
+
+    public function invocationId(): ?string
+    {
+        return $this->invocationId;
     }
 }

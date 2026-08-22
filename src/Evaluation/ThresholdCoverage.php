@@ -15,13 +15,24 @@ namespace Fissible\Verdict\Evaluation;
  * Three populations, deliberately separated:
  *
  * - **evaluated** — passed or failed. The observations a pass rate is computed from.
- * - **measurable but unmeasured** — the model declined, never attempted the capability, the harness
- *   could not observe the outcome, or the error was uncategorized. Each of these *could* have been a
- *   measurement on a different run, and their presence is what erodes a verdict's support.
+ * - **measurable but unmeasured** — the model declined, never attempted the capability, paused on an
+ *   approval challenge nobody answered (`awaiting_approval`), the harness could not observe the
+ *   outcome, or the error was uncategorized. Each of these *could* have been a measurement on a
+ *   different run, and their presence is what erodes a verdict's support.
  * - **structurally unavailable** — cases that cannot be measured live at all (`not_expressible`) or
  *   were blocked on an unlanded dependency (`pending`). These are permanent properties of the suite,
  *   not signals about this run, so counting them against coverage would make a suite containing any
  *   such case permanently insufficient.
+ *
+ * `awaiting_approval` sits in the second bucket rather than the third, and that placement is the
+ * load-bearing distinction. The consequence of a pause is harness-shaped — a single-shot harness
+ * cannot answer the challenge — but *whether a given trial pauses at all* is per-trial and
+ * model-dependent, so it is not a permanent property of the suite the way `not_expressible` is.
+ * Counting it structurally would waive ADR 0022's per-case floor for any case that ever paused. A
+ * harness that cannot resume approvals should declare its execution-asserting gated cases up front
+ * — `pending()`, or not live-expressible — which is how a case claims the structural exemption
+ * honestly. The category is kept distinct from `not_expressible` so an answer-and-resume harness
+ * can reclassify it later without touching the taxonomy — see ADR 0029.
  *
  * See [ADR 0021](../../docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md).
  */
@@ -52,19 +63,27 @@ final readonly class ThresholdCoverage
         }
 
         // Pending is a case status rather than an error category, so it is carried on the Score.
-        $structural = ($errorBreakdown[LiveErrorCategory::NotExpressible->value] ?? 0) + $score->pending;
+        $structural = ($errorBreakdown[LiveErrorCategory::NotExpressible->value] ?? 0)
+            + $score->pending;
 
         return new self($score->evaluated(), $unmeasured, $structural, $blind);
     }
 
     /**
-     * An outcome where **the model** could have acted and did not.
+     * An outcome this run could have measured and did not.
      *
      * `not_expressible` is deliberately absent: a case that cannot be expressed against a live agent
      * will never produce an observation no matter how the run goes. So are the harness-blind
      * categories — see {@see harnessBlindCategories()} and
      * [ADR 0024](../../docs/adr/0024-integrity-is-gated-before-coverage.md). Pooling the two is what
      * made a blinded run indistinguishable from an uncooperative model in #183.
+     *
+     * `awaiting_approval` IS present, and that is the one entry here whose cause is not the model
+     * choosing not to act: the pause is a consequence of today's single-shot harness shape. It is
+     * counted anyway because it is per-trial — the same case may measure cleanly on a trial where
+     * the model never reaches the gated capability — so it erodes coverage the way a decline does
+     * rather than exempting the case permanently. A harness that genuinely cannot resume approvals
+     * declares such cases `pending()` or not live-expressible instead. See ADR 0029.
      *
      * @return list<LiveErrorCategory>
      */
@@ -73,6 +92,7 @@ final readonly class ThresholdCoverage
         return [
             LiveErrorCategory::Declined,
             LiveErrorCategory::NotAttempted,
+            LiveErrorCategory::AwaitingApproval,
         ];
     }
 

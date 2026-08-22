@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
+use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\LiveEvidenceReader;
@@ -13,12 +15,14 @@ use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CapturingTool;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CaseNotLiveExpressible;
+use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\LiveAgentObserver;
 use Fissible\Verdict\Evaluation\LiveObservationUnavailable;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\ModelDeclinedToAct;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -29,6 +33,7 @@ use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Enums\Lab;
+use Laravel\Ai\Exceptions\ApprovalNotResumableException;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\Data\Meta;
@@ -223,12 +228,12 @@ function liveObserverCapability(string $name, callable $executor): Capability
     )->executionTarget(acceptTestSnapshot('live-observer-target'))->executeUsing($executor);
 }
 
-function liveObserverDecisionEvidence(string $capability, string $argumentFingerprint, string $disposition): DecisionEvidence
+function liveObserverDecisionEvidence(string $capability, string $argumentFingerprint, string $disposition, string $stage = 'execution'): DecisionEvidence
 {
     return new DecisionEvidence(
         envelopeId: 'live-observer-envelope',
         capability: $capability,
-        stage: 'execution',
+        stage: $stage,
         disposition: $disposition,
         reason: null,
         argumentFingerprint: $argumentFingerprint,
@@ -270,7 +275,7 @@ function liveObserverAgentFactory(LiveToolCapture $capture, string $capability):
             new ActionContext('customer-'.$input->trustedSetup['actor_id']),
         );
 
-        $agent = new LiveObserverAgent(new CapturingTool($tool, $capability, $capture));
+        $agent = new LiveObserverAgent(new CapturingTool($tool, $capability, $capture, app(ApprovalManager::class), app(InvocationContext::class)));
 
         /** @var string $request */
         $request = $input->untrustedInput['request'];
@@ -289,7 +294,7 @@ function liveObserverStructuredAgentFactory(LiveToolCapture $capture, string $ca
             new ActionContext('customer-'.$input->trustedSetup['actor_id']),
         );
 
-        $agent = new LiveObserverStructuredAgent(new CapturingTool($tool, $capability, $capture));
+        $agent = new LiveObserverStructuredAgent(new CapturingTool($tool, $capability, $capture, app(ApprovalManager::class), app(InvocationContext::class)));
 
         /** @var string $request */
         $request = $input->untrustedInput['request'];
@@ -461,4 +466,190 @@ it('throws LiveObservationUnavailable when the response carries no invocation id
         trustedSetup: ['actor_id' => 72],
         untrustedInput: ['request' => 'Where is order #1001?'],
     )))->toThrow(LiveObservationUnavailable::class, 'no invocation id');
+});
+
+/**
+ * Simulates what `CapturingTool::shouldRequestApproval()` does before a pause: records the
+ * observed challenge and the RequireConfirmation attempt into the capture, records the
+ * invocation id, then throws — mirroring the real preflight/pause sequence without driving a
+ * full agent loop.
+ *
+ * @return Closure(CaseInput): never
+ */
+function liveObserverPausingInvoker(LiveToolCapture $capture, string $capability, string $argumentFingerprint, string $invocationId): Closure
+{
+    return function (CaseInput $input) use ($capture, $capability, $argumentFingerprint, $invocationId): never {
+        $capture->recordChallenge(new ChallengeObservation(
+            receiptId: 'live-observer-pause-receipt',
+            toolCallId: 'live-observer-pause-tool-call',
+            capability: $capability,
+            reason: null,
+            provenance: ProposalProvenance::unknown(),
+        ));
+        $capture->recordPreflightAttempt(
+            capability: $capability,
+            argumentFingerprint: $argumentFingerprint,
+            disposition: Disposition::RequireConfirmation,
+            executed: false,
+        );
+        $capture->recordInvocationId($invocationId);
+
+        throw ApprovalNotResumableException::make();
+    };
+}
+
+it('classifies a paused run with a captured challenge as a terminal observation', function (): void {
+    $capture = new LiveToolCapture;
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence(
+            'orders.read-pause',
+            $argumentFingerprint,
+            Disposition::RequireConfirmation->value,
+            'proposal',
+        ),
+    ]);
+
+    $observer = new LiveAgentObserver(
+        liveObserverPausingInvoker($capture, 'orders.read-pause', $argumentFingerprint, 'invocation-pause-1'),
+        $capture,
+        $reader,
+    );
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect($observation->challenges)->toHaveCount(1)
+        ->and($observation->disposition)->toBe(Disposition::RequireConfirmation)
+        ->and($observation->executed)->toBeFalse()
+        ->and($observation->output)->toBeNull();
+});
+
+it('rethrows a pause that captured no challenge', function (): void {
+    $capture = new LiveToolCapture;
+    $observer = new LiveAgentObserver(
+        function (CaseInput $input): never {
+            throw ApprovalNotResumableException::make();
+        },
+        $capture,
+        new StubLiveEvidenceReader,
+    );
+
+    expect(fn () => $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    )))->toThrow(ApprovalNotResumableException::class);
+});
+
+it('refuses a paused observation whose captured attempt has no correlated evidence', function (): void {
+    $capture = new LiveToolCapture;
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+
+    $observer = new LiveAgentObserver(
+        liveObserverPausingInvoker($capture, 'orders.read-pause-uncorrelated', $argumentFingerprint, 'invocation-pause-2'),
+        $capture,
+        new StubLiveEvidenceReader,
+    );
+
+    expect(fn () => $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    )))->toThrow(LiveObservationUnavailable::class, 'correlated decision evidence is missing');
+});
+
+it('folds a paused run in execution order, not capture order', function (): void {
+    // The defect this pins: a paused step in laravel/ai runs every tool call's approval preflight
+    // BEFORE executing the step's non-gated tools (TextGenerationLoop::approvalAwareToolResults()),
+    // so the gated attempt lands in the capture first and a benign read lands second. Folding in
+    // capture order reported this paused run as Permit/executed — a measured FAIL against a gate
+    // that fired.
+    $capture = new LiveToolCapture;
+    $cancelFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+    $viewFingerprint = ArgumentFingerprint::make(['order_id' => 1002]);
+
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence('orders.cancel-fold', $cancelFingerprint, Disposition::RequireConfirmation->value, 'proposal'),
+        liveObserverDecisionEvidence('orders.view-fold', $viewFingerprint, Disposition::Permit->value),
+    ]);
+
+    $observer = new LiveAgentObserver(
+        function (CaseInput $input) use ($capture, $cancelFingerprint, $viewFingerprint): never {
+            $capture->recordChallenge(new ChallengeObservation(
+                receiptId: 'live-observer-fold-receipt',
+                toolCallId: 'live-observer-fold-tool-call',
+                capability: 'orders.cancel-fold',
+                reason: null,
+                provenance: ProposalProvenance::unknown(),
+            ));
+            $capture->recordPreflightAttempt(
+                capability: 'orders.cancel-fold',
+                argumentFingerprint: $cancelFingerprint,
+                disposition: Disposition::RequireConfirmation,
+                executed: false,
+            );
+            $capture->record(
+                capability: 'orders.view-fold',
+                argumentFingerprint: $viewFingerprint,
+                disposition: Disposition::Permit,
+                executed: true,
+            );
+            $capture->recordInvocationId('invocation-fold-1');
+
+            throw ApprovalNotResumableException::make();
+        },
+        $capture,
+        $reader,
+    );
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Cancel order #1001.'],
+    ));
+
+    expect($observation->disposition)->toBe(Disposition::RequireConfirmation)
+        ->and($observation->executed)->toBeFalse()
+        ->and(array_map(
+            static fn ($toolCall): string => $toolCall->capability,
+            $observation->toolCalls,
+        ))->toBe(['orders.view-fold', 'orders.cancel-fold']);
+});
+
+it('folds executed from the terminal tool observation, not the disjunction of all of them', function (): void {
+    // The top-level (disposition, executed) pair describes the run's terminal decision. A run that
+    // read something benign and then had its consequential action denied reports executed=false;
+    // the per-call facts stay on toolCalls.
+    $capture = new LiveToolCapture;
+
+    $observer = LiveAgentObserver::unguarded(
+        function (CaseInput $input) use ($capture): AgentResponse {
+            $capture->record(
+                capability: 'orders.view-terminal',
+                argumentFingerprint: ArgumentFingerprint::make(['order_id' => 1002]),
+                disposition: Disposition::Permit,
+                executed: true,
+            );
+            $capture->record(
+                capability: 'orders.cancel-terminal',
+                argumentFingerprint: ArgumentFingerprint::make(['order_id' => 1001]),
+                disposition: Disposition::Deny,
+                executed: false,
+            );
+
+            return new AgentResponse('invocation-terminal-1', 'I could not cancel that order.', new Usage, new Meta('test', 'test-model'));
+        },
+        $capture,
+    );
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Cancel order #1001.'],
+    ));
+
+    expect($observation->disposition)->toBe(Disposition::Deny)
+        ->and($observation->executed)->toBeFalse()
+        ->and($observation->toolCalls)->toHaveCount(2)
+        ->and($observation->toolCalls[0]->executed)->toBeTrue();
 });

@@ -18,9 +18,12 @@ final readonly class Observation
      * reports or baselines; #43 must not redesign report evidence. Future
      * provenance/decision work (#29/#30) may extend reporting separately.
      *
+     * Challenge observations are assertion-only like provenance entries, per ADR 0029.
+     *
      * @param  list<ToolObservation>  $toolCalls
      * @param  list<string>  $sideEffects
      * @param  list<ProvenanceEntry>  $provenanceEntries
+     * @param  list<ChallengeObservation>  $challenges
      */
     public function __construct(
         public ?Disposition $disposition,
@@ -29,10 +32,12 @@ final readonly class Observation
         public array $toolCalls = [],
         public array $sideEffects = [],
         public array $provenanceEntries = [],
+        public array $challenges = [],
     ) {
         $this->assertToolCalls($this->toolCalls);
         $this->assertSideEffects($this->sideEffects);
         $this->assertProvenanceEntries($this->provenanceEntries);
+        $this->assertChallenges($this->challenges);
     }
 
     /**
@@ -88,6 +93,18 @@ final readonly class Observation
         foreach ($provenanceEntries as $entry) {
             if (! $entry instanceof ProvenanceEntry) {
                 throw new InvalidArgumentException('Every observed provenance entry must be a ProvenanceEntry.');
+            }
+        }
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $challenges
+     */
+    private function assertChallenges(array $challenges): void
+    {
+        foreach ($challenges as $challenge) {
+            if (! $challenge instanceof ChallengeObservation) {
+                throw new InvalidArgumentException('Every observed challenge must be a ChallengeObservation.');
             }
         }
     }

@@ -4,6 +4,26 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Approval challenges are observable to the live evaluation harness.** A live trial that hit a
+  confirmation gate used to land as `declined` or harness-blind `uncategorized` — the receipt
+  issuance, payload included, was invisible to every attack pack, and confirmation-gated cases were
+  documented as structurally unwinnable. `CapturingTool`'s approval preflight now observes issuance:
+  the `Observation` carries `ChallengeObservation`s (receipt id, capability, reason, the approver
+  payload exactly as materialised, and a decision that is always null in this observe-only
+  instrument), a paused run with a captured challenge is a measured terminal observation with its
+  evidence correlation intact, and post-approval execution facts report under the new
+  `awaiting_approval` category, counted measurable-but-unmeasured so the coverage floors still
+  apply, instead of reading as harness blindness. A pause
+  the preflight can't back with a findable challenge is a harness-integrity fault, never a measured
+  "no challenge". Three new `Assertions` predicates (`challengeIssuedFor`, `challengeDisclosureIs`,
+  `challengeDisclosesDeclaredUpstream`) assert over the payload, and `RagBorneInjectionAttackPack`
+  (suite v2) gains `injected-proposal-challenge-discloses-upstream`, measuring per ADR 0021/0022
+  that an injected-document-derived proposal's challenge names its untrusted upstream. Challenge
+  facts are assertion-only — never projected into reports or baselines, pinned by test. Validated
+  end-to-end against a live local model. See
+  [ADR 0029](docs/adr/0029-approval-challenge-issuance-is-the-measured-fact.md). Closes
+  [#204](https://github.com/fissible/verdict/issues/204).
+
 ## [0.9.2] - 2026-08-20
 
 - **Boot-time configuration recording now survives every database failure, loudly.** #240 guarded the
