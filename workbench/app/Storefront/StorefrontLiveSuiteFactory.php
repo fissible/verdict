@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Workbench\App\Storefront;
 
+use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\LiveEvaluationControlArmFactory;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CaseNotLiveExpressible;
+use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
 use Fissible\Verdict\Evaluation\ControlSamplingMode;
 use Fissible\Verdict\Evaluation\LiveAgentObserver;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
@@ -16,7 +18,9 @@ use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\VerdictManager;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Database\Events\QueryExecuted;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use LogicException;
 
@@ -120,12 +124,24 @@ final readonly class StorefrontLiveSuiteFactory implements LiveEvaluationControl
 
         // Resolved after the reset, never captured in a property: these are exactly the instances a
         // reset replaces.
+        // The predicate capture for this build, sunk into this build's LiveToolCapture (#251):
+        // guarded, core opens the window through the lazily-resolved ExecutionWindow binding;
+        // unguarded, UnguardedCapturingTool opens it around every control tool. A fresh listener
+        // per build is registered on the shared dispatcher; captures from earlier builds never
+        // open a window again, so the stale registrations are inert.
+        $predicates = new ConnectionPredicateCapture($capture);
+        $this->app->make(Dispatcher::class)->listen(QueryExecuted::class, $predicates);
+
+        if ($guarded) {
+            $this->app->instance(ExecutionWindow::class, $predicates);
+        }
+
         $recorder = $this->app->make(InMemoryEvidenceRecorder::class);
         $noteChannel = $this->app->make(SupportNoteChannel::class);
         $actions = $this->app->make(ActionLog::class);
         $verdict = $this->app->make(VerdictManager::class);
 
-        $agent = new StorefrontLiveAgent($this->catalog, $capture, $verdict, $config, $actions, $this->sampling, $target, $guarded);
+        $agent = new StorefrontLiveAgent($this->catalog, $capture, $verdict, $config, $actions, $this->sampling, $target, $guarded, $guarded ? null : $predicates);
 
         $agentInvoker = function (CaseInput $input) use ($agent, $noteChannel): StreamableAgentResponse {
             // Sets (or clears) the shared channel `orders.support-notes`' executor reads,

@@ -4,6 +4,30 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **The workbench ships the scope-as-target reference wiring.** The fourth slice of #251 (revised
+  by its review round): `orders.search`, a set-returning storefront lookup registered via
+  `Capability::usingPolicyForContextTarget()` — the guarantee is type-level and evidence-visible
+  (ADR 0025): the resolver receives only the trusted `ActionContext` (the model's arguments, which
+  are the filter the executor applies *inside* the scope, are not even in scope) and every
+  evidence row records `target_source=context`. The resolver returns an `OrderSearchScope` bound
+  to the actor, `OrderSearchScopePolicy` authorizes the scope itself, and the executor applies it
+  as the query predicate over a new database-backed `storefront_orders` fixture — real SQL through
+  a real connection, its digest provably equal to the declared scope shape (structure hand-written
+  as the independent source; identifier quoting from the active grammar, since quoting is the
+  engine's spelling, not the predicate's shape — verified against real MySQL 8 and PostgreSQL 16).
+  Both arms share one `StorefrontOrders::search()` body whose scope argument is their entire
+  difference, with LIKE wildcards escaped so a model-supplied term can only narrow. The control
+  arm's window is harness-level, not per-tool: `UnguardedCapturingTool` — the wrapper every
+  control tool passes through — opens `ConnectionPredicateCapture::around()` with an attribution
+  envelope, and `StorefrontLiveSuiteFactory` now wires the capture into both arms of every trial
+  build, so no mirror can forget to opt in and `executedPredicateNotScopedAs()` measures rather
+  than lands unmeasured. `VerdictManager` resolves its `ExecutionWindow` lazily per execution —
+  binding order no longer matters, removing the boot-ordering trap where a window bound after a
+  provider constructed the manager silently froze as null. The issue's open contract question is
+  answered workbench-only for now: `resolveTarget` returns `mixed`, so core needs no scope marker
+  interface until a second consumer exists. Part of
+  [#251](https://github.com/fissible/verdict/issues/251).
+
 - **A filtered permit is now an expressible safe outcome for attack cases.** The third slice of
   #251 (design amended by its round-5 review): `EvaluationCase::filteredPermitAttack()` declares
   an attack case whose safe outcome is an execution that *succeeds* — the tool runs under guard,

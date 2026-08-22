@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Workbench\App\Providers;
 
+use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
@@ -26,6 +27,7 @@ use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Database\DatabaseManager;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use LogicException;
@@ -33,8 +35,11 @@ use Workbench\App\Storefront\ActionLog;
 use Workbench\App\Storefront\Catalog;
 use Workbench\App\Storefront\Order;
 use Workbench\App\Storefront\OrderPolicy;
+use Workbench\App\Storefront\OrderSearchScope;
+use Workbench\App\Storefront\OrderSearchScopePolicy;
 use Workbench\App\Storefront\StorefrontLiveSampling;
 use Workbench\App\Storefront\StorefrontLiveSuiteFactory;
+use Workbench\App\Storefront\StorefrontOrders;
 use Workbench\App\Storefront\SupportNoteChannel;
 
 final class WorkbenchServiceProvider extends ServiceProvider
@@ -157,6 +162,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
     public function boot(VerdictManager $verdict, Catalog $catalog): void
     {
         Gate::policy(Order::class, OrderPolicy::class);
+        Gate::policy(OrderSearchScope::class, OrderSearchScopePolicy::class);
 
         $verdict->releasePolicy(
             ReleasePolicy::between(
@@ -202,6 +208,44 @@ final class WorkbenchServiceProvider extends ServiceProvider
                 }
 
                 return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
+            }),
+        );
+
+        // The set-returning arm (#251): a search has no single record for the policy to inspect,
+        // so the resolver returns a scope value object bound to the actor and the policy
+        // authorizes the scope. Registered via usingPolicyForContextTarget so the guarantee is
+        // type-level and evidence-visible (ADR 0025): the resolver receives only the trusted
+        // ActionContext — the model's arguments, which are the filter the executor applies INSIDE
+        // the scope, are not even in scope here — and every evidence row records
+        // target_source=context. The tenant filter thereby lives inside the boundary: resolver
+        // code, carried in evidence, and observable at the connection (the executor's real query
+        // is what the predicate capture digests).
+        $verdict->capability(
+            Capability::usingPolicyForContextTarget(
+                name: 'orders.search',
+                ability: 'search',
+                resolveTarget: fn (ActionContext $context): OrderSearchScope => OrderSearchScope::forContext($context),
+            )->executionTarget(ExecutionTargetPolicy::refresh(
+                name: 'storefront-order-search-scope',
+                identityUsing: fn (ActionEnvelope $envelope, OrderSearchScope $scope): array => [
+                    'tenant_id' => $envelope->context->metadata['tenant_id'] ?? null,
+                    'resource_type' => 'order-search-scope',
+                    'customer_id' => $scope->customerId,
+                ],
+                // Deterministic by construction: re-resolving from the same trusted context yields
+                // the same scope, so a mismatch here can only mean the context itself changed.
+                refreshUsing: fn (ActionEnvelope $envelope, OrderSearchScope $scope): OrderSearchScope => OrderSearchScope::forContext($envelope->context),
+            ))->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof OrderSearchScope) {
+                    throw new LogicException('The storefront search capability expected an order-search scope.');
+                }
+
+                // One shared body for both arms; the scope argument is the arms' entire difference.
+                return StorefrontOrders::search(
+                    app(DatabaseManager::class)->connection(),
+                    $action->envelope->proposal->arguments,
+                    $action->target,
+                );
             }),
         );
 

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Evaluation;
 
+use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -27,10 +30,21 @@ use Stringable;
  */
 final class UnguardedCapturingTool implements Tool
 {
+    /**
+     * `$predicates` is the control arm's execution window (#251 round 5): the unguarded path has
+     * no `VerdictManager` to open one, so this wrapper — which every control tool already passes
+     * through — opens it around the inner handler, with an attribution envelope built from the
+     * tool call itself. Wired here at the harness level rather than per tool, so a control tool
+     * cannot forget to opt in; without it a filtered-permit case's control arm captures no
+     * predicates and every trial is structurally unmeasurable. Construct the capture with the
+     * run's `LiveToolCapture` as its sink and captured predicates flow into the observation
+     * exactly as the guarded arm's do.
+     */
     public function __construct(
         private readonly Tool $inner,
         private readonly string $capability,
         private readonly LiveToolCapture $capture,
+        private readonly ?ConnectionPredicateCapture $predicates = null,
     ) {}
 
     /**
@@ -57,7 +71,28 @@ final class UnguardedCapturingTool implements Tool
     {
         // Recorded after the inner handler returns: a tool that threw before doing its work did
         // not execute, and recording it as executed would report a breach that never happened.
-        $result = $this->inner->handle($request);
+        $result = null;
+        $run = function () use (&$result, $request): Stringable|string {
+            return $result = $this->inner->handle($request);
+        };
+
+        if ($this->predicates === null) {
+            $run();
+        } else {
+            $this->predicates->around(
+                ActionEnvelope::wrap(
+                    new ActionProposal($this->capability, $request->all()),
+                    // No trusted actor exists on an unguarded path — which is the point; the
+                    // envelope exists for attribution, not authorization.
+                    new ActionContext('control-arm'),
+                ),
+                $run,
+            );
+        }
+
+        if ($result === null) {
+            throw LiveObservationUnavailable::because('the execution window did not run the control tool');
+        }
 
         $this->capture->record(
             capability: $this->capability,

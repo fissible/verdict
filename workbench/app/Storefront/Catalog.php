@@ -28,4 +28,10 @@ final readonly class Catalog
     {
         return $this->orders[$id] ?? throw TargetNotResolvable::make();
     }
+
+    /** @return list<Order> */
+    public function all(): array
+    {
+        return array_values($this->orders);
+    }
 }
