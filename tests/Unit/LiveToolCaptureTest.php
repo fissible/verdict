@@ -6,6 +6,7 @@ use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
+use Fissible\Verdict\Evaluation\PredicateObservation;
 
 it('records one tool observation per bound-tool call and resets between invocations', function (): void {
     $capture = new LiveToolCapture;
@@ -58,6 +59,29 @@ it('records challenges and the preflight invocation id, and reset clears them', 
 
     expect($capture->challenges())->toBe([])
         ->and($capture->invocationId())->toBeNull();
+});
+
+it('records predicate observations, and reset clears them', function (): void {
+    $capture = new LiveToolCapture;
+    $predicate = PredicateObservation::fromQuery('select * from "orders" where "customer_id" = ?', [7], 'orders.search', str_repeat('a', 64));
+
+    $capture->recordPredicate($predicate);
+
+    expect($capture->predicates())->toBe([$predicate]);
+
+    $capture->reset();
+
+    expect($capture->predicates())->toBe([]);
+});
+
+it('does not count a predicate-only capture as tool activity', function (): void {
+    // isEmpty() gates ModelDeclinedToAct: a captured statement with no captured tool call means
+    // some query ran inside a window, not that the model invoked a bound tool.
+    $capture = new LiveToolCapture;
+
+    $capture->recordPredicate(PredicateObservation::fromQuery('select * from "orders" where "customer_id" = ?', [7], 'orders.search', str_repeat('a', 64)));
+
+    expect($capture->isEmpty())->toBeTrue();
 });
 
 it('orders handle-path records before preflight attempts, and counts both as non-empty', function (): void {

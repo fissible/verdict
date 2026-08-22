@@ -60,8 +60,22 @@ final class PredicateDigest
      */
     public static function for(string $sql, array $bindings): string
     {
+        return self::forNormalized(self::normalize($sql), $bindings);
+    }
+
+    /**
+     * The digest when the caller already holds the normalized statement — one normalization pass
+     * for a capture that also carries the normalized text. The caller's contract is strict: pass
+     * anything but the output of {@see normalize()} and the result is a digest `for()` can never
+     * produce, which the comparison will refuse — a false failure, per the asymmetry policy, never
+     * a false pass.
+     *
+     * @param  list<bool|float|int|string|null>|array<string, bool|float|int|string|null>  $bindings
+     */
+    public static function forNormalized(string $normalizedSql, array $bindings): string
+    {
         return self::SCHEME.':'.hash('sha256', CanonicalJson::encode(
-            ['bindings' => $bindings, 'sql' => self::normalize($sql)],
+            ['bindings' => $bindings, 'sql' => $normalizedSql],
             'predicate digest',
         ));
     }

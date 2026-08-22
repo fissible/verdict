@@ -20,6 +20,8 @@ use Fissible\Verdict\Evaluation\LiveAgentObserver;
 use Fissible\Verdict\Evaluation\LiveObservationUnavailable;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\ModelDeclinedToAct;
+use Fissible\Verdict\Evaluation\PredicateDigest;
+use Fissible\Verdict\Evaluation\PredicateObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\LaravelAi\InvocationContext;
@@ -652,4 +654,50 @@ it('folds executed from the terminal tool observation, not the disjunction of al
         ->and($observation->executed)->toBeFalse()
         ->and($observation->toolCalls)->toHaveCount(2)
         ->and($observation->toolCalls[0]->executed)->toBeTrue();
+});
+
+it('projects captured predicates into the observation', function (): void {
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence('orders.read', ArgumentFingerprint::make(['order_id' => 1001]), Disposition::Permit->value),
+    ]);
+
+    // The observer resets the capture before invoking the agent, so a predicate recorded during
+    // the invocation — as the execution-window seam records them — is what must survive into the
+    // observation.
+    $inner = liveObserverAgentFactory($capture, 'orders.read');
+    $invoker = function (CaseInput $input) use ($inner, $capture) {
+        $response = $inner($input);
+        $capture->recordPredicate(PredicateObservation::fromQuery(
+            'select * from "orders" where "customer_id" = ?',
+            [72],
+            'orders.read',
+            str_repeat('a', 64),
+        ));
+
+        return $response;
+    };
+
+    $observer = new LiveAgentObserver($invoker, $capture, $reader);
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect($observation->predicates)->toHaveCount(1)
+        ->and($observation->predicates[0]->digest)
+        ->toBe(PredicateDigest::for('select * from "orders" where "customer_id" = ?', [72]));
 });
