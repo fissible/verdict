@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Evaluation;
 
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Contracts\ExecutionWindow;
+use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Events\QueryExecuted;
 
 /**
- * Captures the statements a database connection executes during an explicit window, each as a
- * {@see PredicateObservation}.
+ * Captures the statements a database connection executes inside a capability's execution window,
+ * each as a {@see PredicateObservation} attributed to the envelope whose executor ran it.
  *
  * The capture point is the connection, deliberately (#251 round 4). The where-tree a builder holds
  * sits above the last place the predicate can still change: global scopes and soft-delete
@@ -19,45 +23,99 @@ use Illuminate\Database\Events\QueryExecuted;
  * per-path opt-in, and {@see Assertions::executedPredicateObserved()} can treat a digest-less
  * execution as a failing case.
  *
- * Register it on the application's event dispatcher —
- * `$events->listen(QueryExecuted::class, $capture)` — which observes every connection, not one.
- * Statements outside a window are ignored, so registration can be process-long while capture stays
- * scoped to the execution under measurement. Within the window everything is captured, writes
- * included: assertions pick the statement they care about by digest, and filtering here would be a
- * normalization-adjacent judgment this instrument refuses on the same
- * prefer-false-failure grounds as {@see PredicateDigest}.
+ * The window is opened by `VerdictManager` through the {@see ExecutionWindow} seam — around
+ * exactly the executor invocation, so Verdict's own store traffic (evidence, receipts, claims,
+ * rate limits) runs outside it by construction and can never satisfy the presence assertion.
+ * Windows nest: a capability executed from inside another's executor opens an inner frame, each
+ * statement belongs to the innermost open frame, and closing a frame never disarms or absorbs the
+ * one around it.
  *
- * Windows do not nest; this instrument shares `CapturingTool`'s single-shot assumption.
+ * Two capture rules keep the observation honest:
+ *
+ * - **Bindings are digested in prepared form** ({@see Connection::prepareBindings()}) —
+ *   the form the database actually sees. `QueryExecuted` reports raw bindings, where a
+ *   `DateTimeImmutable` would crash canonicalization from inside the event dispatch (after the
+ *   statement already ran), and where `true` digests differently from the `1` the driver was
+ *   handed. The authorized side of the equality comparison must derive its digest from
+ *   prepared-form bindings for the same reason.
+ * - **Pretended statements are ignored**: `QueryExecuted` fires under `Connection::pretend()`,
+ *   but a pretended statement never executed, and an "executed predicate" observation of it would
+ *   be false.
+ *
+ * Within a window everything is captured, writes included: assertions pick the statement they care
+ * about by digest, and filtering here would be a normalization-adjacent judgment this instrument
+ * refuses on the same prefer-false-failure grounds as {@see PredicateDigest}.
+ *
+ * Wiring (both registrations, at harness setup):
+ *
+ * ```php
+ * $events->listen(QueryExecuted::class, $capture);          // observe every connection
+ * $app->instance(ExecutionWindow::class, $capture);         // let core open the windows
+ * ```
+ *
+ * Constructed with a {@see LiveToolCapture} sink, closed frames record straight into the run's
+ * accumulator (the live path); without one, they collect here for `observations()`/`reset()` (the
+ * deterministic path).
  */
-final class ConnectionPredicateCapture
+final class ConnectionPredicateCapture implements ExecutionWindow
 {
+    /**
+     * One frame per open window, innermost last; each holds the prepared statements observed
+     * while it was the innermost.
+     *
+     * @var list<list<array{sql: string, bindings: array<array-key, mixed>}>>
+     */
+    private array $frames = [];
+
     /** @var list<PredicateObservation> */
     private array $observations = [];
 
-    private bool $armed = false;
+    public function __construct(
+        private readonly ?LiveToolCapture $sink = null,
+    ) {}
 
     public function __invoke(QueryExecuted $event): void
     {
-        if (! $this->armed) {
+        if ($this->frames === [] || $event->connection->pretending()) {
             return;
         }
 
-        $this->observations[] = PredicateObservation::fromQuery($event->sql, $event->bindings);
+        $this->frames[array_key_last($this->frames)][] = [
+            'sql' => $event->sql,
+            'bindings' => $event->connection->prepareBindings($event->bindings),
+        ];
     }
 
     /**
-     * Runs `$execution` with capture armed and returns its result. Disarms on the way out even
-     * when the execution throws — a failed executor must not leave the instrument recording
-     * unrelated statements as if they were the execution's.
+     * Closed in a `finally`: the statements that ran before an executor failure are still that
+     * execution's, and leaving the frame open would hand them to whatever runs next.
      */
-    public function window(callable $execution): mixed
+    public function around(ActionEnvelope $envelope, callable $execution): mixed
     {
-        $this->armed = true;
+        $this->frames[] = [];
 
         try {
             return $execution();
         } finally {
-            $this->armed = false;
+            $frame = array_pop($this->frames);
+            $argumentFingerprint = ArgumentFingerprint::make($envelope->proposal->arguments);
+
+            foreach ($frame as $statement) {
+                /** @var array<array-key, bool|float|int|string|null> $bindings */
+                $bindings = $statement['bindings'];
+                $observation = PredicateObservation::fromQuery(
+                    $statement['sql'],
+                    $bindings,
+                    $envelope->proposal->capability,
+                    $argumentFingerprint,
+                );
+
+                if ($this->sink === null) {
+                    $this->observations[] = $observation;
+                } else {
+                    $this->sink->recordPredicate($observation);
+                }
+            }
         }
     }
 
@@ -65,21 +123,6 @@ final class ConnectionPredicateCapture
     public function observations(): array
     {
         return $this->observations;
-    }
-
-    /**
-     * Returns the captured observations and leaves the capture empty. The live decorator drains
-     * after each tool-call window so one call's statements are recorded against that call exactly
-     * once, while the listener registration itself stays process-long.
-     *
-     * @return list<PredicateObservation>
-     */
-    public function drain(): array
-    {
-        $drained = $this->observations;
-        $this->observations = [];
-
-        return $drained;
     }
 
     public function reset(): void

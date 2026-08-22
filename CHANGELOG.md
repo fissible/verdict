@@ -7,15 +7,22 @@ All notable changes to Verdict will be documented in this file.
 - **Executed predicates are observable to the evaluation harness, at the connection.** The second
   slice of the filtered-permit work (#251): `ConnectionPredicateCapture` listens for
   `QueryExecuted` on the application's event dispatcher — below builder-tree inspection, where
-  global scopes, soft-delete constraints, and raw fragments have already entered — and, inside an
-  explicit window, records each statement as a `PredicateObservation` (the scheme-tagged
-  `PredicateDigest` plus the normalized statement; binding values never ride along).
-  `CapturingTool` arms the window around every inner tool execution and drains the result into
-  `LiveToolCapture`, so `Observation` now carries an assertion-only `predicates` list exactly as it
-  carries challenges. The new `Assertions::executedPredicateObserved()` makes digest *presence*
-  itself an assertion, per the decided design: a path that produces no digest is silence, and
-  silence from the instrument is indistinguishable from nothing having run — so a digest-less
-  execution convicts the harness wiring, never the boundary under measurement. Part of
+  global scopes, soft-delete constraints, and raw fragments have already entered — and records each
+  statement as a `PredicateObservation`: the scheme-tagged `PredicateDigest` plus the normalized
+  statement, attributed to the capability and argument fingerprint whose executor ran it, with
+  binding values digested in **prepared form** (the form the database sees — `QueryExecuted`
+  reports raw bindings, where a `DateTimeImmutable` would crash canonicalization and a boolean
+  would digest differently from what the driver was handed). The capture window is opened by core
+  through the new `ExecutionWindow` seam, around exactly the executor invocation, so Verdict's own
+  store traffic (evidence, receipts, claims, rate limits) runs outside it by construction; windows
+  nest, each statement belonging to the innermost frame, and pretended statements — which never
+  executed — are ignored. `Observation` carries the results as an assertion-only `predicates` list
+  exactly as it carries challenges, and the new `Assertions::executedPredicateObserved(?capability)`
+  makes digest *presence* itself an assertion, per the decided design: a path that produces no
+  digest is silence, indistinguishable from nothing having run, so a digest-less execution convicts
+  the harness wiring — and, with the seam outside the boundary's bookkeeping, only the executor
+  reaching the database can satisfy it. Exercised under the real database stores, not only the
+  in-memory test doubles. Part of
   [#251](https://github.com/fissible/verdict/issues/251).
 
 - **A scheme-tagged digest over executed SQL predicates, specified by a widening-mutation suite.**

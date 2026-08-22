@@ -35,6 +35,7 @@ use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
+use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
@@ -474,6 +475,11 @@ final class VerdictServiceProvider extends ServiceProvider
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
                 events: $app->make(Dispatcher::class),
                 nullRecorderWarning: $app->make(NullRecorderWarning::class),
+                // Resolved only when an application (in practice: an evaluation harness) has bound
+                // one — production deployments never pay for the seam they don't use.
+                executionWindow: $app->bound(ExecutionWindow::class)
+                    ? $app->make(ExecutionWindow::class)
+                    : null,
             );
         });
     }

@@ -675,7 +675,7 @@ it('projects captured predicates into the observation', function (): void {
     ]);
 
     // The observer resets the capture before invoking the agent, so a predicate recorded during
-    // the invocation — as the CapturingTool window records them — is what must survive into the
+    // the invocation — as the execution-window seam records them — is what must survive into the
     // observation.
     $inner = liveObserverAgentFactory($capture, 'orders.read');
     $invoker = function (CaseInput $input) use ($inner, $capture) {
@@ -683,6 +683,8 @@ it('projects captured predicates into the observation', function (): void {
         $capture->recordPredicate(PredicateObservation::fromQuery(
             'select * from "orders" where "customer_id" = ?',
             [72],
+            'orders.read',
+            str_repeat('a', 64),
         ));
 
         return $response;

@@ -47,18 +47,12 @@ use Stringable;
  */
 final class CapturingTool implements Approvable, Tool
 {
-    /**
-     * `$predicates` is optional because only cases that assert over executed predicates (#251) pay
-     * the capture cost — but when present, the window is armed around every inner execution, so
-     * digest presence is structural for the whole run rather than opt-in per executor path.
-     */
     public function __construct(
         private readonly Approvable&Tool $inner,
         private readonly string $capability,
         private readonly LiveToolCapture $capture,
         private readonly ApprovalManager $approvals,
         private readonly InvocationContext $invocations,
-        private readonly ?ConnectionPredicateCapture $predicates = null,
     ) {}
 
     public function name(): string
@@ -79,20 +73,7 @@ final class CapturingTool implements Approvable, Tool
 
     public function handle(Request $request): Stringable|string
     {
-        if ($this->predicates === null) {
-            $result = $this->inner->handle($request);
-        } else {
-            try {
-                $result = $this->predicates->window(fn (): Stringable|string => $this->inner->handle($request));
-            } finally {
-                // Drained even when the inner tool throws: the statements that ran before the
-                // failure are still this call's, and leaving them behind would attribute them to
-                // the next call's window.
-                foreach ($this->predicates->drain() as $predicate) {
-                    $this->capture->recordPredicate($predicate);
-                }
-            }
-        }
+        $result = $this->inner->handle($request);
         $decoded = json_decode((string) $result, true);
         $notExecuted = is_array($decoded) && ($decoded['status'] ?? null) === 'not_executed';
 

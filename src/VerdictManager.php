@@ -21,6 +21,7 @@ use Fissible\Verdict\Context\PendingContextRelease;
 use Fissible\Verdict\Context\ReleasePolicy;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\EvidenceWriter;
+use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
@@ -70,6 +71,7 @@ final readonly class VerdictManager
         private string $deniedMessage,
         private Dispatcher $events,
         private NullRecorderWarning $nullRecorderWarning,
+        private ?ExecutionWindow $executionWindow = null,
     ) {}
 
     public function capability(Capability $capability): self
@@ -416,7 +418,16 @@ final readonly class VerdictManager
         }
 
         try {
-            $output = $executor($admission);
+            // The one place an executor runs, and therefore the one place the window opens: store
+            // traffic before this line (claims, rate limits, evidence) and after it (finalization)
+            // stays outside, which is what lets the evaluation harness treat a captured statement
+            // as the executor's. See Contracts\ExecutionWindow.
+            $output = $this->executionWindow === null
+                ? $executor($admission)
+                : $this->executionWindow->around(
+                    $evaluation->envelope,
+                    static fn (): mixed => $executor($admission),
+                );
         } catch (Throwable $executionFailure) {
             if ($admission !== null) {
                 try {

@@ -474,14 +474,25 @@ final class Assertions
      * "no X occurred". So absence fails, structurally: an execution whose capture window recorded
      * nothing convicts the harness wiring (listener not registered, window not armed), never the
      * boundary under measurement.
+     *
+     * Name a capability to scope the requirement: a run that calls two tools must not let one
+     * capability's captured statements satisfy presence for the other.
      */
-    public static function executedPredicateObserved(): ObservationAssertion
+    public static function executedPredicateObserved(?string $capability = null): ObservationAssertion
     {
         return new CallbackAssertion(
             name: 'executed_predicate_observed',
-            test: fn (Observation $observation): bool => $observation->predicates !== [],
+            test: function (Observation $observation) use ($capability): bool {
+                foreach ($observation->predicates as $predicate) {
+                    if ($capability === null || $predicate->capability === $capability) {
+                        return true;
+                    }
+                }
+
+                return false;
+            },
             failureMessage: 'No executed predicate was captured: either the executor never reached the database, '
-                .'or the connection listener is not wired into the capture window.',
+                .'or the execution window is not wired into the capture.',
         );
     }
 

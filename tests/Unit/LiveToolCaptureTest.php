@@ -63,7 +63,7 @@ it('records challenges and the preflight invocation id, and reset clears them', 
 
 it('records predicate observations, and reset clears them', function (): void {
     $capture = new LiveToolCapture;
-    $predicate = PredicateObservation::fromQuery('select * from "orders" where "customer_id" = ?', [7]);
+    $predicate = PredicateObservation::fromQuery('select * from "orders" where "customer_id" = ?', [7], 'orders.search', str_repeat('a', 64));
 
     $capture->recordPredicate($predicate);
 
@@ -79,7 +79,7 @@ it('does not count a predicate-only capture as tool activity', function (): void
     // some query ran inside a window, not that the model invoked a bound tool.
     $capture = new LiveToolCapture;
 
-    $capture->recordPredicate(PredicateObservation::fromQuery('select * from "orders" where "customer_id" = ?', [7]));
+    $capture->recordPredicate(PredicateObservation::fromQuery('select * from "orders" where "customer_id" = ?', [7], 'orders.search', str_repeat('a', 64)));
 
     expect($capture->isEmpty())->toBeTrue();
 });

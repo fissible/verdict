@@ -9,42 +9,68 @@ use Fissible\Verdict\Evaluation\PredicateDigest;
 use Fissible\Verdict\Evaluation\PredicateObservation;
 
 /**
- * The observed side of the filtered-permit comparison (#251): each statement the connection
- * listener captures becomes a `PredicateObservation` — the scheme-tagged digest plus the
- * normalized statement, never the binding values. Presence is itself an assertion: per the
- * decided design, an execution with no captured digest is a failing case, because silence from
- * the instrument is indistinguishable from nothing having run.
+ * The observed side of the filtered-permit comparison (#251): each statement the execution window
+ * captures becomes a `PredicateObservation` — attributed to the capability and argument
+ * fingerprint whose executor ran it, carrying the scheme-tagged digest plus the normalized
+ * statement, never the binding values. Presence is itself an assertion: per the decided design,
+ * an execution with no captured digest is a failing case, because silence from the instrument is
+ * indistinguishable from nothing having run.
  */
+function anObservedPredicate(string $capability = 'orders.search', string $sql = 'select * from "orders" where "customer_id" = ?'): PredicateObservation
+{
+    return PredicateObservation::fromQuery($sql, [7], $capability, str_repeat('a', 64));
+}
 
 // --- The value object ---------------------------------------------------------------------------
 
-it('derives digest and normalized sql from the executed query', function (): void {
+it('derives digest and normalized sql from the executed query, attributed to its execution', function (): void {
     $observation = PredicateObservation::fromQuery(
         "select *\n  from \"orders\" where \"customer_id\" = ?",
         [7],
+        'orders.search',
+        str_repeat('a', 64),
     );
 
     expect($observation->digest)
         ->toBe(PredicateDigest::for('select * from "orders" where "customer_id" = ?', [7]))
-        ->and($observation->sql)->toBe('select * from "orders" where "customer_id" = ?');
+        ->and($observation->sql)->toBe('select * from "orders" where "customer_id" = ?')
+        ->and($observation->capability)->toBe('orders.search')
+        ->and($observation->argumentFingerprint)->toBe(str_repeat('a', 64));
 });
 
+it('rejects an empty capability', function (): void {
+    PredicateObservation::fromQuery('select 1', [], '  ', str_repeat('a', 64));
+})->throws(InvalidArgumentException::class);
+
+it('rejects a malformed argument fingerprint', function (): void {
+    PredicateObservation::fromQuery('select 1', [], 'orders.search', 'not-a-fingerprint');
+})->throws(InvalidArgumentException::class);
+
 it('rejects a digest that does not carry the scheme tag', function (): void {
-    new PredicateObservation(hash('sha256', 'bare'), 'select 1');
+    new PredicateObservation('orders.search', str_repeat('a', 64), hash('sha256', 'bare'), 'select 1');
 })->throws(InvalidArgumentException::class);
 
 it('rejects a scheme-tagged digest whose hash is malformed', function (): void {
-    new PredicateObservation(PredicateDigest::SCHEME.':short', 'select 1');
+    new PredicateObservation('orders.search', str_repeat('a', 64), PredicateDigest::SCHEME.':short', 'select 1');
 })->throws(InvalidArgumentException::class);
 
 it('rejects an empty statement', function (): void {
-    new PredicateObservation(PredicateDigest::for('select 1', []), '  ');
+    new PredicateObservation('orders.search', str_repeat('a', 64), PredicateDigest::for('select 1', []), '  ');
 })->throws(InvalidArgumentException::class);
+
+// --- forNormalized: the digest without a second normalization pass ------------------------------
+
+it('digests an already-normalized statement identically to the normalizing path', function (): void {
+    $raw = "select *\n  from \"orders\" where \"customer_id\" = ?";
+
+    expect(PredicateDigest::forNormalized(PredicateDigest::normalize($raw), [7]))
+        ->toBe(PredicateDigest::for($raw, [7]));
+});
 
 // --- Observation carries predicates as an assertion-only list -----------------------------------
 
 it('accepts predicate observations on the observation', function (): void {
-    $predicate = PredicateObservation::fromQuery('select * from "orders" where "customer_id" = ?', [7]);
+    $predicate = anObservedPredicate();
 
     $observation = new Observation(
         disposition: Disposition::Permit,
@@ -69,7 +95,7 @@ it('passes executedPredicateObserved when at least one predicate was captured', 
     $observation = new Observation(
         disposition: Disposition::Permit,
         executed: true,
-        predicates: [PredicateObservation::fromQuery('select * from "orders" where "customer_id" = ?', [7])],
+        predicates: [anObservedPredicate()],
     );
 
     $result = Assertions::executedPredicateObserved()->evaluate($observation);
@@ -89,4 +115,18 @@ it('fails executedPredicateObserved when the execution produced no captured dige
     $result = Assertions::executedPredicateObserved()->evaluate($observation);
 
     expect($result->passed)->toBeFalse();
+});
+
+it('scopes executedPredicateObserved to a capability when one is named', function (): void {
+    // A run that calls two tools must not let one capability's captured statements satisfy the
+    // presence requirement for the other — the attribution exists so digests can be paired with
+    // the authorization that produced them.
+    $observation = new Observation(
+        disposition: Disposition::Permit,
+        executed: true,
+        predicates: [anObservedPredicate(capability: 'orders.read')],
+    );
+
+    expect(Assertions::executedPredicateObserved('orders.read')->evaluate($observation)->passed)->toBeTrue()
+        ->and(Assertions::executedPredicateObserved('orders.search')->evaluate($observation)->passed)->toBeFalse();
 });
