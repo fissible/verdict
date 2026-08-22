@@ -272,3 +272,21 @@ jobs:
 
       - name: Test suite
         run: vendor/bin/pest
+
+  # A single, stable-named aggregation check to require in branch protection. It succeeds only
+  # when every job above did, so the ruleset never has to name the brittle, version-specific
+  # matrix jobs (whose names change whenever the matrix changes). Require "CI success" and nothing
+  # else. `if: always()` so it runs even when a dependency fails, and reports the failure itself.
+  ci-success:
+    name: CI success
+    if: always()
+    needs: [claims, consumer-install, coverage, evaluation, postgres, tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all required jobs succeeded
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "A required job failed or was cancelled."
+            exit 1
+          fi
+          echo "All required jobs passed."
