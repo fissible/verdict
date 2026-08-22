@@ -31,8 +31,12 @@ it('retries one recognized concurrency error after a randomized delay', function
 
     // The delay is the whole reason this wrapper exists rather than Laravel's own
     // `transaction($callback, 2)`: synchronized victims that retry immediately collide again
-    // (ADR 0018, #92). Asserting the elapsed time keeps the `usleep()` from being deleted silently.
-    expect((hrtime(true) - $startedAt) / 1_000_000)->toBeGreaterThanOrEqual(10.0);
+    // (ADR 0018, #92). Asserting the elapsed time keeps the `usleep()` from being deleted silently —
+    // a deleted sleep measures ~0ms. The floor is deliberately well under the 10ms minimum, not equal
+    // to it: neither `usleep()` nor `hrtime()` guarantees the full requested duration elapses, and a
+    // coarse OS timer (observed on Windows + PHP 8.5) measured 9.9779ms for a 10ms sleep — a `>= 10.0`
+    // assertion failed there for no real defect. 5ms still unambiguously proves the sleep ran.
+    expect((hrtime(true) - $startedAt) / 1_000_000)->toBeGreaterThanOrEqual(5.0);
 });
 
 it('does not retry an unrelated transaction error', function (): void {
