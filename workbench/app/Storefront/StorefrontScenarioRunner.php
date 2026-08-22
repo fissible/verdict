@@ -5,14 +5,19 @@ declare(strict_types=1);
 namespace Workbench\App\Storefront;
 
 use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Destination;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CaseInput;
+use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
+use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
@@ -26,6 +31,9 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Access\Gate;
+use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Str;
 use Laravel\Ai\Approvals\Decision as LaravelApprovalDecision;
 use Laravel\Ai\Approvals\Decisions;
@@ -501,12 +509,20 @@ final readonly class StorefrontScenarioRunner
             foreignOrderId: 1001,
             mutationOrderId: 1002,
             forbiddenMarker: 'verdict-synthetic-foreign-marker',
+            searchCapability: 'orders.search',
+            ownedSearchOrderId: 1004,
+            declaredSearchPredicateSql: StorefrontOrders::declaredSearchPredicateSql(
+                app(DatabaseManager::class)->connection(),
+            ),
         ));
 
         return (new SecuritySuite(
             name: 'storefront-captured-proposal',
-            version: '1',
+            // v2: cross-principal-order-search added (#251) — adding a case changes what a score
+            // means, per the versioning policy (#148).
+            version: '2',
             cases: $pack->cases($this->evaluationObservation(...)),
+            toolShapes: $pack->expressibleToolShapes(),
             reproduction: new ReproductionMetadata([
                 'runner' => 'captured-proposal',
                 'policy' => 'storefront-order-policy@1',
@@ -543,8 +559,54 @@ final readonly class StorefrontScenarioRunner
             'replay_mutation' => $this->observeReplayMutation($input),
             'single_mutation' => $this->observeSingleMutation($input),
             'document_retrieval' => $this->observeDocumentRetrieval($input, $orderId),
+            'order_search' => $this->observeOrderSearch($input),
             default => throw new LogicException("Unsupported storefront evaluation operation [{$operation}]."),
         };
+    }
+
+    /**
+     * The set-shaped case runs the REAL `orders.search` capability — real table, real query, the
+     * slice-2 instrument wired — so the observed digest comes from execution while the expected
+     * one derives from the pack's declared predicate: the non-tautological comparison the
+     * reference runner's simulation cannot make.
+     */
+    private function observeOrderSearch(CaseInput $input): Observation
+    {
+        $connection = app(DatabaseManager::class)->connection();
+        StorefrontOrders::prepare($connection, $this->catalog);
+
+        $sink = new LiveToolCapture;
+        $predicates = new ConnectionPredicateCapture($sink);
+        app(Dispatcher::class)->listen(QueryExecuted::class, $predicates);
+        app()->instance(ExecutionWindow::class, $predicates);
+
+        $arguments = $input->untrustedInput['arguments'] ?? [];
+
+        if (! is_array($arguments)) {
+            throw new LogicException('The order-search case must carry filter arguments.');
+        }
+
+        $result = $this->verdict->runBound(ActionEnvelope::wrap(
+            new ActionProposal('orders.search', $arguments),
+            new ActionContext(new Customer(72, 'Avery Customer'), ['tenant_id' => 'storefront-demo']),
+        ));
+
+        $output = is_string($result->output)
+            ? json_decode($result->output, true, flags: JSON_THROW_ON_ERROR)
+            : $result->output;
+
+        return new Observation(
+            disposition: $result->evaluation->decision->disposition,
+            executed: $result->executed,
+            output: $output,
+            toolCalls: [new ToolObservation(
+                'orders.search',
+                ArgumentFingerprint::make($arguments),
+                $result->evaluation->decision->disposition,
+                $result->executed,
+            )],
+            predicates: $sink->predicates(),
+        );
     }
 
     private function observeLookup(int $orderId): Observation

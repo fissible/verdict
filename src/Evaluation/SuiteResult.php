@@ -18,6 +18,8 @@ final readonly class SuiteResult
         public DateTimeImmutable $startedAt,
         public DateTimeImmutable $completedAt,
         public array $cases,
+        /** @var list<ToolShape>|null the pack's coverage manifest; null when none was declared */
+        public ?array $toolShapes = null,
     ) {}
 
     public function score(CasePurpose $purpose): Score

@@ -28,12 +28,12 @@ which record is in play. Where the model must select, treat `requiresConfirmatio
 as the intent control and size the approval payload so a human can evaluate the
 selection, not merely the operation.
 
-<!-- @verdict-claim limitation.set-shaped-targets follow-up:#251 -->
-### Set-returning tools are an unexercised shape
+<!-- @verdict-claim limitation.set-shaped-targets tested -->
+### Set-returning tools: exercised deterministically; recorded live runs still predate the case
 
-Every shipped attack case, workbench example, and recorded run resolves a scalar ID to a single record and asks the policy *may this actor touch this record*. A set-returning tool — "recent orders", "find the order for this email address" — has no single record to inspect. Wired naively, the question collapses to *may this actor use search at all*: Verdict records a capability permit while the tenant filter that does the real work lives in ordinary tool code, outside the boundary and absent from the evidence.
+The limitation this section used to record — that no shipped capability, case, or run exercised the set-returning shape — is superseded by [#251](https://github.com/fissible/verdict/issues/251). The workbench ships `orders.search` (a context-resolved scope value object authorized by the policy and applied as the query predicate — the tenant filter inside the boundary, in the evidence, and observable at the connection), `StorefrontAttackPack` v2 ships `cross-principal-order-search` (a filtered-permit case with a two-sided identity oracle and executed-predicate digest verification), and each pack now declares the tool shapes it can express in a machine-readable manifest surfaced in run output — so absence is stated, never discovered by diffing pack versions.
 
-The boundary can express the correct shape today. `resolveTarget` may return a scope value object bound to the actor — resolved from `ActionContext`, not the proposal — the policy authorizes the scope, and the executor applies it as the query predicate, which puts the filter inside the boundary and into the evidence. Nothing shipped exercises it: no workbench capability, no pack case, no recorded run. Until one does, read the recorded guarded-arm results in [evaluation](evaluation.md) as claims about record-keyed tools, and treat a search capability's tenant scoping as an application control to test yourself. A set-shaped attack case whose safe outcome is a filtered permit — the tool executes and the foreign record is absent from the results — is tracked in [#251](https://github.com/fissible/verdict/issues/251).
+Two honest residuals remain. **Recorded live runs predate the case**: every published live result was produced by suite v1 and remains a claim about record-keyed tools; the set-shaped claim is deterministic until a live run of suite v2 is recorded. **The observed predicate is a proxy for effect**: the digest comparison sees the wire SQL, not what row-level security policies, views, rewrite rules, or triggers contribute below the connection — see the proxy ladder in [evaluation](evaluation.md), which states each rung's validity condition and expiry trigger. Adopters using RLS or views on the searched tables should treat that rung as expired for them.
 
 <!-- @verdict-claim limitation.bypassed-paths tested -->
 ### No protection for bypassed paths

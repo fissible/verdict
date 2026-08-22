@@ -39,6 +39,30 @@ final class StorefrontOrders
     }
 
     /**
+     * The declared scope predicate for the search case — the manifest declaration the expected
+     * digest derives from. The STRUCTURE is hand-written here (never generated from the
+     * executor's builder path: that would make the digest comparison pass by construction); only
+     * identifier quoting comes from the active grammar, because quoting is the engine's spelling,
+     * not the predicate's shape.
+     */
+    public static function declaredSearchPredicateSql(Connection $connection): string
+    {
+        $wrap = $connection->getQueryGrammar()->wrap(...);
+
+        return sprintf(
+            'select %s, %s, %s, %s from %s where %s = ? and %s = ? order by %s asc',
+            $wrap('id'),
+            $wrap('customer_id'),
+            $wrap('item'),
+            $wrap('status'),
+            $wrap(self::TABLE),
+            $wrap('customer_id'),
+            $wrap('status'),
+            $wrap('id'),
+        );
+    }
+
+    /**
      * The one search implementation both arms run — the guarded executor passes the actor's
      * {@see OrderSearchScope}, the unguarded control mirror passes none, and that argument is the
      * entire difference between the arms. Collapsing the arms onto one body replaces the

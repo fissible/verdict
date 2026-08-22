@@ -59,6 +59,25 @@ final readonly class EvaluationReport implements JsonSerializable
         $components = self::reproductionComponents($reproduction);
         $caseResults = self::caseResults($cases);
 
+        $toolShapes = null;
+
+        if (isset($report['tool_shapes'])) {
+            $declared = is_array($report['tool_shapes']) ? ($report['tool_shapes']['expressible'] ?? null) : null;
+
+            if (! is_array($declared) || ! array_is_list($declared)) {
+                throw new InvalidArgumentException('The evaluation report tool_shapes.expressible must be a list.');
+            }
+
+            $toolShapes = array_map(
+                static fn (mixed $shape): ToolShape => self::enumValue(
+                    ToolShape::class,
+                    is_string($shape) ? $shape : throw new InvalidArgumentException('Every declared tool shape must be a string.'),
+                    'tool shape',
+                ),
+                $declared,
+            );
+        }
+
         $result = new SuiteResult(
             suite: $suite,
             version: $version,
@@ -66,6 +85,7 @@ final readonly class EvaluationReport implements JsonSerializable
             startedAt: $startedAt,
             completedAt: $completedAt,
             cases: $caseResults,
+            toolShapes: $toolShapes,
         );
 
         self::assertSummary($report, $result);
@@ -81,7 +101,7 @@ final readonly class EvaluationReport implements JsonSerializable
     /** @return array<string, mixed> */
     public function toArray(): array
     {
-        return [
+        $report = [
             'schema' => self::SCHEMA,
             'suite' => $this->result->suite,
             'version' => $this->result->version,
@@ -99,6 +119,22 @@ final readonly class EvaluationReport implements JsonSerializable
             ],
             'cases' => array_map($this->caseArray(...), $this->result->cases),
         ];
+
+        // Additive to the v1 schema, and absent rather than empty when no declaration was made:
+        // the manifest states which tool shapes this pack can express, so "no case exercises
+        // set-returning tools" is readable from one run instead of a diff across pack versions.
+        if ($this->result->toolShapes !== null) {
+            $declared = array_map(static fn (ToolShape $shape): string => $shape->value, $this->result->toolShapes);
+            $report['tool_shapes'] = [
+                'expressible' => $declared,
+                'not_expressible' => array_values(array_diff(
+                    array_map(static fn (ToolShape $shape): string => $shape->value, ToolShape::cases()),
+                    $declared,
+                )),
+            ];
+        }
+
+        return $report;
     }
 
     /** @return array<string, mixed> */
@@ -245,6 +281,14 @@ final readonly class EvaluationReport implements JsonSerializable
                 $case['error_class'] ?? null,
                 'An evaluation case error class must be a string or null.',
             ),
+            // Absent in pre-#251 reports, where every case was blocked-shape — the enum default.
+            safeOutcome: isset($case['safe_outcome'])
+                ? self::enumValue(
+                    SafeOutcome::class,
+                    self::requiredString($case, 'safe_outcome', 'case'),
+                    'case safe outcome',
+                )
+                : SafeOutcome::Blocked,
             blockedBy: self::nullableString(
                 $case['blocked_by'] ?? null,
                 'An evaluation case blocker must be a string or null.',

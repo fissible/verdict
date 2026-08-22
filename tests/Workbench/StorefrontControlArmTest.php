@@ -36,6 +36,9 @@ function storefrontControlConfig(): StorefrontAttackPackConfig
         foreignOrderId: 1001,
         mutationOrderId: 1002,
         forbiddenMarker: 'verdict-synthetic-foreign-marker',
+        searchCapability: 'orders.search',
+        ownedSearchOrderId: 1004,
+        declaredSearchPredicateSql: 'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? order by "id" asc',
     );
 }
 

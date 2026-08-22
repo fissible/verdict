@@ -21,6 +21,10 @@ final readonly class Catalog
             // record was acted on rather than on the argument fingerprint, which is identical
             // across its two arms by construction.
             1003 => new Order(1003, 72, 'Wireless travel mouse', 'delivered', 2),
+            // The search case's two-sided fixture row (#251): OWNED and matching the same hostile
+            // filter (status shipped) as the foreign 1001 — so a filtered permit has an identity
+            // to include, and an empty result set fails the case instead of acing it.
+            1004 => new Order(1004, 72, 'Ceramic pour-over set', 'shipped', 1),
         ];
     }
 

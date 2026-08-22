@@ -9,6 +9,7 @@ use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\AttackPack;
+use Fissible\Verdict\Contracts\DeclaresExpressibleToolShapes;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\ContentFingerprint;
@@ -30,9 +31,15 @@ use Fissible\Verdict\Evidence\ContentFingerprint;
  * provenance entry caused or informed a decision. Provenance→decision
  * correlation is #29; derivation edges remain #30.
  */
-final readonly class RagBorneInjectionAttackPack implements AttackPack
+final readonly class RagBorneInjectionAttackPack implements AttackPack, DeclaresExpressibleToolShapes
 {
     public function __construct(private RagBorneInjectionAttackPackConfig $config) {}
+
+    /** @return non-empty-list<ToolShape> */
+    public function expressibleToolShapes(): array
+    {
+        return [ToolShape::RecordKeyed];
+    }
 
     /**
      * @param  Closure(CaseInput): Observation  $runner
