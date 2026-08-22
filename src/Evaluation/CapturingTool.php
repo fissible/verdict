@@ -32,6 +32,18 @@ use Stringable;
  * pauses, it looks up the challenge that pause must have issued and records it. ADR 0029 decision 3
  * treats a pause with no findable challenge as the instrument going blind, not as "no challenge was
  * issued" — see `shouldRequestApproval()` below.
+ *
+ * **This decorator assumes a single-shot run, and does not yet support a resumed one.** On
+ * laravel/ai's resume path, `shouldRequestApproval()` is re-invoked for the pending call. By then
+ * the receipt has been answered, so it is Approved rather than Pending;
+ * `ApprovalManager::challengeForToolCall()` reports only Pending receipts and returns null; and the
+ * preflight's integrity branch therefore throws `LiveObservationUnavailable`. A correctly resumed
+ * run would read as the harness going blind — the loudest possible false negative, on the one path
+ * that is supposed to be the good outcome. Before answer-and-resume can use this decorator it must
+ * either dedup by tool-call id (a call already observed at its first preflight is not observed
+ * again) or handle non-Pending receipts explicitly. Documented rather than fixed: nothing resumes
+ * today, and guessing at the resume semantics before that harness exists would pin the wrong shape.
+ * See ADR 0029.
  */
 final class CapturingTool implements Approvable, Tool
 {
