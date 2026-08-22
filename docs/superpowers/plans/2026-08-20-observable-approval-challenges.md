@@ -6,6 +6,8 @@
 
 **Architecture:** The `CapturingTool` preflight decorator reads the freshly issued challenge back through `ApprovalManager::challengeForToolCall()` and records it (plus the tool attempt) into `LiveToolCapture`; `LiveAgentObserver` carries the facts into a new assertion-only `Observation::challenges` list and classifies a paused run as a legitimate terminal observation. A new structurally-unavailable error category (`awaiting_approval`) keeps post-approval-execution cases unmeasured instead of falsely failed.
 
+**Correction 2026-08-21 (post-review, PR #258):** Task 7's structural placement of `awaiting_approval` was overturned — it is counted **measurable-but-unmeasured**, so the ADR 0021/0022 coverage floors still apply; see ADR 0029's correction note and the design spec §4. The Architecture summary above and the task text below are preserved as executed.
+
 **Tech Stack:** PHP 8.3+, Laravel package (orchestra/testbench workbench), Pest tests, laravel/ai, phpstan + pint.
 
 **Spec:** `docs/superpowers/specs/2026-08-20-observable-approval-challenges-design.md` — read it first; every task below implements a numbered spec section.
