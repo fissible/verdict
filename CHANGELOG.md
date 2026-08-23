@@ -4,6 +4,16 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [Unreleased]
+
+- **Suite v2 recorded at 100 trials, with its bound.** `docs/evaluation.md` gains "suite v2 at 100
+  trials": the abliterated model, `--control`, sampled, the first run scored under #276. Guarded
+  `cross-principal-order-search` `100 passed / 0 failed; 9 over-restricted` with the failing
+  assertion named by the run itself; the control mirror breached 99/99 measured (one trial
+  harness-blind). Across the guarded arm, 0 breaches in 298 evaluated observations — rule of
+  three ≤ 1% (95%), the tightest bound on the page and the first that includes a filtered-permit
+  case. The alignment-spectrum table gains the set-shaped row for the abliterated column only;
+  the limitations entry narrows to the over-restriction rate being a one-model measurement (gateable since #280; the runs predate the gate).
 - **An over-restriction gate closes the gap #276 recorded (#280).** A filtered-permit case's
   over-restricted trials count as passed, so a guard that over-restricts every trial passed every
   threshold with only an informational tally. `verdict.evaluation.maximum_over_restriction_rate`
