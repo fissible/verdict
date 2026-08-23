@@ -14,6 +14,7 @@ use Fissible\Verdict\Evaluation\LiveEvaluationResult;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\LiveEvaluationThreshold;
 use Fissible\Verdict\Evaluation\LiveEvaluationThresholdDisposition;
+use Fissible\Verdict\Evaluation\OverRestrictionRate;
 use Fissible\Verdict\Evaluation\Score;
 use Fissible\Verdict\Evaluation\ThresholdCoverage;
 use Illuminate\Console\Command;
@@ -72,6 +73,7 @@ final class RunLiveEvaluationCommand extends Command
                 enabled: true,
                 minimumObservations: $this->intConfig('verdict.evaluation.minimum_observations', 0),
                 controlArm: (bool) $this->option('control'),
+                maximumOverRestrictionRate: $this->floatConfig('verdict.evaluation.maximum_over_restriction_rate', 1.0),
             );
 
             $result = $runner->run($factory, $options);
@@ -90,7 +92,12 @@ final class RunLiveEvaluationCommand extends Command
         $bothMet = $result->securityThreshold->disposition() === LiveEvaluationThresholdDisposition::Met
             && $result->utilityThreshold->disposition() === LiveEvaluationThresholdDisposition::Met;
 
-        return $bothMet ? self::SUCCESS : self::FAILURE;
+        // The over-restriction gate (#280) fails the run only on NOT MET. Null means the suite has
+        // no filtered-permit case; NOT EVALUATED is only reachable when the security threshold is
+        // already not met, and one cause should fail the run once.
+        $overRestrictionExceeded = $result->overRestriction?->disposition() === LiveEvaluationThresholdDisposition::NotMet;
+
+        return $bothMet && ! $overRestrictionExceeded ? self::SUCCESS : self::FAILURE;
     }
 
     private function renderConsole(LiveEvaluationResult $result): void
@@ -100,6 +107,7 @@ final class RunLiveEvaluationCommand extends Command
 
         $this->renderConsoleThreshold($result->securityThreshold);
         $this->renderConsoleThreshold($result->utilityThreshold);
+        $this->renderConsoleOverRestriction($result);
 
         $this->newLine();
         $this->components->info('Per-case results');
@@ -210,6 +218,40 @@ final class RunLiveEvaluationCommand extends Command
         $this->components->twoColumnDetail('  zero-breach bound', $this->zeroBreachBound($score->evaluated()));
     }
 
+    /**
+     * The over-restriction gate (#280): a ceiling per filtered-permit case on trials the security
+     * threshold already counted as passed. Absent entirely when the suite has no such case.
+     */
+    private function renderConsoleOverRestriction(LiveEvaluationResult $result): void
+    {
+        $gate = $result->overRestriction;
+
+        if ($gate === null) {
+            return;
+        }
+
+        $this->components->twoColumnDetail(
+            'Over-restriction gate',
+            sprintf('%s (maximum %s)', $this->dispositionLabel($gate->disposition()), $this->percentage($gate->maximumRate)),
+        );
+
+        foreach ($gate->cases as $id => $case) {
+            $this->components->twoColumnDetail("  {$id}", $this->overRestrictionSummary($case));
+        }
+    }
+
+    private function overRestrictionSummary(OverRestrictionRate $case): string
+    {
+        $rate = $case->rate();
+
+        return sprintf(
+            '%d over-restricted of %d evaluated (%s)',
+            $case->overRestricted,
+            $case->evaluated,
+            $rate === null ? 'not evaluated' : $this->percentage($rate),
+        );
+    }
+
     private function renderConsoleThreshold(LiveEvaluationThreshold $threshold): void
     {
         $this->components->twoColumnDetail(
@@ -241,6 +283,27 @@ final class RunLiveEvaluationCommand extends Command
                 $this->scoreSummary($threshold->score),
                 $this->percentage($threshold->minimumPassRate),
                 $this->coverageSummary($threshold),
+            ));
+
+            $this->line("::{$level} title={$title}::{$message}");
+        }
+
+        $gate = $result->overRestriction;
+
+        if ($gate !== null) {
+            $level = $gate->disposition() === LiveEvaluationThresholdDisposition::Met ? 'notice' : 'error';
+            $title = $this->escapeProperty('Verdict live evaluation: over-restriction');
+            $cases = [];
+
+            foreach ($gate->cases as $id => $case) {
+                $cases[] = "{$id} ".$this->overRestrictionSummary($case);
+            }
+
+            $message = $this->escapeMessage(sprintf(
+                '%s (maximum %s) — %s',
+                $this->dispositionLabel($gate->disposition()),
+                $this->percentage($gate->maximumRate),
+                implode('; ', $cases),
             ));
 
             $this->line("::{$level} title={$title}::{$message}");

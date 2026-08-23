@@ -32,6 +32,11 @@ final readonly class LiveEvaluationResult
          * See [ADR 0024](../../docs/adr/0024-integrity-is-gated-before-coverage.md).
          */
         public ?int $haltedAfterTrial = null,
+        /**
+         * The over-restriction gate (#280). Null when the suite has no filtered-permit case —
+         * absent, not a vacuous `Met` — so a blocked-outcome-only suite shows no gate at all.
+         */
+        public ?LiveEvaluationOverRestrictionGate $overRestriction = null,
     ) {}
 
     public function report(): LiveEvaluationReport

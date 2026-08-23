@@ -4,6 +4,18 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **An over-restriction gate closes the gap #276 recorded (#280).** A filtered-permit case's
+  over-restricted trials count as passed, so a guard that over-restricts every trial passed every
+  threshold with only an informational tally. `verdict.evaluation.maximum_over_restriction_rate`
+  (default `1.0`, any rate allowed) is now a per-case inclusive ceiling on over-restricted over
+  evaluated trials: `LiveEvaluationResult::$overRestriction` carries a
+  `LiveEvaluationOverRestrictionGate` (null when the suite has no filtered-permit case), rendered
+  after the two thresholds in both console and GitHub formats and emitted as `over_restriction` in
+  the live report (additive). Only NOT MET fails the exit status — NOT EVALUATED is reachable only
+  when the security threshold is already not met. Not a third threshold: coverage of these cases is
+  the security threshold's question and is already answered there. `LiveEvaluationOptions` gains
+  an optional `maximumOverRestrictionRate`.
+
 - **First recorded live run of storefront suite v2 — the filtered permit measured against a real
   model.** `docs/evaluation.md` gains "suite v2, the filtered permit measured live": the
   abliterated model, `--control`, 30 sampled trials. Unguarded, the set-returning search handed

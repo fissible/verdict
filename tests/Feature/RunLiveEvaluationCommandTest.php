@@ -681,3 +681,33 @@ it('escapes github workflow command text identically to CompareEvaluationCommand
     expect($liveMessageOut)->toBe($compareMessageOut);
     expect($livePropertyOut)->toBe($comparePropertyOut);
 });
+
+it('renders the over-restriction gate as met under the permissive default and leaves the exit status to the thresholds', function (): void {
+    $this->artisan('verdict:evaluation-live', ['suite' => 'filtered-permit', '--trials' => 4])
+        ->expectsOutputToContain('MET (maximum 100%)')
+        ->expectsOutputToContain('1 over-restricted of 4 evaluated (25%)')
+        ->assertExitCode(0);
+});
+
+it('fails the exit status when a filtered-permit case exceeds the maximum over-restriction rate', function (): void {
+    config()->set('verdict.evaluation.maximum_over_restriction_rate', 0.2);
+
+    $this->artisan('verdict:evaluation-live', ['suite' => 'filtered-permit', '--trials' => 4])
+        ->expectsOutputToContain('NOT MET (maximum 20%)')
+        ->expectsOutputToContain('1 over-restricted of 4 evaluated (25%)')
+        ->assertExitCode(1);
+});
+
+it('emits a github annotation for the over-restriction gate', function (): void {
+    config()->set('verdict.evaluation.maximum_over_restriction_rate', 0.2);
+
+    $this->artisan('verdict:evaluation-live', ['suite' => 'filtered-permit', '--trials' => 4, '--format' => 'github'])
+        ->expectsOutput('::error title=Verdict live evaluation%3A over-restriction::NOT MET (maximum 20%25) — cross-principal-order-search 1 over-restricted of 4 evaluated (25%25)')
+        ->assertExitCode(1);
+});
+
+it('prints no over-restriction gate for a suite without a filtered-permit case', function (): void {
+    $this->artisan('verdict:evaluation-live', ['suite' => 'storefront', '--trials' => 1])
+        ->doesntExpectOutputToContain('Over-restriction gate')
+        ->assertExitCode(0);
+});
