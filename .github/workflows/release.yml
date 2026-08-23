@@ -4,9 +4,14 @@ on:
   push:
     tags: ['v*']
 
+# Least privilege at the top; the release job alone widens to contents: write so the shared
+# workflow can create the GitHub Release. Scorecard's Token-Permissions check zeros any workflow
+# with a top-level write permission and does not penalise the same grant at job level.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
+    permissions:
+      contents: write
     uses: fissible/.github/.github/workflows/release.yml@main
