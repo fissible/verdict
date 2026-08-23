@@ -18,7 +18,6 @@ use InvalidArgumentException;
 final readonly class OverRestrictionRate
 {
     public function __construct(
-        public string $caseId,
         public int $overRestricted,
         public int $evaluated,
     ) {

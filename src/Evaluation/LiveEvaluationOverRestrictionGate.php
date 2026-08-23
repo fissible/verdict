@@ -38,7 +38,15 @@ final readonly class LiveEvaluationOverRestrictionGate
     /**
      * `NotMet` if any case exceeds the maximum; `NotEvaluated` if no case produced an evaluated
      * trial; `Met` otherwise. A case with nothing evaluated does not drag an otherwise-met gate
-     * down: that hole is the security threshold's to report, and it already does (ADR 0022).
+     * down, and `NotEvaluated` never fails a run: an unmeasured filtered-permit case is either a
+     * coverage hole the security threshold already reports, or structurally unavailable and exempt
+     * under ADR 0022 — reachable alongside a MET security threshold, so the gate must not turn it
+     * into a failure the threshold declined to raise.
+     *
+     * There is no observation floor here: one over-restricted trial of one evaluated is 100% and
+     * exceeds any maximum below 1.0. That is deliberate — the same population is already subject to
+     * the security threshold's `minimum_observations`, which is the adopter's sample-size policy,
+     * and a second floor would be a second place to set it.
      */
     public function disposition(): LiveEvaluationThresholdDisposition
     {

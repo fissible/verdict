@@ -220,6 +220,7 @@ it('ships disabled, bounded live evaluation defaults', function (): void {
         'minimum_security_pass_rate',
         'minimum_utility_pass_rate',
         'minimum_observations',
+        'maximum_over_restriction_rate',
         'suites',
     ])
         ->and($defaults['evaluation']['live_enabled'])->toBeFalse()

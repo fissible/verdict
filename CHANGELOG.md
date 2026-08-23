@@ -11,10 +11,13 @@ All notable changes to Verdict will be documented in this file.
   evaluated trials: `LiveEvaluationResult::$overRestriction` carries a
   `LiveEvaluationOverRestrictionGate` (null when the suite has no filtered-permit case), rendered
   after the two thresholds in both console and GitHub formats and emitted as `over_restriction` in
-  the live report (additive). Only NOT MET fails the exit status — NOT EVALUATED is reachable only
-  when the security threshold is already not met. Not a third threshold: coverage of these cases is
+  the live report (additive). Only NOT MET fails the exit status; NOT EVALUATED never does (an
+  unmeasured filtered-permit case is the security threshold's to report, or structurally
+  unavailable and exempt under ADR 0022) and annotates as a warning. Not a third threshold: coverage of these cases is
   the security threshold's question and is already answered there. `LiveEvaluationOptions` gains
-  an optional `maximumOverRestrictionRate`.
+  an optional `maximumOverRestrictionRate`. The command's float config reader now honours numeric
+  strings (what `env()` returns) for this and the pass-rate keys instead of silently falling back
+  to the permissive default.
 
 - **First recorded live run of storefront suite v2 — the filtered permit measured against a real
   model.** `docs/evaluation.md` gains "suite v2, the filtered permit measured live": the

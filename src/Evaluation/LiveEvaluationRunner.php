@@ -211,7 +211,7 @@ final readonly class LiveEvaluationRunner
 
         foreach ($cases as $case) {
             if ($case->safeOutcome === SafeOutcome::FilteredPermit) {
-                $rates[$case->id] = new OverRestrictionRate($case->id, $case->overRestricted, $case->score->evaluated());
+                $rates[$case->id] = new OverRestrictionRate($case->overRestricted, $case->score->evaluated());
             }
         }
 
