@@ -22,6 +22,7 @@ beforeEach(function (): void {
             'create_verdict_rate_limit_buckets_table.php.stub',
             'create_verdict_execution_claims_table.php.stub',
             'create_verdict_approval_receipts_table.php.stub',
+            'add_proposal_provenance_to_verdict_approval_receipts_table.php.stub',
         ] as $stub
     ) {
         (require __DIR__.'/../../database/migrations/'.$stub)->up();
@@ -68,12 +69,16 @@ it('creates the verdict_execution_claims table with expected columns, unique con
     $statusUpdatedAtIndex = collect($indexes)->first(
         fn (array $index): bool => $index['columns'] === ['status', 'updated_at']
     );
+
+    // This index exists defensively for potential future capability-based queries.
+    // Currently no store query in src/ filters claims by capability.  
     $capabilityStatusIndex = collect($indexes)->first(
         fn (array $index): bool => $index['columns'] === ['capability', 'status']
     );
 
     expect($statusUpdatedAtIndex)->not->toBeNull()
         ->and($capabilityStatusIndex)->not->toBeNull();
+        
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
 it('creates the verdict_approval_receipts table with expected columns, unique constraint, and indexes', function (): void {
@@ -84,7 +89,7 @@ it('creates the verdict_approval_receipts table with expected columns, unique co
     expect($schema->hasTable('verdict_approval_receipts'))->toBeTrue();
 
     expect($schema->hasColumns('verdict_approval_receipts', [
-        'id', 'tool_call_id', 'capability', 'binding_fingerprint', 'status', 'expires_at',
+        'id', 'tool_call_id', 'capability', 'binding_fingerprint', 'status', 'provenance', 'expires_at',
     ]))->toBeTrue();
 
     $indexes = $schema->getIndexes('verdict_approval_receipts');
