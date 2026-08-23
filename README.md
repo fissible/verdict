@@ -346,6 +346,7 @@ The full documentation is published at **[docs.fissible.dev/verdict](https://doc
 - [Glossary](docs/glossary.md)
 - [Architecture decision records](docs/adr/)
 - [Release policy](RELEASES.md)
+- [Governance: roles and who holds access](GOVERNANCE.md)
 
 ## Status
 
