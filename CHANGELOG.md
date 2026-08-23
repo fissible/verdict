@@ -4,6 +4,12 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Project documentation for OSPS Baseline Level 2.** `.github/SECURITY.md` gains a response
+  timeframe (acknowledge in 3 business days; fix or mitigation in 30 days for critical/high, 90
+  otherwise; coordinated disclosure) and states how vulnerabilities are published (GitHub Security
+  Advisory + CHANGELOG Security entry). New `GOVERNANCE.md` names the maintainer role, the
+  contributor role, and who holds access to each sensitive resource. `CONTRIBUTING.md` gains a
+  Dependencies section describing how dependencies are selected, obtained, and tracked.
 - Assert schema migrations produce the expected tables, unique constraints, and indexes on MySQL,
   MariaDB, and PostgreSQL. Migrations were only ever run for their side effect of making the test
   suite work; nothing inspected what they actually produced, so a defect that doesn't throw — a

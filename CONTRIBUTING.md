@@ -42,6 +42,28 @@ The ordinary test suite is deterministic and must not require network access or 
 credentials. Live-model evaluation work must use an explicit command or test group and synthetic,
 reversible data.
 
+## Dependencies
+
+Verdict keeps its dependency surface deliberately small. How dependencies are chosen, obtained, and
+tracked:
+
+- **Selection.** A runtime dependency is added only when Verdict cannot reasonably own the behaviour
+  itself and the package is maintained, widely used, and compatible with Verdict's supported PHP and
+  Laravel range. `fissible/attest` is `require-dev` only and is never called from core; adopters opt
+  in. The one upstream whose surface Verdict depends on in detail is `laravel/ai`, and every place
+  that dependency reaches is inventoried in
+  [docs/laravel-ai-compatibility.md](docs/laravel-ai-compatibility.md), with the test that would
+  catch a silent change.
+- **Obtaining.** All PHP dependencies come from Packagist via Composer over HTTPS, declared with
+  version constraints in `composer.json`. As a library, Verdict commits no `composer.lock`: CI
+  resolves the constraints fresh on every run, at both `--prefer-lowest` and `--prefer-stable`, so
+  the whole declared range is exercised rather than one frozen set. GitHub Actions are pinned to
+  full commit SHAs, including the shared release workflow.
+- **Tracking.** Dependabot checks Composer and Actions dependencies weekly and opens pull requests,
+  which go through the same review and CI matrix as any change; Dependabot security updates are
+  enabled. Upstream changes that affect Verdict's guarantees are watched in
+  [MILESTONES.md](MILESTONES.md) and, when they land, recorded in the CHANGELOG.
+
 ## Security design expectations
 
 A change that affects authorization, confirmation, replay, rate limits, identity, target freshness,
