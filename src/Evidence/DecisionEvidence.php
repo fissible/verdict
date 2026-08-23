@@ -11,6 +11,24 @@ use InvalidArgumentException;
 
 final readonly class DecisionEvidence
 {
+    /**
+     * What this record asserts, as one stable, namespaced label — the record's *semantic* identity.
+     *
+     * Derived rather than supplied, so a caller cannot mint a claim the evaluation did not make.
+     * Null only when the stage/disposition tuple is outside the vocabulary, which
+     * `ClaimTypeVocabularyTest` prevents for every tuple the state machine can emit.
+     */
+    public ?ClaimType $claimType;
+
+    /**
+     * This record's content-derived, Attest-independent identity: `canonicaljson-sha256:<hash>`.
+     *
+     * Derived in the constructor for the same reason as `claimType`, and because an identity a
+     * caller could pass in is not an identity. See {@see RecordDigest} for the field set, the
+     * exclusions, and why Attest protects this value rather than defining it.
+     */
+    public string $recordDigest;
+
     public function __construct(
         public string $envelopeId,
         public string $capability,
@@ -43,10 +61,40 @@ final readonly class DecisionEvidence
         public ?string $configurationFingerprint = null,
         public ?string $actorFingerprint = null,
         public ?string $subjectFingerprint = null,
+        /**
+         * Which channel this capability's target resolver reads from — `context` or `proposal`.
+         *
+         * Recorded per decision rather than folded into the configuration fingerprint, because an
+         * auditor filtering for proposal-resolved consequential capabilities needs a queryable
+         * value, not a hash they must recompute to interpret. It names the constructor that was
+         * used, never a verified property of the closure body. See
+         * [ADR 0025](../../docs/adr/0025-target-provenance-is-proven-where-it-can-be.md).
+         */
+        public ?string $targetSource = null,
+        /**
+         * The tool description fingerprinted at wiring time, and the one last advertised to the
+         * model. `toolDescriptionMatched` is the comparison made explicit, so an operator reading
+         * evidence after an incident does not have to know it was worth making — and is null, not
+         * false, when the description was never advertised. See #163.
+         */
+        public ?string $toolDescriptionFingerprint = null,
+        public ?string $invocationToolDescriptionFingerprint = null,
+        public ?bool $toolDescriptionMatched = null,
     ) {
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
         }
+
+        // Both are derived from fields already assigned above. The approval phase and execution-claim
+        // status are passed to the vocabulary because two stages record several distinct events
+        // behind one stage/disposition pair — see ClaimType::discriminatorFor().
+        $this->claimType = ClaimType::for($this->stage, $this->disposition, match ($this->stage) {
+            'approval' => $this->approvalPhase,
+            'execution_claim' => $this->executionClaimStatus,
+            default => null,
+        });
+
+        $this->recordDigest = RecordDigest::for($this);
     }
 
     public static function fromEvaluation(Evaluation $evaluation, ?string $invocationId = null): self
@@ -125,9 +173,34 @@ final readonly class DecisionEvidence
             // Not every evaluation resolves a Capability (e.g. an unregistered-capability denial),
             // so this is null exactly when $evaluation->capability is null.
             configurationFingerprint: $evaluation->capability?->configurationFingerprint(),
+            targetSource: $evaluation->capability?->targetSource->value,
+            toolDescriptionFingerprint: self::metadataString($evaluation, 'tool_description_fingerprint'),
+            invocationToolDescriptionFingerprint: self::metadataString($evaluation, 'invocation_tool_description_fingerprint'),
+            toolDescriptionMatched: self::toolDescriptionMatched($evaluation),
             actorFingerprint: self::identityFingerprint($evaluation->envelope->context->actor),
             subjectFingerprint: self::identityFingerprint($evaluation->envelope->context->subject),
         );
+    }
+
+    private static function metadataString(Evaluation $evaluation, string $key): ?string
+    {
+        $value = $evaluation->envelope->proposal->metadata[$key] ?? null;
+
+        return is_string($value) ? $value : null;
+    }
+
+    /**
+     * Null when the description was never advertised: that is an absent observation, and reporting
+     * it as a match would claim one nobody made.
+     */
+    private static function toolDescriptionMatched(Evaluation $evaluation): ?bool
+    {
+        $configured = self::metadataString($evaluation, 'tool_description_fingerprint');
+        $advertised = self::metadataString($evaluation, 'invocation_tool_description_fingerprint');
+
+        return $configured === null || $advertised === null
+            ? null
+            : $configured === $advertised;
     }
 
     private static function identityFingerprint(mixed $identity): ?string

@@ -10,6 +10,16 @@ set -e
 die()     { printf 'error: %s\n' "$1" >&2; exit 1; }
 confirm() { printf '%s [y/N] ' "$1"; read -r ans; [[ "$ans" =~ ^[Yy]$ ]]; }
 
+# In-place edit that leaves no backup on either sed. GNU sed treats `-i''` as "no backup" and
+# `-e` as the script flag; BSD sed (macOS) takes `-e` as the backup *suffix* and silently leaves
+# a `<file>-e` beside the original. That artifact is untracked and not ignored, so a later
+# `git add -A` would commit it. Writing through a temp file avoids the difference entirely.
+replace_in_file() {
+    local file=$1 script=$2 tmp
+    tmp=$(mktemp) || die "could not create a temporary file"
+    sed "$script" "$file" > "$tmp" && mv "$tmp" "$file" || { rm -f "$tmp"; die "could not rewrite $file"; }
+}
+
 # --- preflight checks ---
 
 [[ -f VERSION ]] || die "VERSION file not found — are you in a fissible repo root?"
@@ -18,12 +28,34 @@ confirm() { printf '%s [y/N] ' "$1"; read -r ans; [[ "$ans" =~ ^[Yy]$ ]]; }
 command -v php >/dev/null 2>&1 || die "php not found"
 command -v git >/dev/null 2>&1 || die "git not found"
 
+# Tag signing (ADR 0030): releases are SSH-signed. Refuse rather than cut an unsigned tag that would
+# read as a normal release. One-time setup: git config gpg.format ssh; git config user.signingkey
+# <path-to-ssh-public-key>; then add that key to GitHub as a *signing* key.
+[[ "$(git config --get gpg.format)" == "ssh" ]] \
+    || die "tag signing not configured (ADR 0030): run 'git config gpg.format ssh' and set user.signingkey to your SSH public key"
+[[ -n "$(git config --get user.signingkey)" ]] \
+    || die "no user.signingkey configured for SSH tag signing (ADR 0030)"
+
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 [[ "$current_branch" == "main" ]] \
     || die "Releases must be cut from main (currently on: $current_branch)"
 
 git diff --quiet && git diff --cached --quiet \
     || die "Working tree is dirty — commit or stash changes first"
+
+# Releasing from a stale main produces a wrong commit list and a wrong-or-empty Unreleased section
+# (v0.9.1 was first attempted from a main three commits behind origin). Verify before doing anything;
+# offer the fast-forward rather than pulling silently, and refuse a divergent main outright.
+git fetch origin main --quiet || die "could not fetch origin/main to verify main is current"
+behind=$(git rev-list --count HEAD..origin/main)
+if (( behind > 0 )); then
+    if confirm "main is $behind commit(s) behind origin/main. Fast-forward now?"; then
+        git merge --ff-only origin/main \
+            || die "fast-forward failed — main has diverged from origin/main; reconcile it first"
+    else
+        die "main is behind origin/main — pull first"
+    fi
+fi
 
 # --- state ---
 
@@ -122,7 +154,7 @@ printf '%s\n' "$new_version" > VERSION
 # --- update package.json if present ---
 
 if [[ -f package.json ]]; then
-    sed -i'' -e "s/\"version\": \"[^\"]*\"/\"version\": \"${new_version}\"/" package.json
+    replace_in_file package.json "s/\"version\": \"[^\"]*\"/\"version\": \"${new_version}\"/"
 fi
 
 # --- update the documented install constraint ---
@@ -148,7 +180,7 @@ if [[ -f README.md && -f composer.json ]]; then
     grep -q "composer require ${package}:" README.md \
         || die "no 'composer require ${package}:' line in README.md — refusing to release with an unverifiable install constraint"
 
-    sed -i'' -e "s|composer require ${package}:[^[:space:]]*|composer require ${package}:${constraint}|g" README.md
+    replace_in_file README.md "s|composer require ${package}:[^[:space:]]*|composer require ${package}:${constraint}|g"
     printf 'README install constraint: %s\n' "$constraint"
 fi
 
@@ -158,7 +190,7 @@ git add VERSION CHANGELOG.md
 [[ -f package.json ]] && git add package.json
 [[ -f README.md ]] && git add README.md
 git commit -m "chore: release ${new_tag}"
-git tag -a "$new_tag" -m "$new_tag"
+git tag -s "$new_tag" -m "$new_tag"   # SSH-signed per ADR 0030 (preflighted above)
 
 printf '\nTagged %s locally.\n' "$new_tag"
 

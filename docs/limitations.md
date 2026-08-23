@@ -14,6 +14,27 @@ Refreshing an execution target narrows the gap between authorization and executi
 
 Verdict calls Laravel authorization; it does not create your policies, tenancy model, ownership rules, validation, or business invariants. A poorly scoped target resolver or policy remains an application bug.
 
+<!-- @verdict-claim limitation.intent untestable reason="A package cannot determine whether an authorized action reflects the actor's intent." -->
+### Authorization bounds authority, not intent
+
+Verdict evaluates whether an actor may perform an operation on a resolved record. It
+has no mechanism for deciding whether the actor wanted that operation on that record.
+When a target is resolved from proposal arguments, injected content that selects a
+record within the actor's authority produces a permitted action, and this is the
+authorization layer working as specified rather than failing.
+
+Resolve targets from `ActionContext` where the application, not the proposal, knows
+which record is in play. Where the model must select, treat `requiresConfirmation()`
+as the intent control and size the approval payload so a human can evaluate the
+selection, not merely the operation.
+
+<!-- @verdict-claim limitation.set-shaped-targets tested -->
+### Set-returning tools: one live run recorded; the wire-SQL rung still a proxy
+
+The limitation this section used to record — that no shipped capability, case, or run exercised the set-returning shape — is superseded by [#251](https://github.com/fissible/verdict/issues/251). The workbench ships `orders.search` (a context-resolved scope value object authorized by the policy and applied as the query predicate — the tenant filter inside the boundary, in the evidence, and observable at the connection), `StorefrontAttackPack` v2 ships `cross-principal-order-search` (a filtered-permit case with a two-sided identity oracle and executed-predicate digest verification), and each pack now declares the tool shapes it can express in a machine-readable manifest surfaced in run output — so absence is stated, never discovered by diffing pack versions.
+
+Two honest residuals remain. **The over-restriction rate is a property of one model, measured once** (`evaluation.md`, the suite v2 runs, 2026-08-22): at n=100, unguarded the search returned the foreign order in 99/99 measured trials; guarded, the tool result held only the owned order in 100/100 and the guarded arm's zero-breach bound is ≤ 1% over 298 observations — but in 9 trials the model did not print the owned order's id. That utility-side miss is counted and named ([#276](https://github.com/fissible/verdict/issues/276)) and gateable ([#280](https://github.com/fissible/verdict/issues/280), `maximum_over_restriction_rate`, default `1.0` so nothing fails until an adopter sets a ceiling); the recorded runs predate the gate. Every other published live result was produced by suite v1 and remains a claim about record-keyed tools. **The observed predicate is a proxy for effect**: the digest comparison sees the wire SQL, not what row-level security policies, views, rewrite rules, or triggers contribute below the connection — see the proxy ladder in [evaluation](evaluation.md), which states each rung's validity condition and expiry trigger. Adopters using RLS or views on the searched tables should treat that rung as expired for them.
+
 <!-- @verdict-claim limitation.bypassed-paths tested -->
 ### No protection for bypassed paths
 
@@ -51,6 +72,13 @@ php artisan verdict:resolve-execution-claim CLAIM_ID retryable \
 
 Resolving a claim as `retryable` releases it for one explicit retry. A claim still marked active requires `--force`, which should be used only after application-specific investigation. Claim rows are part of the guarantee horizon, so Verdict provides no automatic pruning command; see [ADR 0009](adr/0009-execution-claim-retention.md).
 
+<!-- @verdict-claim limitation.host-conversation-record untestable reason="The host framework's conversation state is outside Verdict's boundary; Verdict neither reads nor writes it." -->
+### No reconciliation of the host's conversation record
+
+An approval receipt is single-use: once it is consumed at the execution gate, a second resume of the same approval fails closed (`verdict.approval.consumption-failed`), so the action does not run twice. That is the whole of what the receipt promises. It says nothing about what the host framework recorded — whether Laravel AI's conversation still shows the turn as awaiting approval, whether the tool result reached the conversation store, or whether an approval UI will present the same request again. Verdict does not read or write that state and cannot repair it.
+
+The gap is real, not hypothetical: a host that resumes a paused approval under a different participant than the one that paused it can execute the tool and then fail to record the result, leaving the conversation pending with the receipt already spent ([laravel/ai#931](https://github.com/laravel/ai/issues/931)). With Verdict in place the re-approval is refused; without it the action runs again. Either way the conversation record is the host's to reconcile. Read `verdict.execution.claim-completed` accordingly — it is Verdict's admission-side claim that the executor returned, not evidence that the host's conversation caught up.
+
 <!-- @verdict-claim limitation.provider-inspection untestable reason="Verdict cannot observe provider internals it deliberately does not receive." -->
 ### No provider-internal inspection
 
@@ -79,7 +107,7 @@ The check also does not verify that a redaction ran. A path reachable under the 
 <!-- @verdict-claim limitation.tamper-evidence tested -->
 ### Tamper-evident evidence is opt-in, partial, and bounded by key custody
 
-`DatabaseEvidenceRecorder` (the usual choice when an application opts into evidence recording — `verdict.evidence.recorder` itself defaults to `NullEvidenceRecorder`, a no-op, so nothing is recorded unless explicitly configured) is an ordinary mutable audit store: not append-only, immutable, signed, or tamper-evident. A row recording a decision, context release, or provenance fact can be edited or deleted without detection. It must not be described as cryptographic proof.
+`DatabaseEvidenceRecorder` (the usual choice when an application opts into evidence recording — `verdict.evidence.recorder` itself defaults to `NullEvidenceRecorder`, a no-op, so nothing is recorded unless explicitly configured — Verdict dispatches `ConsequentialActionUnrecorded` once per process when a confirmation- or at-most-once-gated capability runs under it, and `verdict:validate` reports it, but neither blocks, because evidence is not a gate) is an ordinary mutable audit store: not append-only, immutable, signed, or tamper-evident. A row recording a decision, context release, or provenance fact can be edited or deleted without detection. It must not be described as cryptographic proof.
 
 `AttestEvidenceRecorder` (requires `composer require fissible/attest-laravel`) writes signed, hash-chained evidence via [`fissible/attest`](https://github.com/fissible/attest) instead. Even with it configured, several things remain true:
 
@@ -92,6 +120,8 @@ The check also does not verify that a redaction ran. A path reachable under the 
     - **Record monotonic per-chain sequence numbers**, so a missing range is visible even when the surviving chain re-links cleanly.
     - **Give the evidence connection its own database credentials**, distinct from the application's (`verdict.evidence.connection` and `verdict.evidence.attest.fallback_connection` both accept a dedicated connection). This does not stop a determined operator, but it removes SQL injection as a single-step path from the application to audit tampering.
 - **"Verified" names five different claims, and a deployment must know which one it has.** `fissible/attest` reports verification at one of five levels — `local_only`, `pending`, `upgraded_no_headers`, `remote_header_confirmed`, and `bitcoin_verified` — and they are not equivalent: `remote_header_confirmed` puts a block explorer in the trust path, and `bitcoin_verified` does not. Pass `php artisan attest:verify --min-anchor=...` to fail verification below the level you actually require, rather than accepting whichever level a run happens to reach.
+- **A passing verification does not assert the record is complete, and since `fissible/attest` 1.3.0 it says so in its own output.** `attest.cli.result.v1` carries a constant `completeness` block — `asserted` is always `false`, beside the separate `verified` field — so a downstream tool can render "integrity verified" and "completeness not asserted" as two facts without parsing prose. The statement names two independent non-assertions: content that bypassed instrumentation never reached the chain to be signed, and a verification can be scoped to part of a chain (`attest:verify --from/--to`, or whatever range a bundle's exporter chose). This is the same explicitness as the five-level ladder above, applied to a different axis. **It appears in `php artisan attest:verify --json`; the command's human-readable output does not currently carry it** (`fissible/attest-laravel` 1.0.0 renders its own summary lines), so an operator reading the terminal rather than the JSON still relies on this document. For Verdict specifically the blind spot has a name: [bypassed paths](#no-protection-for-bypassed-paths) — a controller, job, or service that reaches the same capability without going through Verdict produces no evidence to chain, and no verification can reveal its absence.
+
 - **Tamper-evidence is bounded by key custody.** The chain is tamper-evident against anyone who can reach the evidence store but not the Ed25519 signing key (`ATTEST_SIGNING_KEY_SEED`). An attacker holding that key can rewrite the chain and re-sign it, and verification will pass. Application RCE implies the ability to forge history unless the key is held outside the application's own reach.
 - **A failed chain write does not block the protected action.** Per [ADR 0007](adr/0007-evidence-layering.md), evidence is not an authorization gate. `AttestEvidenceRecorder` retries a failed write with backoff, then records a `chain_gap` marker row in the ordinary evidence table (naming the chain and attempt count) and raises an event the application can route to an alert — it does not fail the request unless explicitly configured with `on_failure: 'throw'`.
 
@@ -142,6 +172,13 @@ the store must preserve those retention and durability properties.
 Verdict records a derivation edge only when it observed a transformation directly, such as an application context release, or when an application explicitly declared one. It does not infer that retrieved content influenced a model output, tool request, or decision merely because the records share an invocation. Missing derivation edges mean "not observed or not declared," not "no influence occurred."
 
 The evidence store may also contain highly sensitive information. Configurable evidence levels, retention, tenant isolation, access authorization, pruning, and encryption remain application responsibilities.
+
+<!-- @verdict-claim limitation.cross-invocation-lineage follow-up:#201 -->
+### Lineage declared in another invocation does not reach an approver
+
+Reading declared provenance back is scoped to one invocation at every hop, so an approver is shown only what was declared **within the invocation that carried the proposal**. This is deliberate: the proposal is anchored on a content fingerprint of the tool call's arguments, so identical arguments in two invocations are the same node, and an unscoped read would present Tuesday's declaration as Thursday's provenance — a causal claim nobody made, and one that would be right often enough to be trusted.
+
+The cost is ingestion-time lineage. A pipeline that declares `chunk ← uploaded PDF` once at indexing time, in the ingestion invocation, gives the approver *"retrieved chunk, untrusted"* days later but never *"…derived from an untrusted upload."* Declare lineage within the invocation whose approver should see it. Relaxing this for content-to-content hops, while keeping the proposal hop scoped, is tracked in [#201](https://github.com/fissible/verdict/issues/201).
 
 <!-- @verdict-claim limitation.content-moderation untestable reason="This is an intentional absence of a moderation product surface." -->
 ### No content moderation or factual review

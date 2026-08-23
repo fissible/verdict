@@ -12,6 +12,24 @@ Effort key: **XS** (<1h) · **S** (1–2h) · **M** (~half day) · **L** (~1 day
 GitHub milestones mirror this document. When they disagree, this document is wrong and should be
 corrected — the issues are the source of truth for scope, this is the source of truth for ordering.
 
+**Milestone membership was backfilled on 2026-08-20**, so GitHub now answers "which tag shipped this?"
+for every closed issue. Expect the per-release tables below to list *fewer* issues than the milestone
+holds — v0.4.0's milestone carries 42 closed issues against the nine rows in its section. That is the
+intended relationship: the tables record what was *planned and why it was ordered that way*; the
+milestone records what the tag *contains*.
+
+The backfill was derived from each issue's close time against the release publication times, not from
+whichever pull request happened to mention the issue last — that heuristic put #65 in an unreleased tag
+nine days after it closed, and misplaced #97, #112, #150, and #153. Every disagreement between the two
+methods was resolved against the code: #65 by finding `configuredDescriptionFingerprint` first present at
+v0.4.0, #150 and #153 by the tags containing their fix commits, #97 and #112 against the statement already
+in the adoption guide.
+
+Two issues carry no milestone on purpose, both closed `not planned`: [#106](https://github.com/fissible/verdict/issues/106)
+(tenant-aware pending-review query seam) and [#227](https://github.com/fissible/verdict/issues/227) (a
+streamed-resumption defect report that a mis-wired probe produced and which no code change answered).
+A milestone states which release shipped the work; neither shipped any.
+
 ---
 
 ## v0.3.0 — Evaluation harness extension *(cut)*
@@ -148,7 +166,7 @@ Both issues in this plan are now closed.
 
 ---
 
-## v0.6.0 — Live evaluation soundness *(next)*
+## v0.6.0 — Live evaluation soundness *(cut)*
 
 **Theme.** Make a live evaluation result trustworthy enough to act on. Every issue here was discovered
 by running #51's harness against a real model, not by reading the code.
@@ -174,7 +192,7 @@ reports `1 passed / 0 failed` → 100% → **MET** after it. #139 is correct and
 is that the less cooperative the model, the easier the threshold becomes to meet. #138 is what closes
 that, which is why this milestone should not be tagged with #137 and #139 alone. [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) settles it: a verdict is gated on coverage before rate, and a purpose whose measurable-but-unmeasured outcomes outnumber its evaluated ones reports `INSUFFICIENT` rather than a rate-based verdict.
 
-All three have merged, so this milestone is **ready to tag**.
+All three have merged and **v0.6.0 was tagged on 2026-08-14**.
 
 The three are one argument rather than three fixes, which is worth stating because they landed
 separately. #137 made trials independent; #139 stopped an unattempted attack being counted as a breach;
@@ -184,44 +202,247 @@ would have left a live verdict weaker than the one it replaced.
 Deferred from this milestone with their reasons recorded rather than dropped:
 [#174](https://github.com/fissible/verdict/issues/174) (per-case coverage, deferred from #138) and
 [#170](https://github.com/fissible/verdict/issues/170) (an unguarded control arm, whose three stated
-dependencies are now all settled).
+dependencies are now all settled). Both are scheduled into v0.7.0 below.
 
 ---
 
-## Contributor-ready — deliberately unscheduled
+## v0.7.0 — Prove the boundary is load-bearing *(cut)*
 
-These carry `scope: ready` and are open to anyone. They are **not** attached to a milestone, and that is a
-decision rather than an oversight: a milestone closes when its issues close, so scheduling unclaimed
-volunteer work would make a release depend on strangers who may never start. Labels are the discovery
-surface — `CONTRIBUTING.md` points contributors at `scope: ready`, and newcomers filter on
-`good first issue`. Whatever lands before a tag ships in that tag, exactly as displaced scope did for
-v0.4.0.
+**Theme.** Answer the question every reader of a security control asks first: *what happens without it?*
+Live evaluation currently measures whether Verdict denied an attack. It does not measure whether the attack
+would have succeeded unguarded, and those are different claims — only the second shows the boundary is
+doing work.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#174](https://github.com/fissible/verdict/issues/174) Decide whether coverage adequacy applies per case | M | #138 ✅ | ✅ Shipped — #179 |
+| [#170](https://github.com/fissible/verdict/issues/170) Add an unguarded control arm so a live run can show what Verdict prevented | XL | #137 ✅, #138 ✅, #139 ✅, #174 ✅ | ✅ Shipped — #180, #181, #186 |
+
+**#174 first, and not only because it is smaller.** The control arm's unit of measurement is the 2×2 for a
+single case — guarded denied or executed, against control executed or declined. v0.6.0's coverage gate is
+purpose-level, so it cannot express "this control's breach case never ran once." Landing #170's reporting on
+top of a purpose-level adequacy rule would produce a comparison that reads as complete while a whole control
+went unmeasured — the same class of defect [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md)
+closed one level up.
+
+**#170 is XL and should not be talked down.** Its three stated dependencies closed in v0.6.0, so it is
+unblocked for the first time, but the issue carries four things that each need doing properly: a safety
+model for deliberately letting an attack succeed, a breach case per control rather than one overall, a model
+chosen to breach reliably rather than to look good, and a sampling mode that distinguishes regression from
+rate estimation. Attempting it as a reporting feature would produce a comparison that looks rigorous and is
+not — the issue says so itself.
+
+**Safety leads here, and that is a change in posture.** Every previous milestone hardened a boundary. This
+one deliberately runs an attack against an unguarded agent so the dangerous capability actually executes.
+`CONTRIBUTING.md`'s requirement that live evaluation use synthetic, reversible data stops being advisory at
+that point. Whether the control arm needs its own opt-in, separate from the two switches that already gate
+live evaluation, is part of #170's decision rather than an implementation detail.
+
+**Why this milestone is worth its size.** v0.6.0 made a single live result trustworthy. The payoff for that
+work is being able to compare two, and the comparison is the first artifact this project can produce that
+demonstrates prevention rather than asserting it.
+
+**Shipped 2026-08-16.** The recorded control-arm run lives in `docs/evaluation.md`: against an abliterated
+Ollama model, the unguarded arm executed the cross-principal lookup and cancellation on every replay and the
+guarded arm denied them on every replay. Read narrowly, as the run itself is written — it demonstrates the
+*authorization* boundary under greedy reproducibility, and is explicitly not a rate, not the authority/intent
+gap, and not the human-approval boundary. Three follow-ups surfaced during the work carry into v0.8.0 below:
+[#183](https://github.com/fissible/verdict/issues/183)/[#184](https://github.com/fissible/verdict/pull/184)
+(guarded-arm evidence correlation — fixed and shipped in this tag),
+[#185](https://github.com/fissible/verdict/issues/185), and
+[#187](https://github.com/fissible/verdict/issues/187).
+
+---
+
+## v0.8.0 — Measure and defend intent *(scope complete, untagged)*
+
+**Theme.** v0.7.0 demonstrated the *authorization* boundary is load-bearing — but only that boundary, and
+only against outside-authority attacks. The harder case is inside-authority: an injected instruction
+selecting a record the actor **legitimately owns**, where authorization passes and the wrong-ness is that the
+action was not the user's intent. This milestone makes that gap measurable and hardens the harness that
+measures it, so a future recorded run can demonstrate the intent boundary the way v0.7.0 demonstrated
+authorization.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#185](https://github.com/fissible/verdict/issues/185) Distinguish harness blindness from model non-attempts in the coverage gates | M | #183 ✅ | ✅ Shipped — PR #189 |
+| [#187](https://github.com/fissible/verdict/issues/187) Add an inside-authority intent case so the control arm can measure the authority/intent gap | L | #170 ✅ | ✅ Shipped |
+| [#192](https://github.com/fissible/verdict/issues/192) Make context-resolved targets a first-class, evidence-visible choice | M | #187 ✅ | ✅ Shipped |
+| [#195](https://github.com/fissible/verdict/issues/195) Surface proposal provenance at the moment of decision | XL | #192 ✅ | ✅ Shipped — PR #205, ADR 0026 |
+| [#152](https://github.com/fissible/verdict/issues/152) Decide and enforce the binding fingerprint canonicalization contract | M | — | ✅ Shipped — PR #208 |
+| [#163](https://github.com/fissible/verdict/issues/163) Record the tool description fingerprints instead of discarding them | S | — | ✅ Shipped — PRs #209, #211 |
+| [#210](https://github.com/fissible/verdict/issues/210) Register a capability by affirming it, not by wiring it | L | — | ✅ Shipped — PR #215, ADR 0027 |
+| [#147](https://github.com/fissible/verdict/issues/147) Write a worked incident-response walkthrough over the evidence tables | M | — | ✅ Shipped — PR #220 |
+| [#146](https://github.com/fissible/verdict/issues/146) Warn from `verdict:validate` when a non-durable adapter is configured outside local | S | — | ✅ Shipped — PR #221 |
+| [#218](https://github.com/fissible/verdict/issues/218) Prove the confirmed-mutation allow-execute completes live (streamed + queued) | L | — | ✅ Shipped — PRs #233, #235 |
+| [#224](https://github.com/fissible/verdict/issues/224) Surface integrity-vs-completeness in verification output | S | — | ✅ Shipped — PR #232 |
+| [#230](https://github.com/fissible/verdict/issues/230) Name a confirmation gate that can never pause — advisory half | S | — | ✅ Shipped — PR #231; rejection half in v1.0.0 |
+| [#223](https://github.com/fissible/verdict/issues/223) Give evidence records an Attest-independent canonical identity | M | — | ✅ Shipped — PR #236 |
+
+**#185 first — it makes every future recorded run trustworthy.** v0.7.0's own recorded run was nearly
+published against a silently-blind guarded arm ([#183](https://github.com/fissible/verdict/issues/183)): the
+coverage gates could not tell "the harness saw nothing" from "the model attempted nothing." #185 gates
+integrity before coverage, failing loudly when the apparatus is blind rather than laundering blindness into a
+coverage verdict. Landing #187's intent demonstration on a harness that cannot draw that distinction would
+repeat the class of defect [ADR 0021](docs/adr/0021-coverage-adequacy-gates-a-live-verdict.md) closed one
+level up — the same argument that put #174 before #170.
+
+**#187 is the direct sequel to v0.7.0's demonstration** — the boundary that run explicitly did not cover. It
+is not a small addition: it needs a context-resolved-vs-proposal-resolved pairing, both arms guarded,
+distinct from #170's guarded/unguarded control arm, which refuses a guarded control arm by construction. The
+defensive mechanism it measures against — target provenance, so a proposal-resolved argument cannot redirect
+the executor — is being scoped separately (its ADR takes 0025, since #185 took 0024) and pairs with this
+issue rather than blocking it.
+
+**#192 and #195 are the defend-half of the same theme.** #187 made the authority/intent gap measurable;
+#192 made the resolution path a first-class, evidence-visible choice, so an auditor can query the population
+that matters rather than recompute a hash to find it; and #195 surfaced declared provenance to the human the
+boundary defers to, which is the intent control for a consequential capability. Together they close the loop
+the theme names: measure the gap, then give the approver the one fact that lets them act on it.
+
+Two design-scope follow-ups were filed from #195's work rather than absorbed into it, and are **deliberately
+not in this milestone**: [#201](https://github.com/fissible/verdict/issues/201) (cross-invocation content
+lineage does not reach an approver) and [#204](https://github.com/fissible/verdict/issues/204) (approval
+challenge facts are not observable to the live attack packs, so #195's claims are proven deterministically
+rather than measured per-case). Both contain decisions that belong in front of an ADR, not at the end of an
+implementation branch.
+
+**Scope is a starting point.** These are the follow-ups v0.7.0 surfaced; the milestone accretes `scope: ready`
+work that lands before the tag, exactly as prior milestones did — which is why #152, #163, #210, #147, and
+#146 appear above without having been in the original plan.
+
+This tag's window also absorbed work without a tracking issue: Claude 5 live-harness support and the
+aligned-ceiling control run (#217), and making `verify:claims` offline-safe with the network made opt-in
+(#219, #222).
+
+**#218 closed 2026-08-19** with both transports verified through completion: streamed via a
+`StepTextGateway` (#233) and queued across a real `InvokeAgent` dispatch, executing exactly once after
+approval (#235). The queued cell was the gap external review had named. Its scoping measured that a
+two-turn approval resume produces two distinct Laravel AI invocation ids, so the live harness cannot
+correlate the proposing turn with the executing one by `invocation_id` — that constraint carries into
+[#204](https://github.com/fissible/verdict/issues/204), which #218's closure unblocks and which is
+scheduled into v0.10.0 below.
+
+**Every row is shipped and the tag is ready to cut.**
+
+---
+
+## v0.9.0 — Adoption-grade proof, cut on upstream compatibility
+
+**Theme.** v0.8.0 finished making the boundary measurable; this milestone makes the proof *continuous*
+and *copyable*. Continuous: the attack packs stop being something that was run once and start being
+something CI re-verifies on every commit. Copyable: the correct wiring stops being prose and becomes an
+application someone can clone.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | none | ✅ merged in #241 |
+| [#237](https://github.com/fissible/verdict/issues/237) Clone-and-run reference application | XL | v0.8.0 tag | ✅ |
+| [#130](https://github.com/fissible/verdict/issues/130) Widen `laravel/ai` to `^0.11` | M | upstream tag ✅ | ✅ merged in #244 — pulled forward from v1.0.0 |
+| [#164](https://github.com/fissible/verdict/issues/164) Rate-limit window boundary, expiry, and cross-window leakage | M | none | ✅ merged in #238 — contributor pool, accreted |
+| [#248](https://github.com/fissible/verdict/issues/248) SHA-256 validators accept a trailing newline in three sites | XS | none | ✅ accreted |
+
+**Both theme items shipped, and then upstream forced the tag.** `laravel/ai 0.11.0` published on
+2026-08-19, hours after v0.8.0 was cut. Every published Verdict requires `^0.10.2`, so an adopter who
+already had `laravel/ai ^0.11` could not install Verdict at all: `composer require fissible/verdict`
+fails outright, and `--with-all-dependencies` does not rescue it because the root constraint blocks the
+downgrade. Since Verdict layers *on top of* Laravel AI, the usual discovery order puts the adopter on the
+newest Laravel AI before they ever reach Verdict — so that failure sits directly on the evaluation path.
+#130 was pulled forward from v1.0.0 and this tag cut on the compatibility fix rather than held for more
+scope. Same reasoning as v0.3.0: a tag is a point in history, and work in flight does not need to wait
+for it.
+
+**#130 drops `laravel/ai 0.10.x`.** That is a breaking change for existing consumers and therefore a
+minor bump per [`RELEASES.md`](RELEASES.md). It is forced rather than chosen: upstream's #874 made
+`float $time` a required argument on `ToolInvoked`, and the correlation assertion Verdict pins *inverts*
+between the two lines — under `0.10.x` the outer event correctly carries the inner tool's id, under
+`0.11.0` it does not. A security-relevant test that asserts opposite things depending on which dependency
+happens to be installed is worth less than the line it would preserve.
+
+**Two items moved out rather than held, so the tag was not delayed by work the theme never promised:**
+
+- [#204](https://github.com/fissible/verdict/issues/204) (approval-challenge facts observable to the live
+  packs) → **v0.10.0**. Research-thread work; see the section below.
+- [#225](https://github.com/fissible/verdict/issues/225) (vendor-neutral `EvidenceReference`) → **no
+  milestone, deliberately**. Its own acceptance criteria gate it on "something outside Verdict actually
+  needs to reference a Verdict claim." Scheduling it into any dated milestone would make that tag hostage
+  to an external consumer who may never appear. It is captured design, not scheduled work.
+
+**#164 and #248 keep their `v1.0.0` milestone on GitHub and are listed here anyway.** That is the rule
+working as designed, not a bookkeeping slip: the 1.0 milestone states what 1.0 *requires*, and it does not
+gate interim tags — whatever lands early ships in whichever tag is open. This table is the record of what
+the tag *contains*; the milestone is the record of what the bar *needs*. They are different questions, and
+prior milestones accreted work the same way (see v0.7.0's #152, #163, #210, #147, #146).
+
+**This tag's window also absorbed work without a tracking issue:** the failure-path tool-correlation
+mirror over `ToolFailed` (#246, the deferred half of #130) and the outbound claim-reference documentation
+(#242).
+
+**#148 was contributor-pool work and was deliberately pulled out of it.** A milestone must not depend on
+unclaimed volunteer work; scheduling #148 meant the maintainer claimed it.
+
+---
+
+## v0.10.0 — Measuring the approval boundary
+
+**Theme.** v0.7.0 measured authorization and v0.8.0 measured intent. This makes the human-approval
+boundary measurable the same way — proven per-case by the live packs rather than deterministically by a
+harness that already knows the answer.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#204](https://github.com/fissible/verdict/issues/204) Approval-challenge facts observable to the live attack packs | L | #218 ✅ | ✅ Shipped — PR #258 |
+| [#251](https://github.com/fissible/verdict/issues/251) Cross-principal order search: set-shaped case, filtered-permit outcome | M–L | #260 | open — pulled forward from v1.0.0 |
+| [#260](https://github.com/fissible/verdict/issues/260) Widening-mutation suite over the predicate normalizer | S–M | none | open — `help wanted`, first buildable slice of #251 |
+
+**Why #251 was pulled forward.** Its design completed under four rounds of external review on the
+issue itself (capture point, oracle shape, normalizer policy, independence — all decided and
+recorded), and it converts the scope limit #250 documented on the headline guarded-arm claims —
+record-keyed tools only — back into coverage. Design freshness is the asset being spent; the same
+accrete-don't-gate rule as #204 applies, and it is not a release gate for this tag.
+
+**Why this is not in v1.0.0.** The 1.0 milestone states what 1.0 *requires*. #204 makes an existing
+guarantee measurable rather than closing a gap that blocks the bar, so it is scheduled without being a
+release gate. Scope will accrete here the way every prior milestone accreted `scope: ready` work that
+landed before its tag.
+
+**One constraint carried in from #218's scoping:** a two-turn approval resume produces two distinct
+Laravel AI invocation ids, and `laravel/ai 0.11.0` did not change that — both `prompt()` and `stream()`
+still mint one unconditionally per call. So the live harness cannot correlate the proposing turn with the
+executing one by `invocation_id`; the tool call id is the boundary-spanning key. #204's design has to
+start from that.
+---
+
+## Contributor-ready
+
+These carry `scope: ready` and are open to anyone. They also now carry the `v1.0.0` milestone — a change
+from the earlier rule that unclaimed work stays unscheduled. The underlying principle is unchanged: a
+release must not depend on strangers who may never start. The milestone states what 1.0 *requires*; it
+does not gate interim tags — whatever lands early ships in whichever tag is open, exactly as displaced
+scope did for v0.4.0, and whatever is still unclaimed at the 1.0 decision point is absorbed by the
+maintainer or explicitly re-triaged (see the v1.0.0 section below). Labels remain the discovery surface —
+`CONTRIBUTING.md` points contributors at `scope: ready`, and newcomers filter on `good first issue`.
 
 Ordered by suggested pickup order: defects first, then self-contained work with a visible result.
 
 | Issue | Effort | Label | Deps |
 |---|---|---|---|
-| [#163](https://github.com/fissible/verdict/issues/163) Record the tool description fingerprints instead of discarding them | S | `bug` | none |
 | [#165](https://github.com/fissible/verdict/issues/165) Give `verdict:prune-rate-limits` a test that can fail | XS | `good first issue` | none |
 | [#143](https://github.com/fissible/verdict/issues/143) Publish PostgreSQL and MariaDB arms of the security-state benchmark | S | `good first issue` | none — compose services already exist |
 | [#142](https://github.com/fissible/verdict/issues/142) Collapse the repeated store/connection/table triple into a shared value object | XS | `good first issue` | none — carved out of #141 |
-| [#146](https://github.com/fissible/verdict/issues/146) Warn from `verdict:validate` when a non-durable adapter is configured outside local | S | `good first issue` | none |
 | [#166](https://github.com/fissible/verdict/issues/166) Prove a failing `CapabilityConfigurationStore` fails closed | S | `good first issue` | none — template at `SemanticRateLimitTest:194` |
 | [#168](https://github.com/fissible/verdict/issues/168) Assert the schema the migrations produce on MySQL, MariaDB, and PostgreSQL | S/M | `good first issue` | none — the matrix already runs them |
-| [#147](https://github.com/fissible/verdict/issues/147) Write a worked incident-response walkthrough over the evidence tables | M | `help wanted` | none — the v0.4.0 chain is complete |
 | [#144](https://github.com/fissible/verdict/issues/144) Prove the in-memory stores agree with the database stores | M | `help wanted` | none |
-| [#148](https://github.com/fissible/verdict/issues/148) Check in pack baselines and fail CI on unexplained regressions | M | `help wanted` | none |
 | [#145](https://github.com/fissible/verdict/issues/145) Add a delegation attack pack for actor-versus-subject confusion | M | `help wanted` | #31 ✅ |
 | [#167](https://github.com/fissible/verdict/issues/167) Pin cross-actor approval receipt separation end to end | S | `help wanted` | none |
 | [#151](https://github.com/fissible/verdict/issues/151) Harden field-path handling in the release path | M | `help wanted` | none — #150 shipped in v0.5.0 |
-| [#152](https://github.com/fissible/verdict/issues/152) Decide and enforce the binding fingerprint canonicalization contract | M | `scope: ready` | none |
 | [#164](https://github.com/fissible/verdict/issues/164) Cover rate-limit window boundary, expiry, and cross-window leakage | M | `scope: ready` | none |
 | [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | `scope: ready` | none — precedent in #91 |
 
-**#151 and #152 are the hardening that remained open after the same audit.** #149 and #150 were fixed in
-v0.5.0: neither was an authorization bypass, but both were asymmetries that were cheap to fix and
-expensive to explain later. #151 and #152 continue that hardening around field-path handling and binding
-fingerprint canonicalization.
+**#151 is the hardening that remains open after the same audit.** #149 and #150 were fixed in v0.5.0:
+neither was an authorization bypass, but both were asymmetries that were cheap to fix and expensive to
+explain later. #152 continued that hardening and shipped in v0.8.0's window; #151 is the remaining half,
+around field-path handling.
 
 [#153](https://github.com/fissible/verdict/issues/153) was settled in v0.5.0: a failed evidence write now
 dispatches `EvidenceWriteFailed` and execution continues, leaving the operational gates — rate-limit
@@ -231,24 +452,16 @@ cannot be finalized blocks its binding indefinitely. See ADR 0007 and the v0.5.0
 
 **#163 through #168 came out of a test-coverage audit after v0.5.0.** None is an authorization bypass and
 none makes a released version unsafe; they are places where a guarantee holds today but nothing pins it.
-Two are worth singling out. #163 is the only one that changes shipped behaviour: `AbstractVerdictTool`
-already fingerprints the tool description at wiring time and again at each invocation, so a description
-that changes in between is *detected* — and then discarded, because neither fingerprint reaches evidence.
-The bound capability is passed explicitly and cannot be redirected by description text, so this is a
-forensic gap rather than an authorization one. #165 is the cheapest and the most instructive: the command's
-only test asserts `Pruned 0` against an empty table, so it holds whether pruning works or does nothing at
-all.
+#163 was the only one that changed shipped behaviour — the tool-description fingerprints were computed and
+then discarded — and it shipped in v0.8.0's window. Of what remains, #165 is the cheapest and the most
+instructive: the command's only test asserts `Pruned 0` against an empty table, so it holds whether pruning
+works or does nothing at all.
 
 #167 and #168 are deliberately last. Cross-actor receipt separation already follows from `actor_id`
 participating in the binding, and the migrations already execute against all three engines in the
 concurrency matrix — both issues pin an existing property rather than close a suspected hole, and both say
 so. An earlier draft of the audit claimed migrations only ever run on SQLite and that a poisoned
 description could redirect a capability; neither survived checking, and neither is filed.
-
-**#147 is the one worth finishing soonest.** v0.4.0 completed the forensic chain — invocation correlation,
-derivation edges, actor and subject identity, configuration fingerprints, optional tamper-evidence — and
-every piece is documented where it was built, nowhere end to end. It is the document a prospective adopter
-opens to decide whether any of this is real.
 
 **#143 closes a gap between what is claimed and what is published.** ADR 0018's retry policy exists because
 of how PostgreSQL reports serialization failures at COMMIT. That behavior is tested, but the benchmark table
@@ -257,26 +470,54 @@ covers SQLite and MySQL only.
 **#142 and #141 must not collide.** #141 owns the `evidence.attest` block, which has real invariants; #142
 owns the four repeated store sections, which have none. Whoever takes the second should rebase on the first.
 
+**Deliberately unscheduled**, each for its own reason rather than by the old blanket rule:
+
+- [#201](https://github.com/fissible/verdict/issues/201) — a recorded, documented limitation; it becomes
+  scheduled work when an adopter hits it, per the v1.0.0 section's argument.
+- [#212](https://github.com/fissible/verdict/issues/212) — on-demand by its own framing; attach it to
+  whichever recorded run next needs a middle-spectrum arm.
+- [#213](https://github.com/fissible/verdict/issues/213) — an epic; its children take milestones (#148
+  opens in v0.9.0), the umbrella does not close with any one tag.
+
 ---
 
-## 1.0 readiness
+## v1.0.0 — the 1.0 bar
 
-Nothing is scheduled, and nothing is listed here on purpose.
+An earlier revision of this section scheduled nothing, on the argument that inventing 1.0 work would
+produce a backlog that measures imagination rather than adoption. That argument held until the backlog
+produced 1.0-shaped work on its own: two decisions now name 1.0 as their natural boundary, one dependency
+question cannot be called settled while upstream sits behind a known unreleased breaking change, and the
+contributor pool's pinning work serves the bar directly. The milestone now exists and carries them.
 
-Every issue this section previously named — the concurrency spike and its tests and benchmarks, the
-extension-contract stability audit, the guarantee-to-test traceability sweep, the ordering and
-compatibility matrix — is closed. Listing closed work as a backlog made the document say the opposite of
-what was true.
+The bar itself is unchanged and stated in [`RELEASES.md`](RELEASES.md): stable documented contracts, an
+explicit Laravel AI compatibility strategy, upgrade-safe migrations, real-application feedback, and no
+known silent bypass within the supported integration paths.
 
-What replaces it is not a shorter list. Verdict's remaining 1.0 questions are the ones only real
-applications can ask: which contracts turn out to be load-bearing in an integration nobody here designed,
-which documented guarantee turns out to be worded more strongly than the implementation supports, and which
-upgrade path hurts. Those become issues when someone hits them, not before. Inventing them now would
-produce a backlog that measures imagination rather than adoption.
+**The decision pair, first:**
 
-The 1.0 bar itself is unchanged and stated in [`RELEASES.md`](RELEASES.md): stable documented contracts, an
-explicit Laravel AI compatibility strategy, upgrade-safe migrations, real-application feedback, and no known
-silent bypass within the supported integration paths.
+| Issue | Effort | Deps |
+|---|---|---|
+| [#159](https://github.com/fissible/verdict/issues/159) Decide whether the capability invariant is structural or only declarative | M | none |
+| [#230](https://github.com/fissible/verdict/issues/230) Reject a pause-less confirmation gate at registration (rejection half) | S | #159 |
+
+These are one question at two layers — whether the boundary is enforced by structure or by advisory — and
+should settle in one ADR. #230's thread already proposes the sequencing: the v0.8.0 advisory (#231) *is*
+the deprecation period, and registration-time rejection lands at the 1.0 boundary.
+
+**Upstream compatibility — satisfied, and moved out.** [#130](https://github.com/fissible/verdict/issues/130)
+lived here because the compatibility-strategy criterion could not be called satisfied while the dependency
+sat behind a known unreleased breaking change. Upstream published `0.11.0` on 2026-08-19 and #130 shipped
+in v0.9.0, so the blocker is gone. What the criterion now requires is not an issue but a practice: that
+the strategy keeps being exercised on each upstream minor. The dependency watch below is that practice.
+
+**The pinning pool** is the contributor-ready section above: every guarantee that holds today but is not
+pinned by a test, plus the hardening that makes an allowlist explainable. Suggested pickup order is stated
+there; #156 and #160 carry `scope: design` and need a decision before code.
+
+**What this milestone cannot contain:** the real-application-feedback criterion is not backlog. It arrives
+through adoption — [#237](https://github.com/fissible/verdict/issues/237) is the nearest instrument;
+external contributors and issue reports are the rest. A 1.0 with every issue above closed but no
+integration feedback is not a true 1.0. The tag waits for the evidence, not the checklist.
 
 ---
 
@@ -286,22 +527,29 @@ See [`docs/laravel-ai-compatibility.md`](docs/laravel-ai-compatibility.md) for t
 Verdict's `src/` actually depends on in Laravel AI's surface, classified by how likely each dependency is
 to change without warning, and which tests would catch it (#18).
 
-Verdict pins `laravel/ai: ^0.10.2`, which in Composer's pre-1.0 caret semantics is `>=0.10.2 <0.11.0`.
+Verdict pins `laravel/ai: ^0.11.0`, which in Composer's pre-1.0 caret semantics is `>=0.11.0 <0.12.0`.
+`0.10.x` is no longer supported — see v0.9.0 above for why that floor move was forced rather than chosen.
 
-- **laravel/ai#848** (open) fixes the nested `toolInvocationId` clobber. It is minor-bump shaped, so it
-  will likely ship in `0.11.0` and will not be picked up automatically. It has since grown into a stack
-  (#870, #872, #873, #874, #875, #876) that adds `RunContext` and `ToolFailed` and makes `float $time` a
-  required argument to `ToolInvoked` — a declared breaking change. **#130** tracks the widening as one
-  reviewed pass, including the two hand-constructed `ToolInvoked` events in
-  `tests/Feature/LaravelAiProvenanceTest.php`.
-- `tests/Feature/ToolInvocationCorrelationTest.php` pins the *current, buggy* behaviour deliberately.
-  When the constraint widens past #848, that test goes red. **That failure is the designed alarm, not a
-  regression** — it means upstream correlation semantics changed and Verdict's evidence path needs review.
+- **The run-context stack shipped in `0.11.0` and was absorbed in one reviewed pass (#130 → #244).**
+  laravel/ai#848, the draft this watch originally tracked, was **closed as superseded**; the work split
+  into #870, #872, #873, #874, #875, and #876. Do not cite #848 as the fix — **#872** is what deleted the
+  shared `toolInvocationId` and scoped it through a `RunContext`.
+- `tests/Feature/ToolInvocationCorrelationTest.php` used to pin the *buggy* behaviour deliberately, so an
+  upstream fix would fail loudly rather than change the meaning of recorded evidence in silence. **The
+  alarm fired as designed**, and the assertion now states the fixed behaviour: each tool's completion
+  event reports its own id. #246 added the failure-path mirror over `ToolFailed`, which occupies the same
+  trailing-event position the defect used to corrupt.
 - Dependabot watches Composer weekly and will open the widening PR. Whichever milestone is open when that
   lands absorbs the compatibility review, per `RELEASES.md`.
 - `.github/workflows/laravel-ai-canary.yml` runs PHPStan and the suite against `laravel/ai:0.x-dev` weekly,
   non-blocking. Dependabot's PR arrives when upstream *publishes*; the canary reports when upstream
   *merges*. That lead time is the point — it is what lets an issue blocked on an in-flight upstream stack
   be scoped against what actually landed rather than against an open draft. A red canary means upstream
-  changed: work **#130**'s checklist, do not widen `composer.json` to make it green. The constraint is
-  `0.x-dev`, not `dev-0.x`; Composer normalizes a branch name that already looks like a version.
+  changed: open a widening issue on #130's pattern — a compatibility review and a release — and do not
+  widen `composer.json` to make it green. The constraint is `0.x-dev`, not `dev-0.x`; Composer normalizes
+  a branch name that already looks like a version.
+- **The canary reports merges, not releases, and that distinction cost real time once.** It ran on
+  schedule the morning after the stack merged and reported exactly the two failures #130 predicted — but
+  `0.11.0` publishing a week later produced no signal of its own, because a published tag outside the
+  constraint is invisible to CI by construction. Dependabot is the alarm for *publication*; the canary is
+  the alarm for *merge*. Neither replaces reading upstream's releases.

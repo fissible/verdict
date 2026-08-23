@@ -28,6 +28,20 @@ it('rejects ambiguous source and destination identifiers', function (Closure $ma
     'trust-zone separator' => [fn (): Destination => Destination::connection('ollama-local', 'local:machine')],
 ]);
 
+it('distinguishes an unregistered route from a registered one that permits nothing', function (): void {
+    $source = Source::application('customer-profile');
+    $destination = Destination::connection('ollama-local', 'local-machine');
+    $registry = new ReleasePolicyRegistry;
+
+    expect($registry->hasRoute($source, $destination))->toBeFalse();
+
+    $registry->register(ReleasePolicy::between($source, $destination));
+
+    expect($registry->hasRoute($source, $destination))->toBeTrue()
+        ->and($registry->permits($source, $destination, DataClass::PII, Trust::Trusted))->toBeFalse()
+        ->and($registry->hasRoute($source, Destination::connection('other-host', 'local-machine')))->toBeFalse();
+});
+
 it('rejects duplicate policies for the same exact route', function (): void {
     $source = Source::application('customer-profile');
     $destination = Destination::connection('ollama-local', 'local-machine');

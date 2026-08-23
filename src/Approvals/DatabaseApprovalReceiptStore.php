@@ -311,6 +311,9 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             'tool_call_id' => $receipt->toolCallId,
             'capability' => $receipt->capability,
             'binding_fingerprint' => $receipt->bindingFingerprint,
+            'provenance' => $receipt->provenance === null
+                ? null
+                : json_encode($receipt->provenance->toArray(), JSON_THROW_ON_ERROR),
             'status' => $receipt->status->value,
             'reason' => $receipt->reason,
             'expires_at' => $receipt->expiresAt,
@@ -331,6 +334,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             toolCallId: (string) $row->tool_call_id,
             capability: (string) $row->capability,
             bindingFingerprint: (string) $row->binding_fingerprint,
+            provenance: $this->provenanceFromRow($row),
             status: ApprovalReceiptStatus::from((string) $row->status),
             reason: $row->reason === null ? null : (string) $row->reason,
             expiresAt: $this->dateFromDatabase($row->expires_at),
@@ -342,6 +346,19 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             createdAt: $this->dateFromDatabase($row->created_at),
             updatedAt: $this->dateFromDatabase($row->updated_at),
         );
+    }
+
+    private function provenanceFromRow(stdClass $row): ?ProposalProvenance
+    {
+        $stored = $row->provenance ?? null;
+
+        if (! is_string($stored) || $stored === '') {
+            return null;
+        }
+
+        $decoded = json_decode($stored, true, flags: JSON_THROW_ON_ERROR);
+
+        return is_array($decoded) ? ProposalProvenance::fromArray($decoded) : null;
     }
 
     private function dateFromDatabase(mixed $value): DateTimeImmutable

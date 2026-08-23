@@ -20,6 +20,7 @@ final readonly class CallbackAssertion implements ObservationAssertion
         public string $name,
         Closure $test,
         public string $failureMessage = 'The observed behavior did not satisfy the assertion.',
+        public AssertionFacet $facet = AssertionFacet::Security,
     ) {
         if (trim($this->name) === '') {
             throw new InvalidArgumentException('An observation assertion must have a name.');
@@ -36,6 +37,7 @@ final readonly class CallbackAssertion implements ObservationAssertion
             assertion: $this->name,
             passed: $passed,
             message: $passed ? null : $this->failureMessage,
+            facet: $this->facet,
         );
     }
 }

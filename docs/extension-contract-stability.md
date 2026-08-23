@@ -21,10 +21,12 @@ used by an implementation part of Verdict's public API.
 | `ClassifiesToolResult` | Stable | None | Add provenance classification to an application's Laravel AI tool result. |
 | `Clock` | Stable | `SystemClock` | Supply deterministic or deployment-specific time. |
 | `ContextTransformer` | Stable | `StructuredRedactor` | Transform data before a release or other context-sensitive operation. |
+| `DeclaresExpressibleToolShapes` | Experimental | `AccountRecoveryAttackPack`, `RagBorneInjectionAttackPack`, `StorefrontAttackPack`, `ToolIntegrityAttackPack` | Declare the tool shapes an attack pack can express — the coverage manifest surfaced in run output beside coverage reporting. |
 | `EvidenceWriter` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Send Verdict evidence to a project-specific durable, attestable, or external backend. |
 | `ProvenanceLedgerStore` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Query a provenance and derivation ledger without taking on evidence writes. |
 | `EvidenceRecorder` | Experimental, deprecated pre-1.0 | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Legacy mixed write/query compatibility bridge; use `EvidenceWriter` and/or `ProvenanceLedgerStore` for new adapters. |
 | `ExecutionClaimStore` | Stable | `DatabaseExecutionClaimStore`, `InMemoryExecutionClaimStore` | Store exactly-once execution claims in a durable or external backend. |
+| `ExecutionWindow` | Experimental | `ConnectionPredicateCapture` | Observe capability executor invocations — the seam `VerdictManager` opens around exactly the executor call, used by the evaluation harness's predicate capture. Implementations must return the execution's result unchanged and let its exceptions propagate. |
 | `ObservationAssertion` | Experimental | `CallbackAssertion` | Define an assertion for a capability evaluation observation. |
 | `PrunableRateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Opt a `RateLimitStore` into expired-bucket cleanup. |
 | `RateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Store rate-limit consumption in a durable or external backend. |

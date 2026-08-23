@@ -10,5 +10,6 @@ final readonly class AssertionResult
         public string $assertion,
         public bool $passed,
         public ?string $message = null,
+        public AssertionFacet $facet = AssertionFacet::Security,
     ) {}
 }

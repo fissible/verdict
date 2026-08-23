@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Evaluation;
 
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Contracts\DeclaresExpressibleToolShapes;
 use Fissible\Verdict\Contracts\ObservationAssertion;
 use Fissible\Verdict\Support\SystemClock;
 use InvalidArgumentException;
@@ -14,15 +15,24 @@ final readonly class SecuritySuite
 {
     /**
      * @param  list<EvaluationCase>  $cases
+     * @param  list<ToolShape>|null  $toolShapes  the pack's coverage manifest
+     *                                            ({@see DeclaresExpressibleToolShapes});
+     *                                            null when the builder made no declaration — absence is honest,
+     *                                            an empty list would claim nothing is expressible
      */
     public function __construct(
         public string $name,
         public string $version,
         public array $cases,
         public ReproductionMetadata $reproduction = new ReproductionMetadata,
+        public ?array $toolShapes = null,
     ) {
         if (trim($this->name) === '' || trim($this->version) === '') {
             throw new InvalidArgumentException('A security suite must have a non-empty name and version.');
+        }
+
+        if ($this->toolShapes !== null) {
+            $this->assertToolShapes($this->toolShapes);
         }
 
         if ($this->cases === []) {
@@ -39,6 +49,24 @@ final readonly class SecuritySuite
             }
 
             $caseIds[$case->id] = true;
+        }
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $toolShapes
+     */
+    private function assertToolShapes(array $toolShapes): void
+    {
+        // An empty list would serialize a false "nothing is expressible" claim — undeclared is
+        // expressed as null, never as []. A keyed array is not the declared contract.
+        if ($toolShapes === [] || ! array_is_list($toolShapes)) {
+            throw new InvalidArgumentException('A tool-shape declaration must be a non-empty list.');
+        }
+
+        foreach ($toolShapes as $shape) {
+            if (! $shape instanceof ToolShape) {
+                throw new InvalidArgumentException('Every declared tool shape must be a ToolShape.');
+            }
         }
     }
 
@@ -71,6 +99,7 @@ final readonly class SecuritySuite
             startedAt: $startedAt,
             completedAt: $clock->now(),
             cases: $results,
+            toolShapes: $this->toolShapes,
         );
     }
 
@@ -86,27 +115,14 @@ final readonly class SecuritySuite
             );
         }
 
+        // Two try blocks, not one. A throw from `execute()` means there is no observation to
+        // record, so the result carries none. A throw from an ASSERTION — `ExecutionAwaitsApproval`
+        // and `CapabilityNotAttempted` are both routine — is a different thing: the run produced a
+        // real observation and only the verdict on it is missing. Folding both into one catch
+        // discarded the evidence for exactly the errored cases whose evidence matters most, which
+        // is what made `LiveEvaluationRunner`'s control-arm challenge check unreachable.
         try {
             $observation = $case->execute();
-            $assertions = array_map(
-                static fn (ObservationAssertion $assertion): AssertionResult => $assertion->evaluate($observation),
-                $case->assertions,
-            );
-            $passed = true;
-
-            foreach ($assertions as $assertion) {
-                if (! $assertion->passed) {
-                    $passed = false;
-                    break;
-                }
-            }
-
-            return $this->result(
-                $case,
-                status: $passed ? CaseStatus::Passed : CaseStatus::Failed,
-                assertions: $assertions,
-                observation: ObservationEvidence::fromObservation($observation),
-            );
         } catch (Throwable $error) {
             return $this->result(
                 $case,
@@ -116,6 +132,39 @@ final readonly class SecuritySuite
                 errorClass: $error::class,
             );
         }
+
+        $evidence = ObservationEvidence::fromObservation($observation);
+
+        try {
+            $assertions = array_map(
+                static fn (ObservationAssertion $assertion): AssertionResult => $assertion->evaluate($observation),
+                $case->assertions,
+            );
+        } catch (Throwable $error) {
+            return $this->result(
+                $case,
+                status: CaseStatus::Error,
+                assertions: [],
+                observation: $evidence,
+                errorClass: $error::class,
+            );
+        }
+
+        $passed = true;
+
+        foreach ($assertions as $assertion) {
+            if (! $assertion->passed) {
+                $passed = false;
+                break;
+            }
+        }
+
+        return $this->result(
+            $case,
+            status: $passed ? CaseStatus::Passed : CaseStatus::Failed,
+            assertions: $assertions,
+            observation: $evidence,
+        );
     }
 
     /** @param list<AssertionResult> $assertions */
@@ -138,6 +187,7 @@ final readonly class SecuritySuite
             observation: $observation,
             errorClass: $errorClass,
             blockedBy: $blockedBy,
+            safeOutcome: $case->safeOutcome,
         );
     }
 }

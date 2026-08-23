@@ -140,6 +140,42 @@ at decision time and cannot demonstrate afterwards: evidence can prove which req
 and that the authorized request is the one that ran, but not *for whom*. Closing it is tracked
 separately.
 
+### Update: what may enter a binding fingerprint
+
+Layer two rests on a digest deciding when two requests are the same request. That digest is
+`ArgumentFingerprint`, and it is the approval receipt's `bindingFingerprint`, the execution claim's,
+the rate-limit bucket identity, the evidence `argument_fingerprint`, and the context release's
+`payload_fingerprint`. What may enter it is therefore part of this ADR's invariant, not an encoding
+detail, and it is stated here rather than inferred from the implementation. Settled by
+[#152](https://github.com/fissible/verdict/issues/152).
+
+**The contract.** A fingerprinted structure contains scalars, `null`, and arrays of those. Anything
+else is refused with an `InvalidArgumentException` at the point it is supplied.
+
+1. **Object keys are sorted; list order is preserved.** Key order is not part of a request's
+   identity. Element order is: a reordered list is a different request.
+2. **Strings are byte-exact.** No Unicode normalization. Two strings that render identically but
+   differ in bytes are different requests, which is the correct behavior for a binding and is stated
+   rather than changed.
+3. **Objects are refused, and this is deliberate.** An object handed to `json_encode` is
+   fingerprinted by whatever it emits: `JsonSerializable` puts an application-defined method inside
+   the binding computation, non-public properties are dropped silently, and `(object) ['a' => 1]`
+   produces the same digest as `['a' => 1]` — a different PHP type treated as the same authorized
+   request. Hashing it and hoping is worse than refusing it, because the failure is silent and
+   arrives as an approval that does not match the action it authorized.
+4. **Float rendering does not depend on ambient configuration.** `json_encode` renders floats
+   according to `serialize_precision`; the encoder pins it to PHP's default (`-1`) for the duration
+   of the call and restores the caller's setting afterwards. Pinning to the default rather than to a
+   fixed digit count means deployments that never changed the setting keep every digest they have
+   already persisted.
+
+**Why refusal rather than tolerance.** Every other layer-two guarantee is fail-closed by
+construction; a binding primitive that quietly accepts an input it cannot canonicalize reliably is
+the one place where being permissive produces a security-relevant wrong answer instead of an error.
+
+`ContentFingerprint` enforces the same contract over the same encoder, so provenance content and
+binding arguments cannot disagree about what a given structure hashes to.
+
 ## Non-goals
 
 - **No `src/` change is made or required by this ADR.** It states a property the code already has and

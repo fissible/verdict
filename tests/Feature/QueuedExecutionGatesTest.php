@@ -226,6 +226,7 @@ beforeEach(function (): void {
 
     (require __DIR__.'/../../vendor/orchestra/testbench-core/laravel/migrations/0001_01_01_000002_testbench_create_jobs_table.php')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_invocation_id_to_verdict_evidence_table.php.stub')->up();
@@ -233,6 +234,9 @@ beforeEach(function (): void {
     (require __DIR__.'/../../database/migrations/add_tool_kind_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_configuration_fingerprint_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_actor_and_subject_fingerprints_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_target_source_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_tool_description_fingerprints_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_record_identity_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_rate_limit_buckets_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_execution_claims_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_capability_configurations_table.php.stub')->up();

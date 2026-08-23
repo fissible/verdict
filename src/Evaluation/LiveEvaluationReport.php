@@ -16,7 +16,7 @@ final readonly class LiveEvaluationReport implements JsonSerializable
     /** @return array<string, mixed> */
     public function toArray(): array
     {
-        return [
+        $report = [
             'schema' => self::SCHEMA,
             'suite' => $this->result->suite,
             'version' => $this->result->version,
@@ -29,6 +29,51 @@ final readonly class LiveEvaluationReport implements JsonSerializable
                 CasePurpose::Utility->value => $this->thresholdArray($this->result->utilityThreshold),
             ],
             'cases' => array_map($this->caseArray(...), $this->result->cases),
+        ];
+
+        // Additive to the v1 schema, absent on non-control runs. `pairs` is null under sampled
+        // decoding by construction — the runner never stores pair counts there. See ADR 0023.
+        // Absent rather than empty when the suite made no declaration, matching the deterministic
+        // report: the manifest states which tool shapes this pack can express.
+        if ($this->result->toolShapes !== null) {
+            $report['tool_shapes'] = ToolShape::manifest($this->result->toolShapes);
+        }
+
+        // Additive (#280), absent when the suite has no filtered-permit case. `rate` is null for a
+        // case with nothing evaluated, never 0 — a rate over zero trials is absent, not zero.
+        if ($this->result->overRestriction !== null) {
+            $report['over_restriction'] = $this->overRestrictionArray($this->result->overRestriction);
+        }
+
+        if ($this->result->control !== null) {
+            $report['control'] = [
+                'sampling_mode' => $this->result->control->samplingMode->value,
+                'cases' => array_map($this->controlCaseArray(...), $this->result->control->cases),
+            ];
+        }
+
+        return $report;
+    }
+
+    /** @return array<string, mixed> */
+    private function controlCaseArray(LiveEvaluationControlCaseResult $case): array
+    {
+        $coverage = $case->coverage();
+
+        return [
+            'id' => $case->id,
+            'purpose' => $case->purpose->value,
+            'safe_outcome' => $case->safeOutcome->value,
+            'score' => $this->scoreArray($case->score),
+            'coverage' => [
+                'evaluated' => $coverage->evaluated,
+                'measurable_but_unmeasured' => $coverage->measurableButUnmeasured,
+                'structurally_unavailable' => $coverage->structurallyUnavailable,
+            ],
+            'pairs' => $case->pairCounts,
+            'failed_assertions' => $case->failedAssertions,
+            // Null for utility cases: executing is their intended behaviour, not a breach.
+            'breach_demonstrated' => $case->purpose === CasePurpose::Security ? $case->breachDemonstrated() : null,
         ];
     }
 
@@ -54,6 +99,27 @@ final readonly class LiveEvaluationReport implements JsonSerializable
         ];
     }
 
+    /** @return array<string, mixed> */
+    private function overRestrictionArray(LiveEvaluationOverRestrictionGate $gate): array
+    {
+        $cases = [];
+
+        foreach ($gate->cases as $id => $case) {
+            $cases[$id] = [
+                'over_restricted' => $case->overRestricted,
+                'evaluated' => $case->evaluated,
+                'rate' => $case->rate(),
+                'disposition' => $case->disposition($gate->maximumRate)->value,
+            ];
+        }
+
+        return [
+            'maximum_rate' => $gate->maximumRate,
+            'disposition' => $gate->disposition()->value,
+            'cases' => $cases,
+        ];
+    }
+
     /** @return array<string, int|float|null> */
     private function scoreArray(Score $score): array
     {
@@ -71,13 +137,27 @@ final readonly class LiveEvaluationReport implements JsonSerializable
     /** @return array<string, mixed> */
     private function caseArray(LiveEvaluationCaseResult $case): array
     {
+        $coverage = $case->coverage();
+
         return [
             'id' => $case->id,
             'version' => $case->version,
             'purpose' => $case->purpose->value,
+            'safe_outcome' => $case->safeOutcome->value,
             'trusted_setup_fingerprint' => $case->trustedSetupFingerprint,
             'untrusted_input_fingerprint' => $case->untrustedInputFingerprint,
             'score' => $this->scoreArray($case->score),
+            // Additive (#276): over-restricted trials are inside score.passed; failed_assertions
+            // is sparse, name to count, so a failed case is attributable from the report.
+            'over_restricted' => $case->overRestricted,
+            'failed_assertions' => $case->failedAssertions,
+            // Additive to the v1 schema. The purpose-level coverage is exactly the sum of these,
+            // so a reader can see which case a verdict's support came from without arithmetic.
+            'coverage' => [
+                'evaluated' => $coverage->evaluated,
+                'measurable_but_unmeasured' => $coverage->measurableButUnmeasured,
+                'structurally_unavailable' => $coverage->structurallyUnavailable,
+            ],
         ];
     }
 }

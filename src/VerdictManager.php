@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict;
 
+use Closure;
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
@@ -12,6 +13,8 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalTransition;
+use Fissible\Verdict\Approvals\ProposalAnchor;
+use Fissible\Verdict\Approvals\StrictProvenanceGuard;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Context\ContextReleaseManager;
@@ -19,6 +22,7 @@ use Fissible\Verdict\Context\PendingContextRelease;
 use Fissible\Verdict\Context\ReleasePolicy;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\EvidenceWriter;
+use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
@@ -27,6 +31,7 @@ use Fissible\Verdict\Decisions\ExecutionResult;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
+use Fissible\Verdict\Evidence\NullRecorderWarning;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\Exceptions\ExecutionClaimFinalizationFailed;
@@ -63,8 +68,18 @@ final readonly class VerdictManager
         private ExecutionClaimManager $executionClaims,
         private ProvenanceLedger $provenance,
         private InvocationContext $invocations,
+        private StrictProvenanceGuard $strictProvenance,
         private string $deniedMessage,
         private Dispatcher $events,
+        private NullRecorderWarning $nullRecorderWarning,
+        /**
+         * Resolved per execution, never at construction: a provider that type-hints this manager
+         * in boot() constructs it before any evaluation harness runs, and an eagerly-captured
+         * window would freeze as null — every filtered-permit trial silently unmeasured.
+         *
+         * @var (Closure(): ?ExecutionWindow)|null
+         */
+        private ?Closure $executionWindow = null,
     ) {}
 
     public function capability(Capability $capability): self
@@ -108,6 +123,14 @@ final readonly class VerdictManager
 
         $capability = $this->capabilities->get($envelope->proposal->capability);
 
+        // A capability requiring confirmation or at-most-once execution is exactly where an
+        // unrecorded decision is most consequential — an approval nobody can later prove was
+        // granted, a claim whose admission history is unrecoverable. Warn once per process if such
+        // a capability is running under the shipped no-op recorder. Advisory only (ADR 0007). #194.
+        if ($capability->isConsequential()) {
+            $this->nullRecorderWarning->noteConsequentialAction($this->evidence, $this->events);
+        }
+
         try {
             $target = $capability->resolveTarget($envelope);
         } catch (TargetNotResolvable) {
@@ -123,7 +146,8 @@ final readonly class VerdictManager
         $decision = $this->authorizer->decide($capability, $envelope, $target);
 
         if ($decision->permitsExecution() && $capability->confirmationRequired()) {
-            $decision = Decision::requireConfirmation($capability->confirmationReason());
+            $decision = $this->strictProvenanceDenial($capability, $envelope)
+                ?? Decision::requireConfirmation($capability->confirmationReason());
         }
 
         return $this->record(new Evaluation(
@@ -133,6 +157,31 @@ final readonly class VerdictManager
             decision: $decision,
             stage: EvaluationStage::Proposal,
         ));
+    }
+
+    /**
+     * Under opt-in strict mode, a consequential proposal nobody declared an origin for is denied
+     * here — at the confirmation gate, before a receipt is issued or any other state is consumed.
+     *
+     * Asks the ledger directly rather than assembling the approver payload: the question is whether
+     * a derivation was declared, and there is no approver to release anything to on a path that
+     * ends in a denial. See ADR 0026 §5.
+     */
+    private function strictProvenanceDenial(Capability $capability, ActionEnvelope $envelope): ?Decision
+    {
+        if (! $this->strictProvenance->enabled() || ! $capability->isConsequential()) {
+            return null;
+        }
+
+        $correlationId = $this->invocations->current();
+        $declared = $correlationId !== null && $this->provenance->declaredUpstreamOf(
+            $correlationId,
+            ProposalAnchor::for($envelope->proposal->arguments),
+        )->isDeclared();
+
+        return $declared
+            ? null
+            : Decision::deny('No declared provenance for this proposal, and strict provenance is enabled.');
     }
 
     /**
@@ -377,7 +426,17 @@ final readonly class VerdictManager
         }
 
         try {
-            $output = $executor($admission);
+            // The one place an executor runs, and therefore the one place the window opens: store
+            // traffic before this line (claims, rate limits, evidence) and after it (finalization)
+            // stays outside, which is what lets the evaluation harness treat a captured statement
+            // as the executor's. See Contracts\ExecutionWindow.
+            $window = $this->executionWindow === null ? null : ($this->executionWindow)();
+            $output = $window === null
+                ? $executor($admission)
+                : $window->around(
+                    $evaluation->envelope,
+                    static fn (): mixed => $executor($admission),
+                );
         } catch (Throwable $executionFailure) {
             if ($admission !== null) {
                 try {

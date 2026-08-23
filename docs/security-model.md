@@ -28,6 +28,44 @@ Authorization and target binding are the foundation of a protected capability. C
 
 The model may supply arguments, but it is not the authority that decides whether an actor can act on a record. Target resolvers should load records from trusted storage and enforce tenant or ownership boundaries explicitly where the application needs them.
 
+### Authority is not intent
+
+Authorization answers one question: may this actor perform this operation on this
+record? It cannot answer a second question: did this actor want it?
+
+Under prompt injection the actor is the legitimate authenticated user. If injected
+content selects a record the actor is authorized for, every authorization check in
+Verdict permits the action, correctly. The gap is not in the policy evaluation. It is
+that the target was chosen by something other than the user.
+
+This is why target provenance matters more than target validation. Verdict distinguishes
+two resolution paths:
+
+- **Context-resolved targets.** The resolver reads from `ActionContext`, which the
+  application builds per invocation from state the model cannot influence. An injected
+  instruction cannot change which record is acted on, only whether an action is
+  proposed at all. This is the recommended path for consequential operations.
+- **Proposal-resolved targets.** The resolver reads from
+  `ActionEnvelope::$proposal->arguments`. Scoping the lookup to the actor bounds which
+  records are reachable. It does not establish that the actor chose this one.
+
+Verdict's authorization layer bounds authority on both paths. Only the first bounds
+selection. For proposal-resolved targets on consequential operations, the intent
+control is human approval, not the policy.
+
+That distinction is executable, not just prose:
+`StorefrontScenarioRunner::contextResolvedTargetDifferential()` runs one injected argument
+— naming a *different* order the actor also owns — through two capability registrations,
+and records which record each acted on. The proposal-resolved registration is redirected to
+the injected order; the context-resolved one holds to the intended order and ignores the
+injection. This measures a capability property: a context-resolved target is not redirectable
+by an injected argument. It does **not** make intent determinable — Verdict still cannot tell a
+wanted action from an unwanted one, only remove the model's ability to choose the record
+(`limitation.intent` stays untestable). Making the resolution path visible in evidence is a
+separate mechanism, tracked in [#192](https://github.com/fissible/verdict/issues/192).
+
+<!-- @verdict-claim capability.context-resolved-target tested -->
+
 ### Actor and subject evidence
 
 `ActionContext::$actor` is the principal acting and is the value Verdict passes to Laravel's Gate. Its optional `$subject` is the principal on whose behalf that actor acts; when it is `null`, the actor acts for itself. A subject is not a delegator: delegation attenuates an existing authority, while an actor acting for a subject may instead reflect a separately authorized escalation. See [ADR 0015](adr/0015-authority-propagation.md).
@@ -47,6 +85,13 @@ final class SupportAgent implements ProvidesVerdictIdentity
 ```
 
 Verdict stores only the SHA-256 fingerprint of this application-supplied string in `actor_fingerprint` and `subject_fingerprint`; it never guesses an identity from an object hash, serialization, or raw value. Values that do not implement the contract produce nullable identity evidence, and an empty supplied identity is rejected.
+
+<!-- @verdict-claim evidence.null-recorder-warned tested -->
+## Evidence recording is opt-in, and its absence is loud
+
+Evidence recording is opt-in: `verdict.evidence.recorder` ships as `NullEvidenceRecorder`, a no-op, so a fresh install records nothing until an operator configures a durable recorder. That is a deliberate default — writing actor identities and argument fingerprints to a table the operator did not choose is a real imposition, and evidence is never an authorization gate ([ADR 0007](adr/0007-evidence-layering.md)), so the security boundary does not depend on it.
+
+The absence is made visible where it matters most, rather than left silent. When a capability requiring confirmation or at-most-once execution runs under the no-op recorder — the cases where a lost record means an approval nobody can prove was granted, or a claim whose admission history is unrecoverable — Verdict dispatches `ConsequentialActionUnrecorded` once per process. `verdict:validate` reports the same configuration at deploy time (advisory; pass `--strict` to fail CI on it). Both are advisory signals about a legal configuration, not gates: a no-op recorder never throws.
 
 <!-- @verdict-claim security.target-freshness tested -->
 ## Target freshness and TOCTOU
@@ -69,6 +114,52 @@ Confirmation is a security control only while the approver reads it. Prompt rate
 Do not batch requests. “Approve these 20 refunds” approves a category, not one concrete request, and defeats the argument binding that exists to bind a human decision to one request. Show the approver every material binding fact—such as amount, destination, and target—because an approver who cannot see an amount cannot meaningfully approve it.
 
 Prefer `rateLimit()` and `atMostOnce()` where they fit: both bound risk without consuming human attention. Instrument the flow as well. `approvalOutcome` is already recorded in decision evidence, so the approval-to-denial ratio is a useful check; an approval flow that has never produced a denial may not be read.
+
+### What an approver is shown about a proposal's origin
+
+<!-- @verdict-claim approval.provenance-declared-only tested -->
+An `ApprovalChallenge` carries a `ProposalProvenance` payload describing where the proposal came from: for each declared upstream source, its identity, trust, data class, and channel — never the content, and never a fingerprint of it. It is assembled from **declared derivations only**. Everything in an invocation shares a correlation id, so *what was retrieved during this invocation* is trivially answerable, but Verdict does not present that as *what caused this proposal*; sharing an invocation is not evidence of influence. See [ADR 0026](adr/0026-what-an-approver-is-shown.md).
+
+<!-- @verdict-claim approval.provenance-absence-visible tested -->
+Absence is reported, never implied. `ProvenanceDisclosure` has three cases, and the distinction between them is the point: `Declared` means edges were found; `Unknown` means the ledger was consulted and nothing was declared; `Unreleased` means the application has registered no release policy for the approver route, so nothing was disclosed at all. An empty source list would read as "no untrusted sources," which is exactly the inference [limitations.md](limitations.md) forbids. Sources that were declared but could not be described are counted rather than dropped — `undescribedSourceCount` for a declared parent the ledger never recorded, `withheldSourceCount` for one the release policy did not permit.
+
+<!-- @verdict-claim approval.provenance-redacted tested -->
+The payload is a **context release to a new audience**, not an exemption from one. It travels the same allowlist path as any other release ([ADR 0008](adr/0008-evidence-privacy-model.md)), and Verdict registers no default policy for it — a default would be Verdict authorizing a release on the application's behalf. Register one explicitly:
+
+```php
+use Fissible\Verdict\Approvals\ApproverAudience;
+
+Verdict::releasePolicy(
+    ReleasePolicy::between(ApproverAudience::source(), ApproverAudience::destination())
+        ->allow(DataClass::Internal, DataClass::Public)
+        ->whenTrustIs(Trust::Untrusted, Trust::Trusted),
+);
+```
+
+Each upstream source is offered with its own trust and data class, so the policy above discloses internal and public sources and withholds PII and sensitive ones from the same payload. Until a policy exists, every challenge reports `Unreleased`; `php artisan verdict:validate` warns when confirmation-gated capabilities are registered and this route is not.
+
+### Declaring where a proposal came from
+
+The payload is only as good as the declarations an application makes, and declaration is opt-in. A deployment that declares nothing sees `Unknown` everywhere — that is a measurement of its declaration coverage, not a defect in the payload. One declaration at the tool-result boundary is enough to start:
+
+```php
+use Fissible\Verdict\Approvals\ProposalAnchor;
+
+// The retrieved document was already recorded in the ledger; declare that the arguments the model
+// proposed derive from it.
+$ledger->declareDerivation(
+    correlationId: $invocationId,
+    childContentFingerprint: ProposalAnchor::for($proposedArguments),
+    parentContentFingerprints: [$retrieved->contentFingerprint],
+    kind: DerivationKind::Summarized,
+);
+```
+
+**Always compute the anchor with `ProposalAnchor::for()`.** A hand-rolled `hash('sha256', json_encode($arguments))` differs on key order and encoding flags, and a declaration made against that hash is unreachable by construction: nothing errors, it simply never matches, and every approver is told the origin is unknown. The rule in one sentence — *the argument fingerprint of the tool call, computed with Verdict's helper, attributed within the invocation that carried it.*
+
+### Denying unattributable proposals
+
+`verdict.approvals.strict_provenance` denies a consequential proposal whose provenance is unknown, at the confirmation gate, before a receipt is issued. It is **off by default and meant to stay off** until an application's declarations are thorough enough to trust: enabling it before adopting declaration converts a documented incompleteness into a refusal at the worst possible moment, and the pressure that creates is to declare something rather than to declare accurately. Verdict ships the visibility; the adopter sets the policy. Enabling strict mode without a registered approver release policy is a contradiction — it demands a control while making the provenance that control serves undeliverable — and refuses at boot.
 
 ### Sizing approval TTLs
 
@@ -104,6 +195,29 @@ Size that bucket for what an attacker can accomplish during its window, not expe
 Context-release controls govern what application data may be supplied to an AI. Evidence records security-relevant facts with a fingerprint-first privacy model: the package is designed not to persist raw prompt or tool content by default.
 
 That is not a PII detector and it does not classify arbitrary provider payloads. Applications remain responsible for their data classification, provider agreements, logging configuration, and retention obligations. See [ADR 0007](adr/0007-evidence-layering.md) and [ADR 0008](adr/0008-evidence-privacy-model.md).
+
+### What a decision record asserts, and how to cite one
+
+Each decision record carries a `claim_type` — a stable, namespaced label for what it asserts — and a
+`record_digest`, a content-derived identity computed by Verdict with no dependency on `fissible/attest`. The
+labels are a public, additive-only vocabulary bounded by what Verdict actually observes: none of them claims
+an operation happened, that a downstream system committed, or what the resulting state was. The strongest
+execution-adjacent label, `verdict.execution.claim-completed`, is Verdict marking its own claim complete
+around a successful return — an admission-side belief, never a receipt from the executor.
+
+The digest adds no raw or sensitive value; it composes fingerprints and enums the record already carries, so
+[ADR 0008](adr/0008-evidence-privacy-model.md)'s correlation-not-anonymization property applies to it
+unchanged. See [evidence record identity](evidence-record-identity.md) for the vocabulary and the digest's
+field set, and [ADR 0028](adr/0028-claim-type-is-a-curated-public-vocabulary.md) for the rules the
+vocabulary obeys.
+
+### A tool description that changed between wiring and invocation
+
+Decision evidence records the fingerprint of the tool description Verdict was wired with (`tool_description_fingerprint`), the fingerprint of the description last advertised to the model (`invocation_tool_description_fingerprint`), and the comparison itself (`tool_description_matched`). A divergence is the signal that a tool's advertised description changed after binding — description poisoning, or an accidental mutation of a shared tool instance.
+
+`tool_description_matched` is stored rather than left to be recomputed, and it is indexed, because an operator reviewing an incident should be able to *find* divergences without knowing to compare two columns. It is **null when the description was never advertised** — a tool invoked without a prompt build was not observed, and reporting that as a match would claim an observation nobody made.
+
+**This is a forensic signal, not an authorization control.** A poisoned description cannot redirect execution: the capability is passed explicitly to `Verdict::bound($tool, 'orders.view', $context)` and is never derived from description text, so authorization, target resolution, and approval binding are unaffected. Recording a divergence does not deny, warn, or dispatch an event — whether it should is a separate decision, deliberately not made here.
 
 ### Redaction paths are validated against the allowlist, not the payload
 
@@ -162,10 +276,16 @@ The derivation table has a `(correlation_id, child_content_fingerprint)` index f
 Verdict is designed to make these failures less likely on its protected path:
 
 - a model proposes an action the actor is not authorized to take;
-- an untrusted argument directs an action at the wrong resource;
+- an untrusted argument directs an action at a resource outside the actor's authority;
 - a consequential action proceeds without required human approval;
 - a qualifying action is admitted more than once; and
 - model behavior exceeds a configured semantic safety limit.
+
+Verdict does not attempt to determine whether an authorized action reflects the
+actor's intent. Where the target is proposal-resolved, an injected instruction that
+stays inside the actor's authority will pass authorization by design. See
+[authority is not intent](#authority-is-not-intent) and
+[limitations](limitations.md#authorization-bounds-authority-not-intent).
 
 It does not assume a model is malicious or trustworthy. Instead, it treats model-proposed actions as requests that need ordinary application authorization and safety controls.
 

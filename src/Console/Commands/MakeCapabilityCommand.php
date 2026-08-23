@@ -56,7 +56,7 @@ final class MakeCapabilityCommand extends Command
         $this->line('Add a fail-closed policy method, then replace its TODO with application-owned authorization:');
         $this->line($this->policyFragment($input));
         $this->newLine();
-        $this->line('Register this capability in your application provider after replacing every TODO:');
+        $this->line('Replace every TODO, then affirm the class to register it — no provider wiring:');
         $this->line($this->registrationSnippet($input));
         $this->newLine();
         $this->line('Then run: php artisan verdict:validate');
@@ -177,9 +177,20 @@ use {$modelImport};
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Contracts\DefinesCapability;
 {$claimUse}{$rateLimitUse}use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use LogicException;
 
+/**
+ * TODO: add `implements DefinesCapability` once every TODO below is replaced.
+ *
+ * That is what registers this capability — Verdict discovers definition classes that implement the
+ * contract and registers them at boot, so no provider wiring is needed. Adding it is an affirmation
+ * that this file is finished; Verdict cannot check that claim, and an unfinished capability that
+ * affirms anyway fails the deploy rather than a customer's request.
+ *
+ * Until then this class is inert: `php artisan verdict:validate` will name it as unaffirmed.
+ */
 final class {$class}
 {
     public static function make(): Capability
@@ -310,7 +321,7 @@ PHP;
     {
         [$namespace, $class] = $this->classParts($input['capability']);
 
-        return "app(\\Fissible\\Verdict\\VerdictManager::class)->capability(\\{$namespace}\\{$class}::make());";
+        return "final class {$class} implements DefinesCapability";
     }
 
     /** @param array{model: string, ability: string} $input */

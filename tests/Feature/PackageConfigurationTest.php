@@ -30,7 +30,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(11)
+    expect($migrations)->toHaveCount(15)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -41,7 +41,7 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(7)
+    expect($migrations)->toHaveCount(10)
         ->and(array_keys($migrations)[0])->toEndWith('create_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php.stub')
@@ -49,6 +49,8 @@ it('publishes the durable evidence migration independently', function (): void {
         ->and(array_keys($migrations)[4])->toEndWith('add_tool_kind_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[5])->toEndWith('add_configuration_fingerprint_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[6])->toEndWith('add_actor_and_subject_fingerprints_to_verdict_evidence_table.php.stub')
+        ->and(array_keys($migrations)[7])->toEndWith('add_target_source_to_verdict_evidence_table.php.stub')
+        ->and(array_keys($migrations)[9])->toEndWith('add_record_identity_to_verdict_evidence_table.php.stub')
         ->and(array_values($migrations)[0])->toEndWith('create_verdict_evidence_table.php')
         ->and(array_values($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php')
         ->and(array_values($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php')
@@ -218,6 +220,7 @@ it('ships disabled, bounded live evaluation defaults', function (): void {
         'minimum_security_pass_rate',
         'minimum_utility_pass_rate',
         'minimum_observations',
+        'maximum_over_restriction_rate',
         'suites',
     ])
         ->and($defaults['evaluation']['live_enabled'])->toBeFalse()

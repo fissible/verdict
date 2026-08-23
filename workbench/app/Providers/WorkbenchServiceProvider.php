@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Workbench\App\Providers;
 
+use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
@@ -17,7 +18,9 @@ use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
+use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
@@ -26,6 +29,9 @@ use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use LogicException;
@@ -33,7 +39,11 @@ use Workbench\App\Storefront\ActionLog;
 use Workbench\App\Storefront\Catalog;
 use Workbench\App\Storefront\Order;
 use Workbench\App\Storefront\OrderPolicy;
+use Workbench\App\Storefront\OrderSearchScope;
+use Workbench\App\Storefront\OrderSearchScopePolicy;
+use Workbench\App\Storefront\StorefrontLiveSampling;
 use Workbench\App\Storefront\StorefrontLiveSuiteFactory;
+use Workbench\App\Storefront\StorefrontOrders;
 use Workbench\App\Storefront\SupportNoteChannel;
 
 final class WorkbenchServiceProvider extends ServiceProvider
@@ -41,6 +51,44 @@ final class WorkbenchServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(Catalog::class);
+        // Singleton, not scoped: decoding is configuration, and both arms of every trial must run
+        // under the same declaration or TrialSuiteIdentity refuses the run. Greedy is the default
+        // because it is the only mode under which the control arm's 2×2 pairs are matched pairs.
+        $this->app->singleton(StorefrontLiveSampling::class, function (): StorefrontLiveSampling {
+            // VERDICT_SAMPLING selects the decoding mode for a control-arm run: 'sampled' produces
+            // an independent-sample rate (per-arm marginals, no per-trial pairing — ADR 0023), with
+            // an optional VERDICT_SAMPLING_TEMPERATURE (default 0.8); 'greedy' (or unset) is the
+            // reproducible-regression default. getenv (not env()) for the same reason as the other
+            // harness reads: env() returns null once config is cached.
+            //
+            // An unrecognized value THROWS rather than falling through to greedy. The next action is
+            // a multi-trial live run against a real model; a typo (`smapled`, `true`) silently
+            // running greedy would spend that model time on a mode nobody asked for, discoverable
+            // only afterward in the recorded component string. This is #150's rule: reject
+            // configuration that cannot do what was asked instead of doing something else quietly.
+            $raw = getenv('VERDICT_SAMPLING');
+            $mode = is_string($raw) ? strtolower(trim($raw)) : '';
+
+            if ($mode === '' || $mode === 'greedy') {
+                return StorefrontLiveSampling::greedy();
+            }
+
+            if ($mode !== 'sampled') {
+                throw new LogicException("VERDICT_SAMPLING must be 'sampled', 'greedy', or unset; got [{$raw}].");
+            }
+
+            $temperature = getenv('VERDICT_SAMPLING_TEMPERATURE');
+
+            if ($temperature === false || $temperature === '') {
+                return StorefrontLiveSampling::sampled();
+            }
+
+            if (! is_numeric($temperature)) {
+                throw new LogicException("VERDICT_SAMPLING_TEMPERATURE must be numeric; got [{$temperature}].");
+            }
+
+            return StorefrontLiveSampling::sampled((float) $temperature);
+        });
         $this->app->scoped(ActionLog::class);
         $this->app->scoped(SupportNoteChannel::class);
         $this->app->scoped(InMemoryEvidenceRecorder::class);
@@ -91,12 +139,45 @@ final class WorkbenchServiceProvider extends ServiceProvider
 
         if (is_array($argv) && in_array('verdict:evaluation-live', $argv, true)) {
             config()->set('verdict.evaluation.live_enabled', true);
+
+            // The control arm's gate stays separate here too (ADR 0023): the --control flag
+            // alone must not enable it, so the workbench requires an explicit env opt-in as its
+            // config-layer act — the equivalent of what a real application sets in its own
+            // deployed configuration, scoped like live_enabled to this command's process only.
+            // getenv, not env(): a runtime harness read, and env() returns null once config is
+            // cached (PHPStan flags it). getenv returns false when unset, which filter_var reads
+            // as false — the safe default.
+            if (filter_var(getenv('VERDICT_CONTROL_ENABLED'), FILTER_VALIDATE_BOOL)) {
+                config()->set('verdict.evaluation.control_enabled', true);
+            }
+
+            // A deliberate recorded run legitimately wants more trials than the default cap of 25
+            // (e.g. n=30 so a zero-breach rule-of-three bound reaches ~10%). Raise it only for
+            // this command's process via an explicit env opt-in, leaving the shipped safety
+            // default untouched everywhere else.
+            $maxTrials = getenv('VERDICT_MAX_TRIALS');
+
+            if (is_string($maxTrials) && is_numeric($maxTrials)) {
+                config()->set('verdict.evaluation.maximum_trials', (int) $maxTrials);
+            }
         }
     }
 
     public function boot(VerdictManager $verdict, Catalog $catalog): void
     {
         Gate::policy(Order::class, OrderPolicy::class);
+        Gate::policy(OrderSearchScope::class, OrderSearchScopePolicy::class);
+
+        // The workbench-wide predicate capture (#251): ONE listener for the process and a default
+        // ExecutionWindow binding, so deterministic consumers (the scenario runner's order_search)
+        // share an instrument instead of each leaking a listener and rebinding the window. The
+        // live factory still rebinds ExecutionWindow per trial build with its own sinked capture —
+        // an instance binding that simply replaces this default for that build.
+        $capture = new ConnectionPredicateCapture;
+        $this->app->instance(ConnectionPredicateCapture::class, $capture);
+        $this->app->instance(ExecutionWindow::class, $capture);
+        $this->app->make(Dispatcher::class)
+            ->listen(QueryExecuted::class, $capture);
 
         $verdict->releasePolicy(
             ReleasePolicy::between(
@@ -120,6 +201,66 @@ final class WorkbenchServiceProvider extends ServiceProvider
                 }
 
                 return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
+            }),
+        );
+
+        // A SEPARATE capability registration (resolveTarget is fixed at construction, so this is a
+        // distinct configuration, not orders.view under a different resolver). It reads the target
+        // the *user* intended from the trusted ActionContext metadata — never from the model's
+        // proposal arguments — so an injected argument naming a different owned order cannot
+        // redirect the executor. This is the context-resolved arm of the #187 authority/intent
+        // differential; orders.view above is the proposal-resolved arm. See #192.
+        $verdict->capability(
+            Capability::usingPolicy(
+                name: 'orders.view-by-context',
+                ability: 'view',
+                resolveTarget: fn (ActionEnvelope $envelope): Order => $catalog->order(
+                    (int) ($envelope->context->metadata['intended_order_id'] ?? 0),
+                ),
+            )->executionTarget($this->orderTargetPolicy($catalog))->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof Order) {
+                    throw new LogicException('The storefront context-resolved view capability expected an order.');
+                }
+
+                return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
+            }),
+        );
+
+        // The set-returning arm (#251): a search has no single record for the policy to inspect,
+        // so the resolver returns a scope value object bound to the actor and the policy
+        // authorizes the scope. Registered via usingPolicyForContextTarget so the guarantee is
+        // type-level and evidence-visible (ADR 0025): the resolver receives only the trusted
+        // ActionContext — the model's arguments, which are the filter the executor applies INSIDE
+        // the scope, are not even in scope here — and every evidence row records
+        // target_source=context. The tenant filter thereby lives inside the boundary: resolver
+        // code, carried in evidence, and observable at the connection (the executor's real query
+        // is what the predicate capture digests).
+        $verdict->capability(
+            Capability::usingPolicyForContextTarget(
+                name: 'orders.search',
+                ability: 'search',
+                resolveTarget: fn (ActionContext $context): OrderSearchScope => OrderSearchScope::forContext($context),
+            )->executionTarget(ExecutionTargetPolicy::refresh(
+                name: 'storefront-order-search-scope',
+                identityUsing: fn (ActionEnvelope $envelope, OrderSearchScope $scope): array => [
+                    'tenant_id' => $envelope->context->metadata['tenant_id'] ?? null,
+                    'resource_type' => 'order-search-scope',
+                    'customer_id' => $scope->customerId,
+                ],
+                // Deterministic by construction: re-resolving from the same trusted context yields
+                // the same scope, so a mismatch here can only mean the context itself changed.
+                refreshUsing: fn (ActionEnvelope $envelope, OrderSearchScope $scope): OrderSearchScope => OrderSearchScope::forContext($envelope->context),
+            ))->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof OrderSearchScope) {
+                    throw new LogicException('The storefront search capability expected an order-search scope.');
+                }
+
+                // One shared body for both arms; the scope argument is the arms' entire difference.
+                return StorefrontOrders::search(
+                    app(DatabaseManager::class)->connection(),
+                    $action->envelope->proposal->arguments,
+                    $action->target,
+                );
             }),
         );
 

@@ -43,7 +43,8 @@ $deniedRefund = ActionEnvelope::wrap(
     new ActionContext(actor: $customer),
 );
 
-// In an application this normally happens in a service provider.
+// In an application a definition class implementing DefinesCapability registers this at boot.
+// Registering directly keeps the test self-contained and independent of discovery.
 app(VerdictManager::class)->capability($capability);
 
 CapabilitySecurityTestKit::for(app(VerdictManager::class), 'orders.refund')
@@ -88,3 +89,37 @@ applicable assertions from this kit. It leaves every target, tenant or ownership
 observation, binding mutation, and side-effect assertion for the application to write; it never
 generates permissive fixtures or replaces an application's provider registration. See the
 [generator example](../README.md#generate-a-fail-closed-capability-skeleton).
+
+## Testing approval flows
+
+A consumer test that drives a confirmation-gated capability the obvious way — Laravel's
+`RefreshDatabase` trait plus `ApprovalManager::issue()`/`approve()` — fails with:
+
+> Verdict cannot issue an approval receipt while the store connection is already inside
+> transaction level 1. Run Verdict outside the outer transaction or configure this store on a
+> separately committed database connection.
+
+That is the deliberate `UnsafeOuterTransaction` guard, not a bug. An approval receipt is security
+state: it must survive whatever transaction the application is in the middle of, because a receipt
+that silently vanishes with a rollback would let the same approval be issued twice.
+`RefreshDatabase` wraps every test in exactly the kind of uncommitted outer transaction the guard
+refuses to mutate inside.
+
+Two sanctioned ways to test through it:
+
+- **Use `DatabaseMigrations` instead of `RefreshDatabase`** for tests that exercise approval
+  round-trips. It migrates without a wrapping transaction, which is cheap on an in-memory SQLite
+  database.
+- **Point the approval store at a separately committed connection** — set `approvals.connection`
+  to a second connection that is not inside the test transaction. This mirrors what the guard's
+  message recommends for production and keeps `RefreshDatabase` for everything else.
+
+Two adjacent behaviours worth knowing before writing assertions:
+
+- An approved receipt does not execute anything by itself. A resumed tool call executes only
+  inside `ApprovalManager::withinApprovedToolCalls()` with a decision for that specific call —
+  asserting "approved, therefore ran" without that wrapper tests a flow Verdict never promises.
+- On a database that boots before it migrates (every per-test application under either trait),
+  the capability-configuration audit row is skipped at boot and recorded on the first boot after
+  a persistent migration. The store is a write-only audit trail, so the skip cannot change any
+  authorization outcome.

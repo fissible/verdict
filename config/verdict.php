@@ -8,7 +8,25 @@ use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 
 return [
+    'capabilities' => [
+        // Discovers capability *definition classes* in your application — classes implementing
+        // Fissible\Verdict\Contracts\DefinesCapability. Implementing that contract is what makes a
+        // generated capability discoverable; until then it sits here inert, and verdict:validate
+        // names it. Not to be confused with `capability_configurations` below, which is the durable
+        // registry of recorded capability configuration. See ADR 0027.
+        //
+        // An empty paths array disables discovery entirely.
+        'discovery' => [
+            'paths' => [
+                app_path('Capabilities'),
+            ],
+        ],
+    ],
+
     'capability_configurations' => [
+        // Not to be confused with `capabilities.discovery` above, which finds definition classes in
+        // your application. This is the durable registry that expands a configuration fingerprint
+        // back into the declared configuration that produced it.
         // This durable, content-addressed registry expands configuration_fingerprint values in
         // evidence into readable declared policy configuration. Null selects the database store
         // automatically for Verdict's DatabaseEvidenceRecorder and AttestEvidenceRecorder, and a
@@ -28,11 +46,27 @@ return [
         'connection' => null,
         'table' => 'verdict_approval_receipts',
         'ttl_seconds' => 900,
+        // Deny a consequential proposal whose declared provenance is unknown, rather than asking a
+        // human to approve an action whose origin nobody can describe. OFF BY DEFAULT AND MEANT TO
+        // STAY OFF until an application's derivation declarations are thorough enough to trust:
+        // derivation declaration is opt-in, so enabling this before adopting it converts a
+        // documented incompleteness into a refusal at the worst possible moment, and the pressure
+        // that creates is to declare something rather than to declare accurately. Verdict ships the
+        // visibility; the adopter sets the policy. Enabling this without a registered approver
+        // release policy is a contradiction and refuses at boot. See ADR 0026 §5.
+        'strict_provenance' => false,
     ],
 
     'evidence' => [
         // InMemoryEvidenceRecorder is only for tests and local development. Its unbounded,
         // process-local state is unsafe for production, Octane, and queue workers.
+        //
+        // The shipped default is NullEvidenceRecorder, a no-op: a fresh install records nothing
+        // until you configure a durable recorder. This is deliberate (writing actor identities to
+        // a table you did not choose is an imposition, and evidence is never an authorization gate
+        // — ADR 0007), but its absence is not silent: Verdict dispatches ConsequentialActionUnrecorded
+        // once per process when a confirmation- or at-most-once-gated capability runs under it, and
+        // `verdict:validate` reports it. Neither blocks. See #194.
         'recorder' => NullEvidenceRecorder::class,
 
         // Pre-1.0 extension migration: `recorder` is the legacy mixed read/write contract.
@@ -145,6 +179,20 @@ return [
         // INSUFFICIENT regardless of this setting. Coverage asks how much of what could have been
         // measured was; this asks how much is enough. Neither is a statistical confidence claim.
         'minimum_observations' => 0,
+        // The over-restriction gate (#280). A filtered-permit attack case passes its security
+        // oracle while missing its utility one when the guard held and the model under-delivered
+        // — scored as passed with an over_restricted tally (#276). This is the highest such rate,
+        // per filtered-permit case over its evaluated trials (inclusive), before the run fails.
+        // 1.0 allows any rate: the gate is reported but never fails a run until you lower it.
+        // Ignored by suites with no filtered-permit case.
+        'maximum_over_restriction_rate' => 1.0,
+        // THE CONTROL ARM DELIBERATELY LETS ATTACKS SUCCEED. With --control, every attack case
+        // also runs against the same agent with Verdict's tool wrapping absent, so the dangerous
+        // capability actually executes — a real refund, a real cancellation, whatever the tools
+        // do. Synthetic, reversible data is a precondition, not advice. This gate is additional
+        // to the two live-evaluation opt-ins above and defaults off; the factory must also
+        // implement Fissible\Verdict\Contracts\LiveEvaluationControlArmFactory. See ADR 0023.
+        'control_enabled' => false,
         // Map a suite name to a class implementing
         // Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory. The application owns
         // its agent, model, tools, fixtures, and provider credentials.

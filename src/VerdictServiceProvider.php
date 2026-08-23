@@ -7,7 +7,11 @@ namespace Fissible\Verdict;
 use Fissible\AttestLaravel\Support\AttestRegistry;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Approvals\StrictProvenanceGuard;
+use Fissible\Verdict\Capabilities\CapabilityDiscovery;
+use Fissible\Verdict\Capabilities\CapabilityRegistrar;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
@@ -31,12 +35,14 @@ use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
+use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\Evidence\NullRecorderWarning;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
@@ -64,7 +70,12 @@ final class VerdictServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/verdict.php', 'verdict');
 
-        $this->app->singleton(CapabilityConfigurationStore::class, function (Container $app): CapabilityConfigurationStore {
+        // Bound `scoped`, not `singleton`, and the distinction is load-bearing: this closure
+        // resolves EvidenceRecorder and holds the result. A singleton would outlive a recorder an
+        // application rebinds with a shorter lifetime — after a Container::forgetScopedInstances()
+        // the wrapper keeps writing to the discarded instance while readers resolve the new one, and
+        // nothing errors. See #183 and ADR 0020: a binding must not outlive what it captures.
+        $this->app->scoped(CapabilityConfigurationStore::class, function (Container $app): CapabilityConfigurationStore {
             $store = config('verdict.capability_configurations.store');
 
             if ($store === null) {
@@ -85,6 +96,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 return new DatabaseCapabilityConfigurationStore(
                     connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
                     table: is_string($table) ? $table : 'verdict_capability_configurations',
+                    events: $app->make(Dispatcher::class),
                 );
             }
 
@@ -99,6 +111,25 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->singleton(CapabilityRegistry::class, fn (Container $app): CapabilityRegistry => new CapabilityRegistry(
             $app->make(CapabilityConfigurationStore::class),
         ));
+        $this->app->singleton(CapabilityDiscovery::class, function (Container $app): CapabilityDiscovery {
+            $paths = config('verdict.capabilities.discovery.paths', []);
+
+            return new CapabilityDiscovery(
+                rootPath: $app->path(),
+                rootNamespace: $app->getNamespace(),
+                paths: is_array($paths) ? array_values(array_filter($paths, is_string(...))) : [],
+            );
+        });
+
+        // Singleton capturing singleton — coterminous lifetimes, which is ADR 0027 §2's rule
+        // followed rather than risked: nothing here outlives what it captures. If either binding
+        // ever becomes scoped, this capture must become lazy. That change is the tripwire, not this
+        // line.
+        $this->app->singleton(CapabilityRegistrar::class, fn (Container $app): CapabilityRegistrar => new CapabilityRegistrar(
+            discovery: $app->make(CapabilityDiscovery::class),
+            capabilities: $app->make(CapabilityRegistry::class),
+        ));
+
         $this->app->singleton(ReleasePolicyRegistry::class);
         $this->app->singleton(FieldProjector::class);
         $this->app->singleton(CapabilityAuthorizer::class, LaravelPolicyAuthorizer::class);
@@ -140,9 +171,17 @@ final class VerdictServiceProvider extends ServiceProvider
                 receipts: $app->make(ApprovalReceiptStore::class),
                 executionContext: $app->make(ApprovalExecutionContext::class),
                 clock: $app->make(Clock::class),
+                approverProvenance: $app->make(ApproverProvenanceRelease::class),
+                invocations: $app->make(InvocationContext::class),
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
             );
         });
+
+        $this->app->scoped(ApproverProvenanceRelease::class, fn (Container $app): ApproverProvenanceRelease => new ApproverProvenanceRelease(
+            provenance: $app->make(ProvenanceLedger::class),
+            releases: $app->make(ContextReleaseManager::class),
+            policies: $app->make(ReleasePolicyRegistry::class),
+        ));
 
         $this->app->singleton(EvidenceRecorder::class, function (Container $app): EvidenceRecorder {
             $recorder = config('verdict.evidence.recorder', NullEvidenceRecorder::class);
@@ -268,7 +307,12 @@ final class VerdictServiceProvider extends ServiceProvider
 
         // `recorder` remains the pre-1.0 compatibility configuration. New adapters can provide
         // only the responsibility they own by configuring `writer` and/or `ledger` instead.
-        $this->app->singleton(EvidenceWriter::class, function (Container $app): EvidenceWriter {
+        // Bound `scoped`, not `singleton`, and the distinction is load-bearing: this closure
+        // resolves EvidenceRecorder and holds the result. A singleton would outlive a recorder an
+        // application rebinds with a shorter lifetime — after a Container::forgetScopedInstances()
+        // the wrapper keeps writing to the discarded instance while readers resolve the new one, and
+        // nothing errors. See #183 and ADR 0020: a binding must not outlive what it captures.
+        $this->app->scoped(EvidenceWriter::class, function (Container $app): EvidenceWriter {
             $writer = config('verdict.evidence.writer');
 
             if ($writer === null) {
@@ -288,7 +332,12 @@ final class VerdictServiceProvider extends ServiceProvider
             return $instance;
         });
 
-        $this->app->singleton(ProvenanceLedgerStore::class, function (Container $app): ProvenanceLedgerStore {
+        // Bound `scoped`, not `singleton`, and the distinction is load-bearing: this closure
+        // resolves EvidenceRecorder and holds the result. A singleton would outlive a recorder an
+        // application rebinds with a shorter lifetime — after a Container::forgetScopedInstances()
+        // the wrapper keeps writing to the discarded instance while readers resolve the new one, and
+        // nothing errors. See #183 and ADR 0020: a binding must not outlive what it captures.
+        $this->app->scoped(ProvenanceLedgerStore::class, function (Container $app): ProvenanceLedgerStore {
             $ledger = config('verdict.evidence.ledger');
 
             if ($ledger === null) {
@@ -388,12 +437,25 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->singleton(LiveEvaluationRunner::class, function (): LiveEvaluationRunner {
             $liveEnabled = config('verdict.evaluation.live_enabled', false);
             $maximumTrials = config('verdict.evaluation.maximum_trials', 25);
+            $controlEnabled = config('verdict.evaluation.control_enabled', false);
 
             return new LiveEvaluationRunner(
                 liveEnabled: $liveEnabled === true,
                 maximumTrials: is_int($maximumTrials) ? $maximumTrials : 25,
+                controlEnabled: $controlEnabled === true,
             );
         });
+
+        // Singleton so the no-op-recorder warning fires once per process, not once per scoped
+        // VerdictManager (which is rebuilt per live-evaluation trial). See NullRecorderWarning.
+        $this->app->singleton(NullRecorderWarning::class);
+
+        // Bound rather than scoped: the guard is a thin read of configuration, and caching an
+        // instance would pin whatever the config said the first time anything resolved it.
+        $this->app->bind(StrictProvenanceGuard::class, fn (Container $app): StrictProvenanceGuard => new StrictProvenanceGuard(
+            enabled: (bool) config('verdict.approvals.strict_provenance', false),
+            policies: $app->make(ReleasePolicyRegistry::class),
+        ));
 
         $this->app->scoped(VerdictManager::class, function (Container $app): VerdictManager {
             $message = config('verdict.ai.denied_message', 'This action was not authorized.');
@@ -409,8 +471,16 @@ final class VerdictServiceProvider extends ServiceProvider
                 executionClaims: $app->make(ExecutionClaimManager::class),
                 provenance: $app->make(ProvenanceLedger::class),
                 invocations: $app->make(InvocationContext::class),
+                strictProvenance: $app->make(StrictProvenanceGuard::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
                 events: $app->make(Dispatcher::class),
+                nullRecorderWarning: $app->make(NullRecorderWarning::class),
+                // A closure, resolved per execution: the harness binds the window whenever it
+                // likes — before or after this manager was constructed at boot — and production
+                // deployments, which never bind one, pay a single bound() check per execution.
+                executionWindow: static fn (): ?ExecutionWindow => $app->bound(ExecutionWindow::class)
+                    ? $app->make(ExecutionWindow::class)
+                    : null,
             );
         });
     }
@@ -421,6 +491,22 @@ final class VerdictServiceProvider extends ServiceProvider
         $events->listen(PromptingAgent::class, RecordAgentPromptProvenance::class);
         $events->listen(StreamingAgent::class, RecordAgentPromptProvenance::class);
         $events->listen(ToolInvoked::class, RecordToolResultProvenance::class);
+
+        // Deferred to booted() so that application providers have registered their release policies
+        // first — this asks whether an approver route exists, and at boot() time it would not yet.
+        // Refusing here rather than at first use means a self-defeating configuration fails the
+        // deploy, not the first request that reaches a confirmation gate.
+        // booted(), not boot(): application providers register their capabilities first, so a
+        // capability registered both ways collides deterministically rather than depending on
+        // provider order. Nothing is caught — a definition that affirms the contract and cannot be
+        // built fails the deploy, which is the earliest moment it can fail. See ADR 0027 §4.
+        $this->app->booted(function (): void {
+            $this->app->make(CapabilityRegistrar::class)->registerDiscovered();
+        });
+
+        $this->app->booted(function (): void {
+            $this->app->make(StrictProvenanceGuard::class)->assertSatisfiable();
+        });
 
         if (! $this->app->runningInConsole()) {
             return;
@@ -444,6 +530,7 @@ final class VerdictServiceProvider extends ServiceProvider
 
         $approvalMigration = [
             __DIR__.'/../database/migrations/create_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_01_000000_create_verdict_approval_receipts_table.php'),
+            __DIR__.'/../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_16_000012_add_proposal_provenance_to_verdict_approval_receipts_table.php'),
         ];
         $evidenceMigration = [
             __DIR__.'/../database/migrations/create_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000001_create_verdict_evidence_table.php'),
@@ -453,6 +540,9 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations/add_tool_kind_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_10_000007_add_tool_kind_to_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/add_configuration_fingerprint_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_10_000008_add_configuration_fingerprint_to_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/add_actor_and_subject_fingerprints_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_11_000010_add_actor_and_subject_fingerprints_to_verdict_evidence_table.php'),
+            __DIR__.'/../database/migrations/add_target_source_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_16_000011_add_target_source_to_verdict_evidence_table.php'),
+            __DIR__.'/../database/migrations/add_tool_description_fingerprints_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_17_000013_add_tool_description_fingerprints_to_verdict_evidence_table.php'),
+            __DIR__.'/../database/migrations/add_record_identity_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_19_000014_add_record_identity_to_verdict_evidence_table.php'),
         ];
         $rateLimitMigration = [
             __DIR__.'/../database/migrations/create_verdict_rate_limit_buckets_table.php.stub' => database_path('migrations/2026_08_01_000002_create_verdict_rate_limit_buckets_table.php'),

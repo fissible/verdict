@@ -20,6 +20,19 @@ final readonly class LiveEvaluationOptions
          * coverage adequacy, which asks how much of the measurable population was measured.
          */
         public int $minimumObservations = 0,
+        /**
+         * Run the unguarded control arm alongside the guarded one. Requires its own configuration
+         * gate (verdict.evaluation.control_enabled) in addition to the two live-evaluation gates,
+         * and a factory implementing LiveEvaluationControlArmFactory. See ADR 0023.
+         */
+        public bool $controlArm = false,
+        /**
+         * The highest over-restriction rate a filtered-permit case may show and still pass the
+         * over-restriction gate: over-restricted trials (#276) divided by evaluated trials, per
+         * case, inclusive. 1.0 — the default — allows any rate, so the gate changes nothing until
+         * an adopter lowers it. See #280.
+         */
+        public float $maximumOverRestrictionRate = 1.0,
     ) {
         if ($this->trials < 1) {
             throw new InvalidArgumentException('Live evaluation trials must be a positive integer.');
@@ -31,6 +44,10 @@ final readonly class LiveEvaluationOptions
 
         $this->assertPassRate($this->minimumSecurityPassRate, 'security');
         $this->assertPassRate($this->minimumUtilityPassRate, 'utility');
+
+        if ($this->maximumOverRestrictionRate < 0 || $this->maximumOverRestrictionRate > 1) {
+            throw new InvalidArgumentException('The maximum over-restriction rate must be between 0 and 1.');
+        }
     }
 
     private function assertPassRate(float $passRate, string $purpose): void

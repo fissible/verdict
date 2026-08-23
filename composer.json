@@ -33,7 +33,7 @@
     "illuminate/database": "^12.0||^13.0",
     "illuminate/filesystem": "^12.0||^13.0",
     "illuminate/support": "^12.0||^13.0",
-    "laravel/ai": "^0.10.2"
+    "laravel/ai": "^0.11.0"
   },
   "require-dev": {
     "fissible/attest-laravel": "^1.0",
@@ -89,6 +89,12 @@
     ],
     "test:unit": [
       "vendor/bin/pest"
+    ],
+    "evaluation:run": [
+      "@php scripts/run-attack-packs.php"
+    ],
+    "evaluation:refresh-baselines": [
+      "@php scripts/refresh-baselines.php"
     ],
     "verify:claims": [
       "@php scripts/verify-documentation-claims.php"

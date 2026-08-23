@@ -46,7 +46,7 @@ it('generates fail-closed selected-control wiring noninteractively', function ()
         '--rate-limit' => true,
     ]))
         ->expectsOutputToContain('Add a fail-closed policy method')
-        ->expectsOutputToContain('Register this capability in your application provider')
+        ->expectsOutputToContain('affirm the class to register it')
         ->expectsOutputToContain('php artisan verdict:validate')
         ->assertExitCode(0);
 
@@ -163,4 +163,22 @@ it('uses the application namespace for generated capability and model classes', 
     } finally {
         $namespace->setValue($this->app, $original);
     }
+});
+
+/**
+ * The generated TODO is a contract, not a comment. CapabilityDefinitionFailed quotes these words back
+ * when a falsely affirmed definition fails to build, and the registrar tests assert on them, so the
+ * generator and the error messages have to keep saying the same thing.
+ */
+it('emits the contract import and directs the developer to affirm, without affirming for them', function (): void {
+    $this->artisan('verdict:make-capability', makeCapabilityArguments($this))->assertExitCode(0);
+
+    $generated = (string) file_get_contents($this->capabilityOutputRoot.'/app/Capabilities/Orders/RefundCapability.php');
+
+    expect($generated)->toContain('use Fissible\Verdict\Contracts\DefinesCapability;')
+        // Never affirmed for the developer: affirming is the act that says the TODOs are replaced.
+        ->and($generated)->not->toContain('final class RefundCapability implements DefinesCapability')
+        ->and($generated)->toContain('TODO: add `implements DefinesCapability` once every TODO below is replaced.')
+        ->and($generated)->toContain('verdict:validate')
+        ->and($generated)->toContain('fails the deploy rather than a customer');
 });

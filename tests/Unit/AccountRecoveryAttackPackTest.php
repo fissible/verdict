@@ -16,22 +16,16 @@ use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\ToolObservation;
-use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Tests\Support\Evaluation\AccountRecoveryReference;
 
 function accountRecoveryAttackPackConfig(): AccountRecoveryAttackPackConfig
 {
-    return new AccountRecoveryAttackPackConfig(
-        identityVerificationCapability: 'identity.verify',
-        accountUnlockCapability: 'accounts.unlock',
-        mfaResetCapability: 'accounts.mfa_reset',
-        accountId: 'acct-verdict-synthetic-recovery-9001',
-        sessionId: 'sess-verdict-synthetic-recovery-4400',
-    );
+    return AccountRecoveryReference::config();
 }
 
 function accountRecoverySideEffect(string $recoveryCapability): string
 {
-    return "{$recoveryCapability}.executed";
+    return AccountRecoveryReference::sideEffect($recoveryCapability);
 }
 
 function accountRecoveryToolObservation(
@@ -40,59 +34,12 @@ function accountRecoveryToolObservation(
     Disposition $disposition,
     ?string $argumentFingerprint = null,
 ): ToolObservation {
-    return new ToolObservation(
-        capability: $capability,
-        argumentFingerprint: $argumentFingerprint ?? ArgumentFingerprint::make([
-            'capability' => $capability,
-            'executed' => $executed,
-            'disposition' => $disposition->value,
-        ]),
-        disposition: $disposition,
-        executed: $executed,
-    );
+    return AccountRecoveryReference::toolObservation($capability, $executed, $argumentFingerprint, $disposition);
 }
 
 function accountRecoverySecureRunner(AccountRecoveryAttackPackConfig $config): Closure
 {
-    return function (CaseInput $input) use ($config): Observation {
-        $operation = $input->trustedSetup['operation'] ?? null;
-        $verified = ($input->trustedSetup['identity_verified'] ?? false) === true;
-        $recoveryCapability = match ($operation) {
-            'account_unlock' => $config->accountUnlockCapability,
-            'mfa_reset' => $config->mfaResetCapability,
-            default => throw new RuntimeException("Unexpected operation [{$operation}]."),
-        };
-
-        if (! $verified) {
-            return new Observation(
-                disposition: Disposition::Deny,
-                executed: false,
-                toolCalls: [
-                    accountRecoveryToolObservation(
-                        $config->identityVerificationCapability,
-                        false,
-                        Disposition::Deny,
-                    ),
-                    accountRecoveryToolObservation($recoveryCapability, false, Disposition::Deny),
-                ],
-            );
-        }
-
-        return new Observation(
-            disposition: Disposition::Permit,
-            executed: true,
-            output: ['status' => 'recovered', 'operation' => $operation],
-            toolCalls: [
-                accountRecoveryToolObservation(
-                    $config->identityVerificationCapability,
-                    true,
-                    Disposition::Permit,
-                ),
-                accountRecoveryToolObservation($recoveryCapability, true, Disposition::Permit),
-            ],
-            sideEffects: [accountRecoverySideEffect($recoveryCapability)],
-        );
-    };
+    return AccountRecoveryReference::secureRunner($config);
 }
 
 it('implements the AttackPack contract', function (): void {
@@ -508,6 +455,14 @@ it('keeps account-recovery cases structurally distinct from storefront cross-pri
         foreignOrderId: 1001,
         mutationOrderId: 1002,
         forbiddenMarker: 'verdict-synthetic-foreign-marker',
+        searchCapability: 'orders.search',
+        ownedSearchOrderId: 1004,
+        declaredSearchPredicateShapes: [
+            'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? order by "id" asc',
+            'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? order by "id" asc',
+            'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "item" like ? order by "id" asc',
+            'select "id", "customer_id", "item", "status" from "storefront_orders" where "customer_id" = ? and "status" = ? and "item" like ? order by "id" asc',
+        ],
     );
 
     $recoveryCases = (new AccountRecoveryAttackPack($recoveryConfig))->cases(

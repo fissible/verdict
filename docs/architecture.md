@@ -25,13 +25,24 @@ capability executor
 The tool definition describes the model-facing contract. The capability defines application authority: the Laravel authorization ability, trusted target resolution, optional safeguards, and the code that performs the side effect.
 
 ```php
-Verdict::capability(
-    Capability::usingPolicy('orders.refund', 'refund', $resolveOrder)
-        ->executionTarget($currentOrder)
-        ->requiresConfirmation($refundApprovalBinding)
-        ->executeUsing($issueRefund),
-);
+final class RefundCapability implements DefinesCapability
+{
+    public static function make(): Capability
+    {
+        return Capability::usingPolicy('orders.refund', 'refund', $resolveOrder)
+            ->executionTarget($currentOrder)
+            ->requiresConfirmation($refundApprovalBinding)
+            ->executeUsing($issueRefund);
+    }
+}
+```
 
+Implementing `DefinesCapability` is what registers it: Verdict discovers such classes under
+`verdict.capabilities.discovery.paths` and registers them at boot, through the same path
+`Verdict::capability()` uses. A discovered capability and a hand-registered one are the same object
+everywhere downstream. See [ADR 0027](adr/0027-a-capability-definition-is-a-declaration.md).
+
+```php
 return Verdict::bound(
     definition: new RefundOrder,
     capability: 'orders.refund',
@@ -99,6 +110,12 @@ Neither strategy establishes transaction isolation. Put database locking, versio
 
 Run `php artisan verdict:validate` in CI after application capabilities have been registered. It never resolves targets, authorizes, or executes actions; it reports configuration errors with a non-zero exit code, while warnings (such as an executor-less `GuardedTool` migration capability) do not fail CI. `BoundTool` wiring is not audited here: it already fails immediately at construction for an unknown or non-executable capability.
 
+It also names any capability that declares `requiresConfirmation()` with no execution-target policy. That combination never pauses: `VerdictManager::requestConfirmation()` returns `null` without a target policy, so Verdict never requests approval and the action is denied at execution without a human ever being asked. It still fails closed, which is why this warns rather than errors — see [#230](https://github.com/fissible/verdict/issues/230), where rejecting the combination at registration is posed as a separate design question.
+
+Outside the `local` and `testing` environments it also warns for each non-durable adapter it finds configured — the in-memory evidence recorder and the in-memory approval, rate-limit, execution-claim, and capability-configuration stores — naming the config key that selects each one and the consequence specific to it. A process-local rate limit binds per process, so N workers admit up to N times the configured limit; a process-local claim store degrades at-most-once to at-most-once-per-process. These are **warnings and do not change the exit code**, because Verdict does not decide an application's deployment topology and an ephemeral preview environment may legitimately run one. Pass `--strict` to make CI block on them along with every other advisory finding. The environment test is the framework's own, so an environment named anything other than `local` or `testing` is covered without configuring a list of production names.
+
+**The check compares configuration, not resolved container bindings.** It reads what the deployment declared in `config/verdict.php`. An application that leaves the config durable and rebinds a store contract to a non-durable implementation in a service provider is not seen, in either direction, and neither is a custom store of your own that happens not to be durable — Verdict cannot judge the durability of an implementation it did not write. Treat a clean run as "nothing declared in configuration is non-durable", not as "every store this application resolves is durable".
+
 ## Extension points
 
 Capabilities compose their safeguards fluently:
@@ -141,6 +158,11 @@ $challenge = Verdict::approvals()->challengeForToolCall($pendingApproval->id);
 
 abort_if($challenge === null, 409);
 
+// What the approver should see about where this proposal came from. The payload was assembled when
+// the receipt was issued, inside the invocation — this request has no invocation frame, and could
+// not have resolved it. `null` means the receipt predates Verdict capturing provenance.
+$provenance = $challenge->provenance;
+
 $transition = Verdict::approvals()->approve(
     receiptId: $challenge->receiptId,
     toolCallId: $challenge->toolCallId,
@@ -167,7 +189,7 @@ Laravel AI's `Agent` contract exposes three ways to invoke a prompt: `prompt()` 
 | Feature | Synchronous | Streamed | Queued |
 | --- | --- | --- | --- |
 | Authorization (proposal/execution stages) | ✅ | ✅¹ — proposal and execution stages | ✅² — proposal permit and execution-stage denial |
-| Confirmation / approval resumption | ✅ | ✅ — [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md), fixed in #22 | Not yet verified³ |
+| Confirmation / approval resumption | ✅ | ✅⁵ — [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md), fixed in #22 | ✅³ — pause and approved resume across two jobs |
 | Execution claims (at-most-once) | ✅ | ✅¹ — duplicate logical actions denied | ✅² — duplicate logical action denied across jobs |
 | Semantic rate limits | ✅ | ✅¹ — consumption and enforcement | ✅² — enforced across jobs |
 | Evidence recording | ✅ | ✅ — prompt provenance and invocation-ID correlation retained | ✅² — durable decision evidence |
@@ -177,8 +199,10 @@ Every "Synchronous" ✅ is exercised directly by the test suite. The notes clari
 
 1. **Authorization, execution claims, and semantic rate limits under streaming are covered by `StreamedExecutionGatesTest`.** The baseline cases construct Laravel AI's real `Agent::stream()` response through `FakeTextGateway`; the two-tool-call cases use a test-only `StepTextGateway` that controls only multi-tool-call provider output while Laravel AI's real provider, response, stream, and tool pipeline run. Every case declares `VerdictProvenanceMiddleware` on the agent and iterates the rewritten response generator lazily. Three substitutions bound the claim: it does not exercise a live provider transport, it binds a stub `CapabilityAuthorizer` instead of resolving a real policy, and the custom gateway supplies the two-call provider response. What these cells assert is therefore gate ordering and lazy-iteration timing under streaming, not policy resolution. The test proves proposal and execution authorization can deny before the executor, a second streamed logical action cannot acquire an execution claim, a streamed execution consumes then enforces its semantic rate limit, and a callable action context resolver runs during iteration rather than when the stream is created. Gate evidence is correlated to the Laravel AI streamed invocation and its frame is released after iteration.
 2. **Queued gate coverage uses Laravel AI's actual dispatch and worker path.** `QueuedExecutionGatesTest` configures Laravel's database queue, calls `Agent::queue()`, confirms an `InvokeAgent` payload was written to `jobs`, then runs `queue:work database --once --force` and asserts that the worker removed the job. `--force` prevents a maintenance-mode test application from turning the worker invocation into a successful no-op; it does not configure a Verdict queue default. The test uses Laravel AI's fake provider only to make the provider response deterministic, and a stub `CapabilityAuthorizer` to control permit/deny outcomes; it does not fake the queue, call `prompt()` directly, or resolve an application policy. The worker resolves Verdict's configured database evidence, execution-claim, rate-limit, and capability-configuration stores, and the assertions read their durable rows after handling. These cells verify queued gate ordering and configured-store resolution, not live provider transport or policy resolution.
-3. **Queued approval resumption is not yet verified.** `InvokeAgent` persists the agent and the next prompt, but does not itself retain the initial job's pending tool-call response for a later `Agent::queue(Decisions)` invocation. An application can supply durable conversation/resumption state, but Verdict has no queue-specific default for it; coverage must be added against that application-owned integration before this cell can be marked verified.
+3. **Queued approval resumption is verified, including completion.** `QueuedApprovalResumptionTest` dispatches a real `InvokeAgent` job onto Laravel's database queue, runs `queue:work database --once --force`, and asserts the worker paused on a confirmation gate leaving one pending receipt and no execution; then approves that receipt in Verdict, dispatches a second job carrying a specific tool-call decision, and asserts the capability executed exactly once with a durable execution-stage permit row behind it. The paused turn crosses the job boundary through the shipped `DatabaseConversationStore`, not through the first job's response — a resume never reads that response. The note that used to sit here said the blocker was that `InvokeAgent` "does not itself retain the initial job's pending tool-call response"; that was wrong, and the gap was only coverage. Three substitutions bound the claim: a test-only `StepTextGateway` supplies the provider's step output (it cannot be `Agent::fake()` — see note 5 — so `generateTextStep` is implemented directly and decides from the incoming messages, since each dispatch is its own generation loop starting at step 0), a stub `CapabilityAuthorizer` stands in for a resolved policy, and worker and dispatcher share one process, so this shows the payload and the durable stores carrying the pause, not two operating-system processes. Two companion cases assert the failure modes are real rather than absent: a resume carrying only `Decision::approveAll()`'s wildcard does not execute, and neither does one whose receipt was never approved in Verdict — each asserting approval-stage evidence exists first, so a resume that never ran cannot pass as a refusal. Closes [#234](https://github.com/fissible/verdict/issues/234).
 4. **Evidence recording and context release under streaming are verified.** `VerdictProvenanceMiddleware` rewrites a streamed response's generator in place so its `InvocationContext` frame remains active for lazy tool execution, and registers prompt provenance when Laravel AI dispatches `StreamingAgent` during real iteration. The regression tests cover prompt provenance plus `DecisionEvidence` and `ContextReleaseEvidence` invocation-ID correlation, including frame cleanup after iteration. This fixes [#80](https://github.com/fissible/verdict/issues/80) and [#83](https://github.com/fissible/verdict/issues/83).
+
+5. **Streamed approval resumption is verified, including completion.** `StreamedApprovalResumptionTest` drives a confirmation-gated capability through Laravel AI's real `stream()` pipeline and asserts the run pauses for confirmation, the executor does not run before approval, and an approved resume executes the capability exactly once. The provider substitution is a `StepTextGateway` — not `Agent::fake()`, which cannot express this at all: `ResumesToolApprovals::resumableApprovalFor()` returns `null` when `Ai::hasFakeGatewayFor()` is true, so a faked agent never resumes tools and would report non-execution for a reason unrelated to Verdict. **Completing a resume requires two things an application must do, and getting either wrong produces silent non-execution:** the receipt must be approved in Verdict through the application's own authenticated flow (`ApprovalManager::approve()`), and the resume must carry a *specific* tool-call decision — `Decision::approveAll()` yields a wildcard `'*'` that `ApprovalExecutionContext::push()` deliberately skips, because a blanket approval from the agent loop must not authorize a specific consequential action. A capability declaring `requiresConfirmation()` with no execution-target policy never pauses at all; `verdict:validate` names that combination ([#230](https://github.com/fissible/verdict/issues/230)). Demonstrated against a live provider as well as deterministically — see [#218](https://github.com/fissible/verdict/issues/218).
 
 ## Relationship to Laravel AI
 

@@ -5,23 +5,33 @@ declare(strict_types=1);
 namespace Workbench\App\Storefront;
 
 use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Evaluation\CapturingTool;
+use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
+use Fissible\Verdict\Evaluation\UnguardedCapturingTool;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Fissible\Verdict\VerdictManager;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasMiddleware;
+use Laravel\Ai\Contracts\HasProviderOptions;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
+use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
 use LogicException;
 use Workbench\App\Storefront\Tools\CancelOrder;
 use Workbench\App\Storefront\Tools\LookupOrder;
 use Workbench\App\Storefront\Tools\LookupSupportNote;
+use Workbench\App\Storefront\Tools\SearchOrders;
+use Workbench\App\Storefront\Tools\UnguardedCancelOrder;
+use Workbench\App\Storefront\Tools\UnguardedLookupSupportNote;
+use Workbench\App\Storefront\Tools\UnguardedSearchOrders;
 
 /**
  * The workbench's live storefront agent. It exists only to drive `StorefrontAttackPack` against a
@@ -35,7 +45,7 @@ use Workbench\App\Storefront\Tools\LookupSupportNote;
  * establishes `$prompt->invocationId` / `$response->invocationId` regardless of this middleware —
  * what is missing without it is Verdict's own binding of the invocation id into its evidence.
  */
-final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
+final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOptions, HasTools
 {
     use Promptable;
 
@@ -48,12 +58,23 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
      */
     private const string SUPPORT_NOTE_CAPABILITY = 'orders.support-notes';
 
+    /**
+     * `$guarded` selects the arm this agent instance is: the guarded arm routes every tool
+     * through `VerdictManager::bound()`, the control arm executes the same tool surface directly
+     * (#170 / ADR 0023). Defaulting to guarded is safe in both directions — a control build that
+     * forgot the flag produces observations carrying Verdict dispositions, which the runner
+     * refuses loudly as an accidentally guarded arm rather than recording silently.
+     */
     public function __construct(
         private readonly Catalog $catalog,
         private readonly LiveToolCapture $capture,
         private readonly VerdictManager $verdict,
         private readonly StorefrontAttackPackConfig $config,
         private readonly ActionLog $actions,
+        private readonly StorefrontLiveSampling $sampling,
+        private readonly StorefrontLiveTarget $target,
+        private readonly bool $guarded = true,
+        private readonly ?ConnectionPredicateCapture $predicates = null,
     ) {}
 
     /**
@@ -77,6 +98,12 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
      */
     public function tools(): array
     {
+        return $this->guarded ? $this->guardedTools() : $this->unguardedTools();
+    }
+
+    /** @return array<int, Tool> */
+    private function guardedTools(): array
+    {
         $context = new ActionContext($this->actor());
 
         return [
@@ -88,6 +115,8 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
                 ),
                 $this->config->readCapability,
                 $this->capture,
+                app(ApprovalManager::class),
+                app(InvocationContext::class),
             ),
             new CapturingTool(
                 new SideEffectRelayTool(
@@ -97,6 +126,8 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
                 ),
                 $this->config->mutationCapability,
                 $this->capture,
+                app(ApprovalManager::class),
+                app(InvocationContext::class),
             ),
             new CapturingTool(
                 new SideEffectRelayTool(
@@ -106,8 +137,74 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
                 ),
                 self::SUPPORT_NOTE_CAPABILITY,
                 $this->capture,
+                app(ApprovalManager::class),
+                app(InvocationContext::class),
+            ),
+            new CapturingTool(
+                new SideEffectRelayTool(
+                    $this->verdict->bound(new SearchOrders, $this->config->searchCapability, $context),
+                    $this->actions,
+                    $this->capture,
+                ),
+                $this->config->searchCapability,
+                $this->capture,
+                app(ApprovalManager::class),
+                app(InvocationContext::class),
             ),
         ];
+    }
+
+    /**
+     * The control arm: an identical tool surface — same names, descriptions, and schemas, in the
+     * same order — with `bound()` absent and nothing else different. `SideEffectRelayTool` stays
+     * (the breach's side effects still need observing) and `UnguardedCapturingTool` records each
+     * call with no disposition, which is what an arm with no Verdict decision looks like.
+     * `LookupOrder` executes directly already; the two definition-only tools are mirrored by
+     * their `Unguarded*` counterparts.
+     *
+     * @return array<int, Tool>
+     */
+    private function unguardedTools(): array
+    {
+        return [
+            $this->unguarded(new LookupOrder($this->catalog), $this->config->readCapability),
+            $this->unguarded(
+                new UnguardedCancelOrder(new CancelOrder, $this->catalog, $this->actions),
+                $this->config->mutationCapability,
+            ),
+            $this->unguarded(
+                new UnguardedLookupSupportNote(new LookupSupportNote, $this->catalog),
+                self::SUPPORT_NOTE_CAPABILITY,
+            ),
+            $this->unguarded(
+                new UnguardedSearchOrders(new SearchOrders),
+                $this->config->searchCapability,
+            ),
+        ];
+    }
+
+    private function unguarded(Tool $tool, string $capability): UnguardedCapturingTool
+    {
+        return new UnguardedCapturingTool(
+            new SideEffectRelayTool($tool, $this->actions, $this->capture),
+            $capability,
+            $this->capture,
+            // The control arm's execution window (#251 round 5), wired here so every control tool
+            // gets it — a per-tool opt-in would leave a forgotten tool structurally unmeasurable.
+            $this->predicates,
+        );
+    }
+
+    /**
+     * What is actually sent to the provider, derived from the same `StorefrontLiveSampling` value
+     * the suite's reproduction metadata attests — one source of truth, so the label and the
+     * request cannot drift apart.
+     *
+     * @return array<string, mixed>
+     */
+    public function providerOptions(Lab|string $provider): array
+    {
+        return $this->sampling->providerOptions($this->target);
     }
 
     public function maxSteps(): int
@@ -139,15 +236,39 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasTools
         return new Customer($this->config->actorId, 'Avery Customer');
     }
 
-    /** The workbench's model choice — not a package default. */
+    /**
+     * Default: ollama (local, free, the mode the recorded runs used). `STOREFRONT_LIVE_PROVIDER`
+     * points the same suite at any Laravel AI provider — `anthropic`, `openai`, `gemini`, … — for
+     * a run against a traditional or frontier model. Credentials come from that provider's own env
+     * (e.g. `ANTHROPIC_API_KEY`), read by Laravel AI, not by this harness. Constant per process, so
+     * `TrialSuiteIdentity` holds; the reproduction metadata records whichever provider ran.
+     *
+     * A methodology note for frontier/aligned models: they are likely to refuse the attack even
+     * unguarded (`self-declined`), so such a run measures alignment resistance and hunts the rare
+     * breach alignment missed — it is not the reliable-breach instrument #170 wants. Use sampled
+     * decoding (`VERDICT_SAMPLING=sampled`) for these; rate estimation is the right question for an
+     * aligned model anyway. On a model whose API rejects `temperature` (Anthropic's Claude 5),
+     * sampled sends no decoding options at all and attests `temperature=provider-default` — the
+     * draws are still independent, so the rule-of-three bound holds; see `StorefrontLiveTarget`.
+     */
     public function provider(): string
     {
-        return 'ollama';
+        // The injected target, not a re-read of the env: the factory resolves it once and hands
+        // the same value to the agent, the greedy guard, and the attested component — so the
+        // request's target and the run's attested target are one value, not one rule read four
+        // times. See StorefrontLiveSuiteFactory.
+        return $this->target->provider;
     }
 
-    /** gpt-oss:20b is the only pulled local model that reports the `tools` capability. */
+    /**
+     * Default: gpt-oss:20b, the frontier-aligned model the guarded baseline is recorded against.
+     * `STOREFRONT_LIVE_MODEL` selects the control arm's breach instrument (#170: *capable enough
+     * to act, not aligned enough to refuse*) — the model must report Ollama's `tools` capability
+     * or every trial reports all-declines. Constant per process, so `TrialSuiteIdentity` holds;
+     * the reproduction metadata records whichever model actually ran.
+     */
     public function model(): string
     {
-        return 'gpt-oss:20b';
+        return $this->target->model;
     }
 }

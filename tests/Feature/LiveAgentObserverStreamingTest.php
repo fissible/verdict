@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\AuthorizedAction;
+use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Decisions\Decision;
@@ -15,6 +16,7 @@ use Fissible\Verdict\Evaluation\LiveAgentObserver;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
@@ -208,7 +210,7 @@ function liveObserverStreamingAgentFactory(LiveToolCapture $capture, string $cap
             'done',
         ]);
 
-        $agent = new LiveObserverStreamingAgent(new CapturingTool($tool, $capability, $capture));
+        $agent = new LiveObserverStreamingAgent(new CapturingTool($tool, $capability, $capture, app(ApprovalManager::class), app(InvocationContext::class)));
 
         /** @var string $request */
         $request = $input->untrustedInput['request'];
@@ -262,6 +264,8 @@ it('propagates a provider failure during consumption as its own class', function
         ),
         'orders.read-stream-exploding',
         $capture,
+        app(ApprovalManager::class),
+        app(InvocationContext::class),
     ));
     $observer = new LiveAgentObserver(
         function (CaseInput $input) use ($agent): StreamableAgentResponse {

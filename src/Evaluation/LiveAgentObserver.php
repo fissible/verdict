@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Evaluation;
 use Closure;
 use Fissible\Verdict\Contracts\LiveEvidenceReader;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Laravel\Ai\Exceptions\ApprovalNotResumableException;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Responses\StructuredAgentResponse;
@@ -42,6 +43,21 @@ final readonly class LiveAgentObserver
         private LiveEvidenceReader $reader,
     ) {}
 
+    /**
+     * The control arm's observer: no evidence reader, because an unguarded arm produces no
+     * `DecisionEvidence` by construction — the guarded correlation check would misreport every
+     * control execution as `LiveObservationUnavailable`. The capture alone is the measurement;
+     * an empty capture is still an honest `ModelDeclinedToAct`. The inverse integrity check — a
+     * captured call carrying a Verdict disposition — is `LiveEvaluationRunner`'s, which refuses
+     * the run as accidentally guarded. See ADR 0023.
+     *
+     * @param  Closure(CaseInput): (AgentResponse|StructuredAgentResponse|StreamableAgentResponse)  $agentInvoker
+     */
+    public static function unguarded(Closure $agentInvoker, LiveToolCapture $capture): self
+    {
+        return new self($agentInvoker, $capture, new NoLiveEvidence);
+    }
+
     public function __invoke(CaseInput $input): Observation
     {
         $request = $input->untrustedInput['request'] ?? null;
@@ -52,44 +68,96 @@ final readonly class LiveAgentObserver
 
         $this->capture->reset();
 
-        $response = ($this->agentInvoker)($input);
+        try {
+            $response = ($this->agentInvoker)($input);
 
-        $invocationId = $this->invocationId($response);
+            if ($response instanceof StreamableAgentResponse) {
+                // Laravel AI streams lazily: tool execution and evidence do not happen until the
+                // generator is iterated. Classifying before this point would misreport a model
+                // that in fact acted as a decline. An approval pause is the one exception
+                // classified here (ADR 0029) — a provider or executor exception during iteration
+                // must still propagate as its own class, not be disguised as a decline or an
+                // unavailable observation.
+                iterator_to_array($response);
+            }
+        } catch (ApprovalNotResumableException $exception) {
+            // A pause with a captured challenge is a legitimate terminal observation (ADR 0029):
+            // the preflight observed issuance; nothing more can happen in a single-shot trial. A
+            // pause with no captured challenge came from outside the capture and stays an
+            // uncategorized harness gap.
+            if ($this->capture->challenges() === []) {
+                throw $exception;
+            }
 
-        if ($response instanceof StreamableAgentResponse) {
-            // Laravel AI streams lazily: tool execution and evidence do not happen until the
-            // generator is iterated. Classifying before this point would misreport a model that
-            // in fact acted as a decline. Do not catch here — a provider or executor exception
-            // during iteration must propagate as its own class, not be disguised as a decline or
-            // an unavailable observation.
-            iterator_to_array($response);
+            return $this->pausedObservation();
         }
 
-        $decisions = $this->reader->decisionsFor($invocationId);
+        $unguarded = $this->reader instanceof NoLiveEvidence;
+        $invocationId = $unguarded ? null : $this->invocationId($response);
+
         $toolCalls = $this->capture->toolObservations();
 
-        if ($this->capture->isEmpty() && $decisions === []) {
-            throw ModelDeclinedToAct::forCase($this->caseId($input));
+        if ($unguarded || $invocationId === null) {
+            // No evidence exists to consult: an empty capture can only mean the model declined.
+            if ($this->capture->isEmpty()) {
+                throw ModelDeclinedToAct::forCase($this->caseId($input));
+            }
+        } else {
+            $decisions = $this->reader->decisionsFor($invocationId);
+
+            if ($this->capture->isEmpty() && $decisions === []) {
+                throw ModelDeclinedToAct::forCase($this->caseId($input));
+            }
+
+            if (! $this->capture->isEmpty()) {
+                $this->assertCorrelated($toolCalls, $decisions);
+            }
         }
 
-        if (! $this->capture->isEmpty()) {
-            $this->assertCorrelated($toolCalls, $decisions);
+        return $this->observation($response->text);
+    }
+
+    private function pausedObservation(): Observation
+    {
+        $invocationId = $this->capture->invocationId();
+
+        if (! $this->reader instanceof NoLiveEvidence) {
+            if ($invocationId === null) {
+                throw LiveObservationUnavailable::because('a paused run carried no preflight invocation id');
+            }
+
+            $this->assertCorrelated($this->capture->toolObservations(), $this->reader->decisionsFor($invocationId));
         }
 
-        $disposition = null;
-        $executed = false;
+        return $this->observation(output: null);
+    }
 
-        foreach ($toolCalls as $toolCall) {
-            $disposition = $toolCall->disposition;
-            $executed = $executed || $toolCall->executed;
-        }
+    /**
+     * The top-level `(disposition, executed)` pair describes the run's **terminal decision** —
+     * both fields are read off the last tool observation, which `LiveToolCapture` orders by
+     * execution. That matches `Observation::fromExecutionResult()`, where the pair means one
+     * action's outcome, and it is deliberately not an OR over `executed`: a run that read
+     * something benign and then had its consequential action blocked reports `executed = false`
+     * at the top level. Per-call facts live in `toolCalls`, which is what
+     * `toolExecuted()`/`toolAttemptedButBlocked()` read.
+     */
+    private function observation(mixed $output): Observation
+    {
+        $toolCalls = $this->capture->toolObservations();
+
+        $terminal = $toolCalls === [] ? null : $toolCalls[array_key_last($toolCalls)];
+
+        $disposition = $terminal?->disposition;
+        $executed = $terminal !== null && $terminal->executed;
 
         return new Observation(
             disposition: $disposition,
             executed: $executed,
-            output: $response->text,
+            output: $output,
             toolCalls: $toolCalls,
             sideEffects: $this->capture->sideEffects(),
+            challenges: $this->capture->challenges(),
+            predicates: $this->capture->predicates(),
         );
     }
 

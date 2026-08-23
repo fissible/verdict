@@ -11,10 +11,52 @@ Complete and record each item before exposing a protected capability to pilot us
 - [ ] **Choose one capability and its target.** Use `BoundTool`, a trusted target resolver, and an explicit execution-target policy. Write and test the Laravel policy against the authenticated actor and tenant-scoped target. The model's arguments must not select an object that the resolver or policy has not accepted. See the [security model](security-model.md#authorization) and [target-freshness guidance](security-model.md#target-freshness-and-toctou).
 - [ ] **Choose the execution mode from the compatibility matrix.** Start with a cell marked verified in [execution-mode compatibility](architecture.md#execution-mode-compatibility). Its notes state what the tests do and do not establish; a green cell is not a live-provider or application-policy certification.
 - [ ] **Select the admission controls deliberately.** For each capability, decide whether it needs a canonical, material-fact approval binding, `atMostOnce()` claim identity and retention, and/or a semantic `rateLimit()` scope, window, and limit. An execution claim controls Verdict admission, not an external side effect. See [approval](security-model.md#human-approval), [claims](security-model.md#preventing-duplicate-actions), and [limits](security-model.md#limiting-what-ai-can-do).
-- [ ] **Own the approval flow.** Build the authenticated reviewer queue, endpoint, display, decision audit, and resume/conversation handling in the application. Present every material binding fact, authenticate the reviewer, and store only an opaque application identifier in `approvedBy`. Verdict ships no reviewer UI, route, queue, or durable conversation-resumption protocol. `php artisan verdict:make-approval-flow` publishes route-free application skeletons as an optional starting point; it registers none of those things. See [approval resolution and scope](architecture.md#resolving-an-approval) and [confirmation-fatigue guidance](security-model.md#avoiding-confirmation-fatigue).
-- [ ] **Explicitly configure evidence.** `NullEvidenceRecorder` is the default and records nothing. Select a durable recorder, give the application a retention and access policy, and verify it records the pilot's expected decisions and context releases. Do not call a mutable database evidence table cryptographic proof. See [evidence limitations](limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody).
+- [ ] **Own the approval flow.** Build the authenticated reviewer queue, endpoint, display, decision audit, and resume/conversation handling in the application. Present every material binding fact, authenticate the reviewer, and store only an opaque application identifier in `approvedBy`. Verdict ships no reviewer UI, route, queue, or durable conversation-resumption protocol. `php artisan verdict:make-approval-flow` publishes route-free application skeletons as an optional starting point; it registers none of those things. **Two requirements are easy to miss and fail silently.** Approving the agent framework's pending call is not approving Verdict's receipt: call `ApprovalManager::approve()` from your authenticated reviewer flow, *and* resume with a specific tool-call decision (`Decisions::from([$toolCallId => Decision::approve()])`). `Decision::approveAll()` is a wildcard that Verdict deliberately refuses, so a blanket approval from the model loop cannot authorize a specific consequential action — a resume that skips either step executes nothing and looks like a broken feature. See [approval resolution and scope](architecture.md#resolving-an-approval) and [confirmation-fatigue guidance](security-model.md#avoiding-confirmation-fatigue).
+- [ ] **Explicitly configure evidence.** `NullEvidenceRecorder` is the default and records nothing. Select a durable recorder, give the application a retention and access policy, and verify it records the pilot's expected decisions and context releases. Do not call a mutable database evidence table cryptographic proof. See [evidence limitations](limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody). Before the pilot ends, walk one real decision end to end with the [incident-response guide](incident-response.md) — an evidence store nobody has queried is an assumption, not a control.
 - [ ] **Exercise failure and recovery.** Test denied authorization, expired/rejected approval, duplicate admission, exhausted limits, an executor with an indeterminate external outcome, and the application's reconciliation path. The application owns domain idempotency keys, transactional outboxes, reconciliation, and compensating operations. See [downstream-side-effect limits](limitations.md#no-guarantee-of-downstream-side-effects).
 - [ ] **Set operational ownership.** Name owners for authentication and tenancy, policy/domain-rule changes, evidence access and retention, provider/data governance, incident response, and alerts. Protect controller, scheduler, queue, and service paths that can bypass Verdict with their own equivalent controls.
+
+## Registering capabilities: affirm, don't wire
+
+`verdict:make-capability` writes a class to `app/Capabilities/` with a `make(): Capability` method and a
+TODO for every security question it cannot answer for you. Replacing those TODOs is the work. When they are
+all replaced, add one token:
+
+```php
+final class RefundCapability implements DefinesCapability
+```
+
+That is the registration. Verdict discovers definition classes implementing `DefinesCapability` under
+`verdict.capabilities.discovery.paths` and registers them at boot, through the same path
+`Verdict::capability()` uses — a discovered capability and a hand-registered one are the same object
+everywhere downstream. Provider wiring still works and is still supported; it is no longer necessary.
+
+**Implementing the contract is an affirmation, not a proof.** Verdict cannot see inside your closures, so it
+cannot check that you replaced the TODOs. It says so plainly rather than implying a guarantee: a definition
+that affirms while still unfinished fails at boot if its TODO throws while building, and at first invocation
+otherwise. Both are fail-closed.
+
+**To ship a deploy with a capability mid-work, remove the interface.** An unaffirmed class is inert —
+nothing registers it, nothing fails — and `verdict:validate` names it on every run so it cannot be
+forgotten. Un-affirming is the supported way to park unfinished work; deleting the file or hacking out a
+TODO are not.
+
+### What `verdict:validate` tells you, and what boot tells you
+
+Run `php artisan verdict:validate` in your deploy pipeline. Two different things can happen, and the
+difference is worth understanding before you meet it:
+
+- **Unaffirmed classes are reported by the command.** Advisory, printed on every run, never blocking. Add
+  `--strict` to make CI fail on them; that changes the exit code only, never what is printed.
+- **A broken definition fails the command's own bootstrap, before the command runs.** Artisan boots the
+  application before dispatching, so a capability that affirms the contract and then throws while building
+  takes the process down during startup — with *every* such failure listed at once, each naming its class,
+  its cause, and both ways to resolve it.
+
+**That second case is the pipeline working, not the tooling breaking.** The guarantee you want from
+`verdict:validate` in CI — *this deploy fails with the full list before production ever boots this code* —
+holds either way. What differs is only which layer prints it. Fix the listed definitions, or remove
+`implements DefinesCapability` from the ones that are not ready, and re-run.
 
 ## Independent security-state connection
 
@@ -121,7 +163,7 @@ Do not treat pilot success as this gate. Require a separate security and operati
 - [ ] Approval review and resumption are application-owned, authenticated, consequence-weighted, and tested for expiry, denial, replay, and reviewer audit. Do not claim a built-in Verdict approval UI or worker.
 - [ ] Claim identity/retention, semantic-limit scope/window, external idempotency keys, transactional outbox, reconciliation, and indeterminate-claim response are reviewed with the owning domain team.
 - [ ] Evidence recorder, chain topology, fallback storage, signing-key custody, retention/access policy, verification level/cadence, anchoring cadence, and alert route have been exercised in the target environment.
-- [ ] The selected execution mode is marked verified in the [compatibility matrix](architecture.md#execution-mode-compatibility), and the test boundary in its note is acceptable. In particular, queued approval resumption remains **not yet verified** without application-owned durable conversation state; do not select it for a high-consequence approval flow until the application has tested that integration.
+- [ ] The selected execution mode is marked verified in the [compatibility matrix](architecture.md#execution-mode-compatibility), and the test boundary in its note is acceptable. In particular, queued approval resumption is verified only with a **durable conversation store**: the paused turn crosses the job boundary through conversation history, and a resume dispatched without it has nothing to reconstruct. It also requires the receipt to be approved in Verdict through the application's own authenticated flow, and the resuming dispatch to carry a *specific* tool-call decision rather than `Decision::approveAll()`'s wildcard — getting either wrong produces silent non-execution.
 - [ ] Provider contracts, model/data governance, logging, secrets, and incident ownership have been reviewed outside Verdict's package boundary.
 - [ ] The team has reviewed the current [limitations](limitations.md), [open security-relevant issues](https://github.com/fissible/verdict/issues?q=is%3Aissue%20is%3Aopen%20label%3Asecurity), and [ADR 0018](adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md)'s measured concurrency findings (the [#97](https://github.com/fissible/verdict/issues/97) and [#112](https://github.com/fissible/verdict/issues/112) retry gaps closed in v0.4.0). Follow their current state; this guide does not represent open items as resolved.
 

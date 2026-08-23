@@ -40,6 +40,8 @@ beforeEach(function (): void {
         $table->string('capability')->nullable();
         $table->string('stage', 32);
         $table->string('disposition', 32);
+        $table->string('claim_type', 64)->nullable();
+        $table->string('record_digest', 96)->nullable();
         $table->text('reason')->nullable();
         $table->string('source')->nullable();
         $table->string('destination')->nullable();
@@ -238,6 +240,7 @@ it('resolves the chain id through the configured resolver class fresh on every w
     config()->set('verdict.evidence.attest.chain_resolver', StaticAttestChainResolver::class);
     StaticAttestChainResolver::$calls = 0;
     StaticAttestChainResolver::$instanceIds = [];
+    StaticAttestChainResolver::$constructions = 0;
 
     $recorder = app(EvidenceRecorder::class);
     expect($recorder)->toBeInstanceOf(AttestEvidenceRecorder::class);

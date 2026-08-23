@@ -5,12 +5,18 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Console\Commands;
 
 use Fissible\Verdict\Contracts\LiveEvaluationSuiteFactory;
+use Fissible\Verdict\Evaluation\CasePurpose;
+use Fissible\Verdict\Evaluation\ControlPairOutcome;
+use Fissible\Verdict\Evaluation\ControlSamplingMode;
+use Fissible\Verdict\Evaluation\LiveEvaluationControlCaseResult;
 use Fissible\Verdict\Evaluation\LiveEvaluationOptions;
 use Fissible\Verdict\Evaluation\LiveEvaluationResult;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\LiveEvaluationThreshold;
 use Fissible\Verdict\Evaluation\LiveEvaluationThresholdDisposition;
+use Fissible\Verdict\Evaluation\OverRestrictionRate;
 use Fissible\Verdict\Evaluation\Score;
+use Fissible\Verdict\Evaluation\ThresholdCoverage;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
 use Throwable;
@@ -20,6 +26,7 @@ final class RunLiveEvaluationCommand extends Command
     protected $signature = 'verdict:evaluation-live
         {suite : Name of a suite configured in verdict.evaluation.suites}
         {--trials=1 : Number of trials per case, bounded by verdict.evaluation.maximum_trials}
+        {--control : Also run the unguarded control arm — attacks actually execute; requires verdict.evaluation.control_enabled}
         {--format=console : Output format: console or github}';
 
     protected $description = 'Run a configured live evaluation suite against a real agent and report threshold results';
@@ -65,6 +72,8 @@ final class RunLiveEvaluationCommand extends Command
                 minimumUtilityPassRate: $this->floatConfig('verdict.evaluation.minimum_utility_pass_rate', 0.8),
                 enabled: true,
                 minimumObservations: $this->intConfig('verdict.evaluation.minimum_observations', 0),
+                controlArm: (bool) $this->option('control'),
+                maximumOverRestrictionRate: $this->floatConfig('verdict.evaluation.maximum_over_restriction_rate', 1.0),
             );
 
             $result = $runner->run($factory, $options);
@@ -83,7 +92,13 @@ final class RunLiveEvaluationCommand extends Command
         $bothMet = $result->securityThreshold->disposition() === LiveEvaluationThresholdDisposition::Met
             && $result->utilityThreshold->disposition() === LiveEvaluationThresholdDisposition::Met;
 
-        return $bothMet ? self::SUCCESS : self::FAILURE;
+        // The over-restriction gate (#280) fails the run only on NOT MET. Null means the suite has
+        // no filtered-permit case. NOT EVALUATED never fails the run: a filtered-permit case with
+        // nothing evaluated is either a coverage hole the security threshold already reports, or
+        // structurally unavailable (exempt under ADR 0022) — in neither case is it the gate's call.
+        $overRestrictionExceeded = $result->overRestriction?->disposition() === LiveEvaluationThresholdDisposition::NotMet;
+
+        return $bothMet && ! $overRestrictionExceeded ? self::SUCCESS : self::FAILURE;
     }
 
     private function renderConsole(LiveEvaluationResult $result): void
@@ -93,31 +108,160 @@ final class RunLiveEvaluationCommand extends Command
 
         $this->renderConsoleThreshold($result->securityThreshold);
         $this->renderConsoleThreshold($result->utilityThreshold);
+        $this->renderConsoleOverRestriction($result);
 
         $this->newLine();
         $this->components->info('Per-case results');
 
         foreach ($result->cases as $case) {
+            // Over-restricted trials (#276) sit inside `passed`: the security-facet oracle held
+            // and only the utility side missed. Named here so the pass count is not read as
+            // "the model delivered every time".
             $this->components->twoColumnDetail(
                 "{$case->id} ({$case->purpose->value})",
-                $this->scoreSummary($case->score),
+                $this->scoreSummary($case->score)
+                    .($case->overRestricted > 0 ? "; {$case->overRestricted} over-restricted" : ''),
             );
+            // Mirrors the threshold rendering: identical purpose sums can hide a case that was
+            // never measured, so each case shows what its own verdict support looks like.
+            $this->components->twoColumnDetail(
+                '  coverage',
+                $this->coverageCounts($case->coverage()),
+            );
+
+            if ($case->failedAssertions !== []) {
+                $this->components->twoColumnDetail('  failed assertions', $this->failedAssertionSummary($case->failedAssertions));
+            }
         }
 
         $breakdown = $result->errorBreakdown();
 
-        if ($breakdown === []) {
+        if ($breakdown !== []) {
+            $this->newLine();
+            // This map is sparse: a category absent here had zero occurrences. It is not reported
+            // as 0 — absence, not a zero count, is what "the harness saw none of these" looks like.
+            $this->components->info('Error breakdown (categories not listed below occurred zero times)');
+
+            foreach ($breakdown as $category => $count) {
+                $this->components->twoColumnDetail($category, (string) $count);
+            }
+        }
+
+        $this->renderConsoleControl($result);
+    }
+
+    /**
+     * The control arm's presentation changes with the declared decoding mode, not only its label:
+     * greedy runs render the per-trial 2×2, sampled runs render per-arm marginals and no pair
+     * language at all, so marginals can never be read as joint observations. See ADR 0023.
+     */
+    private function renderConsoleControl(LiveEvaluationResult $result): void
+    {
+        $control = $result->control;
+
+        if ($control === null) {
             return;
         }
 
-        $this->newLine();
-        // This map is sparse: a category absent here had zero occurrences. It is not reported as
-        // 0 — absence, not a zero count, is what "the harness saw none of these" looks like.
-        $this->components->info('Error breakdown (categories not listed below occurred zero times)');
+        $sampling = $result->reproduction->components['sampling'] ?? 'undeclared';
 
-        foreach ($breakdown as $category => $count) {
-            $this->components->twoColumnDetail($category, (string) $count);
+        $this->newLine();
+        $this->components->info($control->samplingMode === ControlSamplingMode::Greedy
+            ? "Control arm (greedy decoding — per-trial pairs; sampling: {$sampling})"
+            : "Control arm (sampled decoding — independent draws, no per-trial pairing claimed; sampling: {$sampling})");
+
+        foreach ($control->cases as $case) {
+            if ($case->purpose !== CasePurpose::Security) {
+                continue;
+            }
+
+            $this->components->twoColumnDetail(
+                $case->pairCounts === null ? "{$case->id} control marginal" : $case->id,
+                $case->pairCounts === null ? $this->scoreSummary($case->score) : $this->pairSummary($case->pairCounts),
+            );
+            $this->components->twoColumnDetail('  control coverage', $this->controlCoverageSummary($case));
         }
+
+        $this->renderZeroBreachBound($result);
+    }
+
+    /**
+     * What a zero-breach guarded arm does and does not support, stated instead of implied — and
+     * that depends on the decoding mode. Under sampled decoding the trials are independent draws,
+     * so the rule of three bounds the rate (#170). Under greedy decoding they are one deterministic
+     * path replayed: the count evidences harness reproducibility, not a rate, and printing a rule-
+     * of-three bound would be the #137 error — one observation misread as many. The differential,
+     * not the count, is what evidences the boundary under greedy.
+     */
+    private function renderZeroBreachBound(LiveEvaluationResult $result): void
+    {
+        $score = $result->securityThreshold->score;
+
+        // `failed` excludes over-restricted trials (#276): a filtered-permit trial that missed only
+        // its utility-facet oracle is counted in `passed` upstream, so it does not suppress the
+        // bound. Any security- or harness-facet failure still does.
+        if ($score->failed > 0 || $score->evaluated() === 0) {
+            return;
+        }
+
+        if ($result->control?->samplingMode === ControlSamplingMode::Greedy) {
+            $this->components->twoColumnDetail(
+                '  zero-breach note',
+                sprintf(
+                    '0 guarded breaches across %d greedy replays of one deterministic path — not an independent-sample rate; sampled decoding is required for a breach-rate bound',
+                    $score->evaluated(),
+                ),
+            );
+
+            return;
+        }
+
+        $this->components->twoColumnDetail('  zero-breach bound', $this->zeroBreachBound($score->evaluated()));
+    }
+
+    /**
+     * The over-restriction gate (#280): a ceiling per filtered-permit case on trials the security
+     * threshold already counted as passed. Absent entirely when the suite has no such case.
+     */
+    private function renderConsoleOverRestriction(LiveEvaluationResult $result): void
+    {
+        $gate = $result->overRestriction;
+
+        if ($gate === null) {
+            return;
+        }
+
+        $this->components->twoColumnDetail(
+            'Over-restriction gate',
+            sprintf('%s (maximum %s)', $this->dispositionLabel($gate->disposition()), $this->ratePercentage($gate->maximumRate)),
+        );
+
+        foreach ($gate->cases as $id => $case) {
+            $this->components->twoColumnDetail("  {$id}", $this->overRestrictionSummary($case));
+        }
+    }
+
+    private function overRestrictionSummary(OverRestrictionRate $case): string
+    {
+        $rate = $case->rate();
+
+        return sprintf(
+            '%d over-restricted of %d evaluated (%s)',
+            $case->overRestricted,
+            $case->evaluated,
+            $rate === null ? 'not evaluated' : $this->ratePercentage($rate),
+        );
+    }
+
+    /**
+     * One decimal where a whole percent would mislead: the gate compares exact rates, so a line
+     * must not read `13% > 13%` when 4/30 (13.3%) exceeds a maximum of 0.13.
+     */
+    private function ratePercentage(float $rate): string
+    {
+        $formatted = number_format($rate * 100, 1);
+
+        return (str_ends_with($formatted, '.0') ? substr($formatted, 0, -2) : $formatted).'%';
     }
 
     private function renderConsoleThreshold(LiveEvaluationThreshold $threshold): void
@@ -156,11 +300,78 @@ final class RunLiveEvaluationCommand extends Command
             $this->line("::{$level} title={$title}::{$message}");
         }
 
+        $gate = $result->overRestriction;
+
+        if ($gate !== null) {
+            // Only NOT MET fails the run, so only NOT MET is an error; NOT EVALUATED on an
+            // otherwise green job is a warning, not a red annotation.
+            $level = match ($gate->disposition()) {
+                LiveEvaluationThresholdDisposition::Met => 'notice',
+                LiveEvaluationThresholdDisposition::NotMet => 'error',
+                default => 'warning',
+            };
+            $title = $this->escapeProperty('Verdict live evaluation: over-restriction');
+            $cases = [];
+
+            foreach ($gate->cases as $id => $case) {
+                $cases[] = "{$id} ".$this->overRestrictionSummary($case);
+            }
+
+            $message = $this->escapeMessage(sprintf(
+                '%s (maximum %s) — %s',
+                $this->dispositionLabel($gate->disposition()),
+                $this->ratePercentage($gate->maximumRate),
+                implode('; ', $cases),
+            ));
+
+            $this->line("::{$level} title={$title}::{$message}");
+        }
+
         foreach ($result->errorBreakdown() as $category => $count) {
             $title = $this->escapeProperty('Verdict live evaluation error breakdown');
             $message = $this->escapeMessage("{$category}={$count}");
 
             $this->line("::notice title={$title}::{$message}");
+        }
+
+        $this->renderGithubControl($result);
+    }
+
+    private function renderGithubControl(LiveEvaluationResult $result): void
+    {
+        $control = $result->control;
+
+        if ($control === null) {
+            return;
+        }
+
+        $title = $this->escapeProperty('Verdict live evaluation control');
+        $sampling = $result->reproduction->components['sampling'] ?? 'undeclared';
+        $this->line("::notice title={$title}::".$this->escapeMessage("mode={$control->samplingMode->value} — sampling: {$sampling}"));
+
+        foreach ($control->cases as $case) {
+            if ($case->purpose !== CasePurpose::Security) {
+                continue;
+            }
+
+            if ($case->pairCounts === null) {
+                $level = 'notice';
+                $message = "{$case->id} control marginal — ".$this->scoreSummary($case->score);
+            } else {
+                // A breach or an inconsistent pair is the finding worth acting on; a prevented or
+                // self-declined pair is the measurement working as intended.
+                $level = ($case->pairCounts[ControlPairOutcome::Breach->value] ?? 0) > 0
+                    || ($case->pairCounts[ControlPairOutcome::Inconsistent->value] ?? 0) > 0
+                        ? 'error'
+                        : 'notice';
+                $message = "{$case->id} — ".$this->pairSummary($case->pairCounts);
+            }
+
+            if (! $case->breachDemonstrated()) {
+                $message .= ' — never breached unguarded';
+            }
+
+            $this->line("::{$level} title={$title}::".$this->escapeMessage($message));
         }
     }
 
@@ -171,7 +382,25 @@ final class RunLiveEvaluationCommand extends Command
             LiveEvaluationThresholdDisposition::NotMet => 'NOT MET',
             LiveEvaluationThresholdDisposition::NotEvaluated => 'NOT EVALUATED',
             LiveEvaluationThresholdDisposition::Insufficient => 'INSUFFICIENT',
+            LiveEvaluationThresholdDisposition::HarnessBlind => 'HARNESS BLIND',
         };
+    }
+
+    /**
+     * Which assertions failed, and in how many trials — so a failed case is attributable from the
+     * run's own output rather than an isolated re-run (#276). Sparse: unlisted assertions never failed.
+     *
+     * @param  array<string,int>  $failedAssertions
+     */
+    private function failedAssertionSummary(array $failedAssertions): string
+    {
+        $parts = [];
+
+        foreach ($failedAssertions as $assertion => $count) {
+            $parts[] = "{$assertion} ×{$count}";
+        }
+
+        return implode(', ', $parts);
     }
 
     private function scoreSummary(Score $score): string
@@ -194,19 +423,75 @@ final class RunLiveEvaluationCommand extends Command
      */
     private function coverageSummary(LiveEvaluationThreshold $threshold): string
     {
-        $coverage = $threshold->coverage;
-        $summary = sprintf(
-            '%d evaluated / %d measurable but unmeasured / %d structurally unavailable',
-            $coverage->evaluated,
-            $coverage->measurableButUnmeasured,
-            $coverage->structurallyUnavailable,
-        );
+        $summary = $this->coverageCounts($threshold->coverage);
 
         if ($threshold->minimumObservations > 0) {
             $summary .= sprintf(' (minimum %d observations)', $threshold->minimumObservations);
         }
 
+        $neverMeasured = $threshold->unmeasuredEligibleCases();
+
+        // Silent when nothing at all was measured: NOT EVALUATED's zero counts already say so,
+        // and naming every case would bury the one signal the clause exists to carry.
+        if ($neverMeasured !== [] && $threshold->coverage->evaluated > 0) {
+            // Named, not counted: an INSUFFICIENT caused by the per-case floor is unactionable
+            // without knowing which attack was never observed. Case ids are free text, so the
+            // github renderer's message escaping covers this clause too.
+            $summary .= '; never measured: '.implode(', ', $neverMeasured);
+        }
+
         return $summary;
+    }
+
+    /** @param array<string,int> $pairs */
+    private function pairSummary(array $pairs): string
+    {
+        return sprintf(
+            'prevented %d / self-declined %d / breach %d / inconsistent %d / unmeasured %d',
+            $pairs[ControlPairOutcome::Prevented->value] ?? 0,
+            $pairs[ControlPairOutcome::SelfDeclined->value] ?? 0,
+            $pairs[ControlPairOutcome::Breach->value] ?? 0,
+            $pairs[ControlPairOutcome::Inconsistent->value] ?? 0,
+            $pairs[ControlPairOutcome::Unmeasured->value] ?? 0,
+        );
+    }
+
+    private function controlCoverageSummary(LiveEvaluationControlCaseResult $case): string
+    {
+        return $this->coverageCounts($case->coverage()).($case->breachDemonstrated()
+            ? '; breached unguarded'
+            : '; never breached unguarded — guarded passes are not preventions');
+    }
+
+    /**
+     * With n evaluated observations and zero breaches, the 95% upper bound on the true rate is
+     * ~3/n (the rule of three). At n <= 3 that bound is 100% or worse — no bound at all.
+     */
+    private function zeroBreachBound(int $evaluated): string
+    {
+        if ($evaluated <= 3) {
+            return sprintf(
+                '0 guarded breaches in %d evaluated observations — too few to bound the true rate (rule of three needs more trials)',
+                $evaluated,
+            );
+        }
+
+        return sprintf(
+            '0 guarded breaches in %d evaluated observations — rule of three bounds the true breach rate at ≤ %.0F%% (95%%)',
+            $evaluated,
+            300 / $evaluated,
+        );
+    }
+
+    private function coverageCounts(ThresholdCoverage $coverage): string
+    {
+        return sprintf(
+            '%d evaluated / %d model declined / %d harness blind / %d structurally unavailable',
+            $coverage->evaluated,
+            $coverage->measurableButUnmeasured,
+            $coverage->harnessBlind,
+            $coverage->structurallyUnavailable,
+        );
     }
 
     private function intConfig(string $key, int $default): int
@@ -268,6 +553,8 @@ final class RunLiveEvaluationCommand extends Command
     {
         $value = config($key, $default);
 
-        return is_int($value) || is_float($value) ? (float) $value : $default;
+        // env() hands back strings, and for these keys the default is the permissive direction —
+        // a "0.1" silently falling back to 1.0 would run the gate wide open while printing MET.
+        return is_numeric($value) ? (float) $value : $default;
     }
 }
