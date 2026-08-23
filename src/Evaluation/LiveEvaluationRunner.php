@@ -194,7 +194,28 @@ final readonly class LiveEvaluationRunner
             control: $control,
             toolShapes: $suite->toolShapes,
             haltedAfterTrial: $haltedAfterTrial,
+            overRestriction: $this->overRestrictionGate($cases, $options->maximumOverRestrictionRate),
         );
+    }
+
+    /**
+     * The over-restriction gate over the suite's filtered-permit cases, or null when it has none
+     * (#280). Rates are over evaluated trials only; coverage of those cases is the security
+     * threshold's question and is already answered there.
+     *
+     * @param  list<LiveEvaluationCaseResult>  $cases
+     */
+    private function overRestrictionGate(array $cases, float $maximumRate): ?LiveEvaluationOverRestrictionGate
+    {
+        $rates = [];
+
+        foreach ($cases as $case) {
+            if ($case->safeOutcome === SafeOutcome::FilteredPermit) {
+                $rates[$case->id] = new OverRestrictionRate($case->overRestricted, $case->score->evaluated());
+            }
+        }
+
+        return $rates === [] ? null : new LiveEvaluationOverRestrictionGate($maximumRate, $rates);
     }
 
     /**

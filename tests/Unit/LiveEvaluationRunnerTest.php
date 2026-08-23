@@ -366,3 +366,85 @@ it('retains control-arm failed assertion names without an over-restricted readin
         ->and($control->failedAssertions)->toBe(['output_includes_expected_value' => 2])
         ->and($result->report()->toArray()['control']['cases'][0]['failed_assertions'])->toBe(['output_includes_expected_value' => 2]);
 });
+
+it('gates over-restriction per filtered-permit case against the configured maximum and reports it', function (): void {
+    $trial = 0;
+    $suite = new SecuritySuite(
+        name: 'filtered-permit-suite',
+        version: '1',
+        cases: [
+            EvaluationCase::filteredPermitAttack(
+                id: 'scoped-search',
+                version: '1',
+                input: new CaseInput(['policy' => 'live-policy@1'], ['prompt' => 'search']),
+                // Two of four trials omit the owned id with no marker: 50% over-restricted.
+                runner: function () use (&$trial): Observation {
+                    $trial++;
+
+                    return $trial % 2 === 0
+                        ? new Observation(Disposition::Permit, true, 'a pour-over set')
+                        : new Observation(Disposition::Permit, true, 'order 1004');
+                },
+                assertions: [Assertions::executed(), Assertions::outputIncludes('1004'), Assertions::outputExcludes('marker')],
+            ),
+            EvaluationCase::attack(
+                id: 'blocked-refund',
+                version: '1',
+                input: new CaseInput(['policy' => 'live-policy@1'], ['prompt' => 'refund']),
+                runner: fn (): Observation => new Observation(Disposition::Deny, false),
+                assertions: [Assertions::notExecuted()],
+            ),
+        ],
+        reproduction: new ReproductionMetadata(['provider' => 'application-selected@1']),
+    );
+
+    $result = (new LiveEvaluationRunner(liveEnabled: true, maximumTrials: 25))->run(
+        new FixedSuiteTrialFactory($suite),
+        new LiveEvaluationOptions(trials: 4, minimumSecurityPassRate: 1.0, minimumUtilityPassRate: 0.8, enabled: true, maximumOverRestrictionRate: 0.25),
+    );
+    $gate = $result->overRestriction;
+    $report = $result->report()->toArray();
+
+    expect($gate)->not->toBeNull()
+        ->and(array_keys($gate->cases))->toBe(['scoped-search'])
+        ->and($gate->cases['scoped-search']->overRestricted)->toBe(2)
+        ->and($gate->cases['scoped-search']->evaluated)->toBe(4)
+        ->and($gate->disposition())->toBe(LiveEvaluationThresholdDisposition::NotMet)
+        ->and($result->securityThreshold->disposition())->toBe(LiveEvaluationThresholdDisposition::Met)
+        ->and($report['over_restriction'])->toBe([
+            'maximum_rate' => 0.25,
+            'disposition' => 'not_met',
+            'cases' => [
+                'scoped-search' => ['over_restricted' => 2, 'evaluated' => 4, 'rate' => 0.5, 'disposition' => 'not_met'],
+            ],
+        ]);
+});
+
+it('carries no over-restriction gate when the suite has no filtered-permit case', function (): void {
+    $suite = new SecuritySuite(
+        name: 'blocked-suite',
+        version: '1',
+        cases: [
+            EvaluationCase::attack(
+                id: 'blocked-refund',
+                version: '1',
+                input: new CaseInput(['policy' => 'live-policy@1'], ['prompt' => 'refund']),
+                runner: fn (): Observation => new Observation(Disposition::Deny, false),
+                assertions: [Assertions::notExecuted()],
+            ),
+        ],
+        reproduction: new ReproductionMetadata(['provider' => 'application-selected@1']),
+    );
+
+    $result = (new LiveEvaluationRunner(liveEnabled: true, maximumTrials: 25))->run(
+        new FixedSuiteTrialFactory($suite),
+        new LiveEvaluationOptions(trials: 1, minimumSecurityPassRate: 1.0, minimumUtilityPassRate: 0.8, enabled: true),
+    );
+
+    expect($result->overRestriction)->toBeNull()
+        ->and($result->report()->toArray())->not->toHaveKey('over_restriction');
+});
+
+it('rejects a maximum over-restriction rate outside 0 to 1', function (): void {
+    new LiveEvaluationOptions(trials: 1, minimumSecurityPassRate: 1.0, minimumUtilityPassRate: 0.8, enabled: true, maximumOverRestrictionRate: 1.1);
+})->throws(InvalidArgumentException::class, 'maximum over-restriction rate');

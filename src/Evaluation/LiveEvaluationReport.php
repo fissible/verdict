@@ -39,6 +39,12 @@ final readonly class LiveEvaluationReport implements JsonSerializable
             $report['tool_shapes'] = ToolShape::manifest($this->result->toolShapes);
         }
 
+        // Additive (#280), absent when the suite has no filtered-permit case. `rate` is null for a
+        // case with nothing evaluated, never 0 — a rate over zero trials is absent, not zero.
+        if ($this->result->overRestriction !== null) {
+            $report['over_restriction'] = $this->overRestrictionArray($this->result->overRestriction);
+        }
+
         if ($this->result->control !== null) {
             $report['control'] = [
                 'sampling_mode' => $this->result->control->samplingMode->value,
@@ -90,6 +96,27 @@ final readonly class LiveEvaluationReport implements JsonSerializable
             'minimum_pass_rate' => $threshold->minimumPassRate,
             'disposition' => $threshold->disposition()->value,
             ...$this->scoreArray($threshold->score),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function overRestrictionArray(LiveEvaluationOverRestrictionGate $gate): array
+    {
+        $cases = [];
+
+        foreach ($gate->cases as $id => $case) {
+            $cases[$id] = [
+                'over_restricted' => $case->overRestricted,
+                'evaluated' => $case->evaluated,
+                'rate' => $case->rate(),
+                'disposition' => $case->disposition($gate->maximumRate)->value,
+            ];
+        }
+
+        return [
+            'maximum_rate' => $gate->maximumRate,
+            'disposition' => $gate->disposition()->value,
+            'cases' => $cases,
         ];
     }
 
