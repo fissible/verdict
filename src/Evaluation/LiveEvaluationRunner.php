@@ -102,7 +102,12 @@ final readonly class LiveEvaluationRunner
 
                 foreach ($controlResult->cases as $case) {
                     $this->assertCaseRanUnguarded($case, $trial);
-                    $controlCounters[$case->id]->record($case->status, $case->errorClass, $case->assertions, $case->safeOutcome);
+                    // Always Blocked here, never the case's declared outcome: over-restricted is a
+                    // reading of a *guarded* trial (the scope held, the model under-delivered), and
+                    // nothing guards the control arm. A mirror trial that fails only the utility
+                    // oracle stays failed on the marginal — the pair classifier reads the same
+                    // trial as a broken mirror, and the two must not disagree (#276 review).
+                    $controlCounters[$case->id]->record($case->status, $case->errorClass, $case->assertions, SafeOutcome::Blocked);
 
                     if ($classifyPairs && isset($pairCounts[$case->id], $guardedByCase[$case->id])) {
                         $guarded = $guardedByCase[$case->id];

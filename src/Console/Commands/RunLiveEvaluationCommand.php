@@ -188,6 +188,9 @@ final class RunLiveEvaluationCommand extends Command
     {
         $score = $result->securityThreshold->score;
 
+        // `failed` excludes over-restricted trials (#276): a filtered-permit trial that missed only
+        // its utility-facet oracle is counted in `passed` upstream, so it does not suppress the
+        // bound. Any security- or harness-facet failure still does.
         if ($score->failed > 0 || $score->evaluated() === 0) {
             return;
         }

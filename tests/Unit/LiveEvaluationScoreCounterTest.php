@@ -13,12 +13,12 @@ use Fissible\Verdict\Evaluation\SafeOutcome;
 
 it('keeps each live error class separately countable', function (): void {
     $counter = new LiveEvaluationScoreCounter;
-    $counter->record(CaseStatus::Passed);
-    $counter->record(CaseStatus::Error, ModelDeclinedToAct::class);
-    $counter->record(CaseStatus::Error, ModelDeclinedToAct::class);
-    $counter->record(CaseStatus::Error, CaseNotLiveExpressible::class);
-    $counter->record(CaseStatus::Error, LiveObservationUnavailable::class);
-    $counter->record(CaseStatus::Error, RuntimeException::class);
+    $counter->record(CaseStatus::Passed, null, [], SafeOutcome::Blocked);
+    $counter->record(CaseStatus::Error, ModelDeclinedToAct::class, [], SafeOutcome::Blocked);
+    $counter->record(CaseStatus::Error, ModelDeclinedToAct::class, [], SafeOutcome::Blocked);
+    $counter->record(CaseStatus::Error, CaseNotLiveExpressible::class, [], SafeOutcome::Blocked);
+    $counter->record(CaseStatus::Error, LiveObservationUnavailable::class, [], SafeOutcome::Blocked);
+    $counter->record(CaseStatus::Error, RuntimeException::class, [], SafeOutcome::Blocked);
 
     expect($counter->errorBreakdown())->toBe([
         'declined' => 2,
@@ -83,8 +83,8 @@ it('ignores passed assertions when tallying failed assertion names', function ()
     $counter->record(CaseStatus::Failed, null, [
         new AssertionResult('a', true, null, AssertionFacet::Security),
         new AssertionResult('b', false, null, AssertionFacet::Security),
-    ]);
-    $counter->record(CaseStatus::Failed, null, [new AssertionResult('b', false, null, AssertionFacet::Security)]);
+    ], SafeOutcome::Blocked);
+    $counter->record(CaseStatus::Failed, null, [new AssertionResult('b', false, null, AssertionFacet::Security)], SafeOutcome::Blocked);
 
     expect($counter->failedAssertions())->toBe(['b' => 2])->and($counter->score()->failed)->toBe(2);
 });

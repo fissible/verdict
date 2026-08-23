@@ -35,9 +35,9 @@ final class LiveEvaluationScoreCounter
      */
     public function record(
         CaseStatus $status,
-        ?string $errorClass = null,
-        array $assertions = [],
-        SafeOutcome $safeOutcome = SafeOutcome::Blocked,
+        ?string $errorClass,
+        array $assertions,
+        SafeOutcome $safeOutcome,
     ): void {
         switch ($status) {
             case CaseStatus::Passed:
