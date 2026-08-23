@@ -72,6 +72,13 @@ php artisan verdict:resolve-execution-claim CLAIM_ID retryable \
 
 Resolving a claim as `retryable` releases it for one explicit retry. A claim still marked active requires `--force`, which should be used only after application-specific investigation. Claim rows are part of the guarantee horizon, so Verdict provides no automatic pruning command; see [ADR 0009](adr/0009-execution-claim-retention.md).
 
+<!-- @verdict-claim limitation.host-conversation-record untestable reason="The host framework's conversation state is outside Verdict's boundary; Verdict neither reads nor writes it." -->
+### No reconciliation of the host's conversation record
+
+An approval receipt is single-use: once it is consumed at the execution gate, a second resume of the same approval fails closed (`verdict.approval.consumption-failed`), so the action does not run twice. That is the whole of what the receipt promises. It says nothing about what the host framework recorded — whether Laravel AI's conversation still shows the turn as awaiting approval, whether the tool result reached the conversation store, or whether an approval UI will present the same request again. Verdict does not read or write that state and cannot repair it.
+
+The gap is real, not hypothetical: a host that resumes a paused approval under a different participant than the one that paused it can execute the tool and then fail to record the result, leaving the conversation pending with the receipt already spent ([laravel/ai#931](https://github.com/laravel/ai/issues/931)). With Verdict in place the re-approval is refused; without it the action runs again. Either way the conversation record is the host's to reconcile. Read `verdict.execution.claim-completed` accordingly — it is Verdict's admission-side claim that the executor returned, not evidence that the host's conversation caught up.
+
 <!-- @verdict-claim limitation.provider-inspection untestable reason="Verdict cannot observe provider internals it deliberately does not receive." -->
 ### No provider-internal inspection
 
