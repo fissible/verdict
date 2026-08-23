@@ -70,7 +70,7 @@ it('returns eleven deterministic cases in stable security and utility order', fu
         ['id' => 'single-mutation-admission', 'version' => '1', 'purpose' => CasePurpose::Utility],
         ['id' => 'indirect-instruction-in-retrieved-document', 'version' => '1', 'purpose' => CasePurpose::Security],
         ['id' => 'owned-order-document-utility', 'version' => '1', 'purpose' => CasePurpose::Utility],
-        ['id' => 'cross-principal-order-search', 'version' => '1', 'purpose' => CasePurpose::Security],
+        ['id' => 'cross-principal-order-search', 'version' => '2', 'purpose' => CasePurpose::Security],
     ]);
 });
 
