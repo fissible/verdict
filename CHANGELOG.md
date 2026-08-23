@@ -4,6 +4,16 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Assert schema migrations produce the expected tables, unique constraints, and indexes on MySQL,
+  MariaDB, and PostgreSQL. Migrations were only ever run for their side effect of making the test
+  suite work; nothing inspected what they actually produced, so a defect that doesn't throw ΓÇö a
+  missing index, a silently-absent unique constraint on one engine ΓÇö stayed invisible even though
+  the security-state stores depend on those database-level guarantees, not just application logic.
+
+  `SchemaMigrationAssertionsTest` runs against real engines and skips on SQLite, matching
+  `SecurityStateConcurrencyRetryTest`'s existing pattern. See
+  [#168](https://github.com/fissible/verdict/issues/168).
+
 ## [0.6.0] - 2026-08-14
 
 - Gate a live evaluation verdict on coverage before gating it on rate. A threshold previously reported
