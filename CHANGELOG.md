@@ -4,6 +4,14 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Workbench tests run on a frozen clock.** `StorefrontDemoTest`'s semantic rate-limit demo ran
+  its three attempts on the wall clock against a 60-second fixed window; whenever a minute boundary
+  fell between attempts two and three, the third was admitted and the test failed — every Windows
+  lane of one CI run reached it at hh:mm:00. `WorkbenchTestCase` now pins `Clock` to a
+  `FrozenClock` before the workbench provider boots (the managers capture the clock at capability
+  registration, so a binding in a test body is too late), and a positive-control test marches that
+  clock across the boundary to show the rollover admits the third refresh.
+
 - **Limitation recorded: the approval receipt does not reconcile the host's conversation record.**
   `docs/limitations.md` gains "No reconciliation of the host's conversation record": a consumed
   receipt refuses a second resume, but Verdict neither reads nor repairs what Laravel AI recorded
