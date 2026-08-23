@@ -71,14 +71,14 @@ it('creates the verdict_execution_claims table with expected columns, unique con
     );
 
     // This index exists defensively for potential future capability-based queries.
-    // Currently no store query in src/ filters claims by capability.  
+    // Currently no store query in src/ filters claims by capability.
     $capabilityStatusIndex = collect($indexes)->first(
         fn (array $index): bool => $index['columns'] === ['capability', 'status']
     );
 
     expect($statusUpdatedAtIndex)->not->toBeNull()
         ->and($capabilityStatusIndex)->not->toBeNull();
-        
+
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
 it('creates the verdict_approval_receipts table with expected columns, unique constraint, and indexes', function (): void {
