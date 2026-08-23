@@ -14,4 +14,4 @@ jobs:
   release:
     permissions:
       contents: write
-    uses: fissible/.github/.github/workflows/release.yml@main
+    uses: fissible/.github/.github/workflows/release.yml@a23cf514dcc303a188ebdcde2971d17c2ce8b013 # main, 2026-08-22
