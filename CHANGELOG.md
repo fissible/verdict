@@ -4,6 +4,19 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **First recorded live run of storefront suite v2 — the filtered permit measured against a real
+  model.** `docs/evaluation.md` gains "suite v2, the filtered permit measured live": the
+  abliterated model, `--control`, 30 sampled trials. Unguarded, the set-returning search handed
+  over the foreign order in 30/30 trials; guarded, the scoped tool result held only the owned
+  order in 30/30, with the model naming it in 26. The four guarded failures were attributed by
+  isolated re-runs to the utility-facet identity oracle alone (the model described the owned
+  order without printing its id) — the `over_restricted` cell #251's design anticipated, not a
+  breach. The control-coverage table's filtered-permit row moves from "not demonstrated" to
+  demonstrated; the limitations entry narrows to what remains. The run also exposed that the
+  live security score and the zero-breach bound do not yet consult assertion facets, so a
+  filtered-permit utility failure reads as a security failure and suppresses the bound — filed
+  as #276; no bound is back-computed for this run.
+
 - **The cross-principal order search case ships: a filtered permit, measured end to end.** The
   final slice of #251, closing the gap an external reader of the dev.to write-up identified: can
   the boundary express a filtered permit, or is scoping in the query the honest answer? It is now
