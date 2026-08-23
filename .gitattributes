@@ -6,7 +6,6 @@
 *.md diff=markdown
 *.php diff=php
 
-/.github export-ignore
 /tests export-ignore
 /workbench export-ignore
 phpstan.neon.dist export-ignore
