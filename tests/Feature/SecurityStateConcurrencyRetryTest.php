@@ -50,24 +50,12 @@ const CONCURRENCY_TEST_CONCURRENCY = 20;
 
 const CONCURRENCY_TEST_RATE_LIMIT = 5;
 
-function concurrencyTestDriver(): ?string
-{
-    $driver = app(DatabaseManager::class)->connection()->getDriverName();
-
-    return in_array($driver, ['mysql', 'mariadb', 'pgsql'], true) ? $driver : null;
-}
-
 /** @return array<string, mixed> */
 function concurrencyTestConnectionConfig(): array
 {
     $connection = app(DatabaseManager::class);
 
     return config("database.connections.{$connection->getDefaultConnection()}");
-}
-
-function concurrencyTestSkipReason(): string
-{
-    return 'Requires a real MySQL/MariaDB or PostgreSQL connection (DB_CONNECTION); SQLite has no REPEATABLE READ/SERIALIZABLE semantics and never raises SQLSTATE 40001.';
 }
 
 /**
