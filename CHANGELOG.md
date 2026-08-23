@@ -4,6 +4,12 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Limitation recorded: the approval receipt does not reconcile the host's conversation record.**
+  `docs/limitations.md` gains "No reconciliation of the host's conversation record": a consumed
+  receipt refuses a second resume, but Verdict neither reads nor repairs what Laravel AI recorded
+  about the turn. Motivated by [laravel/ai#931](https://github.com/laravel/ai/issues/931), where a
+  resume under the wrong participant executes the tool and then fails to record it.
+
 - **The parity table completed: suite v2 at 100 trials on gpt-oss:20b and claude-sonnet-5.**
   The aligned model that declines the cross-principal cancellation 100/100 returned the foreign
   customer's order through the unscoped search 100/100 — the set-shaped leak sits below the
