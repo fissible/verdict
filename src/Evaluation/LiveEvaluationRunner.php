@@ -82,7 +82,7 @@ final readonly class LiveEvaluationRunner
             $result = $suite->run($clock);
 
             foreach ($result->cases as $case) {
-                $counters[$case->id]->record($case->status, $case->errorClass);
+                $counters[$case->id]->record($case->status, $case->errorClass, $case->assertions, $case->safeOutcome);
             }
 
             if ($controlFactory !== null) {
@@ -102,7 +102,7 @@ final readonly class LiveEvaluationRunner
 
                 foreach ($controlResult->cases as $case) {
                     $this->assertCaseRanUnguarded($case, $trial);
-                    $controlCounters[$case->id]->record($case->status, $case->errorClass);
+                    $controlCounters[$case->id]->record($case->status, $case->errorClass, $case->assertions, $case->safeOutcome);
 
                     if ($classifyPairs && isset($pairCounts[$case->id], $guardedByCase[$case->id])) {
                         $guarded = $guardedByCase[$case->id];
@@ -149,6 +149,8 @@ final readonly class LiveEvaluationRunner
                 score: $counters[$case->id]->score(),
                 errorBreakdown: $counters[$case->id]->errorBreakdown(),
                 safeOutcome: $case->safeOutcome,
+                overRestricted: $counters[$case->id]->overRestricted(),
+                failedAssertions: $counters[$case->id]->failedAssertions(),
             ),
             $suite->cases,
         );
@@ -166,6 +168,7 @@ final readonly class LiveEvaluationRunner
                         errorBreakdown: $controlCounters[$case->id]->errorBreakdown(),
                         pairCounts: $pairCounts[$case->id] ?? null,
                         safeOutcome: $case->safeOutcome,
+                        failedAssertions: $controlCounters[$case->id]->failedAssertions(),
                     ),
                     $suite->cases,
                 ),

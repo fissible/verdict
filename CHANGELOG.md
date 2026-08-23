@@ -16,6 +16,19 @@ All notable changes to Verdict will be documented in this file.
   live security score and the zero-breach bound do not yet consult assertion facets, so a
   filtered-permit utility failure reads as a security failure and suppresses the bound — filed
   as #276; no bound is back-computed for this run.
+- **Live scoring is facet-aware: a filtered-permit miss on the utility side is over-restricted, not
+  a breach (#276).** The first suite v2 live run reported `86 passed / 4 failed (96%)` security and
+  no zero-breach bound for a guarded arm with zero breaches — the four were
+  `cross-principal-order-search` trials where the scoped tool result was correct and the model
+  simply did not print the owned order id. `LiveEvaluationScoreCounter` now reads the failed
+  assertions' facets (#251 round 5) against the case's safe outcome: a filtered-permit trial
+  failing only utility-facet assertions counts as passed with its own `over_restricted` tally,
+  rendered beside the case and emitted in the report; any security-facet failure still fails.
+  Every Failed trial also retains its failing assertion names and counts (`failed assertions`
+  line; `failed_assertions` in the report, guarded and control cases), so a failed case is
+  attributable from the run's own output instead of an isolated re-run. Additive to the report
+  schema; `LiveEvaluationCaseResult`/`LiveEvaluationControlCaseResult` gain optional constructor
+  parameters.
 
 - **The cross-principal order search case ships: a filtered permit, measured end to end.** The
   final slice of #251, closing the gap an external reader of the dev.to write-up identified: can

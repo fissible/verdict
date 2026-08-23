@@ -22,6 +22,8 @@ final readonly class LiveEvaluationControlCaseResult
         public array $errorBreakdown = [],
         public ?array $pairCounts = null,
         public SafeOutcome $safeOutcome = SafeOutcome::Blocked,
+        /** @var array<string,int> sparse: assertion name to the trials it failed in */
+        public array $failedAssertions = [],
     ) {}
 
     /**

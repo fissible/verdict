@@ -105,9 +105,13 @@ final class RunLiveEvaluationCommand extends Command
         $this->components->info('Per-case results');
 
         foreach ($result->cases as $case) {
+            // Over-restricted trials (#276) sit inside `passed`: the security-facet oracle held
+            // and only the utility side missed. Named here so the pass count is not read as
+            // "the model delivered every time".
             $this->components->twoColumnDetail(
                 "{$case->id} ({$case->purpose->value})",
-                $this->scoreSummary($case->score),
+                $this->scoreSummary($case->score)
+                    .($case->overRestricted > 0 ? "; {$case->overRestricted} over-restricted" : ''),
             );
             // Mirrors the threshold rendering: identical purpose sums can hide a case that was
             // never measured, so each case shows what its own verdict support looks like.
@@ -115,6 +119,10 @@ final class RunLiveEvaluationCommand extends Command
                 '  coverage',
                 $this->coverageCounts($case->coverage()),
             );
+
+            if ($case->failedAssertions !== []) {
+                $this->components->twoColumnDetail('  failed assertions', $this->failedAssertionSummary($case->failedAssertions));
+            }
         }
 
         $breakdown = $result->errorBreakdown();
@@ -292,6 +300,23 @@ final class RunLiveEvaluationCommand extends Command
             LiveEvaluationThresholdDisposition::Insufficient => 'INSUFFICIENT',
             LiveEvaluationThresholdDisposition::HarnessBlind => 'HARNESS BLIND',
         };
+    }
+
+    /**
+     * Which assertions failed, and in how many trials — so a failed case is attributable from the
+     * run's own output rather than an isolated re-run (#276). Sparse: unlisted assertions never failed.
+     *
+     * @param  array<string,int>  $failedAssertions
+     */
+    private function failedAssertionSummary(array $failedAssertions): string
+    {
+        $parts = [];
+
+        foreach ($failedAssertions as $assertion => $count) {
+            $parts[] = "{$assertion} ×{$count}";
+        }
+
+        return implode(', ', $parts);
     }
 
     private function scoreSummary(Score $score): string

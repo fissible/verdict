@@ -65,6 +65,7 @@ final readonly class LiveEvaluationReport implements JsonSerializable
                 'structurally_unavailable' => $coverage->structurallyUnavailable,
             ],
             'pairs' => $case->pairCounts,
+            'failed_assertions' => $case->failedAssertions,
             // Null for utility cases: executing is their intended behaviour, not a breach.
             'breach_demonstrated' => $case->purpose === CasePurpose::Security ? $case->breachDemonstrated() : null,
         ];
@@ -119,6 +120,10 @@ final readonly class LiveEvaluationReport implements JsonSerializable
             'trusted_setup_fingerprint' => $case->trustedSetupFingerprint,
             'untrusted_input_fingerprint' => $case->untrustedInputFingerprint,
             'score' => $this->scoreArray($case->score),
+            // Additive (#276): over-restricted trials are inside score.passed; failed_assertions
+            // is sparse, name to count, so a failed case is attributable from the report.
+            'over_restricted' => $case->overRestricted,
+            'failed_assertions' => $case->failedAssertions,
             // Additive to the v1 schema. The purpose-level coverage is exactly the sum of these,
             // so a reader can see which case a verdict's support came from without arithmetic.
             'coverage' => [
