@@ -2,8 +2,9 @@
 
 [![Tests](https://github.com/fissible/verdict/actions/workflows/tests.yml/badge.svg)](https://github.com/fissible/verdict/actions/workflows/tests.yml)
 [![Latest version](https://img.shields.io/packagist/v/fissible/verdict.svg)](https://packagist.org/packages/fissible/verdict)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/fissible/verdict/badge)](https://scorecard.dev/viewer/?uri=github.com/fissible/verdict)
+[![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Ffissible%2Fverdict&query=%24.score&label=openssf%20scorecard)](https://scorecard.dev/viewer/?uri=github.com/fissible/verdict)
 [![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14202/badge)](https://www.bestpractices.dev/projects/14202)
+[![OpenSSF Baseline](https://www.bestpractices.dev/projects/14202/baseline)](https://www.bestpractices.dev/projects/14202/baseline-1)
 
 **Verdict is a Laravel security boundary for AI-triggered application actions.**
 
