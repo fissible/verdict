@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-23
+
 - **Project documentation for OSPS Baseline Level 2.** `.github/SECURITY.md` gains a response
   timeframe (acknowledge in 3 business days; fix or mitigation in 30 days for critical/high, 90
   otherwise; coordinated disclosure) and states how vulnerabilities are published (GitHub Security
@@ -1214,7 +1216,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.9.2...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/fissible/verdict/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/fissible/verdict/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/fissible/verdict/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/fissible/verdict/compare/v0.8.0...v0.9.0
