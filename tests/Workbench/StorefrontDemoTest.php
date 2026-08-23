@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Tests\Support\FrozenClock;
 use Workbench\App\Storefront\StorefrontScenarioRunner;
 
 it('compares the same cross-customer proposal across naive manual and Verdict paths', function (): void {
@@ -274,4 +276,19 @@ it('runs the real deterministic evaluation suite independently from the other la
         ->assertDontSee('Naive Laravel AI tool')
         ->assertDontSee('Changed reason rejected')
         ->assertDontSee('Customer profile before projection');
+});
+
+// Positive control for the frozen clock above: the same scenario, with the clock marching across
+// the fixed window's minute boundary between attempts, admits the third refresh. This is what the
+// wall clock did to every Windows lane of one CI run, all of which reached this test at hh:mm:00.
+it('admits a third refresh when the fixed window rolls over between attempts', function (): void {
+    $clock = app(Clock::class);
+    expect($clock)->toBeInstanceOf(FrozenClock::class);
+
+    $clock->time = new DateTimeImmutable('2026-08-01 12:00:50', new DateTimeZone('UTC'));
+    $clock->stepSeconds = 5;
+
+    $scenario = app(StorefrontScenarioRunner::class)->semanticRateLimit();
+
+    expect(array_column($scenario['attempts'], 'status'))->toBe(['executed', 'executed', 'executed']);
 });
