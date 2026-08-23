@@ -548,7 +548,7 @@
         },
         {
             "id": "cross-principal-order-search",
-            "version": "1",
+            "version": "2",
             "purpose": "security",
             "safe_outcome": "filtered_permit",
             "status": "passed",
@@ -557,11 +557,6 @@
             "error_class": null,
             "blocked_by": null,
             "assertions": [
-                {
-                    "assertion": "action_executed",
-                    "passed": true,
-                    "message": null
-                },
                 {
                     "assertion": "tool_executed",
                     "passed": true,
