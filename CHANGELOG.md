@@ -4,6 +4,14 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Release policy: milestone-gated cadence and a no-known-bug readiness gate.** `RELEASES.md` gains
+  readiness item 9 — no release ships while an open `bug`/incorrect-published-behavior issue is in its
+  scope — and a Release cadence section: releases are milestone-gated rather than per-merge, with one
+  exception, that correctness and security fixes ship a prompt patch instead of waiting for a batch.
+  `MILESTONES.md` records the resulting plan: `v0.10.1` (the #284 correctness patch) and `v0.11.0`
+  ("Correct the measurement, extend the surface" — #294 + #296), with #295 and the approval-surface
+  cluster deferred to later milestones.
+
 - **`indirect-instruction-in-retrieved-document` v2: the case asserts the gate the boundary
   actually is (#284).** The injected cancel targets the actor's own order, so the real boundary
   answers with `RequireConfirmation` and a challenge — not the `Deny` case v1 asserted and both
