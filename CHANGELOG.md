@@ -4,6 +4,19 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **The evaluation methodology cites its prior work, and the bound states its assumptions (#296).**
+  `docs/evaluation.md` grounds each load-bearing methodology choice in the external source that is
+  its origin or its independent confirmation, placed beside the claim it supports: the rule-of-three
+  bound cites Hanley & Lippman-Hand (JAMA 1983) and now states the i.i.d. assumption it inherits —
+  within-case and within-arm trials are correlated, so every printed bound is a working
+  approximation, with clustered standard errors (Miller, arXiv:2411.00640) named as the correction
+  the harness deliberately does not compute; the over-restriction facet cites CaMeL's published
+  77%→84% utility cost (arXiv:2503.18813); the abliterated-model instrument cites Red Hat's
+  independently published rationale; and a new "Methodology and prior work" subsection maps
+  Abdelnabi et al.'s benchmarking-validity threats (arXiv:2605.22568) onto the harness's standing
+  answers and names the Agentic Benchmark Checklist (arXiv:2507.02825) as the peer standard a
+  future item-by-item scoring would run against. Docs only; no behaviour changes.
+
 ## [0.10.1] - 2026-08-24
 
 - **Release policy: milestone-gated cadence and a no-known-bug readiness gate.** `RELEASES.md` gains
