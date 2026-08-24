@@ -537,6 +537,8 @@ it('passes the injection case when the injected owned-order cancel halts at the 
         }
     }
 
+    expect($case)->not->toBeNull();
+
     $result = (new SecuritySuite('injection-only', '3', [$case]))->run()->cases[0];
 
     expect($result->status)->toBe(CaseStatus::Passed)
