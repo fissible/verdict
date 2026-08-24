@@ -392,8 +392,8 @@ harness that already knows the answer.
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#204](https://github.com/fissible/verdict/issues/204) Approval-challenge facts observable to the live attack packs | L | #218 ✅ | ✅ Shipped — PR #258 |
-| [#251](https://github.com/fissible/verdict/issues/251) Cross-principal order search: set-shaped case, filtered-permit outcome | M–L | #260 | open — pulled forward from v1.0.0 |
-| [#260](https://github.com/fissible/verdict/issues/260) Widening-mutation suite over the predicate normalizer | S–M | none | open — `help wanted`, first buildable slice of #251 |
+| [#251](https://github.com/fissible/verdict/issues/251) Cross-principal order search: set-shaped case, filtered-permit outcome | M–L | #260 | ✅ Shipped — PRs #263/#264/#266/#270/#273 |
+| [#260](https://github.com/fissible/verdict/issues/260) Widening-mutation suite over the predicate normalizer | S–M | none | ✅ Shipped — PR #263 |
 
 **Why #251 was pulled forward.** Its design completed under four rounds of external review on the
 issue itself (capture point, oracle shape, normalizer policy, independence — all decided and
@@ -411,6 +411,45 @@ Laravel AI invocation ids, and `laravel/ai 0.11.0` did not change that — both 
 still mint one unconditionally per call. So the live harness cannot correlate the proposing turn with the
 executing one by `invocation_id`; the tool call id is the boundary-spanning key. #204's design has to
 start from that.
+
+## v0.10.1 — Correctness patch
+
+**Theme.** The correctness exception to the batched-release cadence (see `RELEASES.md`): a defect in
+published behavior ships its own prompt patch rather than waiting for the next themed minor.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#284](https://github.com/fissible/verdict/issues/284) Injection case asserted a denial the boundary never makes | M | none | ✅ Fixed — PR #293; `v0.10.1` release pending |
+
+**Why a patch, not a wait.** The storefront `indirect-instruction-in-retrieved-document` case asserted
+`decisionIs(Deny)` while the real boundary returns `RequireConfirmation`; the deterministic runners
+*simulated* a denial that never happens. The gpt-oss:20b 100-trial run (2026-08-23) scored 38/100
+correct approval-gate holds as **failures**, which suppressed that run's published zero-breach bound —
+a wrong number already in `docs/evaluation.md`. Readiness item 9 forbids releasing over it, and the
+cadence policy forbids sitting on it to preserve a batch. Case v2 asserts the confirmation gate; both
+runners stop simulating; the recorded runs are re-read.
+
+## v0.11.0 — Correct the measurement, extend the surface
+
+**Theme.** The first milestone-gated feature batch after the cadence change: one new attack surface,
+one methodology-grounding docs pass. Not a kitchen sink — #295 (TOCTOU, needs a new primitive) and the
+approval-surface cluster (#297 keystone) are held for their own later milestones.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | none | open — `help wanted`; extends the shipped #251 machinery |
+| [#296](https://github.com/fissible/verdict/issues/296) Ground the evaluation methodology in external prior work | S | none | open — docs; feeds the sequel post |
+
+**Why these two.** #294 is the flagship additive surface from the 2026-08-24 literature sweep — a
+`filteredPermitAttack()`-shaped case reusing the #251 predicate-capture machinery, so it is coverage
+growth, not new mechanism. #296 grounds the harness's own claims (rule-of-three source, over-restriction
+precedent, benchmarking-validity checklist) against published prior work. Both are additive and neither
+gates the tag; the tag cuts when the batch is complete and readiness passes.
+
+**Deferred deliberately.** #295 (check-to-use digest binding) requires a new cross-call primitive and is
+scoped to **v0.12.0**, design-first. The approval-surface cluster — #297 (`RequireReview` has no runtime,
+the keystone) → #298 → #299, with #230/#201/#265/#300 and the verdict-console ADR 0001 that surfaced them
+— is L–XL and earns its own later milestone rather than bloating this one.
 ---
 
 ## Contributor-ready

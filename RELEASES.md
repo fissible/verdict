@@ -76,6 +76,9 @@ A release is cut only when:
 6. New configuration and migrations have publication tests and upgrade notes.
 7. Documentation distinguishes implemented behavior from planned behavior.
 8. Known security limitations are documented without overstating guarantees.
+9. No open issue labeled `bug`, or describing incorrect published behavior, falls within the
+   release's scope. A release never ships over a known defect in what it publishes — including a
+   wrong evaluation result or a claim the code does not support.
 
 The release commit is tagged only after these checks pass. `VERSION`, `release.sh`, the curated
 `CHANGELOG.md`, and the tag-triggered GitHub release workflow follow the Fissible organization
@@ -84,6 +87,18 @@ prior release history. Run `bash release.sh patch`, `minor`, or `major` from a c
 for subsequent releases. Publication to Packagist and changing repository visibility are explicit
 maintainer actions, not automated side effects of a merge. Verdict is currently public and
 registered on Packagist.
+
+## Release cadence
+
+Releases are **milestone-gated, not time-driven**. A version is cut when a themed milestone is
+complete and the readiness checklist above passes — not on a schedule and not once per merge. Shipping
+a release for every landed PR reads as unstable and pressures the readiness gate; batching a themed
+set of changes behind one tag is the norm.
+
+The single exception is correctness and security. A defect in published behavior — readiness item 9,
+a wrong evaluation number, a claim the code does not support — is **not** held back to preserve a
+batch. It ships a prompt patch release of its own rather than waiting for the next themed minor.
+Batch features; never batch a fix for something already published wrong.
 
 ## Security releases
 
