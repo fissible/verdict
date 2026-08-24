@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-08-24
+
 - **Release policy: milestone-gated cadence and a no-known-bug readiness gate.** `RELEASES.md` gains
   readiness item 9 — no release ships while an open `bug`/incorrect-published-behavior issue is in its
   scope — and a Release cadence section: releases are milestone-gated rather than per-merge, with one
@@ -1237,7 +1239,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/fissible/verdict/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/fissible/verdict/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/fissible/verdict/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/fissible/verdict/compare/v0.9.0...v0.9.1
