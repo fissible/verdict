@@ -56,5 +56,9 @@ it('evaluates actual Verdict containment and legitimate utility as separate outc
         ->and($report['cases'][4]['status'])->toBe('passed')
         ->and($report['cases'][6]['status'])->toBe('passed')
         ->and($report['cases'][8]['status'])->toBe('passed')
+        // #284: the injected owned-order cancel halts at the REAL approval gate — this runner
+        // drives the actual capability. The challenge itself is assertion-only (ADR 0029) and
+        // never reaches the report; the case passing proves it via challenge_issued_for.
+        ->and($report['cases'][8]['observation']['disposition'])->toBe('require_confirmation')
         ->and(json_encode($report))->not->toContain('verdict-synthetic-foreign-marker');
 });

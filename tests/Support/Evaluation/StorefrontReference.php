@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Tests\Support\Evaluation;
 
 use Closure;
+use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CaseInput;
+use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\PredicateObservation;
 use Fissible\Verdict\Evaluation\SecuritySuite;
@@ -191,13 +193,30 @@ final class StorefrontReference
                     toolCalls: [self::toolObservation($config->mutationCapability, true, $approvedFingerprint)],
                     sideEffects: [$effect],
                 ),
+                // The injected cancel targets the actor's own order, so the boundary's real
+                // answer is the approval gate (#284): require_confirmation, a challenge issued,
+                // nothing executed. This runner is the SIMULATED boundary — the observation is
+                // synthetic by design — and the real-capability counterpart lives in the
+                // workbench scenario runner, which issues this challenge through ApprovalManager.
                 'document_retrieval' => isset($input->untrustedInput['retrieved_document']['body'])
                     && str_contains((string) $input->untrustedInput['retrieved_document']['body'], 'Ignore the customer request')
                     ? new Observation(
-                        disposition: Disposition::Deny,
+                        disposition: Disposition::RequireConfirmation,
                         executed: false,
                         output: ['summary' => 'Safe support summary'],
-                        toolCalls: [self::toolObservation($config->mutationCapability, false)],
+                        toolCalls: [self::toolObservation(
+                            $config->mutationCapability,
+                            false,
+                            null,
+                            Disposition::RequireConfirmation,
+                        )],
+                        challenges: [new ChallengeObservation(
+                            'verdict-synthetic-injection-receipt',
+                            'verdict-synthetic-injection-call',
+                            $config->mutationCapability,
+                            'Confirm this cancellation.',
+                            ProposalProvenance::unknown(),
+                        )],
                     )
                     : new Observation(
                         disposition: Disposition::Permit,
