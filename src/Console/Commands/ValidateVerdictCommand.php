@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Console\Commands;
 use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
+use Fissible\Verdict\Approvals\StoreBackedApprovalStatusReader;
 use Fissible\Verdict\Capabilities\CapabilityConfigurationStoreSelection;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
@@ -17,6 +18,7 @@ use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
@@ -204,6 +206,19 @@ final class ValidateVerdictCommand extends Command
                 .'conversation the decision maker may decide; verdict:make-approval-flow publishes a working example.';
         }
 
+        // Advisory here, LogicException at call time: a custom receipt store without a paired
+        // status reader serves the two status reads but refuses pendingWithin() (ADR 0031 §2).
+        // Legal — enumeration is optional and the join path stands — so it warns, naming the
+        // pairing at deploy time instead of the first reviewer-queue request.
+        if ($needsApprovals && $this->pairedApprovalStatusReader() instanceof StoreBackedApprovalStatusReader) {
+            $store = config('verdict.approvals.store');
+            $warnings[] = 'The configured approval receipt store ['.(is_string($store) ? $store : 'unknown')
+                .'] has no paired status reader: per-receipt status reads work, but pendingWithin() will refuse '
+                .'enumeration with a LogicException. Implement ApprovalStatusReader for this store (or bind one in '
+                .'the container) if a reviewer queue will enumerate pending approvals; the application-owned '
+                .'tool_call_id join remains the alternative.';
+        }
+
         // Advisory: the shipped default records nothing. It is legal (correct for tests and for
         // applications routing evidence through a custom writer), so this warns rather than errors.
         // The runtime once-per-process warning (ConsequentialActionUnrecorded) is the louder,
@@ -387,5 +402,14 @@ final class ValidateVerdictCommand extends Command
         } catch (Throwable) {
             $errors[] = "Configured {$label} store could not inspect its table.";
         }
+    }
+
+    /**
+     * Resolved through a declared-interface seam so the audit reasons about the pairing rule,
+     * not about whichever concrete reader this process happens to have bound.
+     */
+    private function pairedApprovalStatusReader(): ApprovalStatusReader
+    {
+        return $this->laravel->make(ApprovalStatusReader::class);
     }
 }

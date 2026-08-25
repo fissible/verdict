@@ -174,7 +174,6 @@ final class VerdictServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(ApprovalStatusReader::class, fn (Container $app): ApprovalStatusReader => $this->approvalStatusReader(
-            $app,
             $app->make(ApprovalReceiptStore::class),
         ));
 
@@ -504,26 +503,20 @@ final class VerdictServiceProvider extends ServiceProvider
     }
 
     /**
-     * Null when unconfigured — ApprovalManager::approve()/reject() then refuse (fail-closed)
-     * rather than finalizing receipts on the caller's word alone. Not a boot-time refusal:
-     * installs that never decide receipts should not be forced to configure one. Called from a
-     * Closure the manager invokes at decision time, so a misconfigured class breaks only the
-     * decision path; verdict:validate reports the same misconfiguration at the wiring audit.
+     * Paired by store (ADR 0031 §2): a store that implements the reader contract itself is its
+     * own pairing; the shipped database and in-memory readers own enumeration for their stores,
+     * each on the store's own connection/state; any other store gets the store-backed status
+     * reads, and its owner adds enumeration by implementing the contract (or binding
+     * ApprovalStatusReader directly). verdict:validate names the enumeration-less pairing.
      */
-    /**
-     * Paired by store (ADR 0031 §2): the database and in-memory readers own enumeration for
-     * their stores; any other store gets the store-backed status reads, and its owner implements
-     * the reader contract to add enumeration.
-     */
-    private function approvalStatusReader(Container $app, ApprovalReceiptStore $store): ApprovalStatusReader
+    private function approvalStatusReader(ApprovalReceiptStore $store): ApprovalStatusReader
     {
-        if ($store instanceof DatabaseApprovalReceiptStore) {
-            $connection = config('verdict.approvals.connection');
+        if ($store instanceof ApprovalStatusReader) {
+            return $store;
+        }
 
-            return new DatabaseApprovalStatusReader(
-                store: $store,
-                connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
-            );
+        if ($store instanceof DatabaseApprovalReceiptStore) {
+            return new DatabaseApprovalStatusReader($store);
         }
 
         if ($store instanceof InMemoryApprovalReceiptStore) {
@@ -533,6 +526,13 @@ final class VerdictServiceProvider extends ServiceProvider
         return new StoreBackedApprovalStatusReader($store);
     }
 
+    /**
+     * Null when unconfigured — ApprovalManager::approve()/reject() then refuse (fail-closed)
+     * rather than finalizing receipts on the caller's word alone. Not a boot-time refusal:
+     * installs that never decide receipts should not be forced to configure one. Called from a
+     * Closure the manager invokes at decision time, so a misconfigured class breaks only the
+     * decision path; verdict:validate reports the same misconfiguration at the wiring audit.
+     */
     private function approvalDecisionAuthorizer(Container $app): ?ApprovalDecisionAuthorizer
     {
         $authorizer = config('verdict.approvals.authorizer');

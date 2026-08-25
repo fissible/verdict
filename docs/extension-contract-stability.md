@@ -14,6 +14,7 @@ used by an implementation part of Verdict's public API.
 | Contract | Stability | Built-in adapters | Application use |
 | --- | --- | --- | --- |
 | `ApprovalReceiptStore` | Stable | `DatabaseApprovalReceiptStore`, `InMemoryApprovalReceiptStore` | Store approval receipts in a durable or external backend. |
+| `ApprovalStatusReader` | Experimental | `DatabaseApprovalStatusReader`, `InMemoryApprovalStatusReader`, `StoreBackedApprovalStatusReader` | Observational reads of approval-receipt status (ADR 0031): per-receipt status plus pending enumeration scoped by `approval_context`, for reviewer queues and dashboards. A custom receipt store adds enumeration by implementing this contract for its backend. |
 | `AttackPack` | Experimental | `AccountRecoveryAttackPack`, `RagBorneInjectionAttackPack`, `StorefrontAttackPack`, `ToolIntegrityAttackPack` | Define deterministic evaluation cases for a capability. |
 | `AttestChainResolver` | Stable | None; applications configure the resolver class | Resolve a tenant- or deployment-specific attestation chain at runtime. |
 | `CapabilityAuthorizer` | Stable | `LaravelPolicyAuthorizer` | Adapt a project's authorization system to capability decisions. |

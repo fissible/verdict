@@ -19,31 +19,30 @@ final readonly class InMemoryApprovalStatusReader implements ApprovalStatusReade
 
     public function statusFor(string $receiptId): ?ApprovalStatusView
     {
-        $receipt = $this->store->find($receiptId);
-
-        return $receipt === null ? null : ApprovalStatusView::fromReceipt($receipt);
+        return ApprovalStatusView::fromNullableReceipt($this->store->find($receiptId));
     }
 
     public function statusForToolCall(string $toolCallId): ?ApprovalStatusView
     {
-        $receipt = $this->store->findForToolCall($toolCallId);
-
-        return $receipt === null ? null : ApprovalStatusView::fromReceipt($receipt);
+        return ApprovalStatusView::fromNullableReceipt($this->store->findForToolCall($toolCallId));
     }
 
     public function pendingWithin(array $scope): array
     {
         ApprovalScopeMatch::assertScope($scope);
 
-        $matching = array_filter(
-            $this->store->allReceipts(),
+        $matching = array_values(array_filter(
+            $this->store->all(),
             static fn (ApprovalReceipt $receipt): bool => $receipt->status === ApprovalReceiptStatus::Pending
                 && ApprovalScopeMatch::matches($receipt->approvalContext, $scope),
-        );
+        ));
 
+        // Second-precision createdAt, matching what the database reader inherits from the
+        // column's stored 'Y-m-d H:i:s' — the two shipped readers order identically.
         usort(
             $matching,
-            static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => [$a->createdAt, $a->id] <=> [$b->createdAt, $b->id],
+            static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => [$a->createdAt->format('Y-m-d H:i:s'), $a->id]
+                <=> [$b->createdAt->format('Y-m-d H:i:s'), $b->id],
         );
 
         return array_map(

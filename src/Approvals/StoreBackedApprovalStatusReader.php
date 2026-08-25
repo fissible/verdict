@@ -24,16 +24,12 @@ final readonly class StoreBackedApprovalStatusReader implements ApprovalStatusRe
 
     public function statusFor(string $receiptId): ?ApprovalStatusView
     {
-        $receipt = $this->store->find($receiptId);
-
-        return $receipt === null ? null : ApprovalStatusView::fromReceipt($receipt);
+        return ApprovalStatusView::fromNullableReceipt($this->store->find($receiptId));
     }
 
     public function statusForToolCall(string $toolCallId): ?ApprovalStatusView
     {
-        $receipt = $this->store->findForToolCall($toolCallId);
-
-        return $receipt === null ? null : ApprovalStatusView::fromReceipt($receipt);
+        return ApprovalStatusView::fromNullableReceipt($this->store->findForToolCall($toolCallId));
     }
 
     public function pendingWithin(array $scope): array

@@ -15,11 +15,13 @@ use Fissible\Verdict\Approvals\StoreBackedApprovalStatusReader;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Tests\Support\CustomStatusReaderTestStore;
+use Fissible\Verdict\Tests\Support\SelfPairingStatusReaderTestStore;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\Schema\Builder;
 
-beforeEach(function (): void {
-    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+function createStatusReaderSchema(Builder $schema): void
+{
     $schema->dropIfExists(verdictTable('approvals'));
     $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
         $table->string('id', 64)->primary();
@@ -39,6 +41,10 @@ beforeEach(function (): void {
         $table->timestamps();
         $table->unique(['tool_call_id', 'capability', 'binding_fingerprint'], 'verdict_approval_receipts_binding_unique');
     });
+}
+
+beforeEach(function (): void {
+    createStatusReaderSchema(app(DatabaseManager::class)->connection()->getSchemaBuilder());
 });
 
 afterEach(function (): void {
@@ -78,10 +84,9 @@ function statusReaderReceipt(
 /** @return array{ApprovalReceiptStore, ApprovalStatusReader} */
 function databaseReaderPair(): array
 {
-    $connection = app(DatabaseManager::class)->connection();
-    $store = new DatabaseApprovalReceiptStore($connection);
+    $store = new DatabaseApprovalReceiptStore(app(DatabaseManager::class)->connection());
 
-    return [$store, new DatabaseApprovalStatusReader($store, $connection)];
+    return [$store, new DatabaseApprovalStatusReader($store)];
 }
 
 /** @return array{ApprovalReceiptStore, ApprovalStatusReader} */
@@ -279,4 +284,34 @@ it('resolves the reader paired with the configured receipt store', function (): 
     app()->forgetInstance(ApprovalStatusReader::class);
     app()->forgetInstance(ApprovalReceiptStore::class);
     expect(app(ApprovalStatusReader::class))->toBeInstanceOf(StoreBackedApprovalStatusReader::class);
+});
+
+it('enumerates on the store-owned connection, not a re-resolved configured one', function (): void {
+    config()->set('database.connections.verdict_reader_second', [
+        'driver' => 'sqlite',
+        'database' => ':memory:',
+        'prefix' => '',
+        'foreign_key_constraints' => false,
+    ]);
+    $second = app(DatabaseManager::class)->connection('verdict_reader_second');
+    createStatusReaderSchema($second->getSchemaBuilder());
+
+    $store = new DatabaseApprovalReceiptStore($second);
+    $reader = new DatabaseApprovalStatusReader($store);
+    $store->issue(statusReaderReceipt('receipt-second-conn', ['tenant_id' => 11]));
+
+    [, $defaultReader] = databaseReaderPair();
+
+    expect(array_map(fn (ApprovalStatusView $v): string => $v->receiptId, $reader->pendingWithin(['tenant_id' => 11])))
+        ->toBe(['receipt-second-conn'])
+        ->and($defaultReader->pendingWithin(['tenant_id' => 11]))->toBe([]);
+});
+
+it('honors a store that implements the status reader contract itself', function (): void {
+    config()->set('verdict.approvals.store', SelfPairingStatusReaderTestStore::class);
+    app()->forgetInstance(ApprovalStatusReader::class);
+    app()->forgetInstance(ApprovalReceiptStore::class);
+
+    expect(app(ApprovalStatusReader::class))->toBeInstanceOf(SelfPairingStatusReaderTestStore::class)
+        ->and(app(ApprovalStatusReader::class))->toBe(app(ApprovalReceiptStore::class));
 });

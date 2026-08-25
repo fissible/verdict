@@ -40,7 +40,9 @@ interface ApprovalStatusReader
      * scope throws InvalidArgumentException. Receipts with null or empty context never
      * enumerate. A lapsed-but-undecided receipt is still returned with its expiresAt — expiry is
      * the consumer's clock comparison, never a reported status. Deterministic order: createdAt
-     * ascending, then receiptId.
+     * ascending at second precision, then receiptId — with string ordering as the backing store
+     * collates it (the shipped readers agree; a case-insensitive collation orders mixed-case ids
+     * its own way, deterministically).
      *
      * @param  non-empty-array<string, string|int>  $scope
      * @return list<ApprovalStatusView>

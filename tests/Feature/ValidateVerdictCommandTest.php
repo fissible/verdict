@@ -16,6 +16,8 @@ use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\ReleasePolicy;
 use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
@@ -30,6 +32,7 @@ use Fissible\Verdict\RateLimits\RateLimitConsumption;
 use Fissible\Verdict\RateLimits\RateLimitOutcome;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
+use Fissible\Verdict\Tests\Support\CustomStatusReaderTestStore;
 use Fissible\Verdict\Tests\Support\DurableCustomEvidenceRecorder;
 use Fissible\Verdict\Tests\Support\VolatileCustomEvidenceRecorder;
 use Illuminate\Database\DatabaseManager;
@@ -124,6 +127,31 @@ it('fails under --strict when only advisory warnings are present', function (): 
     $this->artisan('verdict:validate', ['--strict' => true])
         ->expectsOutputToContain('no-op evidence recorder')
         ->assertExitCode(1);
+});
+
+it('warns when a confirmation-gated deployment pairs a custom store with no status reader', function (): void {
+    config()->set('verdict.approvals.store', CustomStatusReaderTestStore::class);
+    app()->forgetInstance(ApprovalStatusReader::class);
+    app()->forgetInstance(ApprovalReceiptStore::class);
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('has no paired status reader')
+        ->assertExitCode(0);
+});
+
+it('does not warn about status-reader pairing for a shipped store', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('has no paired status reader')
+        ->assertExitCode(0);
 });
 
 it('warns when a confirmation-gated capability has no approver release policy registered', function (): void {

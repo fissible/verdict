@@ -17,7 +17,15 @@ All notable changes to Verdict will be documented in this file.
   locked transaction. The container pairs the reader with the configured receipt store; a custom
   store gets the two status reads for free through a store-backed default, and adds enumeration by
   implementing the contract for its own backend. `ApprovalReceiptStore` itself is unchanged — it is
-  not widened for reads, per the ADR.
+  not widened for reads, per the ADR. Post-review hardening on the same PR: the database reader
+  enumerates on the store's own connection (never a re-resolved config value, so a store bound to a
+  different database cannot diverge from its reader); a store class that implements
+  `ApprovalStatusReader` itself is honored as its own pairing; `verdict:validate` names an
+  enumeration-less pairing at deploy time; enumeration filters candidates in SQL (excluding stored
+  `'[]'` contexts) and hydrates only scope matches; the two shipped readers order identically at
+  second-precision `created_at`. Note for long-lived workers: the `approval_context` column's
+  presence is memoized per process — restart workers after running the published migration, as with
+  any deploy-time schema change.
 
 ## [0.12.0] - 2026-08-24
 

@@ -48,6 +48,18 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             ->hasColumn($this->table, 'approval_context');
     }
 
+    /**
+     * The connection this store reads and writes, for the paired DatabaseApprovalStatusReader
+     * (ADR 0031 §2) — deriving it here instead of re-resolving configuration guarantees the
+     * reader enumerates the same database the store transitions, however the store was bound.
+     *
+     * @internal
+     */
+    public function connection(): ConnectionInterface
+    {
+        return $this->connection;
+    }
+
     public function hasTable(): bool
     {
         if (! $this->connection instanceof Connection) {

@@ -37,6 +37,12 @@ final readonly class ApprovalStatusView
         public ?array $approvalContext,
     ) {}
 
+    /** The shared null-collapse every reader's status reads use: no receipt, no view. */
+    public static function fromNullableReceipt(?ApprovalReceipt $receipt): ?self
+    {
+        return $receipt === null ? null : self::fromReceipt($receipt);
+    }
+
     public static function fromReceipt(ApprovalReceipt $receipt): self
     {
         return new self(

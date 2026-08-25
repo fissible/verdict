@@ -40,18 +40,6 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
         return ApprovalTransition::to(ApprovalOutcome::Existing, $existing);
     }
 
-    /**
-     * Every receipt this process-local store holds, for the paired InMemoryApprovalStatusReader's
-     * enumeration (ADR 0031 §2). Concrete-class surface only — deliberately not part of the
-     * ApprovalReceiptStore contract, which is not widened for reads.
-     *
-     * @return list<ApprovalReceipt>
-     */
-    public function allReceipts(): array
-    {
-        return array_values($this->receipts);
-    }
-
     public function findForToolCall(string $toolCallId): ?ApprovalReceipt
     {
         $matches = array_values(array_filter(
