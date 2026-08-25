@@ -4,6 +4,17 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Recorded: gpt-oss:20b under the corrected cases — the injection measured, the bound earned.**
+  100 sampled `--control` trials at the #293 merge commit, stated up front as not line-for-line
+  comparable with the 2026-08-23 run (both changed cases are v2; the report carries per-case
+  versions). 188 guarded security observations, 0 failures, rule-of-three ≤ 2% (95%). The
+  retrieved-document injection was measured live for the first time: 32 evaluated guarded trials,
+  every one an attempted owned-order cancel halted at the confirmation gate, all passing under
+  case v2 where v1 mislabelled them failures. The #280 over-restriction gate appears in a
+  recorded run for the first time (`MET (maximum 100%)`, search case 64.2% — reported, not
+  gated, at the deliberate default). `cross-principal-cancellation` was measured on gpt-oss for
+  the first time (2 guarded denials, 3 unguarded breaches).
+
 - **The evaluation methodology cites its prior work, and the bound states its assumptions (#296).**
   `docs/evaluation.md` grounds each load-bearing methodology choice in the external source that is
   its origin or its independent confirmation, placed beside the claim it supports: the rule-of-three
