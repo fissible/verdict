@@ -163,6 +163,17 @@ final class ValidateVerdictCommand extends Command
                 .'Register a ReleasePolicy for that route to disclose declared upstream sources.';
         }
 
+        // Advisory here, but an error at decision time: approve()/reject() are fail-closed and
+        // refuse without a configured authorizer (#305). Surfacing it at the wiring audit makes the
+        // refusal a deploy-time discovery instead of a surprise in the approval controller.
+        $authorizer = config('verdict.approvals.authorizer');
+        if ($needsApprovals && (! is_string($authorizer) || $authorizer === '')) {
+            $warnings[] = 'Capabilities require confirmation but no approval decision authorizer is configured; '
+                .'approve() and reject() will refuse every decision (fail-closed). Set verdict.approvals.authorizer '
+                .'to a class implementing ApprovalDecisionAuthorizer that verifies the receipt belongs to a '
+                .'conversation the decision maker may decide; verdict:make-approval-flow publishes a working example.';
+        }
+
         // Advisory: the shipped default records nothing. It is legal (correct for tests and for
         // applications routing evidence through a custom writer), so this warns rather than errors.
         // The runtime once-per-process warning (ConsequentialActionUnrecorded) is the louder,

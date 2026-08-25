@@ -158,6 +158,40 @@ it('does not warn about the approver route when no capability requires confirmat
         ->assertExitCode(0);
 });
 
+it('warns when a confirmation-gated capability has no approval decision authorizer configured', function (): void {
+    config()->set('verdict.approvals.authorizer', null);
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('no approval decision authorizer is configured')
+        ->assertExitCode(0);
+});
+
+it('does not warn about the approval authorizer once one is configured', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('approval decision authorizer')
+        ->assertExitCode(0);
+});
+
+it('does not warn about the approval authorizer when no capability requires confirmation', function (): void {
+    config()->set('verdict.approvals.authorizer', null);
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.view', 'view', fn (ActionEnvelope $envelope): int => 1),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('approval decision authorizer')
+        ->assertExitCode(0);
+});
+
 it('does not warn about the recorder when a real one is configured', function (): void {
     config()->set('verdict.evidence.recorder', InMemoryEvidenceRecorder::class);
 
