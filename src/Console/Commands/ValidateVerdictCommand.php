@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Console\Commands;
 
 use Fissible\Verdict\Approvals\ApproverAudience;
+use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
@@ -12,6 +13,7 @@ use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\UnaffirmedDefinition;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
+use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
@@ -21,6 +23,7 @@ use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\Targets\ExecutionTargetStrategy;
+use Fissible\Verdict\Testing\AllowAllApprovalAuthorizer;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
 use Throwable;
@@ -120,6 +123,7 @@ final class ValidateVerdictCommand extends Command
 
             $this->auditStore(
                 errors: $errors,
+                warnings: $warnings,
                 container: $container,
                 contract: $store['contract'],
                 label: $store['label'],
@@ -161,6 +165,41 @@ final class ValidateVerdictCommand extends Command
                 .'('.ApproverAudience::source()->identity().' -> '.ApproverAudience::destination()->identity().'); '
                 .'approvers are shown no provenance for the proposals they authorize. '
                 .'Register a ReleasePolicy for that route to disclose declared upstream sources.';
+        }
+
+        // Errors, not advisories: a configured-but-invalid authorizer will throw on every
+        // decision, and nothing before that moment would have said so — the manager resolves it
+        // lazily precisely so issue()/consume() paths survive, which makes this audit the only
+        // pre-decision surface that can catch the typo.
+        $configuredAuthorizer = config('verdict.approvals.authorizer');
+        if (is_string($configuredAuthorizer) && $configuredAuthorizer !== '') {
+            if (! class_exists($configuredAuthorizer)) {
+                $errors[] = "The approval decision authorizer [{$configuredAuthorizer}] configured in verdict.approvals.authorizer does not exist.";
+            } elseif (! is_a($configuredAuthorizer, ApprovalDecisionAuthorizer::class, true)) {
+                $errors[] = "The approval decision authorizer [{$configuredAuthorizer}] must implement ".ApprovalDecisionAuthorizer::class.'.';
+            }
+        }
+
+        // Advisory: the shipped AllowAllApprovalAuthorizer authorizes every decision — correct in a
+        // test suite, and the removal of per-receipt authorization anywhere else. Gated on the
+        // framework's own local and testing determination, like the non-durable adapter advisories.
+        if ($needsApprovals
+            && $configuredAuthorizer === AllowAllApprovalAuthorizer::class
+            && ! $this->laravel->environment(['local', 'testing'])) {
+            $warnings[] = 'verdict.approvals.authorizer is the test-only AllowAllApprovalAuthorizer, which authorizes every '
+                .'decision; outside local/testing this removes per-receipt authorization entirely. Configure the '
+                ."application's own ApprovalDecisionAuthorizer.";
+        }
+
+        // Advisory here, but an error at decision time: approve()/reject() are fail-closed and
+        // refuse without a configured authorizer (#305). Surfacing it at the wiring audit makes the
+        // refusal a deploy-time discovery instead of a surprise in the approval controller.
+        $authorizer = config('verdict.approvals.authorizer');
+        if ($needsApprovals && (! is_string($authorizer) || $authorizer === '')) {
+            $warnings[] = 'Capabilities require confirmation but no approval decision authorizer is configured; '
+                .'approve() and reject() will refuse every decision (fail-closed). Set verdict.approvals.authorizer '
+                .'to a class implementing ApprovalDecisionAuthorizer that verifies the receipt belongs to a '
+                .'conversation the decision maker may decide; verdict:make-approval-flow publishes a working example.';
         }
 
         // Advisory: the shipped default records nothing. It is legal (correct for tests and for
@@ -288,9 +327,13 @@ final class ValidateVerdictCommand extends Command
         ];
     }
 
-    /** @param list<string> $errors */
+    /**
+     * @param  list<string>  $errors
+     * @param  list<string>  $warnings
+     */
     private function auditStore(
         array &$errors,
+        array &$warnings,
         Container $container,
         string $contract,
         string $label,
@@ -311,6 +354,14 @@ final class ValidateVerdictCommand extends Command
             if (! $store->hasTable()) {
                 $table = $store->table();
                 $errors[] = "Configured {$label} store requires missing table [{$table}]. Publish and run Verdict's migrations.";
+            } elseif ($store instanceof DatabaseApprovalReceiptStore && ! $store->hasApprovalContextColumn()) {
+                // Advisory: the store degrades deliberately — writes omit the column and receipts
+                // hydrate as never-captured, which a fail-closed authorizer refuses — so nothing
+                // fails at runtime, but every decision on a new receipt will be refused for a
+                // reason this audit can name and the approval controller cannot.
+                $warnings[] = "The [{$store->table()}] table predates the approval_context column, so new receipts record no binding "
+                    .'context and a fail-closed authorizer will refuse them. Publish and run the '
+                    .'add_approval_context_to_verdict_approval_receipts_table migration.';
             }
         } catch (Throwable) {
             $errors[] = "Configured {$label} store could not inspect its table.";

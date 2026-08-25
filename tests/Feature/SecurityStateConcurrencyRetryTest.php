@@ -123,6 +123,7 @@ function concurrencyApprovalReceipt(string $bindingFingerprint, string $toolCall
         capability: 'concurrency-test.approval',
         bindingFingerprint: $bindingFingerprint,
         provenance: null,
+        approvalContext: null,
         status: ApprovalReceiptStatus::Pending,
         reason: null,
         expiresAt: $createdAt->modify('+1 hour'),
@@ -217,6 +218,7 @@ beforeEach(function (): void {
             'create_verdict_execution_claims_table.php.stub',
             'create_verdict_approval_receipts_table.php.stub',
             'add_proposal_provenance_to_verdict_approval_receipts_table.php.stub',
+            'add_approval_context_to_verdict_approval_receipts_table.php.stub',
         ] as $stub
     ) {
         (require __DIR__.'/../../database/migrations/'.$stub)->up();

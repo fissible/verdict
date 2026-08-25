@@ -8,6 +8,14 @@ Create a fresh kit in each test for the capability your application has already 
 matches the normal provider-based registration used by an application and prevents a test helper
 from silently replacing production wiring.
 
+Approval decisions are fail-closed, and `assertApprovalBindingInvalidation()` decides a receipt —
+so the test environment must configure an authorizer or that assertion throws
+`ApprovalAuthorizerMissing`. Verdict ships `Fissible\Verdict\Testing\AllowAllApprovalAuthorizer`
+for exactly this: set `verdict.approvals.authorizer` to it in the test environment. It authorizes
+everything, which exercises receipt state machinery while deliberately not testing per-receipt
+authorization — cover your own authorizer's deny paths in its own tests, and never configure the
+allow-all class outside local/testing (`verdict:validate` warns if you do).
+
 ```php
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;

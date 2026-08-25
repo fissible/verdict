@@ -107,6 +107,14 @@ Refreshing reduces the window between authorization and execution, but no in-pro
 
 The application decides which facts are material. Include every fact whose change would require a new human decision. Streaming approval resumption is intentionally deferred and fails closed; see [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md).
 
+### Who may decide a receipt
+
+`approved_by` (and `rejected_by`) is **attestation by the application**, not authentication by Verdict: the manager persists the identifier string the application supplies and verifies nothing about it. What makes it mean something is the required `ApprovalDecisionAuthorizer` (`verdict.approvals.authorizer`): `approve()`/`reject()` are fail-closed and refuse every decision — `ApprovalAuthorizerMissing` — until the application configures one, and return `unauthorized` without touching the receipt when it denies. The authorizer answers the one question a shipped package cannot: may *this* decision maker finalize *this* receipt?
+
+To make that check writable, receipts capture the application's binding identifiers at issue time: whatever the application places in `ActionContext(approvalContext: ['tenant_id' => …, 'conversation_id' => …])` is carried verbatim on the receipt (`approval_context`), so the authorizer can verify the receipt belongs to a conversation the decision maker may decide. Receipts issued before the column existed carry `null` there — "never captured", distinct from a receipt whose application supplied none (`[]`) — and the authorizer decides what that history is worth; the published example fails closed on both. `php artisan verdict:make-approval-flow` publishes a working authorizer beside the controller skeletons.
+
+Execution-claim reconciliation shares the trust model at a different surface: `resolvedBy` on `verdict:execution-claims` resolutions is likewise an application-attested identifier, but the resolve path is reachable only through the artisan command, so the operator is authenticated by shell access rather than by an authorizer hook.
+
 ### Avoiding confirmation fatigue
 
 Confirmation is a security control only while the approver reads it. Prompt rate is therefore a security parameter: a prompt at five times a week can be meaningful, while the same prompt at fifty times a day becomes a rubber stamp. Confirm irreversible or expensive actions, not routine ones; low-consequence prompts train an approver to dismiss the consequential prompt that follows.

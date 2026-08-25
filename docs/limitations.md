@@ -93,7 +93,7 @@ Verdict’s fingerprint-first evidence model avoids recording raw content by def
 
 Content and component fingerprints are deterministic. A hash of a predictable prompt, identifier, version, filename, URL, or personal value can be guessed and must be treated as correlation—not anonymization, encryption, or proof that the underlying input is safe.
 
-Actor and subject fingerprints have the same boundary. `ProvidesVerdictIdentity::verdictIdentity()` is an application-supplied correlation string, not an authentication assertion: Verdict does not verify that the string identifies the actor, subject, or any delegated authority. It records only the fingerprint, never the raw value, just as an approval's `approvedBy` is application-supplied rather than authenticated by Verdict.
+Actor and subject fingerprints have the same boundary. `ProvidesVerdictIdentity::verdictIdentity()` is an application-supplied correlation string, not an authentication assertion: Verdict does not verify that the string identifies the actor, subject, or any delegated authority. It records only the fingerprint, never the raw value, just as an approval's `approvedBy` is application-supplied rather than authenticated by Verdict. The required approval decision authorizer (`verdict.approvals.authorizer`) gates *whether* a decision maker may finalize a receipt, but the identifier string it stores remains attestation by the application.
 
 <!-- @verdict-claim limitation.redaction-subtree-allowlist tested -->
 ### Redaction validation does not reach inside a subtree allowlist

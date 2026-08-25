@@ -29,6 +29,8 @@ use Fissible\Verdict\RateLimits\RateLimitConsumption;
 use Fissible\Verdict\RateLimits\RateLimitOutcome;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
+use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Schema\Blueprint;
 
 it('reports static wiring warnings without failing CI', function (): void {
     $targetResolutions = 0;
@@ -155,6 +157,100 @@ it('does not warn about the approver route when no capability requires confirmat
 
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('approver route')
+        ->assertExitCode(0);
+});
+
+it('warns when a confirmation-gated capability has no approval decision authorizer configured', function (): void {
+    config()->set('verdict.approvals.authorizer', null);
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('no approval decision authorizer is configured')
+        ->assertExitCode(0);
+});
+
+it('does not warn about the approval authorizer once one is configured', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('approval decision authorizer')
+        ->assertExitCode(0);
+});
+
+it('warns when the approval receipts table predates the approval_context column', function (): void {
+    config()->set('verdict.approvals.store', DatabaseApprovalReceiptStore::class);
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+    $schema->dropIfExists(verdictTable('approvals'));
+    $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
+        $table->string('id', 64)->primary();
+        $table->string('tool_call_id');
+        $table->text('provenance')->nullable();
+    });
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('approval_context')
+        ->assertExitCode(0);
+
+    $schema->dropIfExists(verdictTable('approvals'));
+});
+
+it('warns when the test-only allow-all authorizer is configured outside local and testing', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('AllowAllApprovalAuthorizer')
+        ->assertExitCode(0);
+});
+
+it('does not warn about the allow-all authorizer in the testing environment', function (): void {
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.refund', 'update', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresConfirmation(fn (ActionEnvelope $envelope, int $target): array => ['order_id' => $target]),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('AllowAllApprovalAuthorizer')
+        ->assertExitCode(0);
+});
+
+it('errors when the configured approval authorizer class does not exist', function (): void {
+    config()->set('verdict.approvals.authorizer', 'App\\Nope\\MissingAuthorizer');
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('does not exist')
+        ->assertExitCode(1);
+});
+
+it('errors when the configured approval authorizer does not implement the contract', function (): void {
+    config()->set('verdict.approvals.authorizer', stdClass::class);
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('must implement')
+        ->assertExitCode(1);
+});
+
+it('does not warn about the approval authorizer when no capability requires confirmation', function (): void {
+    config()->set('verdict.approvals.authorizer', null);
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.view', 'view', fn (ActionEnvelope $envelope): int => 1),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('approval decision authorizer')
         ->assertExitCode(0);
 });
 

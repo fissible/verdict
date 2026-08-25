@@ -11,6 +11,7 @@ function approvalFlowGeneratedPaths(): array
     return [
         app_path('Http/Controllers/VerdictApprovalDecisionController.php'),
         app_path('Http/Requests/DecideVerdictApprovalRequest.php'),
+        app_path('Support/VerdictApprovalAuthorizer.php'),
         app_path('Jobs/NotifyVerdictApprovalDecision.php'),
         base_path('routes/verdict-approval-flow.php'),
         base_path('docs/verdict-approval-flow.md'),
@@ -52,14 +53,16 @@ it('publishes application-owned decision outcomes and disabled route scaffolding
 
     $controller = file_get_contents(app_path('Http/Controllers/VerdictApprovalDecisionController.php'));
     $request = file_get_contents(app_path('Http/Requests/DecideVerdictApprovalRequest.php'));
+    $authorizer = file_get_contents(app_path('Support/VerdictApprovalAuthorizer.php'));
     $routes = file_get_contents(base_path('routes/verdict-approval-flow.php'));
     $guide = file_get_contents(base_path('docs/verdict-approval-flow.md'));
 
-    expect($controller)->toContain('ApprovalManager', 'approve(', 'reject(', 'receiptId:', 'toolCallId:', 'approvedBy:', 'rejectedBy:', 'challengeForToolCall($toolCallId)', 'exact receipt and tool call belong', 'not_found, mismatch, expired, and invalid_state', 'TODO: Resume the application-owned agent/conversation')
-        ->and($request)->toContain('receipt and tool call belong to an application-owned conversation', 'authenticated reviewer may decide in this tenant')
-        ->and($routes)->toContain('deliberately not included', "//     Route::post('/verdict/approvals/approve'")
+    expect($controller)->toContain('ApprovalManager', 'approve(', 'reject(', 'receiptId:', 'toolCallId:', 'approvedBy:', 'rejectedBy:', 'challengeForToolCall($toolCallId)', 'verdict.approvals.authorizer', 'fail-closed', 'not_found, mismatch, expired, invalid_state, and unauthorized', 'TODO: Resume the application-owned agent/conversation')
+        ->and($request)->toContain('per-receipt authorization', 'VerdictApprovalAuthorizer')
+        ->and($authorizer)->toContain('ApprovalDecisionAuthorizer', 'approvalContext', 'conversation_id', 'tenant_id', 'return false', 'verdict.approvals.authorizer', 'global scopes')
+        ->and($routes)->toContain('deliberately not included', 'verdict.approvals.authorizer', "//     Route::post('/verdict/approvals/approve'")
         ->not->toMatch('/^\s*Route::post\(/m')
-        ->and($guide)->toContain('opaque application identifier', 'did not register the route file', 'challengeForToolCall($toolCallId)', 'already-decided or already-consumed receipt returns `invalid_state`', 'https://github.com/fissible/verdict/blob/main/docs/adoption-guide.md', '#103', 'raw prompts or tool arguments into Verdict receipts')
+        ->and($guide)->toContain('opaque application identifier', 'did not register the route file', 'challengeForToolCall($toolCallId)', 'already-decided or already-consumed receipt returns `invalid_state`', 'https://github.com/fissible/verdict/blob/main/docs/adoption-guide.md', '#103', 'raw prompts or tool arguments into Verdict receipts', 'verdict.approvals.authorizer', '`unauthorized`')
         ->and($guide)->not->toContain('store raw prompts');
 });
 

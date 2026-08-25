@@ -6,7 +6,10 @@ use App\Http\Controllers\VerdictApprovalDecisionController;
 use Illuminate\Support\Facades\Route;
 
 // This route file is deliberately not included by Verdict or Laravel automatically.
-// Include it only after adding the application's authentication, tenancy, and policy middleware.
+// Include it only after adding the application's authentication, tenancy, and policy middleware,
+// AND after registering an authorizer under verdict.approvals.authorizer — approval decisions
+// are fail-closed, so with none configured every request through these routes throws
+// ApprovalAuthorizerMissing (a 500: a misconfiguration, deliberately loud, not an outcome).
 //
 // Route::middleware(['auth', 'verified', 'TODO:tenant-and-reviewer-policy'])->group(function (): void {
 //     Route::post('/verdict/approvals/approve', [VerdictApprovalDecisionController::class, 'approve']);

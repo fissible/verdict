@@ -4,6 +4,66 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Per-receipt authorization is now expressible — and required (#305).** Receipts capture the
+  application's binding identifiers at issue time: whatever the application places in
+  `ActionContext(approvalContext: ['tenant_id' => …, 'conversation_id' => …])` is carried
+  verbatim on the receipt in a new nullable `approval_context` column, so "does this receipt
+  belong to a conversation this reviewer may decide" — the check the published controller could
+  only leave as a TODO, because the receipt didn't know — is writable for the first time. On top
+  of it, `ApprovalManager::approve()`/`reject()` now consult a **required**
+  `ApprovalDecisionAuthorizer` (`verdict.approvals.authorizer`): with none configured they refuse
+  every decision (`ApprovalAuthorizerMissing`, fail-closed, consistent with the package posture
+  everywhere else), and when the configured authorizer denies they return the new `unauthorized`
+  outcome without touching the receipt. The store remains the single authority on receipt state —
+  the authorizer runs only against a found, id-matching receipt, and the fetch-then-transition
+  race is benign because it reads only fields immutable after issue. `verdict:validate` warns at
+  the wiring audit when confirmation-gated capabilities exist with no authorizer configured, and
+  `verdict:make-approval-flow` now publishes a working `App\Support\VerdictApprovalAuthorizer`
+  (fail-closed on receipts that name no conversation) instead of a TODO. `approved_by` is
+  documented for what it is — attestation by the application — and claims' `resolvedBy` shares
+  that trust model at the artisan-only resolve surface. See
+  [who may decide a receipt](docs/security-model.md#who-may-decide-a-receipt).
+
+  **Upgrade note — approve()/reject() refuse until an authorizer is configured.** An `approve()`
+  that succeeded on 0.11 will throw `ApprovalAuthorizerMissing` after upgrading, deliberately: set
+  `verdict.approvals.authorizer` to a class implementing
+  `Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer` (re-run
+  `php artisan verdict:make-approval-flow` for the working example), publish and run the new
+  `add_approval_context_to_verdict_approval_receipts_table` migration, and pass the identifiers
+  your authorizer checks via `ActionContext(approvalContext: [...])`. Receipts issued before the
+  migration carry `null` context; the example authorizer refuses them, so decide-before-migrate
+  backlogs should be drained or handled explicitly in your authorizer. This also reaches tests:
+  `CapabilitySecurityTestKit::assertApprovalBindingInvalidation()` decides a receipt, so test
+  suites using the kit need an authorizer configured — Verdict ships
+  `Fissible\Verdict\Testing\AllowAllApprovalAuthorizer` for test environments (and
+  `verdict:validate` warns when it is configured outside local/testing). Applications that adopt
+  `approvalContext` should also drain receipts issued before the upgrade: the context now
+  participates in the binding fingerprint, so a pending pre-upgrade receipt will not validate
+  once the same action is proposed with a context attached.
+
+  Post-review hardening (external review, 2026-08-24), folded in before merge: decisions address
+  the receipt **by id** (`ApprovalReceiptStore::find()`, new contract method) rather than via
+  `findForToolCall()`, whose null is ambiguous — absent *or* a colliding tool-call id — and would
+  have let a second receipt on the same call bypass the authorizer while the store still
+  finalized by id. `approval_context` participates in the binding fingerprint when supplied, so a
+  colliding tool-call id from a different conversation gets its own receipt instead of reusing —
+  and later consuming — one authorized against another conversation's context; an empty context
+  is omitted from the fingerprint, so an application that has not adopted `approvalContext`
+  produces the exact pre-capture fingerprint and its pending receipts survive the upgrade. The
+  authorizer is container-resolved lazily at decision time, so a misconfigured class breaks only
+  the decision path (`verdict:validate` reports a nonexistent or non-implementing class as an
+  error). The database store tolerates a missing `approval_context` column — writes omit it and
+  receipts hydrate as never-captured rather than hard-failing every confirmation-gated `issue()`
+  — and `verdict:validate` warns until the migration runs.
+
+  **Upgrade note — custom `ApprovalReceiptStore` implementations.** `ApprovalReceipt`'s
+  constructor gains a required `approvalContext` parameter (the `@internal` constructor reserves
+  exactly this right), the contract gains `find(string $receiptId): ?ApprovalReceipt` (unique-id
+  lookup; decisions authorize against it), and both shipped stores map the new column; a custom
+  store must implement `find()`, construct receipts with `approvalContext` (`null` for rows that
+  predate the column), and persist it on issue. The contract now documents each method's
+  invariants.
+
 ## [0.11.0] - 2026-08-24
 
 - **Migration stubs read table names from config — a rename is a config change only (#290).**

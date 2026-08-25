@@ -18,6 +18,7 @@ final class MakeApprovalFlowCommand extends Command
         $templates = [
             __DIR__.'/../../../stubs/approval-flow/ApprovalDecisionController.php.stub' => app_path('Http/Controllers/VerdictApprovalDecisionController.php'),
             __DIR__.'/../../../stubs/approval-flow/DecideVerdictApprovalRequest.php.stub' => app_path('Http/Requests/DecideVerdictApprovalRequest.php'),
+            __DIR__.'/../../../stubs/approval-flow/VerdictApprovalAuthorizer.php.stub' => app_path('Support/VerdictApprovalAuthorizer.php'),
             __DIR__.'/../../../stubs/approval-flow/NotifyVerdictApprovalDecision.php.stub' => app_path('Jobs/NotifyVerdictApprovalDecision.php'),
             __DIR__.'/../../../stubs/approval-flow/verdict-approval-flow.php.stub' => base_path('routes/verdict-approval-flow.php'),
             __DIR__.'/../../../stubs/approval-flow/README.md.stub' => base_path('docs/verdict-approval-flow.md'),
