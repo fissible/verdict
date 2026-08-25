@@ -230,6 +230,7 @@ it('denies with nothing consumed when the intent write fails', function (): void
 
 });
 
+/** @verdict-claim limitation.intent-pre-mutation-only */
 it('keeps the intent mirror fail-open: a mirror evidence failure never stops the action', function (): void {
     Event::fake([EvidenceWriteFailed::class]);
     config()->set('verdict.intents.required', true);

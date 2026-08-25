@@ -90,6 +90,7 @@ final class AttestEvidenceRecorder implements DurableEvidenceRecorder, EvidenceR
                 'execution_claim_status' => $evidence->executionClaimStatus,
                 'execution_claim_attempt' => $evidence->executionClaimAttempt,
                 'invocation_id' => $evidence->invocationId,
+                'intent_id' => $evidence->intentId,
                 'recorded_at' => $evidence->recordedAt->format(DATE_ATOM),
             ],
         );

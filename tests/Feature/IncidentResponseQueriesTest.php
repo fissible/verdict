@@ -2,15 +2,24 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Decisions\Decision;
+use Fissible\Verdict\Decisions\Evaluation;
+use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
+use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\Intents\ActionIntent;
+use Fissible\Verdict\Intents\DatabaseActionIntentStore;
 use Illuminate\Database\DatabaseManager;
 
 /**
@@ -44,6 +53,7 @@ it('runs every query documented in docs/incident-response.md against the publish
         'add_tool_description_fingerprints_to_verdict_evidence_table',
         'add_record_identity_to_verdict_evidence_table',
         'add_intent_id_to_verdict_evidence_table',
+        'create_verdict_action_intents_table',
     ];
 
     $tables = [
@@ -53,6 +63,7 @@ it('runs every query documented in docs/incident-response.md against the publish
         verdictTable('capability_configurations'),
         verdictTable('rate_limits'),
         verdictTable('execution_claims'),
+        verdictTable('intents'),
     ];
 
     // Dropped before and after: these tables are created by other suites with their own hand-rolled
@@ -146,6 +157,68 @@ it('runs every query documented in docs/incident-response.md against the publish
     expect($connection->table(verdictTable('evidence'))->where('record_type', 'provenance')->count())->toBe(2)
         ->and($connection->table(verdictTable('evidence'))->where('record_type', 'provenance')->where('invocation_id', $invocationId)->count())->toBe(2);
 
+    // Scheduled verification: intents with no outcome. Three fixtures pin the query's three
+    // decisions: an intent with an outcome record does not report; an intent whose only reference
+    // is its own evidence mirror (stage 'intent') still reports — the exclusion is load-bearing;
+    // an in-flight intent inside the grace window does not report.
+    $intentStore = new DatabaseActionIntentStore($connection, verdictTable('intents'));
+    $intentAt = new DateTimeImmutable('2026-08-14 14:00:00', new DateTimeZone('UTC'));
+
+    foreach ([
+        ['id' => str_repeat('a', 64), 'at' => $intentAt],
+        ['id' => str_repeat('b', 64), 'at' => $intentAt],
+        ['id' => str_repeat('c', 64), 'at' => new DateTimeImmutable('2026-08-14 14:31:59', new DateTimeZone('UTC'))],
+    ] as $row) {
+        $intentStore->record(new ActionIntent(
+            id: $row['id'],
+            capability: 'orders.cancel',
+            configurationFingerprint: hash('sha256', 'configuration'),
+            actorFingerprint: null,
+            subjectFingerprint: null,
+            executionTargetIdentityFingerprint: null,
+            argumentFingerprint: $anchor,
+            invocationId: $invocationId,
+            recordedAt: $row['at'],
+        ));
+    }
+
+    $intentEvaluation = new Evaluation(
+        envelope: ActionEnvelope::wrap(
+            new ActionProposal('orders.cancel', $arguments),
+            new ActionContext(null),
+        ),
+        capability: null,
+        target: null,
+        decision: Decision::permit('Permitted.'),
+        stage: EvaluationStage::RateLimit,
+    );
+    // The covered intent gets an outcome record; the orphan gets only its own mirror.
+    $recorder->record(DecisionEvidence::fromEvaluation($intentEvaluation, $invocationId, str_repeat('a', 64)));
+    $recorder->record(DecisionEvidence::fromEvaluation(
+        new Evaluation(
+            envelope: $intentEvaluation->envelope,
+            capability: null,
+            target: null,
+            decision: Decision::permit('A durable intent record was written.'),
+            stage: EvaluationStage::Intent,
+        ),
+        $invocationId,
+        str_repeat('b', 64),
+    ));
+
+    $gaps = $connection->select(
+        'SELECT i.id, i.capability, i.invocation_id, i.recorded_at
+  FROM verdict_action_intents i
+  LEFT JOIN verdict_evidence e
+    ON e.intent_id = i.id AND e.stage <> \'intent\'
+ WHERE e.id IS NULL
+   AND i.recorded_at < ?
+ ORDER BY i.recorded_at',
+        [new DateTimeImmutable('2026-08-14 14:31:00', new DateTimeZone('UTC'))],
+    );
+    expect($gaps)->toHaveCount(1)
+        ->and($gaps[0]->id)->toBe(str_repeat('b', 64));
+
     foreach ($tables as $table) {
         $connection->getSchemaBuilder()->dropIfExists($table);
     }
@@ -182,6 +255,10 @@ it('fails when the documented SQL drifts from the SQL this test executes', funct
         'WHERE d.correlation_id = :invocation_id',
         // Step 4. Resolving a fingerprint back to what the content actually was.
         "WHERE record_type = 'provenance'",
+        // Scheduled verification. The mirror exclusion is load-bearing: the intent's own evidence
+        // mirror references the intent id, and counting it would hide exactly the gap being sought.
+        "ON e.intent_id = i.id AND e.stage <> 'intent'",
+        'WHERE e.id IS NULL',
     ];
 
     $missing = array_values(array_filter(

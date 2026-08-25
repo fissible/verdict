@@ -150,6 +150,12 @@ return [
             // 'alert' (default) never blocks the protected action — ADR 0007 already
             // decided evidence is not an authorization gate. 'throw' is for deployments
             // whose compliance regime requires fail-closed on evidence-write failure.
+            //
+            // Boundary with the `intents` lever below (#160): this key governs the
+            // evidence layer — records that already exist gaining attestation, including
+            // the intent's fail-open evidence mirror. The pre-mutation operational intent
+            // write is governed by `verdict.intents.required`; the two never express the
+            // same preference.
             'on_failure' => 'alert',
             'max_attempts' => 3,
             'base_delay_ms' => 50,

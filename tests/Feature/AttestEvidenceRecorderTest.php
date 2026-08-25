@@ -122,6 +122,7 @@ beforeEach(function (): void {
         recordedAt: new DateTimeImmutable('2026-08-09T00:00:00+00:00'),
         actorFingerprint: hash('sha256', 'support-agent:17'),
         subjectFingerprint: hash('sha256', 'customer:72'),
+        intentId: str_repeat('f', 64),
     );
 });
 
@@ -163,7 +164,10 @@ it('writes a decision to the attest chain', function (): void {
         // inside the payload. See RecordDigest.
         ->and($tail->envelope->payload['record_digest'])->toBe($this->decision->recordDigest)
         ->and($tail->envelope->payload['record_digest'])->toStartWith(RecordDigest::SCHEME.':')
-        ->and($tail->envelope->payload['claim_type'])->toBe($this->decision->claimType?->value);
+        ->and($tail->envelope->payload['claim_type'])->toBe($this->decision->claimType?->value)
+        // The outcome->intent reference must survive into the chained payload (#160): for an
+        // attest deployment, chained decisions are the only place the reference exists.
+        ->and($tail->envelope->payload['intent_id'])->toBe(str_repeat('f', 64));
 
     expect(attestChainGapRows())->toBeEmpty();
 });
