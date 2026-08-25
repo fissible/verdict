@@ -304,7 +304,7 @@ these remain true:
   this walkthrough, is the part least likely to be covered.
 - **Approval receipts are never chained**, per Step 7.
 - **The chain proves nothing until someone verifies it.** A chain is tamper-evident only in retrospect; the
-  control is `php artisan attest:verify` running on a schedule, not the chain's existence. A passing
+  control is `php artisan verdict:evidence:verify` running on a schedule, not the chain's existence. A passing
   verification establishes that the retained chain verifies against its recorded head and signing key. It
   does not identify a change or an actor.
 - **Truncation verifies clean.** An attacker who controls the store can truncate the chain to a chosen point

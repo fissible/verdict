@@ -463,19 +463,20 @@ Queue order within the milestone is the review's own, recorded on #305.
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#305](https://github.com/fissible/verdict/issues/305) Per-receipt authorization expressible + a required, fail-closed authorization hook | M–L | none | open — `scope: ready`; under the "human approval" claim |
-| [#307](https://github.com/fissible/verdict/issues/307) `verdict:evidence:verify` — a Verdict-native chain verification command | M | coordinate with attest-laravel chain format | open — `scope: ready` |
+| [#307](https://github.com/fissible/verdict/issues/307) `verdict:evidence:verify` — a Verdict-aware delegate to chain verification | M | fissible/attest-laravel | open — `scope: ready` |
 | [#308](https://github.com/fissible/verdict/issues/308) `CanonicalJson` mutates `serialize_precision` process-globally | S–M | none | open — `scope: ready`; quick win |
 | [#310](https://github.com/fissible/verdict/issues/310) Custom durable recorders silently get the no-op capability-configuration store | S | none | open — `scope: ready`; quick win |
 
 **Neither #305 nor #307 is a false published claim** (checked against the tree, 2026-08-25). The README
 assigns approval authorization to the *application* ("Your application—not the model—decides… whether a
 person must approve") and does not claim Verdict enforces it; and verification already exists via
-attest-laravel's `attest:verify`, which the docs tell adopters to run and schedule (`docs/limitations.md`,
-`docs/adoption-guide.md`). So these are **high-priority hardening, not patch-release defects** — no
+attest-laravel's `attest:verify`, which Verdict's documentation currently names as the verifier
+(`docs/limitations.md`, `docs/adoption-guide.md`). So these are **high-priority hardening, not patch-release defects** — no
 out-of-order documentation-correction patch is warranted. #305 closes an *expressibility* gap (the shipped
 stub's `TODO: verify this receipt belongs to a conversation` cannot be written, because the receipt carries
-no conversation binding); #307 gives Verdict a native verify command instead of delegating to `attest:verify`
-and adds incremental scope options. #308 (a process-global `ini` mutation during canonicalization — replace
+no conversation binding); #307 gives Verdict a configuration-aware delegate to `attest:verify`, documents
+exactly which Verdict evidence is covered, and proves Verdict-recorded attest envelopes detect corruption.
+#308 (a process-global `ini` mutation during canonicalization — replace
 with deterministic float formatting) and #310 (a silent no-op store where a fail-closed error belongs) are
 the review's quick wins.
 

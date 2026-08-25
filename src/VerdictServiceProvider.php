@@ -24,6 +24,7 @@ use Fissible\Verdict\Console\Commands\PruneRateLimitBucketsCommand;
 use Fissible\Verdict\Console\Commands\ResolveExecutionClaimCommand;
 use Fissible\Verdict\Console\Commands\RunLiveEvaluationCommand;
 use Fissible\Verdict\Console\Commands\ValidateVerdictCommand;
+use Fissible\Verdict\Console\Commands\VerifyEvidenceCommand;
 use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
@@ -555,6 +556,7 @@ final class VerdictServiceProvider extends ServiceProvider
             ResolveExecutionClaimCommand::class,
             RunLiveEvaluationCommand::class,
             ValidateVerdictCommand::class,
+            VerifyEvidenceCommand::class,
         ]);
 
         $this->publishes([
