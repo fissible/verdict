@@ -449,12 +449,51 @@ merged 2026-08-23. The tag cuts when #290 lands and readiness passes.
 **Why #294 is no longer here.** The flagship attack-surface case turned out to be unexpressible against the
 current observation model (see #294's design finding): its exfil oracle needs a privacy-safe boundary
 observation that does not yet exist. Rather than gate a feature release on a design cycle, #294 moved to
-**v0.12.0** behind its prerequisite. This is the cadence policy working — batch features, do not block a
+**v0.13.0** behind its prerequisite. This is the cadence policy working — batch features, do not block a
 release on newly-discovered design work.
 
-## v0.12.0 — Security-evaluation sequence
+## v0.12.0 — Harden the shipped claims
+
+**Theme.** The findings from the Ox Alpha external review (2026-08-25) that harden the trust behind the
+package's README claims and its fail-closed posture. **This is the next minor after v0.11.0** — the ready,
+high-priority hardening batch ships ahead of the design-gated security sequence (now v0.13.0), which keeps
+releases monotonic (current tag `v0.10.1`) while not making implementation wait on #304's unresolved design.
+Queue order within the milestone is the review's own, recorded on #305.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#305](https://github.com/fissible/verdict/issues/305) Per-receipt authorization expressible + a required, fail-closed authorization hook | M–L | none | open — `scope: ready`; under the "human approval" claim |
+| [#307](https://github.com/fissible/verdict/issues/307) `verdict:evidence:verify` — a Verdict-native chain verification command | M | coordinate with attest-laravel chain format | open — `scope: ready` |
+| [#308](https://github.com/fissible/verdict/issues/308) `CanonicalJson` mutates `serialize_precision` process-globally | S–M | none | open — `scope: ready`; quick win |
+| [#310](https://github.com/fissible/verdict/issues/310) Custom durable recorders silently get the no-op capability-configuration store | S | none | open — `scope: ready`; quick win |
+
+**Neither #305 nor #307 is a false published claim** (checked against the tree, 2026-08-25). The README
+assigns approval authorization to the *application* ("Your application—not the model—decides… whether a
+person must approve") and does not claim Verdict enforces it; and verification already exists via
+attest-laravel's `attest:verify`, which the docs tell adopters to run and schedule (`docs/limitations.md`,
+`docs/adoption-guide.md`). So these are **high-priority hardening, not patch-release defects** — no
+out-of-order documentation-correction patch is warranted. #305 closes an *expressibility* gap (the shipped
+stub's `TODO: verify this receipt belongs to a conversation` cannot be written, because the receipt carries
+no conversation binding); #307 gives Verdict a native verify command instead of delegating to `attest:verify`
+and adds incremental scope options. #308 (a process-global `ini` mutation during canonicalization — replace
+with deterministic float formatting) and #310 (a silent no-op store where a fail-closed error belongs) are
+the review's quick wins.
+
+**Scoping notes carried in from #305's review pushback.**
+- The authorization hook is **required and fail-closed**, not nullable-with-a-warning: `approve()`/`reject()`
+  without a configured authorizer must refuse, and the stub must wire a working example rather than a TODO.
+- Because a required authorizer **changes approval behavior for existing adopters** (an `approve()` that
+  worked will start refusing until an authorizer is configured), #305 must ship an **explicit upgrade and
+  configuration path** — an upgrade note, the new config key(s), and the receipt-binding migration — so the
+  breaking change is deliberate and guided, not a surprise on `composer update`.
+- Server-side signing (key management) stays out of scope for this milestone.
+---
+
+## v0.13.0 — Security-evaluation sequence
 
 **Theme.** The design-then-build pair the #294 finding created, plus the other primitive-needing surface.
+Sequenced after the v0.12.0 hardening batch — it is design-gated (#304 first), so it does not lead the
+release order.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
@@ -470,6 +509,22 @@ the other primitive-needing surface (a cross-call resource digest), independent 
 **Held for their own milestone.** The approval-surface cluster — #297 (`RequireReview` has no runtime, the
 keystone) → #298 → #299, with #230/#201/#265/#300 and the verdict-console ADR 0001 that surfaced them — is
 L–XL and earns a dedicated milestone rather than riding here.
+
+## v0.14.0 — Approvals: design rounds
+
+**Theme.** The two review findings that need a design round before implementation. Both concern the approval
+receipt.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design` |
+| [#309](https://github.com/fissible/verdict/issues/309) Receipt timestamp round-trips depend on a uniform DB session timezone | S (validate) / M (schema) | #168 | open — `scope: design` |
+
+**Relationship to the approval-surface cluster.** #306 is squarely an ADR 0026 round and shares its theme
+with the held approval-surface cluster above (#297 keystone, #298/#299/#300, #230/#201/#265, verdict-console
+ADR 0001). When that cluster is finally cut as its own milestone, **#306 should move into it and be designed
+together with #300** (`issuedAt`) rather than shipped alone — they touch the same `ApprovalChallenge`
+payload. #309 is a narrower schema/portability correctness round and can stand on its own; it relates #168.
 ---
 
 ## Contributor-ready
