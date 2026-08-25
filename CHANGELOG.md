@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-08-24
+
 - **Custom durable evidence recorders now get the durable capability-configuration store (#310).**
   With `verdict.capability_configurations.store` unset, the store was selected by checking the
   recorder class against a literal list of the two shipped durable recorders — a deployment with
@@ -1373,7 +1375,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/fissible/verdict/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/fissible/verdict/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/fissible/verdict/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/fissible/verdict/compare/v0.9.2...v0.10.0
