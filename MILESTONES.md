@@ -472,6 +472,51 @@ keystone) → #298 → #299, with #230/#201/#265/#300 and the verdict-console AD
 L–XL and earns a dedicated milestone rather than riding here.
 ---
 
+## v0.13.0 — Harden the shipped claims
+
+**Theme.** The findings from the Ox Alpha external review (2026-08-25) that sit directly under the
+package's README claims or its fail-closed posture. These are correctness-of-claims, not new features, so
+the release policy (`RELEASES.md` item 9 — no release over a claim the code does not support) makes this a
+**high-priority batch that may be cut before v0.12.0's feature work**, despite the higher version number.
+Queue order is the review's own, recorded on #305.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#305](https://github.com/fissible/verdict/issues/305) Per-receipt authorization expressible + a required, fail-closed authorization hook | M–L | none | open — `scope: ready`; under the "human approval" claim |
+| [#307](https://github.com/fissible/verdict/issues/307) `verdict:evidence:verify` — the chain is written but never verified | M | coordinate with attest-laravel chain format | open — `scope: ready`; under the "tamper-evident evidence" claim |
+| [#308](https://github.com/fissible/verdict/issues/308) `CanonicalJson` mutates `serialize_precision` process-globally | S–M | none | open — `scope: ready`; quick win |
+| [#310](https://github.com/fissible/verdict/issues/310) Custom durable recorders silently get the no-op capability-configuration store | S | none | open — `scope: ready`; quick win |
+
+**Why in this order.** #305 and #307 sit under README claims — per-receipt authorization is not expressible
+today (the shipped stub's `TODO: verify this receipt belongs to a conversation` cannot be written), and the
+evidence chain has no verify command, so "tamper-evident" is unverifiable by an adopter. Both are trust-claim
+gaps the release policy forbids shipping over. #308 (a process-global ini mutation during canonicalization —
+replace with deterministic float formatting) and #310 (a silent no-op store where a fail-closed error
+belongs) are the review's quick wins. #308's global-state nature makes it a candidate for a fast patch
+(`v0.12.1`-style) ahead of the batch if it ever bites a host application.
+
+**Scoping note carried in from #305's review pushback.** The authorization hook is **required and
+fail-closed**, not nullable-with-a-warning: `approve()`/`reject()` without a configured authorizer must
+refuse, and the stub must wire a working example rather than a TODO. Server-side signing (key management)
+stays out of scope for this milestone.
+
+## v0.14.0 — Approvals: design rounds
+
+**Theme.** The two review findings that need a design round before implementation. Both concern the approval
+receipt.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design` |
+| [#309](https://github.com/fissible/verdict/issues/309) Receipt timestamp round-trips depend on a uniform DB session timezone | S (validate) / M (schema) | #168 | open — `scope: design` |
+
+**Relationship to the approval-surface cluster.** #306 is squarely an ADR 0026 round and shares its theme
+with the held approval-surface cluster above (#297 keystone, #298/#299/#300, #230/#201/#265, verdict-console
+ADR 0001). When that cluster is finally cut as its own milestone, **#306 should move into it and be designed
+together with #300** (`issuedAt`) rather than shipped alone — they touch the same `ApprovalChallenge`
+payload. #309 is a narrower schema/portability correctness round and can stand on its own; it relates #168.
+---
+
 ## Contributor-ready
 
 These carry `scope: ready` and are open to anyone. They also now carry the `v1.0.0` milestone — a change
