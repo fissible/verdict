@@ -16,6 +16,7 @@ use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\UnaffirmedDefinition;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
+use Fissible\Verdict\Contracts\ActionIntentStore;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalStatusReader;
@@ -25,6 +26,8 @@ use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
+use Fissible\Verdict\Intents\ActionIntentManager;
+use Fissible\Verdict\Intents\InMemoryActionIntentStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\Targets\ExecutionTargetStrategy;
 use Fissible\Verdict\Testing\AllowAllApprovalAuthorizer;
@@ -59,6 +62,8 @@ final class ValidateVerdictCommand extends Command
         $needsApprovals = false;
         $needsRateLimits = false;
         $needsExecutionClaims = false;
+        $needsIntents = false;
+        $intents = $container->make(ActionIntentManager::class);
 
         foreach ($capabilities->all() as $capability) {
             if (! $capability->isExecutable()) {
@@ -68,6 +73,7 @@ final class ValidateVerdictCommand extends Command
             $needsApprovals = $needsApprovals || $capability->confirmationRequired();
             $needsRateLimits = $needsRateLimits || $capability->rateLimitPolicy() !== null;
             $needsExecutionClaims = $needsExecutionClaims || $capability->executionClaimPolicy() !== null;
+            $needsIntents = $needsIntents || $intents->required($capability);
 
             // Advisory (#230): requestConfirmation() returns null without an execution-target policy, so
             // this capability asks for confirmation and never pauses — no human is ever shown the
@@ -111,6 +117,14 @@ final class ValidateVerdictCommand extends Command
                 'needed' => $needsExecutionClaims,
                 'contract' => ExecutionClaimStore::class,
                 'label' => 'execution-claim',
+            ],
+            [
+                // With the intent lever effective for any capability, a missing intent table
+                // denies every guarded action at gate 9.5 — fail-closed, but for a reason this
+                // audit can name before the first denial pages anyone (#160).
+                'needed' => $needsIntents,
+                'contract' => ActionIntentStore::class,
+                'label' => 'action-intent',
             ],
             [
                 // Registration records a configuration fingerprint for every registered capability,
@@ -353,6 +367,12 @@ final class ValidateVerdictCommand extends Command
                 'class' => InMemoryExecutionClaimStore::class,
                 'detail' => 'Claims are process-local, so at-most-once degrades to at-most-once-per-process and '
                     .'cannot prevent duplicate execution across workers or nodes.',
+            ],
+            [
+                'key' => 'verdict.intents.store',
+                'class' => InMemoryActionIntentStore::class,
+                'detail' => 'Intent rows are the durable proof the fail-closed lever exists to give a compliance '
+                    .'deployment; a process-local row dies with the process that wrote it, so the guarantee is not made.',
             ],
             [
                 'key' => 'verdict.capability_configurations.store',
