@@ -13,13 +13,13 @@ use Illuminate\Support\Facades\Event;
 
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_capability_configurations');
+    $schema->dropIfExists(verdictTable('capability_configurations'));
 
     (require __DIR__.'/../../database/migrations/create_verdict_capability_configurations_table.php.stub')->up();
 });
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_capability_configurations');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('capability_configurations'));
 });
 
 it('stores the declared configuration once without closures or application data', function (): void {
@@ -40,12 +40,12 @@ it('stores the declared configuration once without closures or application data'
     $store->record($capability->configuration());
 
     $row = app(DatabaseManager::class)->connection()
-        ->table('verdict_capability_configurations')
+        ->table(verdictTable('capability_configurations'))
         ->where('configuration_fingerprint', $capability->configurationFingerprint())
         ->first();
 
     expect($row)->not->toBeNull()
-        ->and(app(DatabaseManager::class)->connection()->table('verdict_capability_configurations')->count())->toBe(1)
+        ->and(app(DatabaseManager::class)->connection()->table(verdictTable('capability_configurations'))->count())->toBe(1)
         ->and($row->capability)->toBe('orders.refund')
         // toEqualCanonicalizing, not toBe: MySQL's native JSON column type does not guarantee
         // preserving object member order on the storage/retrieval round-trip (documented MySQL
@@ -70,7 +70,7 @@ it('stores the declared configuration once without closures or application data'
 
 it('skips recording while the configuration table has not been migrated', function (): void {
     $connection = app(DatabaseManager::class)->connection();
-    $connection->getSchemaBuilder()->dropIfExists('verdict_capability_configurations');
+    $connection->getSchemaBuilder()->dropIfExists(verdictTable('capability_configurations'));
 
     $capability = Capability::usingPolicy(
         name: 'orders.refund',
@@ -85,7 +85,7 @@ it('skips recording while the configuration table has not been migrated', functi
 
     expect($store->record($capability->configuration()))->toBeTrue();
 
-    expect($connection->table('verdict_capability_configurations')->count())->toBe(1);
+    expect($connection->table(verdictTable('capability_configurations'))->count())->toBe(1);
 });
 
 it('skips recording while the database itself is unreachable', function (): void {
@@ -153,7 +153,7 @@ it('announces an exception-skipped recording once per store instead of failing b
 
 it('skips and announces when the write itself fails instead of failing boot', function (): void {
     $connection = app(DatabaseManager::class)->connection();
-    $connection->getSchemaBuilder()->dropColumns('verdict_capability_configurations', ['configuration']);
+    $connection->getSchemaBuilder()->dropColumns(verdictTable('capability_configurations'), ['configuration']);
 
     Event::fake([CapabilityConfigurationUnrecorded::class]);
 

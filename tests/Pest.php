@@ -15,6 +15,27 @@ uses(TestCase::class)->in('Feature');
 uses(WorkbenchTestCase::class)->in('Workbench');
 uses(AttestTestCase::class)->in('Integration');
 
+/**
+ * Resolve a Verdict table name through the config key the stubs and stores read (#290), so a test
+ * that creates a table by requiring a stub asserts against the same name the stub used.
+ */
+function verdictTable(string $area): string
+{
+    $map = [
+        'capability_configurations' => ['verdict.capability_configurations.table', 'verdict_capability_configurations'],
+        'approvals' => ['verdict.approvals.table', 'verdict_approval_receipts'],
+        'evidence' => ['verdict.evidence.table', 'verdict_evidence'],
+        'derivations' => ['verdict.evidence.derivations_table', 'verdict_provenance_derivations'],
+        'rate_limits' => ['verdict.rate_limits.table', 'verdict_rate_limit_buckets'],
+        'execution_claims' => ['verdict.execution_claims.table', 'verdict_execution_claims'],
+    ];
+
+    [$key, $default] = $map[$area] ?? throw new InvalidArgumentException("Unknown Verdict table area [{$area}].");
+    $name = config($key, $default);
+
+    return is_string($name) ? $name : $default;
+}
+
 function acceptTestSnapshot(string $name = 'test-snapshot'): ExecutionTargetPolicy
 {
     return ExecutionTargetPolicy::acceptStaleSnapshot(

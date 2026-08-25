@@ -53,8 +53,8 @@ beforeEach(function (): void {
     // The database store, so this proves row visibility on the store's own connection —
     // not merely presence in an in-memory array. Mirrors DatabaseApprovalReceiptStoreTest.
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_approval_receipts');
-    $schema->create('verdict_approval_receipts', function (Blueprint $table): void {
+    $schema->dropIfExists(verdictTable('approvals'));
+    $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
         $table->string('id', 64)->primary();
         $table->string('tool_call_id');
         $table->string('capability');
@@ -98,7 +98,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_approval_receipts');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('approvals'));
 });
 
 /**

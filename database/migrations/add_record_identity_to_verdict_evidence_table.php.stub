@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('verdict_evidence', function (Blueprint $table): void {
+        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
             // The record's semantic identity: what it asserts, as a stable namespaced label.
             // Indexed because it exists to be filtered on — an auditor selecting every
             // execution-claim completion should not have to know which stage/disposition/status
@@ -31,7 +31,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('verdict_evidence', function (Blueprint $table): void {
+        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
             $table->dropIndex('verdict_evidence_claim_type_index');
             $table->dropIndex('verdict_evidence_record_digest_index');
             $table->dropColumn(['claim_type', 'record_digest']);

@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('verdict_capability_configurations', function (Blueprint $table): void {
+        Schema::create((string) config('verdict.capability_configurations.table', 'verdict_capability_configurations'), function (Blueprint $table): void {
             $table->char('configuration_fingerprint', 64)->primary();
             $table->string('capability');
             $table->json('configuration');
@@ -22,6 +22,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('verdict_capability_configurations');
+        Schema::dropIfExists((string) config('verdict.capability_configurations.table', 'verdict_capability_configurations'));
     }
 };

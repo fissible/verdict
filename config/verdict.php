@@ -76,6 +76,10 @@ return [
         'ledger' => null,
         'connection' => null,
         'table' => 'verdict_evidence',
+        // The provenance-derivations table the database recorder writes alongside evidence. Read
+        // by both the recorder and the published migration stub, so renaming it — like every table
+        // here — is a config change only (#290).
+        'derivations_table' => 'verdict_provenance_derivations',
 
         // Only consulted when 'recorder' is AttestEvidenceRecorder::class. Requires
         // fissible/attest-laravel (composer require fissible/attest-laravel) — see

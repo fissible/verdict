@@ -8,7 +8,7 @@ use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Illuminate\Database\DatabaseManager;
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_capability_configurations');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('capability_configurations'));
 });
 
 /**
@@ -19,7 +19,7 @@ afterEach(function (): void {
 it('boots discovered capabilities on a fresh database and records on the next boot after migrate', function (): void {
     config(['verdict.capability_configurations.store' => DatabaseCapabilityConfigurationStore::class]);
     $connection = app(DatabaseManager::class)->connection();
-    $connection->getSchemaBuilder()->dropIfExists('verdict_capability_configurations');
+    $connection->getSchemaBuilder()->dropIfExists(verdictTable('capability_configurations'));
 
     app()->forgetInstance(CapabilityConfigurationStore::class);
     app()->forgetInstance(CapabilityRegistry::class);
@@ -27,7 +27,7 @@ it('boots discovered capabilities on a fresh database and records on the next bo
     bootDiscovery('Capabilities');
 
     expect(app(CapabilityRegistry::class)->has('fixtures.affirmed'))->toBeTrue()
-        ->and($connection->getSchemaBuilder()->hasTable('verdict_capability_configurations'))->toBeFalse();
+        ->and($connection->getSchemaBuilder()->hasTable(verdictTable('capability_configurations')))->toBeFalse();
 
     (require __DIR__.'/../../database/migrations/create_verdict_capability_configurations_table.php.stub')->up();
 
@@ -35,5 +35,5 @@ it('boots discovered capabilities on a fresh database and records on the next bo
     bootDiscovery('Capabilities');
 
     // bootDiscovery('Capabilities') registers exactly the two affirmed fixture capabilities.
-    expect($connection->table('verdict_capability_configurations')->count())->toBe(2);
+    expect($connection->table(verdictTable('capability_configurations'))->count())->toBe(2);
 });

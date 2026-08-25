@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('verdict_evidence', function (Blueprint $table): void {
+        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
             $table->string('tool_kind', 16)->nullable();
             $table->index('tool_kind', 'verdict_evidence_tool_kind_index');
         });
@@ -18,7 +18,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('verdict_evidence', function (Blueprint $table): void {
+        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
             $table->dropIndex('verdict_evidence_tool_kind_index');
             $table->dropColumn('tool_kind');
         });

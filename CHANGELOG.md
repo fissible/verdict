@@ -4,6 +4,19 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Migration stubs read table names from config — a rename is a config change only (#290).**
+  Every published stub now resolves its table through the config key the stores already honour
+  (`Schema::create(config('verdict.execution_claims.table', …))` and likewise across all 15
+  stubs), so an adopter who renames a table in config no longer gets a store pointed at a table
+  `migrate` never created. `verdict_provenance_derivations` — previously not renameable at all —
+  gains `verdict.evidence.derivations_table`, read by the stub and threaded into the database
+  recorder (both provider construction sites). Tests that create tables by requiring stubs now
+  resolve names through a shared `verdictTable()` helper so the suite cannot be green with stubs
+  and tests disagreeing; a new test proves the stubs under non-default names (create, add_*, down,
+  and an end-to-end evidence write). Also closes #168's remaining half: fingerprint columns are
+  asserted fixed `char(64)` and time columns engine timestamps (`char`/`bpchar` verified against
+  real MySQL 8.4 and PostgreSQL). No behaviour change for anyone on default names.
+
 - **Recorded: gpt-oss:20b under the corrected cases — the injection measured, the bound earned.**
   100 sampled `--control` trials at the #293 merge commit, stated up front as not line-for-line
   comparable with the 2026-08-23 run (both changed cases are v2; the report carries per-case
@@ -68,6 +81,7 @@ All notable changes to Verdict will be documented in this file.
   `SchemaMigrationAssertionsTest` runs against real engines and skips on SQLite, matching
   `SecurityStateConcurrencyRetryTest`'s existing pattern. See
   [#168](https://github.com/fissible/verdict/issues/168).
+
 - **Workbench tests run on a frozen clock.** `StorefrontDemoTest`'s semantic rate-limit demo ran
   its three attempts on the wall clock against a 60-second fixed window; whenever a minute boundary
   fell between attempts two and three, the third was admitted and the test failed — every Windows
@@ -810,7 +824,6 @@ All notable changes to Verdict will be documented in this file.
   recorder, the pinned instance and the resolved one were the same object. It was found by running
   the guarded arm against two unrelated models and observing identical correlation failure, which
   ruled out a provider quirk. See [#183](https://github.com/fissible/verdict/issues/183).
-
 
 ## [0.6.0] - 2026-08-14
 

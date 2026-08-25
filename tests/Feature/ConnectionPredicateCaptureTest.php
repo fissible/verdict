@@ -223,7 +223,7 @@ it('accumulates across windows until reset', function (): void {
 it('captures only the executor statements under the real database stores', function (): void {
     $connection = app(DatabaseManager::class)->connection();
 
-    $tables = ['verdict_evidence', 'verdict_execution_claims', 'capture_orders'];
+    $tables = [verdictTable('evidence'), verdictTable('execution_claims'), 'capture_orders'];
     foreach ($tables as $table) {
         $connection->getSchemaBuilder()->dropIfExists($table);
     }
@@ -287,8 +287,8 @@ it('captures only the executor statements under the real database stores', funct
 
     expect($result->executed)->toBeTrue()
         // Evidence rows and a completed claim really were written in this request...
-        ->and($connection->table('verdict_evidence')->count())->toBeGreaterThan(0)
-        ->and($connection->table('verdict_execution_claims')->count())->toBe(1)
+        ->and($connection->table(verdictTable('evidence'))->count())->toBeGreaterThan(0)
+        ->and($connection->table(verdictTable('execution_claims'))->count())->toBe(1)
         // ...and none of that traffic was captured: the window held exactly the executor's query.
         ->and($sink->predicates())->toHaveCount(1)
         ->and($sink->predicates()[0]->digest)

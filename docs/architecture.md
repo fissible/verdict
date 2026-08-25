@@ -241,4 +241,12 @@ php artisan vendor:publish --provider="Fissible\Verdict\VerdictServiceProvider" 
 php artisan migrate
 ```
 
+Every security-state and evidence table name is read from configuration **by the migration stubs as
+well as by the stores** — `verdict.approvals.table`, `verdict.evidence.table`,
+`verdict.evidence.derivations_table`, `verdict.rate_limits.table`, `verdict.execution_claims.table`,
+and `verdict.capability_configurations.table` — so renaming a table is a config change only: set the
+name before running `php artisan migrate` and both the schema and the store use it. No migration
+file needs editing, and a rename after tables exist is an application-owned data migration, not a
+config edit.
+
 Use the generated configuration to review retention and evaluation controls for your environment. See [limitations](limitations.md) for the controls that remain outside the package.

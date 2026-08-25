@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\Event;
 function attestChainGapRows(): array
 {
     return app(DatabaseManager::class)->connection()
-        ->table('verdict_evidence')
+        ->table(verdictTable('evidence'))
         ->where('record_type', 'chain_gap')
         ->get()
         ->all();
@@ -36,9 +36,9 @@ function attestChainGapRows(): array
 
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_evidence');
-    $schema->dropIfExists('verdict_provenance_derivations');
-    $schema->create('verdict_evidence', function (Blueprint $table): void {
+    $schema->dropIfExists(verdictTable('evidence'));
+    $schema->dropIfExists(verdictTable('derivations'));
+    $schema->create(verdictTable('evidence'), function (Blueprint $table): void {
         $table->uuid('id')->primary();
         $table->string('record_type', 32);
         $table->string('correlation_id')->nullable();
@@ -84,7 +84,7 @@ beforeEach(function (): void {
         $table->char('content_fingerprint', 64)->nullable();
         $table->timestamp('recorded_at');
     });
-    $schema->create('verdict_provenance_derivations', function (Blueprint $table): void {
+    $schema->create(verdictTable('derivations'), function (Blueprint $table): void {
         $table->string('correlation_id');
         $table->char('child_content_fingerprint', 64);
         $table->char('parent_content_fingerprint', 64);
@@ -125,8 +125,8 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_evidence');
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_provenance_derivations');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('evidence'));
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('derivations'));
 });
 
 function makeAttestEvidenceRecorder(ChainStore $store, string $onFailure = 'alert'): AttestEvidenceRecorder
@@ -272,7 +272,7 @@ it('does not throw when the gap-marker DB write itself fails in alert mode', fun
     // Drop the evidence table so the fallback insert() inside recordGap() genuinely
     // throws a QueryException, simulating the correlated-failure case where whatever
     // broke the chain write also broke the DB write.
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->drop('verdict_evidence');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->drop(verdictTable('evidence'));
 
     $store = new FlakyChainStore(AttestFixture::store(), failures: 99);
     $recorder = makeAttestEvidenceRecorder($store);

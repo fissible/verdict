@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('verdict_rate_limit_buckets', function (Blueprint $table): void {
+        Schema::create((string) config('verdict.rate_limits.table', 'verdict_rate_limit_buckets'), function (Blueprint $table): void {
             $table->char('bucket_fingerprint', 64);
             $table->timestamp('window_starts_at');
             $table->timestamp('reset_at');
@@ -27,6 +27,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists('verdict_rate_limit_buckets');
+        Schema::dropIfExists((string) config('verdict.rate_limits.table', 'verdict_rate_limit_buckets'));
     }
 };

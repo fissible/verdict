@@ -207,7 +207,7 @@ beforeEach(function (): void {
     $manager = app(DatabaseManager::class);
     $schema = $manager->connection()->getSchemaBuilder();
 
-    foreach (['verdict_rate_limit_buckets', 'verdict_execution_claims', 'verdict_approval_receipts'] as $table) {
+    foreach ([verdictTable('rate_limits'), verdictTable('execution_claims'), verdictTable('approvals')] as $table) {
         $schema->dropIfExists($table);
     }
 
@@ -232,7 +232,7 @@ afterEach(function (): void {
     $manager = app(DatabaseManager::class);
     $schema = $manager->connection()->getSchemaBuilder();
 
-    foreach (['verdict_rate_limit_buckets', 'verdict_execution_claims', 'verdict_approval_receipts'] as $table) {
+    foreach ([verdictTable('rate_limits'), verdictTable('execution_claims'), verdictTable('approvals')] as $table) {
         $schema->dropIfExists($table);
     }
 });
