@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Evidence\CanonicalJson;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 
 /**
@@ -59,7 +60,24 @@ it('fingerprints a float identically under any serialize_precision', function ()
         ->and($atSeventeen)->toBe('c0fc1ae4e195fc450450af26864a61d9d751b6b4684fb42a3aba5860c63d20c2');
 });
 
-it('restores a caller-chosen serialize_precision after fingerprinting', function (): void {
+it('keeps PHP default float tokens under arbitrary process precision', function (): void {
+    $fixture = [
+        'tenth' => 0.1,
+        'fraction' => 1.0,
+        'small' => 1.0e-6,
+        'large' => 1.0e20,
+        'negative_zero' => -0.0,
+    ];
+
+    foreach (['17', '-1', '3', '0'] as $precision) {
+        ini_set('serialize_precision', $precision);
+
+        expect(CanonicalJson::encode($fixture, 'float compatibility fixture'))
+            ->toBe('{"fraction":1.0,"large":1.0e+20,"negative_zero":-0.0,"small":1.0e-6,"tenth":0.1}');
+    }
+});
+
+it('does not alter a caller-chosen serialize_precision while fingerprinting', function (): void {
     ini_set('serialize_precision', '17');
 
     ArgumentFingerprint::make(bindingContractFixture());
