@@ -4,6 +4,21 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Approval status reads have a contract (#327, ADR 0031).** New
+  `Fissible\Verdict\Contracts\ApprovalStatusReader` — the observational read seam over approval
+  receipts: `statusFor()` and `statusForToolCall()` return an `ApprovalStatusView` DTO (never a row;
+  decided receipts read back too, which un-collapses `challengeForToolCall()`'s null into "already
+  decided" versus "lapsed, undecided"), and `pendingWithin()` enumerates pending receipts scoped by
+  typed containment over `approval_context` — an empty scope throws, an integer `1` does not match a
+  string `'1'`, receipts with no captured context never enumerate, and results are ordered by
+  `created_at` then id. The reader never reports an `Expired` status: it returns the persisted
+  status plus `expires_at`, and the consumer compares clocks (ADR 0029). Freshness is
+  poll-consistency and reads carry no authority — every transition still re-validates inside its
+  locked transaction. The container pairs the reader with the configured receipt store; a custom
+  store gets the two status reads for free through a store-backed default, and adds enumeration by
+  implementing the contract for its own backend. `ApprovalReceiptStore` itself is unchanged — it is
+  not widened for reads, per the ADR.
+
 ## [0.12.0] - 2026-08-24
 
 - **Custom durable evidence recorders now get the durable capability-configuration store (#310).**

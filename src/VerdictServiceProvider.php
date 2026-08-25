@@ -9,6 +9,10 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Approvals\DatabaseApprovalStatusReader;
+use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
+use Fissible\Verdict\Approvals\InMemoryApprovalStatusReader;
+use Fissible\Verdict\Approvals\StoreBackedApprovalStatusReader;
 use Fissible\Verdict\Approvals\StrictProvenanceGuard;
 use Fissible\Verdict\Capabilities\CapabilityConfigurationStoreSelection;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
@@ -30,6 +34,7 @@ use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Contracts\AttestChainResolver;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
@@ -167,6 +172,11 @@ final class VerdictServiceProvider extends ServiceProvider
 
             return $instance;
         });
+
+        $this->app->singleton(ApprovalStatusReader::class, fn (Container $app): ApprovalStatusReader => $this->approvalStatusReader(
+            $app,
+            $app->make(ApprovalReceiptStore::class),
+        ));
 
         $this->app->scoped(ApprovalManager::class, function (Container $app): ApprovalManager {
             $ttl = config('verdict.approvals.ttl_seconds', 900);
@@ -500,6 +510,29 @@ final class VerdictServiceProvider extends ServiceProvider
      * Closure the manager invokes at decision time, so a misconfigured class breaks only the
      * decision path; verdict:validate reports the same misconfiguration at the wiring audit.
      */
+    /**
+     * Paired by store (ADR 0031 §2): the database and in-memory readers own enumeration for
+     * their stores; any other store gets the store-backed status reads, and its owner implements
+     * the reader contract to add enumeration.
+     */
+    private function approvalStatusReader(Container $app, ApprovalReceiptStore $store): ApprovalStatusReader
+    {
+        if ($store instanceof DatabaseApprovalReceiptStore) {
+            $connection = config('verdict.approvals.connection');
+
+            return new DatabaseApprovalStatusReader(
+                store: $store,
+                connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+            );
+        }
+
+        if ($store instanceof InMemoryApprovalReceiptStore) {
+            return new InMemoryApprovalStatusReader($store);
+        }
+
+        return new StoreBackedApprovalStatusReader($store);
+    }
+
     private function approvalDecisionAuthorizer(Container $app): ?ApprovalDecisionAuthorizer
     {
         $authorizer = config('verdict.approvals.authorizer');
