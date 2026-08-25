@@ -11,6 +11,7 @@ use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
+use Fissible\Verdict\Intents\ActionIntent;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use InvalidArgumentException;
@@ -312,7 +313,7 @@ final readonly class Capability
      * Declare this capability's write-ahead intent posture, overriding the global
      * `verdict.intents.required` lever in either direction (#160).
      *
-     * With the requirement effective, no mutating gate runs until a durable {@see \Fissible\Verdict\Intents\ActionIntent}
+     * With the requirement effective, no mutating gate runs until a durable {@see ActionIntent}
      * has been committed; an intent-write failure denies the action with nothing consumed.
      * Left undeclared, the capability follows the global lever.
      */

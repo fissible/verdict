@@ -32,6 +32,7 @@ use Fissible\Verdict\Console\Commands\VerifyEvidenceCommand;
 use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
+use Fissible\Verdict\Contracts\ActionIntentStore;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalStatusReader;
@@ -41,7 +42,6 @@ use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceWriter;
-use Fissible\Verdict\Contracts\ActionIntentStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
@@ -53,9 +53,9 @@ use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullRecorderWarning;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
+use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
 use Fissible\Verdict\Intents\ActionIntentManager;
 use Fissible\Verdict\Intents\DatabaseActionIntentStore;
-use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
 use Fissible\Verdict\LaravelAi\RecordAgentPromptProvenance;
@@ -523,6 +523,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 executionClaims: $app->make(ExecutionClaimManager::class),
                 provenance: $app->make(ProvenanceLedger::class),
                 invocations: $app->make(InvocationContext::class),
+                intents: $app->make(ActionIntentManager::class),
                 strictProvenance: $app->make(StrictProvenanceGuard::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
                 events: $app->make(Dispatcher::class),

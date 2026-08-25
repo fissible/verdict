@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\ActionIntentStore;
 use Fissible\Verdict\Intents\ActionIntent;
 use Fissible\Verdict\Intents\ActionIntentManager;
@@ -21,6 +22,8 @@ final class WiringTestActionIntentStore implements ActionIntentStore
 }
 
 it('resolves the database intent store from the shipped default', function (): void {
+    // The base TestCase configures the in-memory store; this test asserts the shipped default.
+    config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
     $this->app->forgetInstance(ActionIntentStore::class);
 
     $store = app(ActionIntentStore::class);
@@ -30,6 +33,7 @@ it('resolves the database intent store from the shipped default', function (): v
 });
 
 it('resolves the configured intent table name', function (): void {
+    config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
     config()->set('verdict.intents.table', 'renamed_action_intents');
     $this->app->forgetInstance(ActionIntentStore::class);
 
@@ -62,7 +66,7 @@ it('wires the intent manager against the global lever', function (): void {
     $this->app->forgetInstance(ActionIntentManager::class);
 
     $manager = app(ActionIntentManager::class);
-    $capability = Fissible\Verdict\Capabilities\Capability::usingPolicy('orders.refund', 'refund', fn () => null);
+    $capability = Capability::usingPolicy('orders.refund', 'refund', fn () => null);
 
     expect($manager->required($capability))->toBeTrue()
         ->and($manager->required($capability->requiresIntentRecord(false)))->toBeFalse();

@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Evidence;
 
 use DateTimeImmutable;
-use Fissible\Verdict\Contracts\ProvidesVerdictIdentity;
 use Fissible\Verdict\Decisions\Evaluation;
-use InvalidArgumentException;
 
 final readonly class DecisionEvidence
 {
