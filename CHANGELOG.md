@@ -63,6 +63,14 @@ All notable changes to Verdict will be documented in this file.
   store must implement `find()`, construct receipts with `approvalContext` (`null` for rows that
   predate the column), and persist it on issue. The contract now documents each method's
   invariants.
+- **Verdict evidence now has a configuration-aware verification entry point (#307).**
+  `php artisan verdict:evidence:verify` resolves Verdict's configured fixed Attest chain and delegates
+  signature, chain, and anchor verification to Attest's `attest:verify` command. Its output makes the
+  configured coverage explicit: decisions and context releases are chained; provenance is included only
+  when `chain_provenance` is enabled, and approval receipts are never evidence-layer records. Deployments
+  using a tenant chain resolver must schedule one explicit `--chain` invocation for each concrete chain.
+  The integration suite records a real Verdict decision, verifies it, then corrupts the resulting upstream
+  `attest_envelopes` artifact and proves verification fails.
 
 ## [0.11.0] - 2026-08-24
 

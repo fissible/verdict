@@ -141,11 +141,20 @@ Schedule::command('attest:anchor')
     ->withoutOverlapping()
     ->onOneServer();
 
-Schedule::command('attest:verify --min-anchor=remote_header_confirmed')
+Schedule::command('verdict:evidence:verify --min-anchor=remote_header_confirmed')
     ->dailyAt('02:15')
     ->withoutOverlapping()
     ->onOneServer();
 ```
+
+`verdict:evidence:verify` is Verdict's configuration-aware delegate to `attest:verify`: it resolves the
+configured fixed Verdict chain and uses Attest's configured connection and trusted keys. It does not
+reimplement signature or chain verification. A deployment using `chain_resolver` has more than one possible
+chain, so schedule one invocation per concrete chain, for example
+`verdict:evidence:verify --chain=tenant:42 --min-anchor=remote_header_confirmed`. The command reports whether
+provenance is covered by the configured `chain_provenance` setting; it never verifies approval receipts.
+For an exceptional verification run, it forwards Attest's `--trusted-key`, `--trusted-key-file`,
+`--bitcoin-core-rpc`, `--bitcoin-core-cookie`, `--esplora-url`, and range/anchor options unchanged.
 
 `attest:anchor` is experimental and confirmation lags its anchor interval. Verification detects a problem; it does not identify the actor or repair evidence. Keep an out-of-band record of each chain head and entry count as described in [limitations](limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody).
 
