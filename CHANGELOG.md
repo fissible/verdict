@@ -43,6 +43,12 @@ All notable changes to Verdict will be documented in this file.
   answers and names the Agentic Benchmark Checklist (arXiv:2507.02825) as the peer standard a
   future item-by-item scoring would run against. Docs only; no behaviour changes.
 
+- **Published migration stubs now honor configured table names (#290).** Every Verdict migration
+  reads the matching `verdict.*.table` configuration value, including the newly configurable
+  provenance-derivations table, so changing a supported table name in configuration no longer
+  leaves the corresponding store pointing at an uncreated default-named table. The migration
+  tests exercise configured names and their matching stores.
+
 ## [0.10.1] - 2026-08-24
 
 - **Release policy: milestone-gated cadence and a no-known-bug readiness gate.** `RELEASES.md` gains

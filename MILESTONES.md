@@ -438,13 +438,13 @@ adopter rename. Both are additive and low-risk; neither introduces new mechanism
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#296](https://github.com/fissible/verdict/issues/296) Ground the evaluation methodology in external prior work | S | none | ✅ Merged — PR #302 |
-| [#290](https://github.com/fissible/verdict/issues/290) Migration stubs honor the configured table names | S–M | #287 ✅ | open — `scope: ready` |
+| [#290](https://github.com/fissible/verdict/issues/290) Migration stubs honor the configured table names | S–M | #287 ✅ | ✅ Merged — PR #313 |
 
 **Why these two.** #296 grounds the harness's claims (rule-of-three source, over-restriction precedent,
 benchmarking-validity checklist) against published prior work — it shipped in PR #302. #290 closes a real
 adopter footgun: the stores read `config('verdict.*.table')` but the migration stubs hardcode the default
 names, so a config-only rename fails at first write; its only dependency (#287, the schema-assertion tests)
-merged 2026-08-23. The tag cuts when #290 lands and readiness passes.
+merged 2026-08-23. Both milestone items are now merged; the tag cuts when readiness passes.
 
 **Why #294 is no longer here.** The flagship attack-surface case turned out to be unexpressible against the
 current observation model (see #294's design finding): its exfil oracle needs a privacy-safe boundary
