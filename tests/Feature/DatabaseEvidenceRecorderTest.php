@@ -26,6 +26,7 @@ beforeEach(function (): void {
         $table->string('record_type', 32);
         $table->string('correlation_id')->nullable();
         $table->string('invocation_id')->nullable();
+        $table->string('intent_id', 64)->nullable();
         $table->string('capability')->nullable();
         $table->string('tool_kind', 16)->nullable();
         $table->char('configuration_fingerprint', 64)->nullable();

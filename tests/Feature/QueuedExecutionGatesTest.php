@@ -237,6 +237,7 @@ beforeEach(function (): void {
     (require __DIR__.'/../../database/migrations/add_target_source_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_tool_description_fingerprints_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_record_identity_to_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_intent_id_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_rate_limit_buckets_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_execution_claims_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_capability_configurations_table.php.stub')->up();

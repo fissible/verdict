@@ -43,6 +43,7 @@ it('runs every query documented in docs/incident-response.md against the publish
         'add_proposal_provenance_to_verdict_approval_receipts_table',
         'add_tool_description_fingerprints_to_verdict_evidence_table',
         'add_record_identity_to_verdict_evidence_table',
+        'add_intent_id_to_verdict_evidence_table',
     ];
 
     $tables = [

@@ -67,6 +67,7 @@ final readonly class Capability
         private ?ExecutionClaimPolicy $executionClaimPolicy = null,
         private ?ExecutionTargetPolicy $executionTargetPolicy = null,
         private ?string $configurationVersion = null,
+        private ?bool $requiresIntentRecord = null,
         public TargetSource $targetSource = TargetSource::Proposal,
     ) {
         if (trim($this->name) === '') {
@@ -114,6 +115,12 @@ final readonly class Capability
                 'name' => $this->executionClaimPolicy->name,
             ],
             'configuration_version' => $this->configurationVersion,
+            // Sparse deliberately: present only when the application declared a posture, so a
+            // package upgrade alone changes no capability's content-addressed identity
+            // (ADR 0017). A declared posture is security material and enters the fingerprint.
+            ...($this->requiresIntentRecord === null
+                ? []
+                : ['requires_intent_record' => $this->requiresIntentRecord]),
         ];
     }
 
@@ -169,6 +176,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $this->configurationVersion,
+            requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
         );
     }
@@ -199,6 +207,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $this->configurationVersion,
+            requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
         );
     }
@@ -217,6 +226,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $this->configurationVersion,
+            requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
         );
     }
@@ -240,6 +250,7 @@ final readonly class Capability
             executionClaimPolicy: $policy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $this->configurationVersion,
+            requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
         );
     }
@@ -263,6 +274,7 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $policy,
             configurationVersion: $this->configurationVersion,
+            requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
         );
     }
@@ -291,8 +303,45 @@ final readonly class Capability
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
             configurationVersion: $version,
+            requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
         );
+    }
+
+    /**
+     * Declare this capability's write-ahead intent posture, overriding the global
+     * `verdict.intents.required` lever in either direction (#160).
+     *
+     * With the requirement effective, no mutating gate runs until a durable {@see \Fissible\Verdict\Intents\ActionIntent}
+     * has been committed; an intent-write failure denies the action with nothing consumed.
+     * Left undeclared, the capability follows the global lever.
+     */
+    public function requiresIntentRecord(bool $required = true): self
+    {
+        return new self(
+            name: $this->name,
+            ability: $this->ability,
+            resolveTarget: $this->targetResolver,
+            executor: $this->executor,
+            approvalBindingResolver: $this->approvalBindingResolver,
+            confirmationReason: $this->confirmationReason,
+            confirmationTtlSeconds: $this->confirmationTtlSeconds,
+            rateLimitPolicy: $this->rateLimitPolicy,
+            executionClaimPolicy: $this->executionClaimPolicy,
+            executionTargetPolicy: $this->executionTargetPolicy,
+            configurationVersion: $this->configurationVersion,
+            requiresIntentRecord: $required,
+            targetSource: $this->targetSource,
+        );
+    }
+
+    /**
+     * The declared intent-record posture: true or false when this capability declared one,
+     * null when it follows the global `verdict.intents.required` lever.
+     */
+    public function intentRecordRequirement(): ?bool
+    {
+        return $this->requiresIntentRecord;
     }
 
     public function configurationFingerprint(): string

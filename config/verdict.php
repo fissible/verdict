@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
+use Fissible\Verdict\Intents\DatabaseActionIntentStore;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 
 return [
@@ -171,6 +172,37 @@ return [
         'store' => DatabaseExecutionClaimStore::class,
         'connection' => null,
         'table' => 'verdict_execution_claims',
+    ],
+
+    'intents' => [
+        // The fail-closed lever for deployments that must not act unrecorded (#160). With the
+        // lever effective for a capability, Verdict commits one write-ahead intent record —
+        // operational security state, on this store's connection — after every non-mutating gate
+        // has passed and before the first mutating gate runs. If that write fails, the action is
+        // denied with nothing consumed: no rate-limit unit, no approval receipt, no execution
+        // claim. The default is off, preserving ADR 0007's posture exactly.
+        //
+        // Boundary with `evidence.attest.on_failure`: that key governs the *evidence layer* — a
+        // record that already exists gaining attestation, including the fail-open evidence mirror
+        // of this intent row. This lever governs the *pre-mutation operational write*. They never
+        // express the same preference; neither replaces the other.
+        //
+        // What this cannot cover, stated plainly: outcome evidence written after a committed
+        // mutation stays fail-open (EvidenceWriteFailed, ADR 0007 #153), and nothing can fail
+        // closed after a successful executor — the side effect has happened. The intent row makes
+        // both gaps detectable (an intent id no outcome row references) rather than silent.
+        'required' => false,
+        // Per-capability override in either direction: ->requiresIntentRecord() / (false).
+        //
+        // InMemoryActionIntentStore is only for tests and local development: process-local state
+        // cannot make the durability promise this lever exists to give.
+        // Database intent writes require an independently committed connection.
+        'store' => DatabaseActionIntentStore::class,
+        'connection' => null,
+        'table' => 'verdict_action_intents',
+        // Retention is an application-owned compliance decision (ADR 0009's reasoning applies):
+        // intent rows ARE the record a fail-closed deployment exists to keep. Verdict ships no
+        // pruning command for them; archive before removing, on the window your regime requires.
     ],
 
     'ai' => [

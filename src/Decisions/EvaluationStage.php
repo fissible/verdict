@@ -10,6 +10,7 @@ enum EvaluationStage: string
     case Approval = 'approval';
     case TargetRefresh = 'target_refresh';
     case Execution = 'execution';
+    case Intent = 'intent';
     case RateLimit = 'rate_limit';
     case ExecutionClaim = 'execution_claim';
 }

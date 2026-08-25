@@ -238,6 +238,7 @@ it('captures only the executor statements under the real database stores', funct
         'add_target_source_to_verdict_evidence_table',
         'add_tool_description_fingerprints_to_verdict_evidence_table',
         'add_record_identity_to_verdict_evidence_table',
+        'add_intent_id_to_verdict_evidence_table',
         'create_verdict_execution_claims_table',
     ] as $name) {
         (require __DIR__.'/../../database/migrations/'.$name.'.php.stub')->up();
