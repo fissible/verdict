@@ -15,12 +15,13 @@ enum ApprovalOutcome: string
     case Mismatch = 'mismatch';
     case Expired = 'expired';
     case InvalidState = 'invalid_state';
+    case Unauthorized = 'unauthorized';
 
     public function succeeded(): bool
     {
         return match ($this) {
             self::Issued, self::Existing, self::Approved, self::Rejected, self::Consumed => true,
-            self::NotFound, self::Mismatch, self::Expired, self::InvalidState => false,
+            self::NotFound, self::Mismatch, self::Expired, self::InvalidState, self::Unauthorized => false,
         };
     }
 }

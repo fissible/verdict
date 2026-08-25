@@ -2,8 +2,15 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\ActionProposal;
+use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistrar;
+use Fissible\Verdict\Decisions\Decision;
+use Fissible\Verdict\Decisions\Evaluation;
+use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\Tests\AttestTestCase;
 use Fissible\Verdict\Tests\TestCase;
@@ -34,6 +41,31 @@ function verdictTable(string $area): string
     $name = config($key, $default);
 
     return is_string($name) ? $name : $default;
+}
+
+/**
+ * A minimal confirmation-gated evaluation, ready for ApprovalManager::issue(). Lives here because
+ * more than one Feature file issues receipts this way.
+ */
+function confirmationEvaluation(
+    ActionContext $context,
+    string $toolCallId = 'call-confirmation-1',
+    string $capabilityName = 'orders.cancel',
+): Evaluation {
+    $arguments = ['order_id' => 1001];
+
+    $capability = Capability::usingPolicy($capabilityName, 'update', fn (ActionEnvelope $envelope): array => $envelope->proposal->arguments)
+        ->requiresConfirmation(
+            bindUsing: fn (ActionEnvelope $envelope, array $target): array => $target,
+            reason: 'Confirm this action.',
+        );
+
+    $envelope = ActionEnvelope::wrap(
+        new ActionProposal($capabilityName, $arguments, $toolCallId),
+        $context,
+    );
+
+    return new Evaluation($envelope, $capability, $arguments, Decision::requireConfirmation('Confirm this action.'), EvaluationStage::Proposal);
 }
 
 function acceptTestSnapshot(string $name = 'test-snapshot'): ExecutionTargetPolicy

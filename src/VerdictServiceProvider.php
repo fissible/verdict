@@ -27,6 +27,7 @@ use Fissible\Verdict\Console\Commands\ValidateVerdictCommand;
 use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
+use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\AttestChainResolver;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
@@ -174,6 +175,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 approverProvenance: $app->make(ApproverProvenanceRelease::class),
                 invocations: $app->make(InvocationContext::class),
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
+                authorizer: $this->approvalDecisionAuthorizer($app),
             );
         });
 
@@ -486,6 +488,28 @@ final class VerdictServiceProvider extends ServiceProvider
                     : null,
             );
         });
+    }
+
+    /**
+     * Null when unconfigured — ApprovalManager::approve()/reject() then refuse (fail-closed)
+     * rather than finalizing receipts on the caller's word alone. Not a boot-time refusal:
+     * installs that never decide receipts should not be forced to configure one.
+     */
+    private function approvalDecisionAuthorizer(Container $app): ?ApprovalDecisionAuthorizer
+    {
+        $authorizer = config('verdict.approvals.authorizer');
+
+        if (! is_string($authorizer) || $authorizer === '') {
+            return null;
+        }
+
+        $instance = $app->make($authorizer);
+
+        if (! $instance instanceof ApprovalDecisionAuthorizer) {
+            throw new LogicException("The [{$authorizer}] approval decision authorizer must implement ".ApprovalDecisionAuthorizer::class.'.');
+        }
+
+        return $instance;
     }
 
     public function boot(): void

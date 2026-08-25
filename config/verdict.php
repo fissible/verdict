@@ -46,6 +46,14 @@ return [
         'connection' => null,
         'table' => 'verdict_approval_receipts',
         'ttl_seconds' => 900,
+        // Class implementing Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer, consulted by
+        // ApprovalManager::approve()/reject() before any receipt is finalized. REQUIRED for
+        // deciding receipts: approval decisions are fail-closed, so with this unset approve() and
+        // reject() refuse rather than trusting the caller's approved_by string. The authorizer is
+        // where the application makes approved_by mean something — verify the receipt's
+        // approval_context (tenant, conversation, ...) against what the decision maker owns.
+        // `php artisan verdict:make-approval-flow` publishes a working example.
+        'authorizer' => null,
         // Deny a consequential proposal whose declared provenance is unknown, rather than asking a
         // human to approve an action whose origin nobody can describe. OFF BY DEFAULT AND MEANT TO
         // STAY OFF until an application's derivation declarations are thorough enough to trust:

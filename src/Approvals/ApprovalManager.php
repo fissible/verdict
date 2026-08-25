@@ -6,10 +6,12 @@ namespace Fissible\Verdict\Approvals;
 
 use Closure;
 use DateInterval;
+use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Exceptions\ApprovalAuthorizerMissing;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -29,6 +31,7 @@ final readonly class ApprovalManager
         private ApproverProvenanceRelease $approverProvenance,
         private InvocationContext $invocations,
         private int $defaultTtlSeconds,
+        private ?ApprovalDecisionAuthorizer $authorizer = null,
     ) {
         if ($this->defaultTtlSeconds < 1) {
             throw new InvalidArgumentException('The default approval receipt TTL must be at least one second.');
@@ -85,6 +88,12 @@ final readonly class ApprovalManager
     {
         $this->validateDecisionInput($receiptId, $toolCallId, $approvedBy);
 
+        $unauthorized = $this->unauthorized($receiptId, $toolCallId, ApprovalDecisionKind::Approve, $approvedBy);
+
+        if ($unauthorized !== null) {
+            return $unauthorized;
+        }
+
         return $this->receipts->approve(
             receiptId: $receiptId,
             toolCallId: $toolCallId,
@@ -96,6 +105,12 @@ final readonly class ApprovalManager
     public function reject(string $receiptId, string $toolCallId, string $rejectedBy): ApprovalTransition
     {
         $this->validateDecisionInput($receiptId, $toolCallId, $rejectedBy);
+
+        $unauthorized = $this->unauthorized($receiptId, $toolCallId, ApprovalDecisionKind::Reject, $rejectedBy);
+
+        if ($unauthorized !== null) {
+            return $unauthorized;
+        }
 
         return $this->receipts->reject(
             receiptId: $receiptId,
@@ -192,6 +207,35 @@ final readonly class ApprovalManager
             'arguments' => $evaluation->envelope->proposal->arguments,
             'binding' => $capability->approvalBinding($evaluation->envelope, $evaluation->target),
         ]);
+    }
+
+    /**
+     * Runs the required authorizer against the receipt this decision names — approval decisions
+     * are fail-closed, so no configured authorizer means no decision. The store remains the single
+     * authority on receipt state: a missing or id-mismatched receipt is delegated to it untouched
+     * so it produces the canonical NotFound/Mismatch/Expired/InvalidState outcome, and the
+     * authorizer is consulted only for a found, id-matching receipt. The fetch-then-transition
+     * race is benign because the authorizer reads only fields that are immutable after issue.
+     */
+    private function unauthorized(
+        string $receiptId,
+        string $toolCallId,
+        ApprovalDecisionKind $kind,
+        string $decidedBy,
+    ): ?ApprovalTransition {
+        if ($this->authorizer === null) {
+            throw ApprovalAuthorizerMissing::forDecision($kind);
+        }
+
+        $receipt = $this->receipts->findForToolCall($toolCallId);
+
+        if ($receipt === null || $receipt->id !== $receiptId) {
+            return null;
+        }
+
+        return $this->authorizer->authorize($receipt, $kind, $decidedBy)
+            ? null
+            : ApprovalTransition::to(ApprovalOutcome::Unauthorized);
     }
 
     private function validateDecisionInput(string $receiptId, string $toolCallId, string $decidedBy): void
