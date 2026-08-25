@@ -490,22 +490,32 @@ the review's quick wins.
 - Server-side signing (key management) stays out of scope for this milestone.
 ---
 
-## v0.13.0 — Security-evaluation sequence
+## v0.13.0 — Security evaluation and upstream compatibility
 
-**Theme.** The design-then-build pair the #294 finding created, plus the other primitive-needing surface.
-Sequenced after the v0.12.0 hardening batch — it is design-gated (#304 first), so it does not lead the
-release order.
+**Theme.** Two design-first tracks: extend the attack-surface coverage the #294 finding opened, and
+harden the seam where Verdict meets a fast-moving 0.x upstream. Design-gated (#304 and #324 both start
+with design), so it follows the v0.12.0 hardening batch rather than leading the release order.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#304](https://github.com/fissible/verdict/issues/304) Privacy-safe observation: did a registered secret marker appear in an executed argument? | M | none | open — `scope: design`; the #294 prerequisite |
 | [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | #304 | blocked by #304; builds on it with the existing filtered-permit utility arm |
 | [#295](https://github.com/fissible/verdict/issues/295) Check-to-use digest binding (TOCTOU) | M–L | new cross-call primitive | open — `scope: design` |
+| [#324](https://github.com/fissible/verdict/issues/324) laravel/ai compatibility contract: adapter boundary, named contract tests, published matrix | L | none | open — `scope: design` |
 
-**Sequence.** #304 is design-first: a boundary observation that records only a boolean match per registered
-secret marker (never raw arguments or fragments — ADR 0008-clean), and that defines its encoding and
-concatenation residuals explicitly. Once accepted and implemented, #294 builds the exfil case on it. #295 is
-the other primitive-needing surface (a cross-call resource digest), independent of #304.
+**Attack-surface track.** #304 is design-first: a boundary observation that records only a boolean match
+per registered secret marker (never raw arguments or fragments — ADR 0008-clean), and that defines its
+encoding and concatenation residuals explicitly. Once accepted and implemented, #294 builds the exfil case
+on it. #295 is the other primitive-needing surface (a cross-call resource digest), independent of #304.
+
+**Compatibility track.** #324 hardens the laravel/ai coupling into a formal contract — an adapter /
+anti-corruption boundary so a 0.x upstream refactor touches only the adapter, named consumer-driven
+contract tests wired into the existing canary, and a published verdict × console × laravel/ai matrix. Its
+*defensive* half is unilateral (no upstream coordination needed); the coordination asks are a flagged
+follow-on. This was named the one **gating** condition in the external "would Laravel endorse this" review,
+and it is the surface [laravel/ai#932](https://github.com/laravel/ai/pull/932) is actively churning (see
+#265) — so within this milestone it can lead the design work rather than wait behind the attack-surface
+track. Builds on #18 (dependency audit) and #131 (the 0.x-dev canary).
 
 **Held for their own milestone.** The approval-surface cluster — #297 (`RequireReview` has no runtime, the
 keystone) → #298 → #299, with #230/#201/#265/#300 and the verdict-console ADR 0001 that surfaced them — is
