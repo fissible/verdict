@@ -474,31 +474,39 @@ L–XL and earns a dedicated milestone rather than riding here.
 
 ## v0.13.0 — Harden the shipped claims
 
-**Theme.** The findings from the Ox Alpha external review (2026-08-25) that sit directly under the
-package's README claims or its fail-closed posture. These are correctness-of-claims, not new features, so
-the release policy (`RELEASES.md` item 9 — no release over a claim the code does not support) makes this a
-**high-priority batch that may be cut before v0.12.0's feature work**, despite the higher version number.
-Queue order is the review's own, recorded on #305.
+**Theme.** The findings from the Ox Alpha external review (2026-08-25) that harden the trust behind the
+package's README claims and its fail-closed posture. **This is a high-priority minor — not an out-of-order
+release.** Releases are monotonic (the current tag is `v0.10.1`), so this ships in version order after
+v0.11.0 and v0.12.0; "high-priority" governs what is *worked on* next, not what version number cuts first.
+Queue order within the milestone is the review's own, recorded on #305.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#305](https://github.com/fissible/verdict/issues/305) Per-receipt authorization expressible + a required, fail-closed authorization hook | M–L | none | open — `scope: ready`; under the "human approval" claim |
-| [#307](https://github.com/fissible/verdict/issues/307) `verdict:evidence:verify` — the chain is written but never verified | M | coordinate with attest-laravel chain format | open — `scope: ready`; under the "tamper-evident evidence" claim |
+| [#307](https://github.com/fissible/verdict/issues/307) `verdict:evidence:verify` — a Verdict-native chain verification command | M | coordinate with attest-laravel chain format | open — `scope: ready` |
 | [#308](https://github.com/fissible/verdict/issues/308) `CanonicalJson` mutates `serialize_precision` process-globally | S–M | none | open — `scope: ready`; quick win |
 | [#310](https://github.com/fissible/verdict/issues/310) Custom durable recorders silently get the no-op capability-configuration store | S | none | open — `scope: ready`; quick win |
 
-**Why in this order.** #305 and #307 sit under README claims — per-receipt authorization is not expressible
-today (the shipped stub's `TODO: verify this receipt belongs to a conversation` cannot be written), and the
-evidence chain has no verify command, so "tamper-evident" is unverifiable by an adopter. Both are trust-claim
-gaps the release policy forbids shipping over. #308 (a process-global ini mutation during canonicalization —
-replace with deterministic float formatting) and #310 (a silent no-op store where a fail-closed error
-belongs) are the review's quick wins. #308's global-state nature makes it a candidate for a fast patch
-(`v0.12.1`-style) ahead of the batch if it ever bites a host application.
+**Neither #305 nor #307 is a false published claim** (checked against the tree, 2026-08-25). The README
+assigns approval authorization to the *application* ("Your application—not the model—decides… whether a
+person must approve") and does not claim Verdict enforces it; and verification already exists via
+attest-laravel's `attest:verify`, which the docs tell adopters to run and schedule (`docs/limitations.md`,
+`docs/adoption-guide.md`). So these are **high-priority hardening, not patch-release defects** — no
+out-of-order documentation-correction patch is warranted. #305 closes an *expressibility* gap (the shipped
+stub's `TODO: verify this receipt belongs to a conversation` cannot be written, because the receipt carries
+no conversation binding); #307 gives Verdict a native verify command instead of delegating to `attest:verify`
+and adds incremental scope options. #308 (a process-global `ini` mutation during canonicalization — replace
+with deterministic float formatting) and #310 (a silent no-op store where a fail-closed error belongs) are
+the review's quick wins.
 
-**Scoping note carried in from #305's review pushback.** The authorization hook is **required and
-fail-closed**, not nullable-with-a-warning: `approve()`/`reject()` without a configured authorizer must
-refuse, and the stub must wire a working example rather than a TODO. Server-side signing (key management)
-stays out of scope for this milestone.
+**Scoping notes carried in from #305's review pushback.**
+- The authorization hook is **required and fail-closed**, not nullable-with-a-warning: `approve()`/`reject()`
+  without a configured authorizer must refuse, and the stub must wire a working example rather than a TODO.
+- Because a required authorizer **changes approval behavior for existing adopters** (an `approve()` that
+  worked will start refusing until an authorizer is configured), #305 must ship an **explicit upgrade and
+  configuration path** — an upgrade note, the new config key(s), and the receipt-binding migration — so the
+  breaking change is deliberate and guided, not a surprise on `composer update`.
+- Server-side signing (key management) stays out of scope for this milestone.
 
 ## v0.14.0 — Approvals: design rounds
 
