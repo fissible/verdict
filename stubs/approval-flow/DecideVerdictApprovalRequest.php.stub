@@ -10,9 +10,10 @@ final class DecideVerdictApprovalRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // TODO: Verify this receipt and tool call belong to an application-owned conversation
-        // the authenticated reviewer may decide in this tenant.
-        return false;
+        // This gate answers only "is an authenticated reviewer present"; per-receipt authorization
+        // (does this receipt belong to a conversation this reviewer may decide) runs inside
+        // ApprovalManager::approve()/reject() via the configured App\Support\VerdictApprovalAuthorizer.
+        return $this->user() !== null;
     }
 
     /** @return array<string, list<string>> */

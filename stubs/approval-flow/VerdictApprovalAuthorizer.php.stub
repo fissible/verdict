@@ -1,0 +1,63 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Support;
+
+use Fissible\Verdict\Approvals\ApprovalDecisionKind;
+use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Decides whether a specific reviewer may finalize a specific receipt. Register it under
+ * the verdict.approvals.authorizer config key:
+ *
+ *     // config/verdict.php
+ *     'approvals' => [
+ *         'authorizer' => App\Support\VerdictApprovalAuthorizer::class,
+ *         // ...
+ *     ],
+ *
+ * Verdict consults it inside ApprovalManager::approve()/reject() and refuses every decision
+ * (fail-closed) while no authorizer is configured. `approved_by` is attestation by the
+ * application; this class is where the application makes it mean something.
+ */
+final class VerdictApprovalAuthorizer implements ApprovalDecisionAuthorizer
+{
+    public function authorize(ApprovalReceipt $receipt, ApprovalDecisionKind $kind, string $decidedBy): bool
+    {
+        // The receipt's approval context is whatever the application put in
+        // ActionContext(approvalContext: [...]) when the action was proposed. Fail closed on
+        // receipts that name no conversation: issued before the approval_context migration
+        // (null) or issued without identifiers ([]) — there is nothing to scope the decision to.
+        $conversationId = $receipt->approvalContext['conversation_id'] ?? null;
+
+        if (! is_string($conversationId) || $conversationId === '') {
+            return false;
+        }
+
+        return $this->reviewerMayDecide($conversationId, $decidedBy);
+    }
+
+    /**
+     * The application-owned half: may this reviewer decide this conversation? The lookup below
+     * assumes the published controller's decision-maker format ('user:42') and a conversations
+     * table owned by the application — replace the table and ownership rule with the
+     * application's own conversation/tenant model. Keep the shape: resolve the reviewer FROM
+     * $decidedBy and the conversation FROM the receipt, never from request input.
+     */
+    private function reviewerMayDecide(string $conversationId, string $decidedBy): bool
+    {
+        if (! str_starts_with($decidedBy, 'user:')) {
+            return false;
+        }
+
+        $reviewerId = substr($decidedBy, strlen('user:'));
+
+        return DB::table('conversations')
+            ->where('id', $conversationId)
+            ->where('owner_user_id', $reviewerId)
+            ->exists();
+    }
+}

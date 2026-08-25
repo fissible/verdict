@@ -13,8 +13,11 @@ final class VerdictApprovalDecisionController
 {
     public function approve(DecideVerdictApprovalRequest $request, ApprovalManager $approvals): RedirectResponse
     {
-        // TODO: Verify this exact receipt and tool call belong to an application-owned conversation
-        // the authenticated reviewer may decide in this tenant.
+        // Per-receipt authorization runs inside approve(): Verdict consults the authorizer
+        // configured in verdict.approvals.authorizer (App\Support\VerdictApprovalAuthorizer,
+        // published beside this controller) and refuses every decision — fail-closed — while
+        // none is configured. Route middleware still owns authentication; the authorizer owns
+        // whether THIS reviewer may decide THIS receipt.
         // TODO: Look up the pending Verdict summary with challengeForToolCall($toolCallId), then
         // combine it with application-owned display context. The challenge excludes raw arguments.
         // Do not put raw prompts or tool arguments in a Verdict receipt.
@@ -31,7 +34,7 @@ final class VerdictApprovalDecisionController
 
     public function reject(DecideVerdictApprovalRequest $request, ApprovalManager $approvals): RedirectResponse
     {
-        // TODO: Apply the same exact receipt, tenant, and conversation checks before rejecting.
+        // reject() runs the same per-receipt authorizer as approve() before finalizing.
         $decisionMaker = $this->decisionMaker($request);
 
         $transition = $approvals->reject(
@@ -46,7 +49,8 @@ final class VerdictApprovalDecisionController
     private function respond(DecideVerdictApprovalRequest $request, ApprovalOutcome $outcome, bool $succeeded): RedirectResponse
     {
         if (! $succeeded) {
-            // Normal outcomes: not_found, mismatch, expired, and invalid_state. Do not resume.
+            // Normal outcomes: not_found, mismatch, expired, invalid_state, and unauthorized
+            // (the configured authorizer refused this reviewer for this receipt). Do not resume.
             return back()->with('verdict_approval_outcome', $outcome->value);
         }
 
