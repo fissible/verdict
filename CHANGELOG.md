@@ -15,7 +15,9 @@ All notable changes to Verdict will be documented in this file.
   and tests disagreeing; a new test proves the stubs under non-default names (create, add_*, down,
   and an end-to-end evidence write). Also closes #168's remaining half: fingerprint columns are
   asserted fixed `char(64)` and time columns engine timestamps (`char`/`bpchar` verified against
-  real MySQL 8.4 and PostgreSQL). No behaviour change for anyone on default names.
+  real MySQL 8.4, MariaDB 11.8, and PostgreSQL). Named indexes keep default-derived names — two
+  renamed installs in one PostgreSQL database still collide, stated in the docs and tracked as
+  #315. No behaviour change for anyone on default names.
 
 - **Recorded: gpt-oss:20b under the corrected cases — the injection measured, the bound earned.**
   100 sampled `--control` trials at the #293 merge commit, stated up front as not line-for-line
