@@ -429,27 +429,47 @@ a wrong number already in `docs/evaluation.md`. Readiness item 9 forbids releasi
 cadence policy forbids sitting on it to preserve a batch. Case v2 asserts the confirmation gate; both
 runners stop simulating; the recorded runs are re-read.
 
-## v0.11.0 — Correct the measurement, extend the surface
+## v0.11.0 — Grounded methodology and configurable migrations
 
-**Theme.** The first milestone-gated feature batch after the cadence change: one new attack surface,
-one methodology-grounding docs pass. Not a kitchen sink — #295 (TOCTOU, needs a new primitive) and the
-approval-surface cluster (#297 keystone) are held for their own later milestones.
+**Theme.** The first milestone-gated batch after the cadence change: ground the harness's own claims in
+external prior work, and make the shipped migrations honor the table names the config already lets an
+adopter rename. Both are additive and low-risk; neither introduces new mechanism.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | none | open — `help wanted`; extends the shipped #251 machinery |
-| [#296](https://github.com/fissible/verdict/issues/296) Ground the evaluation methodology in external prior work | S | none | open — docs; feeds the sequel post |
+| [#296](https://github.com/fissible/verdict/issues/296) Ground the evaluation methodology in external prior work | S | none | ✅ Merged — PR #302 |
+| [#290](https://github.com/fissible/verdict/issues/290) Migration stubs honor the configured table names | S–M | #287 ✅ | open — `scope: ready` |
 
-**Why these two.** #294 is the flagship additive surface from the 2026-08-24 literature sweep — a
-`filteredPermitAttack()`-shaped case reusing the #251 predicate-capture machinery, so it is coverage
-growth, not new mechanism. #296 grounds the harness's own claims (rule-of-three source, over-restriction
-precedent, benchmarking-validity checklist) against published prior work. Both are additive and neither
-gates the tag; the tag cuts when the batch is complete and readiness passes.
+**Why these two.** #296 grounds the harness's claims (rule-of-three source, over-restriction precedent,
+benchmarking-validity checklist) against published prior work — it shipped in PR #302. #290 closes a real
+adopter footgun: the stores read `config('verdict.*.table')` but the migration stubs hardcode the default
+names, so a config-only rename fails at first write; its only dependency (#287, the schema-assertion tests)
+merged 2026-08-23. The tag cuts when #290 lands and readiness passes.
 
-**Deferred deliberately.** #295 (check-to-use digest binding) requires a new cross-call primitive and is
-scoped to **v0.12.0**, design-first. The approval-surface cluster — #297 (`RequireReview` has no runtime,
-the keystone) → #298 → #299, with #230/#201/#265/#300 and the verdict-console ADR 0001 that surfaced them
-— is L–XL and earns its own later milestone rather than bloating this one.
+**Why #294 is no longer here.** The flagship attack-surface case turned out to be unexpressible against the
+current observation model (see #294's design finding): its exfil oracle needs a privacy-safe boundary
+observation that does not yet exist. Rather than gate a feature release on a design cycle, #294 moved to
+**v0.12.0** behind its prerequisite. This is the cadence policy working — batch features, do not block a
+release on newly-discovered design work.
+
+## v0.12.0 — Security-evaluation sequence
+
+**Theme.** The design-then-build pair the #294 finding created, plus the other primitive-needing surface.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#304](https://github.com/fissible/verdict/issues/304) Privacy-safe observation: did a registered secret marker appear in an executed argument? | M | none | open — `scope: design`; the #294 prerequisite |
+| [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | #304 | blocked by #304; builds on it with the existing filtered-permit utility arm |
+| [#295](https://github.com/fissible/verdict/issues/295) Check-to-use digest binding (TOCTOU) | M–L | new cross-call primitive | open — `scope: design` |
+
+**Sequence.** #304 is design-first: a boundary observation that records only a boolean match per registered
+secret marker (never raw arguments or fragments — ADR 0008-clean), and that defines its encoding and
+concatenation residuals explicitly. Once accepted and implemented, #294 builds the exfil case on it. #295 is
+the other primitive-needing surface (a cross-call resource digest), independent of #304.
+
+**Held for their own milestone.** The approval-surface cluster — #297 (`RequireReview` has no runtime, the
+keystone) → #298 → #299, with #230/#201/#265/#300 and the verdict-console ADR 0001 that surfaced them — is
+L–XL and earns a dedicated milestone rather than riding here.
 ---
 
 ## Contributor-ready
