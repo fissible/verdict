@@ -314,6 +314,9 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             'provenance' => $receipt->provenance === null
                 ? null
                 : json_encode($receipt->provenance->toArray(), JSON_THROW_ON_ERROR),
+            'approval_context' => $receipt->approvalContext === null
+                ? null
+                : json_encode($receipt->approvalContext, JSON_THROW_ON_ERROR),
             'status' => $receipt->status->value,
             'reason' => $receipt->reason,
             'expires_at' => $receipt->expiresAt,
@@ -335,6 +338,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             capability: (string) $row->capability,
             bindingFingerprint: (string) $row->binding_fingerprint,
             provenance: $this->provenanceFromRow($row),
+            approvalContext: $this->approvalContextFromRow($row),
             status: ApprovalReceiptStatus::from((string) $row->status),
             reason: $row->reason === null ? null : (string) $row->reason,
             expiresAt: $this->dateFromDatabase($row->expires_at),
@@ -346,6 +350,24 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             createdAt: $this->dateFromDatabase($row->created_at),
             updatedAt: $this->dateFromDatabase($row->updated_at),
         );
+    }
+
+    /**
+     * Null when the row predates the approval_context column ("never captured") or the
+     * column itself is absent because the add-column migration has not run yet.
+     *
+     * @return ?array<string, string|int>
+     */
+    private function approvalContextFromRow(stdClass $row): ?array
+    {
+        $stored = $row->approval_context ?? null;
+
+        if (! is_string($stored) || $stored === '') {
+            return null;
+        }
+
+        /** @var array<string, string|int> */
+        return json_decode($stored, true, flags: JSON_THROW_ON_ERROR);
     }
 
     private function provenanceFromRow(stdClass $row): ?ProposalProvenance

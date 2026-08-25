@@ -1040,6 +1040,7 @@ it('renders a receipt issued before provenance was recorded as an absent payload
         capability: 'orders.cancel',
         bindingFingerprint: str_repeat('a', 64),
         provenance: null,
+        approvalContext: null,
         status: ApprovalReceiptStatus::Pending,
         reason: 'Confirm cancellation of this order.',
         expiresAt: $now->modify('+15 minutes'),

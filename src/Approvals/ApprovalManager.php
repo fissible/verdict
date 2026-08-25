@@ -52,6 +52,7 @@ final readonly class ApprovalManager
             capability: $capability->name,
             bindingFingerprint: $this->fingerprint($evaluation),
             provenance: $this->provenance($evaluation),
+            approvalContext: $evaluation->envelope->context->approvalContext,
             status: ApprovalReceiptStatus::Pending,
             reason: $capability->confirmationReason(),
             expiresAt: $now->add(new DateInterval("PT{$ttl}S")),

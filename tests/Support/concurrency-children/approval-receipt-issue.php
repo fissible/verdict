@@ -46,6 +46,7 @@ try {
         capability: 'concurrency-test.approval',
         bindingFingerprint: $payload['binding_fingerprint'],
         provenance: null,
+        approvalContext: null,
         status: ApprovalReceiptStatus::Pending,
         reason: null,
         expiresAt: $at->modify('+1 hour'),

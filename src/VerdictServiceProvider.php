@@ -534,6 +534,7 @@ final class VerdictServiceProvider extends ServiceProvider
         $approvalMigration = [
             __DIR__.'/../database/migrations/create_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_01_000000_create_verdict_approval_receipts_table.php'),
             __DIR__.'/../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_16_000012_add_proposal_provenance_to_verdict_approval_receipts_table.php'),
+            __DIR__.'/../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_24_000013_add_approval_context_to_verdict_approval_receipts_table.php'),
         ];
         $evidenceMigration = [
             __DIR__.'/../database/migrations/create_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000001_create_verdict_evidence_table.php'),

@@ -207,6 +207,7 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
             capability: $receipt->capability,
             bindingFingerprint: $receipt->bindingFingerprint,
             provenance: $receipt->provenance,
+            approvalContext: $receipt->approvalContext,
             status: $status ?? $receipt->status,
             reason: $receipt->reason,
             expiresAt: $receipt->expiresAt,

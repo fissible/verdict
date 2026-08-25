@@ -34,6 +34,7 @@ beforeEach(function (): void {
         $table->timestamp('rejected_at')->nullable();
         $table->timestamp('consumed_at')->nullable();
         $table->text('provenance')->nullable();
+        $table->text('approval_context')->nullable();
         $table->timestamps();
         $table->unique(['tool_call_id', 'capability', 'binding_fingerprint'], 'verdict_approval_receipts_binding_unique');
     });
@@ -46,6 +47,7 @@ afterEach(function (): void {
 function databaseReceipt(
     string $fingerprint = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     string $id = 'rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr',
+    ?array $approvalContext = null,
 ): ApprovalReceipt {
     $now = new DateTimeImmutable('2026-08-01 12:00:00', new DateTimeZone('UTC'));
 
@@ -55,6 +57,7 @@ function databaseReceipt(
         capability: 'orders.cancel',
         bindingFingerprint: $fingerprint,
         provenance: null,
+        approvalContext: $approvalContext,
         status: ApprovalReceiptStatus::Pending,
         reason: 'Confirm cancellation.',
         expiresAt: $now->modify('+15 minutes'),
@@ -220,6 +223,7 @@ it('round-trips the approver provenance payload through the durable receipt stor
         capability: $receipt->capability,
         bindingFingerprint: $receipt->bindingFingerprint,
         provenance: $provenance,
+        approvalContext: $receipt->approvalContext,
         status: $receipt->status,
         reason: $receipt->reason,
         expiresAt: $receipt->expiresAt,
@@ -249,4 +253,30 @@ it('reads a receipt issued before provenance was recorded as never captured', fu
     $store->issue(databaseReceipt());
 
     expect($store->findForToolCall('call-database-receipt')?->provenance)->toBeNull();
+});
+
+it('round-trips the approval context through the database', function (): void {
+    $store = databaseReceiptStore();
+    $receipt = databaseReceipt(approvalContext: ['tenant_id' => 'tenant-9', 'conversation_id' => 'conv-41']);
+
+    $store->issue($receipt);
+
+    expect($store->findForToolCall($receipt->toolCallId)?->approvalContext)
+        ->toBe(['tenant_id' => 'tenant-9', 'conversation_id' => 'conv-41']);
+});
+
+it('keeps a captured-empty approval context distinct from a never-captured one', function (): void {
+    $store = databaseReceiptStore();
+
+    $store->issue(databaseReceipt(approvalContext: []));
+
+    expect($store->findForToolCall('call-database-receipt')?->approvalContext)->toBe([]);
+});
+
+it('hydrates a receipt issued before approval context existed as never captured', function (): void {
+    $store = databaseReceiptStore();
+
+    $store->issue(databaseReceipt(approvalContext: null));
+
+    expect($store->findForToolCall('call-database-receipt')?->approvalContext)->toBeNull();
 });

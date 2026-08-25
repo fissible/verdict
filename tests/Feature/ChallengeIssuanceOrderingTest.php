@@ -68,6 +68,7 @@ beforeEach(function (): void {
         $table->timestamp('rejected_at')->nullable();
         $table->timestamp('consumed_at')->nullable();
         $table->text('provenance')->nullable();
+        $table->text('approval_context')->nullable();
         $table->timestamps();
         $table->unique(['tool_call_id', 'capability', 'binding_fingerprint'], 'verdict_approval_receipts_binding_unique');
     });

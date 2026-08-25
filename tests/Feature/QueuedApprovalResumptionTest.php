@@ -280,6 +280,7 @@ beforeEach(function (): void {
     (require __DIR__.'/../../vendor/laravel/ai/database/migrations/2026_01_11_000001_create_agent_conversations_table.php')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_invocation_id_to_verdict_evidence_table.php.stub')->up();
