@@ -13,8 +13,9 @@ All notable changes to Verdict will be documented in this file.
   `Fissible\Verdict\Contracts\DurableEvidenceRecorder` marker contract (both shipped durable
   recorders do) select the durable store; a custom durable recorder opts in by implementing the
   marker, or keeps setting the store key explicitly. `verdict:validate` now warns when a
-  non-no-op recorder meets the no-op configuration store — the silent-mismatch case, named at
-  deploy time. No behavior changes for the shipped recorders or for explicit store configuration.
+  non-no-op recorder falls through to the no-op configuration store with the store key unset —
+  the silent-mismatch case, named at deploy time (an explicitly configured no-op store is a
+  declared choice and does not warn). No behavior changes for the shipped recorders or for explicit store configuration.
 
 - **Canonical fingerprints no longer mutate PHP process state (#308).** Float tokens are now emitted
   locally in the same shortest round-trippable form as the previous `serialize_precision=-1` path,

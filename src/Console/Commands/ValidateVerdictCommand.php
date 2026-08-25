@@ -221,10 +221,12 @@ final class ValidateVerdictCommand extends Command
         // and configuration fingerprints on whatever evidence it retains become permanently
         // unexpandable. Legal (the recorder may genuinely retain nothing), so this warns rather
         // than errors, and it mirrors the provider's fall-through by reading configuration, not
-        // resolved bindings, like every check in this command.
-        $effectiveStore = config('verdict.capability_configurations.store')
-            ?? CapabilityConfigurationStoreSelection::forRecorder($recorder);
-        if ($recorder !== NullEvidenceRecorder::class && $effectiveStore === NullCapabilityConfigurationStore::class) {
+        // resolved bindings, like every check in this command. Scoped to the unset store key on
+        // purpose: an explicitly configured no-op store is a declared choice, not this silent
+        // fall-through, and the remedy below would be nonsensical advice for it.
+        if ($recorder !== NullEvidenceRecorder::class
+            && config('verdict.capability_configurations.store') === null
+            && CapabilityConfigurationStoreSelection::forRecorder($recorder) === NullCapabilityConfigurationStore::class) {
             $warnings[] = 'Evidence is being recorded, but capability configuration fingerprints are going to the '
                 .'no-op configuration store: fingerprints on retained evidence will be permanently unexpandable. '
                 .'If the recorder retains evidence, implement the DurableEvidenceRecorder contract on it '
