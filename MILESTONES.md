@@ -429,7 +429,7 @@ a wrong number already in `docs/evaluation.md`. Readiness item 9 forbids releasi
 cadence policy forbids sitting on it to preserve a batch. Case v2 asserts the confirmation gate; both
 runners stop simulating; the recorded runs are re-read.
 
-## v0.11.0 — Grounded methodology and configurable migrations
+## v0.11.0 — Grounded methodology and configurable migrations *(cut)*
 
 **Theme.** The first milestone-gated batch after the cadence change: ground the harness's own claims in
 external prior work, and make the shipped migrations honor the table names the config already lets an
@@ -444,7 +444,7 @@ adopter rename. Both are additive and low-risk; neither introduces new mechanism
 benchmarking-validity checklist) against published prior work — it shipped in PR #302. #290 closes a real
 adopter footgun: the stores read `config('verdict.*.table')` but the migration stubs hardcode the default
 names, so a config-only rename fails at first write; its only dependency (#287, the schema-assertion tests)
-merged 2026-08-23. Both milestone items are now merged; the tag cuts when readiness passes.
+merged 2026-08-23. Both items merged; **v0.11.0 tagged 2026-08-25**.
 
 **Why #294 is no longer here.** The flagship attack-surface case turned out to be unexpressible against the
 current observation model (see #294's design finding): its exfil oracle needs a privacy-safe boundary
@@ -452,7 +452,7 @@ observation that does not yet exist. Rather than gate a feature release on a des
 **v0.13.0** behind its prerequisite. This is the cadence policy working — batch features, do not block a
 release on newly-discovered design work.
 
-## v0.12.0 — Harden the shipped claims
+## v0.12.0 — Harden the shipped claims *(complete — all items merged, ready to cut)*
 
 **Theme.** The findings from the Ox Alpha external review (2026-08-25) that harden the trust behind the
 package's README claims and its fail-closed posture. **This is the next minor after v0.11.0** — the ready,
@@ -462,10 +462,10 @@ Queue order within the milestone is the review's own, recorded on #305.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#305](https://github.com/fissible/verdict/issues/305) Per-receipt authorization expressible + a required, fail-closed authorization hook | M–L | none | open — `scope: ready`; under the "human approval" claim |
-| [#307](https://github.com/fissible/verdict/issues/307) `verdict:evidence:verify` — a Verdict-aware delegate to chain verification | M | fissible/attest-laravel | open — `scope: ready` |
-| [#308](https://github.com/fissible/verdict/issues/308) `CanonicalJson` mutates `serialize_precision` process-globally | S–M | none | open — `scope: ready`; quick win |
-| [#310](https://github.com/fissible/verdict/issues/310) Custom durable recorders silently get the no-op capability-configuration store | S | none | open — `scope: ready`; quick win |
+| [#305](https://github.com/fissible/verdict/issues/305) Per-receipt authorization expressible + a required, fail-closed authorization hook | M–L | none | ✅ Merged — PR #316 (breaking: authorizer now required) |
+| [#307](https://github.com/fissible/verdict/issues/307) `verdict:evidence:verify` — a Verdict-aware delegate to chain verification | M | fissible/attest-laravel | ✅ Merged — PR #317 |
+| [#308](https://github.com/fissible/verdict/issues/308) `CanonicalJson` mutates `serialize_precision` process-globally | S–M | none | ✅ Merged — PR #318 (byte-equivalence verified across ~250k values) |
+| [#310](https://github.com/fissible/verdict/issues/310) Custom durable recorders silently get the no-op capability-configuration store | S | none | ✅ Merged — PR #319 |
 
 **Neither #305 nor #307 is a false published claim** (checked against the tree, 2026-08-25). The README
 assigns approval authorization to the *application* ("Your application—not the model—decides… whether a
