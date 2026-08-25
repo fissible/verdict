@@ -12,6 +12,12 @@ Effort key: **XS** (<1h) · **S** (1–2h) · **M** (~half day) · **L** (~1 day
 GitHub milestones mirror this document. When they disagree, this document is wrong and should be
 corrected — the issues are the source of truth for scope, this is the source of truth for ordering.
 
+**Every issue is attached to a milestone when it is filed** — the release expected to ship it — or added
+to the **deliberately unscheduled** list (see Contributor-ready) with its reason recorded. An unmilestoned
+open issue is a filing gap, not a scheduling state. Closed issues carry the milestone of the tag that
+shipped them, per the backfill rule above. Practice adopted 2026-08-25, when the backlog was swept:
+fourteen open issues were attached and two closed ones (#276, #280) backfilled to v0.11.0.
+
 **Milestone membership was backfilled on 2026-08-20**, so GitHub now answers "which tag shipped this?"
 for every closed issue. Expect the per-release tables below to list *fewer* issues than the milestone
 holds — v0.4.0's milestone carries 42 closed issues against the nine rows in its section. That is the
@@ -502,6 +508,10 @@ with design), so it follows the v0.12.0 hardening batch rather than leading the 
 | [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | #304 | blocked by #304; builds on it with the existing filtered-permit utility arm |
 | [#295](https://github.com/fissible/verdict/issues/295) Check-to-use digest binding (TOCTOU) | M–L | new cross-call primitive | open — `scope: design` |
 | [#324](https://github.com/fissible/verdict/issues/324) laravel/ai compatibility contract: adapter boundary, named contract tests, published matrix | L | none | open — `scope: design` |
+| [#322](https://github.com/fissible/verdict/issues/322) Durability checks read `verdict.evidence.recorder` while runtime honors the writer override — one blind spot, three sites | S | none | open — from the v0.12.0 review round |
+| [#311](https://github.com/fissible/verdict/issues/311) Low-severity hardening batch from the external review | S–M (batch) | none | open — triage batch; items split out when picked up |
+| [#315](https://github.com/fissible/verdict/issues/315) Named indexes keep default-derived names — two renamed installs collide on PostgreSQL | S | #290 ✅ | open |
+| [#321](https://github.com/fissible/verdict/issues/321) Housekeeping: `verdict:evidence:verify` option forwarding; validate double-reads authorizer config | XS–S | none | open |
 
 **Attack-surface track.** #304 is design-first: a boundary observation that records only a boolean match
 per registered secret marker (never raw arguments or fragments — ADR 0008-clean), and that defines its
@@ -517,25 +527,57 @@ and it is the surface [laravel/ai#932](https://github.com/laravel/ai/pull/932) i
 #265) — so within this milestone it can lead the design work rather than wait behind the attack-surface
 track. Builds on #18 (dependency audit) and #131 (the 0.x-dev canary).
 
-**Held for their own milestone.** The approval-surface cluster — #297 (`RequireReview` has no runtime, the
-keystone) → #298 → #299, with #230/#201/#265/#300 and the verdict-console ADR 0001 that surfaced them — is
-L–XL and earns a dedicated milestone rather than riding here.
+**Hardening carry-over.** #322, #311, #315, and #321 are fix-shaped work from the v0.12.0 review rounds
+riding the next tag rather than joining either design track. #298's design half also ships in this tag:
+ADR 0031 (the approval read contract) merged after v0.12.0 was cut, so the closed issue carries this
+milestone while the cluster it unblocks lives in v0.15.0.
+
+**The approval-surface cluster has its milestone: v0.15.0.** Held from this release since it was planned —
+#297 (`RequireReview` has no runtime, the keystone) → #298 ✅ → #299, with #265/#300/#306/#320/#327 and the
+verdict-console ADR 0001 that surfaced them — it was cut as its own milestone on 2026-08-25; see below.
+#230 stays on v1.0.0 (a boundary decision on the 1.0 bar) and #201 stays deliberately unscheduled.
 
 ## v0.14.0 — Approvals: design rounds
 
-**Theme.** The two review findings that need a design round before implementation. Both concern the approval
-receipt.
+**Theme.** Originally the two review findings needing a design round before implementation, both concerning
+the approval receipt. #306 moved to v0.15.0 on 2026-08-25 — the move this section always planned — leaving
+the schema/portability round.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design` |
 | [#309](https://github.com/fissible/verdict/issues/309) Receipt timestamp round-trips depend on a uniform DB session timezone | S (validate) / M (schema) | #168 | open — `scope: design` |
 
-**Relationship to the approval-surface cluster.** #306 is squarely an ADR 0026 round and shares its theme
-with the held approval-surface cluster above (#297 keystone, #298/#299/#300, #230/#201/#265, verdict-console
-ADR 0001). When that cluster is finally cut as its own milestone, **#306 should move into it and be designed
-together with #300** (`issuedAt`) rather than shipped alone — they touch the same `ApprovalChallenge`
-payload. #309 is a narrower schema/portability correctness round and can stand on its own; it relates #168.
+**Relationship to the approval-surface cluster.** #306 is squarely an ADR 0026 round; when the cluster was
+cut as v0.15.0 it moved there, **to be designed together with #300** (`issuedAt`) rather than shipped
+alone — they touch the same `ApprovalChallenge` payload. #309 is a narrower schema/portability correctness
+round and stands on its own; it relates #168.
+---
+
+## v0.15.0 — Approvals: the approval-surface cluster
+
+**Theme.** The cluster verdict-console ADR 0001 surfaced, held for a dedicated milestone since the v0.13.0
+plan and cut on 2026-08-25. Its design keystone half-shipped early: #298 closed as
+[ADR 0031](docs/adr/0031-approval-reads-are-observational-and-scoped.md) (approval reads are observational
+and scoped), which rides v0.13.0's tag; this milestone is the remaining build order. The recorded order is
+#297 → #298 ✅ → #299, with the status reads (#327) able to ship for the sync lane alone — they are what
+verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#300](https://github.com/fissible/verdict/issues/300) `ApprovalChallenge` has no `issuedAt` | XS | none | open — ungated, contributor-drivable; design with #306 |
+| [#327](https://github.com/fissible/verdict/issues/327) Implement the `ApprovalStatusReader` read contract | S | ADR 0031 ✅ | open — semantics fixed by the ADR |
+| [#320](https://github.com/fissible/verdict/issues/320) Does authorization precede receipt-state resolution — `Unauthorized` can mask expired/consumed | S (round) | #305 ✅ | open — design round |
+| [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()` | S | watches laravel/ai #932 | open |
+| [#299](https://github.com/fissible/verdict/issues/299) Receipt transitions dispatch no events | S–M | #327 | open — gated on the read contract |
+| [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design`; moved from v0.14.0 |
+| [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` is a disposition with no runtime | L–XL | none | open — `scope: design`, the keystone; design rounds can proceed on the issue any time |
+
+**Cluster membership, settled.** #230 stays on v1.0.0 — it is a boundary decision on the 1.0 bar, and it
+was already scheduled there when the cluster was cut. #201 stays deliberately unscheduled with its recorded
+reason. ADR 0031 §6 reserves #297's review-request reads to ride the #327 contract, and #299 is only
+meaningful against that contract's freshness statement — the intra-milestone ordering is load-bearing, not
+aesthetic.
+
 ---
 
 ## Contributor-ready
@@ -603,6 +645,9 @@ owns the four repeated store sections, which have none. Whoever takes the second
   whichever recorded run next needs a middle-spectrum arm.
 - [#213](https://github.com/fissible/verdict/issues/213) — an epic; its children take milestones (#148
   opens in v0.9.0), the umbrella does not close with any one tag.
+- [#259](https://github.com/fissible/verdict/issues/259) — a design-first governance/cost gate (external
+  budget facts at the action boundary); it becomes scheduled work when an adopter demonstrates the
+  metered-tenant requirement, the same argument that holds #201. Added to this list 2026-08-25.
 
 ---
 
