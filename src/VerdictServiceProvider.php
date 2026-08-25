@@ -175,7 +175,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 approverProvenance: $app->make(ApproverProvenanceRelease::class),
                 invocations: $app->make(InvocationContext::class),
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
-                authorizer: $this->approvalDecisionAuthorizer($app),
+                authorizer: fn (): ?ApprovalDecisionAuthorizer => $this->approvalDecisionAuthorizer($app),
             );
         });
 
@@ -493,7 +493,9 @@ final class VerdictServiceProvider extends ServiceProvider
     /**
      * Null when unconfigured — ApprovalManager::approve()/reject() then refuse (fail-closed)
      * rather than finalizing receipts on the caller's word alone. Not a boot-time refusal:
-     * installs that never decide receipts should not be forced to configure one.
+     * installs that never decide receipts should not be forced to configure one. Called from a
+     * Closure the manager invokes at decision time, so a misconfigured class breaks only the
+     * decision path; verdict:validate reports the same misconfiguration at the wiring audit.
      */
     private function approvalDecisionAuthorizer(Container $app): ?ApprovalDecisionAuthorizer
     {
@@ -501,6 +503,10 @@ final class VerdictServiceProvider extends ServiceProvider
 
         if (! is_string($authorizer) || $authorizer === '') {
             return null;
+        }
+
+        if (! class_exists($authorizer)) {
+            throw new LogicException("The [{$authorizer}] approval decision authorizer configured in [verdict.approvals.authorizer] does not exist.");
         }
 
         $instance = $app->make($authorizer);

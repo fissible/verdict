@@ -50,6 +50,11 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
         return count($matches) === 1 ? $matches[0] : null;
     }
 
+    public function find(string $receiptId): ?ApprovalReceipt
+    {
+        return $this->receipts[$receiptId] ?? null;
+    }
+
     public function approve(
         string $receiptId,
         string $toolCallId,

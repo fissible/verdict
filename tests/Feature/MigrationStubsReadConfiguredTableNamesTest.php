@@ -135,8 +135,10 @@ it('applies the add_* stubs to the configured table name', function (): void {
 
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub')->up();
 
-    expect($schema->hasColumn('renamed_approval_receipts', 'provenance'))->toBeTrue();
+    expect($schema->hasColumn('renamed_approval_receipts', 'provenance'))->toBeTrue()
+        ->and($schema->hasColumn('renamed_approval_receipts', 'approval_context'))->toBeTrue();
 
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->down();
 });

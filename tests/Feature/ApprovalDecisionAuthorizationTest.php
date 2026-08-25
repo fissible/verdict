@@ -134,3 +134,37 @@ it('does not consult the authorizer when the receipt id does not match the tool 
         ->and(app(ApprovalReceiptStore::class)->findForToolCall($challenge->toolCallId)?->status)
         ->toBe(ApprovalReceiptStatus::Pending);
 });
+
+it('still consults the authorizer when a second receipt shares the tool call id', function (): void {
+    $authorizer = authorizerConfigured(allow: false);
+    $challenge = authorizationChallenge('call-shared-id');
+
+    // A colliding provider tool-call id with a different capability is legal under the
+    // three-column unique key; it makes findForToolCall() ambiguous (null), which must not
+    // become a hole the authorizer falls through — decisions look receipts up by id.
+    $context = new ActionContext(actor: 'customer:73', approvalContext: ['conversation_id' => 'conv-99']);
+    app(ApprovalManager::class)->issue(confirmationEvaluation($context, 'call-shared-id', 'orders.refund'));
+
+    $transition = app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'user:9');
+
+    expect($transition->outcome)->toBe(ApprovalOutcome::Unauthorized)
+        ->and($authorizer->decisions)->toHaveCount(1);
+});
+
+it('does not let a misconfigured authorizer class break paths that never decide a receipt', function (): void {
+    config()->set('verdict.approvals.authorizer', 'App\\Nope\\MissingAuthorizer');
+
+    $issued = app(ApprovalManager::class)->issue(confirmationEvaluation(
+        new ActionContext(actor: 'customer:72'),
+        'call-misconfigured-authorizer',
+    ));
+
+    // The authorizer is resolved at decision time, not manager construction: a typo'd class
+    // must not take down issue()/validate()/consume(), which never consult it.
+    expect($issued->outcome)->toBe(ApprovalOutcome::Issued);
+
+    $challenge = app(ApprovalManager::class)->challengeForToolCall('call-misconfigured-authorizer');
+
+    expect(fn () => app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'user:9'))
+        ->toThrow(LogicException::class, 'verdict.approvals.authorizer');
+});

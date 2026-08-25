@@ -9,7 +9,7 @@ use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
-use Fissible\Verdict\Tests\Support\AllowAllApprovalAuthorizer;
+use Fissible\Verdict\Testing\AllowAllApprovalAuthorizer;
 use Fissible\Verdict\VerdictServiceProvider;
 use Illuminate\Foundation\Application;
 use Laravel\Ai\AiServiceProvider;

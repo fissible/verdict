@@ -29,25 +29,30 @@ final class VerdictApprovalAuthorizer implements ApprovalDecisionAuthorizer
     {
         // The receipt's approval context is whatever the application put in
         // ActionContext(approvalContext: [...]) when the action was proposed. Fail closed on
-        // receipts that name no conversation: issued before the approval_context migration
-        // (null) or issued without identifiers ([]) — there is nothing to scope the decision to.
+        // receipts that name no tenant or no conversation: issued before the approval_context
+        // migration (null) or issued without identifiers ([]) — there is nothing to scope the
+        // decision to. Check BOTH identifiers: a conversation check alone lets a reviewer with
+        // a matching conversation id in another tenant decide across the tenant boundary.
+        $tenantId = $receipt->approvalContext['tenant_id'] ?? null;
         $conversationId = $receipt->approvalContext['conversation_id'] ?? null;
 
-        if (! is_string($conversationId) || $conversationId === '') {
+        if (! is_string($tenantId) || $tenantId === '' || ! is_string($conversationId) || $conversationId === '') {
             return false;
         }
 
-        return $this->reviewerMayDecide($conversationId, $decidedBy);
+        return $this->reviewerMayDecide($tenantId, $conversationId, $decidedBy);
     }
 
     /**
-     * The application-owned half: may this reviewer decide this conversation? The lookup below
-     * assumes the published controller's decision-maker format ('user:42') and a conversations
-     * table owned by the application — replace the table and ownership rule with the
-     * application's own conversation/tenant model. Keep the shape: resolve the reviewer FROM
-     * $decidedBy and the conversation FROM the receipt, never from request input.
+     * The application-owned half: may this reviewer decide this conversation in this tenant?
+     * The lookup below assumes the published controller's decision-maker format ('user:42') and
+     * a conversations table owned by the application — replace it with the application's own
+     * conversation/tenant model. Prefer an Eloquent model here over DB::table(): a raw query
+     * bypasses tenant global scopes, so the tenant constraint must then be explicit, as it is
+     * below. Keep the shape either way: resolve the reviewer FROM $decidedBy and the tenant and
+     * conversation FROM the receipt, never from request input.
      */
-    private function reviewerMayDecide(string $conversationId, string $decidedBy): bool
+    private function reviewerMayDecide(string $tenantId, string $conversationId, string $decidedBy): bool
     {
         if (! str_starts_with($decidedBy, 'user:')) {
             return false;
@@ -57,6 +62,7 @@ final class VerdictApprovalAuthorizer implements ApprovalDecisionAuthorizer
 
         return DB::table('conversations')
             ->where('id', $conversationId)
+            ->where('tenant_id', $tenantId)
             ->where('owner_user_id', $reviewerId)
             ->exists();
     }

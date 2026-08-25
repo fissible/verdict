@@ -17,10 +17,36 @@ use stdClass;
 
 final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore
 {
+    /**
+     * Mutable memo inside a readonly class: holds the lazily-checked presence of the
+     * approval_context column so the schema is inspected at most once per store instance,
+     * and only on the first write that would touch the column.
+     */
+    private stdClass $schemaMemo;
+
     public function __construct(
         private ConnectionInterface $connection,
         private string $table = 'verdict_approval_receipts',
-    ) {}
+    ) {
+        $this->schemaMemo = new stdClass;
+    }
+
+    /**
+     * Whether the approval_context column exists. False on an install that composer-updated
+     * without running the published add_approval_context migration: writes then omit the column
+     * (receipts hydrate as never-captured, and a fail-closed authorizer refuses them) instead of
+     * hard-failing every confirmation-gated issue(). verdict:validate reports the missing column.
+     */
+    public function hasApprovalContextColumn(): bool
+    {
+        if (! $this->connection instanceof Connection) {
+            throw new LogicException('The approval receipt connection does not support schema inspection.');
+        }
+
+        return $this->schemaMemo->hasApprovalContext ??= $this->connection
+            ->getSchemaBuilder()
+            ->hasColumn($this->table, 'approval_context');
+    }
 
     public function hasTable(): bool
     {
@@ -77,6 +103,15 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         return $rows->count() === 1 && $rows->first() instanceof stdClass
             ? $this->receiptFromRow($rows->first())
             : null;
+    }
+
+    public function find(string $receiptId): ?ApprovalReceipt
+    {
+        $row = $this->connection->table($this->table)
+            ->where('id', $receiptId)
+            ->first();
+
+        return $row instanceof stdClass ? $this->receiptFromRow($row) : null;
     }
 
     public function approve(
@@ -306,7 +341,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
     /** @return array<string, mixed> */
     private function attributes(ApprovalReceipt $receipt): array
     {
-        return [
+        $attributes = [
             'id' => $receipt->id,
             'tool_call_id' => $receipt->toolCallId,
             'capability' => $receipt->capability,
@@ -314,9 +349,6 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             'provenance' => $receipt->provenance === null
                 ? null
                 : json_encode($receipt->provenance->toArray(), JSON_THROW_ON_ERROR),
-            'approval_context' => $receipt->approvalContext === null
-                ? null
-                : json_encode($receipt->approvalContext, JSON_THROW_ON_ERROR),
             'status' => $receipt->status->value,
             'reason' => $receipt->reason,
             'expires_at' => $receipt->expiresAt,
@@ -328,6 +360,14 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             'created_at' => $receipt->createdAt,
             'updated_at' => $receipt->updatedAt,
         ];
+
+        if ($this->hasApprovalContextColumn()) {
+            $attributes['approval_context'] = $receipt->approvalContext === null
+                ? null
+                : json_encode($receipt->approvalContext, JSON_THROW_ON_ERROR);
+        }
+
+        return $attributes;
     }
 
     private function receiptFromRow(stdClass $row): ApprovalReceipt
@@ -366,8 +406,14 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             return null;
         }
 
-        /** @var array<string, string|int> */
-        return json_decode($stored, true, flags: JSON_THROW_ON_ERROR);
+        $decoded = json_decode($stored, true, flags: JSON_THROW_ON_ERROR);
+
+        if (! is_array($decoded)) {
+            return null;
+        }
+
+        /** @var array<string, string|int> $decoded */
+        return $decoded;
     }
 
     private function provenanceFromRow(stdClass $row): ?ProposalProvenance

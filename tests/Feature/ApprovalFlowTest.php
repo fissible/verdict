@@ -113,6 +113,11 @@ final class RacingApprovalReceiptStore implements ApprovalReceiptStore
         return $this->receipts->findForToolCall($toolCallId);
     }
 
+    public function find(string $receiptId): ?ApprovalReceipt
+    {
+        return $this->receipts->find($receiptId);
+    }
+
     public function approve(
         string $receiptId,
         string $toolCallId,

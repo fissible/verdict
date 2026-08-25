@@ -59,8 +59,8 @@ it('publishes application-owned decision outcomes and disabled route scaffolding
 
     expect($controller)->toContain('ApprovalManager', 'approve(', 'reject(', 'receiptId:', 'toolCallId:', 'approvedBy:', 'rejectedBy:', 'challengeForToolCall($toolCallId)', 'verdict.approvals.authorizer', 'fail-closed', 'not_found, mismatch, expired, invalid_state, and unauthorized', 'TODO: Resume the application-owned agent/conversation')
         ->and($request)->toContain('per-receipt authorization', 'VerdictApprovalAuthorizer')
-        ->and($authorizer)->toContain('ApprovalDecisionAuthorizer', 'approvalContext', 'conversation_id', 'return false', 'verdict.approvals.authorizer')
-        ->and($routes)->toContain('deliberately not included', "//     Route::post('/verdict/approvals/approve'")
+        ->and($authorizer)->toContain('ApprovalDecisionAuthorizer', 'approvalContext', 'conversation_id', 'tenant_id', 'return false', 'verdict.approvals.authorizer', 'global scopes')
+        ->and($routes)->toContain('deliberately not included', 'verdict.approvals.authorizer', "//     Route::post('/verdict/approvals/approve'")
         ->not->toMatch('/^\s*Route::post\(/m')
         ->and($guide)->toContain('opaque application identifier', 'did not register the route file', 'challengeForToolCall($toolCallId)', 'already-decided or already-consumed receipt returns `invalid_state`', 'https://github.com/fissible/verdict/blob/main/docs/adoption-guide.md', '#103', 'raw prompts or tool arguments into Verdict receipts', 'verdict.approvals.authorizer', '`unauthorized`')
         ->and($guide)->not->toContain('store raw prompts');

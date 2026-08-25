@@ -31,7 +31,7 @@ final readonly class ApprovalManager
         private ApproverProvenanceRelease $approverProvenance,
         private InvocationContext $invocations,
         private int $defaultTtlSeconds,
-        private ?ApprovalDecisionAuthorizer $authorizer = null,
+        private ApprovalDecisionAuthorizer|Closure|null $authorizer = null,
     ) {
         if ($this->defaultTtlSeconds < 1) {
             throw new InvalidArgumentException('The default approval receipt TTL must be at least one second.');
@@ -201,20 +201,37 @@ final readonly class ApprovalManager
             throw new InvalidArgumentException('An approval fingerprint requires a resolved capability.');
         }
 
-        return ArgumentFingerprint::make([
+        // approval_context participates in the binding identity so a colliding tool-call id from
+        // a different conversation gets its own receipt: the authorizer keys on this field, so a
+        // receipt reachable under one context must never be validated, consumed, or reused under
+        // another. The key is omitted — not hashed as [] — when no context was supplied, so an
+        // application that has not adopted approvalContext produces the exact pre-capture
+        // fingerprint and its receipts pending across the upgrade still validate.
+        $payload = [
             'capability' => $capability->name,
             'execution_target_policy' => $capability->executionTargetPolicy()?->name,
             'arguments' => $evaluation->envelope->proposal->arguments,
             'binding' => $capability->approvalBinding($evaluation->envelope, $evaluation->target),
-        ]);
+        ];
+
+        $approvalContext = $evaluation->envelope->context->approvalContext;
+
+        if ($approvalContext !== []) {
+            $payload['approval_context'] = $approvalContext;
+        }
+
+        return ArgumentFingerprint::make($payload);
     }
 
     /**
      * Runs the required authorizer against the receipt this decision names — approval decisions
      * are fail-closed, so no configured authorizer means no decision. The store remains the single
-     * authority on receipt state: a missing or id-mismatched receipt is delegated to it untouched
-     * so it produces the canonical NotFound/Mismatch/Expired/InvalidState outcome, and the
-     * authorizer is consulted only for a found, id-matching receipt. The fetch-then-transition
+     * authority on receipt state: a missing or call-mismatched receipt is delegated to it
+     * untouched so it produces the canonical NotFound/Mismatch/Expired/InvalidState outcome, and
+     * the authorizer is consulted only for a found, call-matching receipt. The receipt is
+     * addressed by id — never by findForToolCall(), whose null is ambiguous (absent OR a
+     * colliding tool-call id) and would let a second receipt on the same call bypass the
+     * authorizer while the store still finalized by id. The fetch-then-transition
      * race is benign because the authorizer reads only fields that are immutable after issue.
      */
     private function unauthorized(
@@ -223,17 +240,22 @@ final readonly class ApprovalManager
         ApprovalDecisionKind $kind,
         string $decidedBy,
     ): ?ApprovalTransition {
-        if ($this->authorizer === null) {
+        // A Closure defers container resolution to decision time, so a misconfigured authorizer
+        // class surfaces here — in the decision path it would break — rather than failing every
+        // ApprovalManager resolution including issue()/validate()/consume().
+        $authorizer = $this->authorizer instanceof Closure ? ($this->authorizer)() : $this->authorizer;
+
+        if ($authorizer === null) {
             throw ApprovalAuthorizerMissing::forDecision($kind);
         }
 
-        $receipt = $this->receipts->findForToolCall($toolCallId);
+        $receipt = $this->receipts->find($receiptId);
 
-        if ($receipt === null || $receipt->id !== $receiptId) {
+        if ($receipt === null || $receipt->toolCallId !== $toolCallId) {
             return null;
         }
 
-        return $this->authorizer->authorize($receipt, $kind, $decidedBy)
+        return $authorizer->authorize($receipt, $kind, $decidedBy)
             ? null
             : ApprovalTransition::to(ApprovalOutcome::Unauthorized);
     }

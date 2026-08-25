@@ -280,3 +280,44 @@ it('hydrates a receipt issued before approval context existed as never captured'
 
     expect($store->findForToolCall('call-database-receipt')?->approvalContext)->toBeNull();
 });
+
+it('issues and decides receipts when the approval_context column has not been migrated yet', function (): void {
+    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+    $schema->dropIfExists(verdictTable('approvals'));
+    $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
+        $table->string('id', 64)->primary();
+        $table->string('tool_call_id');
+        $table->string('capability');
+        $table->char('binding_fingerprint', 64);
+        $table->string('status', 24);
+        $table->text('reason')->nullable();
+        $table->timestamp('expires_at');
+        $table->string('approved_by')->nullable();
+        $table->timestamp('approved_at')->nullable();
+        $table->string('rejected_by')->nullable();
+        $table->timestamp('rejected_at')->nullable();
+        $table->timestamp('consumed_at')->nullable();
+        $table->text('provenance')->nullable();
+        $table->timestamps();
+    });
+
+    $store = databaseReceiptStore();
+
+    // Guided upgrade: composer update without the new migration must degrade to receipts whose
+    // context reads as never-captured — not hard-fail every confirmation-gated issue().
+    expect($store->issue(databaseReceipt(approvalContext: ['tenant_id' => 't-9']))->outcome)
+        ->toBe(ApprovalOutcome::Issued)
+        ->and($store->findForToolCall('call-database-receipt')?->approvalContext)->toBeNull();
+});
+
+it('hydrates a corrupt approval_context value as never captured rather than erroring', function (): void {
+    $store = databaseReceiptStore();
+    $receipt = databaseReceipt();
+
+    $store->issue($receipt);
+    app(DatabaseManager::class)->connection()->table(verdictTable('approvals'))
+        ->where('id', $receipt->id)
+        ->update(['approval_context' => '"not-an-array"']);
+
+    expect($store->findForToolCall($receipt->toolCallId)?->approvalContext)->toBeNull();
+});

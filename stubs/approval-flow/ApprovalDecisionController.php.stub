@@ -51,6 +51,9 @@ final class VerdictApprovalDecisionController
         if (! $succeeded) {
             // Normal outcomes: not_found, mismatch, expired, invalid_state, and unauthorized
             // (the configured authorizer refused this reviewer for this receipt). Do not resume.
+            // These distinctions are for the reviewer UI and logs; do not expose them on any
+            // surface reachable by callers who are not the authenticated reviewer, where they
+            // would enumerate receipt state.
             return back()->with('verdict_approval_outcome', $outcome->value);
         }
 
