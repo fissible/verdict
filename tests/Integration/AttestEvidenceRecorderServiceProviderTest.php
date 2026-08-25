@@ -30,9 +30,9 @@ beforeEach(function (): void {
     // full composed verdict_evidence schema by hand, exactly as tests/Feature does, so
     // the container-built recorder's fallback writes hit the real shipped column set.
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_evidence');
-    $schema->dropIfExists('verdict_provenance_derivations');
-    $schema->create('verdict_evidence', function (Blueprint $table): void {
+    $schema->dropIfExists(verdictTable('evidence'));
+    $schema->dropIfExists(verdictTable('derivations'));
+    $schema->create(verdictTable('evidence'), function (Blueprint $table): void {
         $table->uuid('id')->primary();
         $table->string('record_type', 32);
         $table->string('correlation_id')->nullable();
@@ -80,7 +80,7 @@ beforeEach(function (): void {
         $table->char('content_fingerprint', 64)->nullable();
         $table->timestamp('recorded_at');
     });
-    $schema->create('verdict_provenance_derivations', function (Blueprint $table): void {
+    $schema->create(verdictTable('derivations'), function (Blueprint $table): void {
         $table->string('correlation_id');
         $table->char('child_content_fingerprint', 64);
         $table->char('parent_content_fingerprint', 64);
@@ -90,8 +90,8 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_evidence');
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_provenance_derivations');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('evidence'));
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('derivations'));
 });
 
 function attestDecisionEvidence(string $envelopeId): DecisionEvidence
@@ -167,7 +167,7 @@ it('routes provenance through the real DatabaseEvidenceRecorder fallback the con
         ->and(AttestEnvelope::query()->forCorrelation('inv-int-1')->first())->toBeNull();
 
     $row = app(DatabaseManager::class)->connection()
-        ->table('verdict_evidence')
+        ->table(verdictTable('evidence'))
         ->where('correlation_id', 'inv-int-1')
         ->first();
 
@@ -269,7 +269,7 @@ it('propagates a throwing chain_resolver into the existing resolverFailed/phase-
     $recorder->record(attestDecisionEvidence('env-resolver-fail'));
 
     $row = app(DatabaseManager::class)->connection()
-        ->table('verdict_evidence')
+        ->table(verdictTable('evidence'))
         ->where('correlation_id', 'env-resolver-fail')
         ->where('record_type', 'chain_gap')
         ->first();

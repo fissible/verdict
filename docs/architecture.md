@@ -241,4 +241,18 @@ php artisan vendor:publish --provider="Fissible\Verdict\VerdictServiceProvider" 
 php artisan migrate
 ```
 
+Every security-state and evidence table name is read from configuration **by the migration stubs as
+well as by the stores** — `verdict.approvals.table`, `verdict.evidence.table`,
+`verdict.evidence.derivations_table`, `verdict.rate_limits.table`, `verdict.execution_claims.table`,
+and `verdict.capability_configurations.table` — so renaming a table is a config change only: set the
+name before running `php artisan migrate` and both the schema and the store use it. No migration
+file needs editing, and a rename after tables exist is an application-owned data migration, not a
+config edit.
+
+One caveat, stated rather than implied: the stubs' explicitly **named indexes** keep their
+default-derived names ([#315](https://github.com/fissible/verdict/issues/315)). A single renamed
+install is unaffected — but PostgreSQL index names are schema-global, so **two Verdict table-sets
+in one PostgreSQL database collide on index names** and the second `migrate` fails loudly. Until
+#315 resolves the naming, treat renaming as a config change only *per database*.
+
 Use the generated configuration to review retention and evaluation controls for your environment. See [limitations](limitations.md) for the controls that remain outside the package.

@@ -19,8 +19,8 @@ use Illuminate\Database\Schema\Blueprint;
 
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_approval_receipts');
-    $schema->create('verdict_approval_receipts', function (Blueprint $table): void {
+    $schema->dropIfExists(verdictTable('approvals'));
+    $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
         $table->string('id', 64)->primary();
         $table->string('tool_call_id');
         $table->string('capability');
@@ -40,7 +40,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_approval_receipts');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('approvals'));
 });
 
 function databaseReceipt(
@@ -196,7 +196,7 @@ it('rejects every receipt mutation inside an outer transaction on the store conn
     ]);
 
     expect($connection->transactionLevel())->toBe(0)
-        ->and($connection->table('verdict_approval_receipts')->count())->toBe(1)
+        ->and($connection->table(verdictTable('approvals'))->count())->toBe(1)
         ->and($store->findForToolCall($receipt->toolCallId)?->status)->toBe(ApprovalReceiptStatus::Pending);
 });
 

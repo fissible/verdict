@@ -49,7 +49,7 @@ function recordIdentityEvidence(string $stage, string $disposition, ?string $cla
 
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_evidence');
+    $schema->dropIfExists(verdictTable('evidence'));
 
     (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub')->up();
@@ -63,7 +63,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_evidence');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('evidence'));
 });
 
 it('persists the claim type and the scheme-tagged record digest', function (): void {
@@ -72,7 +72,7 @@ it('persists the claim type and the scheme-tagged record digest', function (): v
     app(DatabaseManager::class)->connection()->getSchemaBuilder();
     (new DatabaseEvidenceRecorder(app(DatabaseManager::class)->connection()))->record($evidence);
 
-    $row = app('db')->table('verdict_evidence')->where('record_type', 'decision')->first();
+    $row = app('db')->table(verdictTable('evidence'))->where('record_type', 'decision')->first();
 
     expect($row->claim_type)->toBe(ClaimType::ExecutionClaimCompleted->value)
         ->and($row->record_digest)->toBe($evidence->recordDigest)
@@ -90,7 +90,7 @@ it('reproduces the stored digest from the persisted row alone', function (): voi
 
     (new DatabaseEvidenceRecorder(app(DatabaseManager::class)->connection()))->record($evidence);
 
-    $row = app('db')->table('verdict_evidence')->where('record_type', 'decision')->first();
+    $row = app('db')->table(verdictTable('evidence'))->where('record_type', 'decision')->first();
 
     $fromRow = [
         'envelope_id' => $row->correlation_id,
@@ -142,7 +142,7 @@ it('keeps the persisted digest stable when only the reason differs', function ()
 
     $recorder->record(recordIdentityEvidence('execution', 'permit'));
 
-    $digests = app('db')->table('verdict_evidence')->pluck('record_digest')->all();
+    $digests = app('db')->table(verdictTable('evidence'))->pluck('record_digest')->all();
 
     expect($digests)->toHaveCount(1);
 

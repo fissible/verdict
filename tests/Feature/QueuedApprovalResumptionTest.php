@@ -258,9 +258,9 @@ function queuedApprovalTables(): array
         'job_batches',
         'agent_conversations',
         'agent_conversation_messages',
-        'verdict_capability_configurations',
-        'verdict_approval_receipts',
-        'verdict_evidence',
+        verdictTable('capability_configurations'),
+        verdictTable('approvals'),
+        verdictTable('evidence'),
     ];
 }
 
@@ -359,7 +359,7 @@ function queuedApprovalPause(): string
 
     queuedApprovalWork();
 
-    $pending = app('db')->table('verdict_approval_receipts')->where('status', 'pending')->get();
+    $pending = app('db')->table(verdictTable('approvals'))->where('status', 'pending')->get();
 
     expect($pending)->toHaveCount(1, 'A confirmation-gated capability must leave one pending receipt behind.')
         ->and(app(QueuedApprovalState::class)->executions)->toBe(0, 'The executor must not run before approval.');
@@ -388,7 +388,7 @@ function queuedApprovalResume(Decisions $decisions): void
  */
 function expectQueuedApprovalWasEvaluatedOnResume(): void
 {
-    expect(app('db')->table('verdict_evidence')->where('stage', 'approval')->count())
+    expect(app('db')->table(verdictTable('evidence'))->where('stage', 'approval')->count())
         ->toBeGreaterThan(0, 'The resume must have re-invoked the tool and asked Verdict to evaluate the receipt.');
 }
 
@@ -414,7 +414,7 @@ it('executes a queued confirmation-gated capability once when an approved receip
     queuedApprovalResume(Decisions::from([$toolCallId => AiDecision::approve()]));
 
     expect(app(QueuedApprovalState::class)->executions)->toBe(1, 'An approved, specifically-decided queued resume must execute the capability once.')
-        ->and(app('db')->table('verdict_evidence')->where('stage', 'execution')->where('disposition', 'permit')->count())
+        ->and(app('db')->table(verdictTable('evidence'))->where('stage', 'execution')->where('disposition', 'permit')->count())
         ->toBe(1, 'The worker must leave durable execution evidence behind.');
 });
 

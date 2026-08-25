@@ -19,9 +19,9 @@ use Illuminate\Database\Schema\Blueprint;
 
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_evidence');
-    $schema->dropIfExists('verdict_provenance_derivations');
-    $schema->create('verdict_evidence', function (Blueprint $table): void {
+    $schema->dropIfExists(verdictTable('evidence'));
+    $schema->dropIfExists(verdictTable('derivations'));
+    $schema->create(verdictTable('evidence'), function (Blueprint $table): void {
         $table->uuid('id')->primary();
         $table->string('record_type', 32);
         $table->string('correlation_id')->nullable();
@@ -77,7 +77,7 @@ beforeEach(function (): void {
         $table->char('content_fingerprint', 64)->nullable();
         $table->timestamp('recorded_at');
     });
-    $schema->create('verdict_provenance_derivations', function (Blueprint $table): void {
+    $schema->create(verdictTable('derivations'), function (Blueprint $table): void {
         $table->string('correlation_id');
         $table->char('child_content_fingerprint', 64);
         $table->char('parent_content_fingerprint', 64);
@@ -87,8 +87,8 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_evidence');
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_provenance_derivations');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('evidence'));
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('derivations'));
 });
 
 function databaseEvidenceRecorder(): DatabaseEvidenceRecorder
@@ -134,7 +134,7 @@ it('persists decision evidence while hashing the tool-call key', function (): vo
 
     databaseEvidenceRecorder()->record($evidence);
 
-    $row = app(DatabaseManager::class)->connection()->table('verdict_evidence')->first();
+    $row = app(DatabaseManager::class)->connection()->table(verdictTable('evidence'))->first();
 
     expect($row)->toBeInstanceOf(stdClass::class);
 
@@ -187,7 +187,7 @@ it('persists context-release evidence without raw paths or payload values', func
 
     databaseEvidenceRecorder()->recordRelease($evidence);
 
-    $row = app(DatabaseManager::class)->connection()->table('verdict_evidence')->first();
+    $row = app(DatabaseManager::class)->connection()->table(verdictTable('evidence'))->first();
 
     expect($row)->toBeInstanceOf(stdClass::class);
 
@@ -270,7 +270,7 @@ it('persists and retrieves redacted provenance without mixing correlations', fun
         $recorder->recordProvenance($entry);
     }
 
-    $rows = app(DatabaseManager::class)->connection()->table('verdict_evidence')->get();
+    $rows = app(DatabaseManager::class)->connection()->table(verdictTable('evidence'))->get();
     $serializedRows = json_encode($rows, JSON_THROW_ON_ERROR);
     $correlated = $recorder->provenanceFor('invocation-1');
 
@@ -343,7 +343,7 @@ it('persists a tool-description divergence so it survives the process that obser
         toolDescriptionMatched: false,
     ));
 
-    $row = DB::table('verdict_evidence')->where('correlation_id', 'envelope-description')->first();
+    $row = DB::table(verdictTable('evidence'))->where('correlation_id', 'envelope-description')->first();
 
     expect($row?->tool_description_fingerprint)->toBe($configured)
         ->and($row?->invocation_tool_description_fingerprint)->toBe($advertised)

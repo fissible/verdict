@@ -10,8 +10,8 @@ use Illuminate\Database\Schema\Blueprint;
 
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_rate_limit_buckets');
-    $schema->create('verdict_rate_limit_buckets', function (Blueprint $table): void {
+    $schema->dropIfExists(verdictTable('rate_limits'));
+    $schema->create(verdictTable('rate_limits'), function (Blueprint $table): void {
         $table->char('bucket_fingerprint', 64);
         $table->timestamp('window_starts_at');
         $table->timestamp('reset_at');
@@ -27,7 +27,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_rate_limit_buckets');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('rate_limits'));
 });
 
 function databaseRateLimitStore(): DatabaseRateLimitStore
@@ -61,7 +61,7 @@ it('atomically counts attempts within a fixed window', function (): void {
         ->and($third->resetAt->getTimestamp())->toBe(
             (new DateTimeImmutable('2026-08-01 12:01:00', new DateTimeZone('UTC')))->getTimestamp(),
         )
-        ->and(app(DatabaseManager::class)->connection()->table('verdict_rate_limit_buckets')->value('attempts'))
+        ->and(app(DatabaseManager::class)->connection()->table(verdictTable('rate_limits'))->value('attempts'))
         ->toBe(2);
 });
 
@@ -72,9 +72,9 @@ it('starts a fresh bucket at the exact window boundary and prunes expired bucket
 
     expect($next->allowed)->toBeTrue()
         ->and($next->remaining)->toBe(1)
-        ->and(app(DatabaseManager::class)->connection()->table('verdict_rate_limit_buckets')->count())->toBe(2)
+        ->and(app(DatabaseManager::class)->connection()->table(verdictTable('rate_limits'))->count())->toBe(2)
         ->and($store->pruneExpired(new DateTimeImmutable('2026-08-01 12:01:00', new DateTimeZone('UTC'))))->toBe(1)
-        ->and(app(DatabaseManager::class)->connection()->table('verdict_rate_limit_buckets')->count())->toBe(1);
+        ->and(app(DatabaseManager::class)->connection()->table(verdictTable('rate_limits'))->count())->toBe(1);
 });
 
 it('rejects rate-limit consumption inside an outer transaction on the store connection', function (): void {
@@ -91,5 +91,5 @@ it('rejects rate-limit consumption inside an outer transaction on the store conn
     }
 
     expect($connection->transactionLevel())->toBe(0)
-        ->and($connection->table('verdict_rate_limit_buckets')->count())->toBe(0);
+        ->and($connection->table(verdictTable('rate_limits'))->count())->toBe(0);
 });
