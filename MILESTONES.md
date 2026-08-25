@@ -449,35 +449,15 @@ merged 2026-08-23. The tag cuts when #290 lands and readiness passes.
 **Why #294 is no longer here.** The flagship attack-surface case turned out to be unexpressible against the
 current observation model (see #294's design finding): its exfil oracle needs a privacy-safe boundary
 observation that does not yet exist. Rather than gate a feature release on a design cycle, #294 moved to
-**v0.12.0** behind its prerequisite. This is the cadence policy working — batch features, do not block a
+**v0.13.0** behind its prerequisite. This is the cadence policy working — batch features, do not block a
 release on newly-discovered design work.
 
-## v0.12.0 — Security-evaluation sequence
-
-**Theme.** The design-then-build pair the #294 finding created, plus the other primitive-needing surface.
-
-| Issue | Effort | Deps | Status |
-|---|---|---|---|
-| [#304](https://github.com/fissible/verdict/issues/304) Privacy-safe observation: did a registered secret marker appear in an executed argument? | M | none | open — `scope: design`; the #294 prerequisite |
-| [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | #304 | blocked by #304; builds on it with the existing filtered-permit utility arm |
-| [#295](https://github.com/fissible/verdict/issues/295) Check-to-use digest binding (TOCTOU) | M–L | new cross-call primitive | open — `scope: design` |
-
-**Sequence.** #304 is design-first: a boundary observation that records only a boolean match per registered
-secret marker (never raw arguments or fragments — ADR 0008-clean), and that defines its encoding and
-concatenation residuals explicitly. Once accepted and implemented, #294 builds the exfil case on it. #295 is
-the other primitive-needing surface (a cross-call resource digest), independent of #304.
-
-**Held for their own milestone.** The approval-surface cluster — #297 (`RequireReview` has no runtime, the
-keystone) → #298 → #299, with #230/#201/#265/#300 and the verdict-console ADR 0001 that surfaced them — is
-L–XL and earns a dedicated milestone rather than riding here.
----
-
-## v0.13.0 — Harden the shipped claims
+## v0.12.0 — Harden the shipped claims
 
 **Theme.** The findings from the Ox Alpha external review (2026-08-25) that harden the trust behind the
-package's README claims and its fail-closed posture. **This is a high-priority minor — not an out-of-order
-release.** Releases are monotonic (the current tag is `v0.10.1`), so this ships in version order after
-v0.11.0 and v0.12.0; "high-priority" governs what is *worked on* next, not what version number cuts first.
+package's README claims and its fail-closed posture. **This is the next minor after v0.11.0** — the ready,
+high-priority hardening batch ships ahead of the design-gated security sequence (now v0.13.0), which keeps
+releases monotonic (current tag `v0.10.1`) while not making implementation wait on #304's unresolved design.
 Queue order within the milestone is the review's own, recorded on #305.
 
 | Issue | Effort | Deps | Status |
@@ -507,6 +487,28 @@ the review's quick wins.
   configuration path** — an upgrade note, the new config key(s), and the receipt-binding migration — so the
   breaking change is deliberate and guided, not a surprise on `composer update`.
 - Server-side signing (key management) stays out of scope for this milestone.
+---
+
+## v0.13.0 — Security-evaluation sequence
+
+**Theme.** The design-then-build pair the #294 finding created, plus the other primitive-needing surface.
+Sequenced after the v0.12.0 hardening batch — it is design-gated (#304 first), so it does not lead the
+release order.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#304](https://github.com/fissible/verdict/issues/304) Privacy-safe observation: did a registered secret marker appear in an executed argument? | M | none | open — `scope: design`; the #294 prerequisite |
+| [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | #304 | blocked by #304; builds on it with the existing filtered-permit utility arm |
+| [#295](https://github.com/fissible/verdict/issues/295) Check-to-use digest binding (TOCTOU) | M–L | new cross-call primitive | open — `scope: design` |
+
+**Sequence.** #304 is design-first: a boundary observation that records only a boolean match per registered
+secret marker (never raw arguments or fragments — ADR 0008-clean), and that defines its encoding and
+concatenation residuals explicitly. Once accepted and implemented, #294 builds the exfil case on it. #295 is
+the other primitive-needing surface (a cross-call resource digest), independent of #304.
+
+**Held for their own milestone.** The approval-surface cluster — #297 (`RequireReview` has no runtime, the
+keystone) → #298 → #299, with #230/#201/#265/#300 and the verdict-console ADR 0001 that surfaced them — is
+L–XL and earns a dedicated milestone rather than riding here.
 
 ## v0.14.0 — Approvals: design rounds
 
