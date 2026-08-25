@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-24
+
 - **Migration stubs read table names from config — a rename is a config change only (#290).**
   Every published stub now resolves its table through the config key the stores already honour
   (`Schema::create(config('verdict.execution_claims.table', …))` and likewise across all 15
@@ -1284,7 +1286,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.10.1...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/fissible/verdict/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/fissible/verdict/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/fissible/verdict/compare/v0.9.2...v0.10.0
 [0.9.2]: https://github.com/fissible/verdict/compare/v0.9.1...v0.9.2
