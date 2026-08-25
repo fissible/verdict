@@ -201,12 +201,12 @@ function queuedGateTables(): array
 {
     return [
         'jobs',
-        'verdict_provenance_derivations',
-        'verdict_capability_configurations',
-        'verdict_execution_claims',
-        'verdict_rate_limit_buckets',
-        'verdict_approval_receipts',
-        'verdict_evidence',
+        verdictTable('derivations'),
+        verdictTable('capability_configurations'),
+        verdictTable('execution_claims'),
+        verdictTable('rate_limits'),
+        verdictTable('approvals'),
+        verdictTable('evidence'),
         'failed_jobs',
         'job_batches',
     ];
@@ -322,8 +322,8 @@ it('dispatches and handles a queued Laravel AI agent job through Verdict in work
         ->and(app(EvidenceRecorder::class))->toBeInstanceOf(DatabaseEvidenceRecorder::class)
         ->and(app(RateLimitStore::class))->toBeInstanceOf(DatabaseRateLimitStore::class)
         ->and(app(ExecutionClaimStore::class))->toBeInstanceOf(DatabaseExecutionClaimStore::class)
-        ->and(app('db')->table('verdict_evidence')->where('record_type', 'decision')->count())->toBeGreaterThan(0)
-        ->and(app('db')->table('verdict_capability_configurations')->count())->toBe(1);
+        ->and(app('db')->table(verdictTable('evidence'))->where('record_type', 'decision')->count())->toBeGreaterThan(0)
+        ->and(app('db')->table(verdictTable('capability_configurations'))->count())->toBe(1);
 });
 
 it('denies a queued execution when authorization changes after the proposal check', function (): void {
@@ -334,7 +334,7 @@ it('denies a queued execution when authorization changes after the proposal chec
 
     expect($state->authorizations)->toBe(2)
         ->and($state->executions)->toBe(0)
-        ->and(app('db')->table('verdict_evidence')->where('stage', 'execution')->where('disposition', 'deny')->count())->toBe(1);
+        ->and(app('db')->table(verdictTable('evidence'))->where('stage', 'execution')->where('disposition', 'deny')->count())->toBe(1);
 });
 
 it('enforces execution claims across queued jobs', function (): void {
@@ -345,9 +345,9 @@ it('enforces execution claims across queued jobs', function (): void {
     runQueuedGate(queuedGateAgent([new ToolCall('queued-claim-b', 'QueuedGateTool', ['operation_id' => 1001]), 'done']));
 
     expect($state->executions)->toBe(1)
-        ->and(app('db')->table('verdict_execution_claims')->count())->toBe(1)
-        ->and(app('db')->table('verdict_execution_claims')->value('status'))->toBe('completed')
-        ->and(app('db')->table('verdict_evidence')->where('stage', 'execution_claim')->count())->toBe(3);
+        ->and(app('db')->table(verdictTable('execution_claims'))->count())->toBe(1)
+        ->and(app('db')->table(verdictTable('execution_claims'))->value('status'))->toBe('completed')
+        ->and(app('db')->table(verdictTable('evidence'))->where('stage', 'execution_claim')->count())->toBe(3);
 });
 
 it('enforces semantic rate limits across queued jobs', function (): void {
@@ -358,9 +358,9 @@ it('enforces semantic rate limits across queued jobs', function (): void {
     runQueuedGate(queuedGateAgent([new ToolCall('queued-limit-b', 'QueuedGateTool', ['operation_id' => 1003]), 'done']));
 
     expect($state->executions)->toBe(1)
-        ->and(app('db')->table('verdict_rate_limit_buckets')->count())->toBe(1)
-        ->and(app('db')->table('verdict_rate_limit_buckets')->value('attempts'))->toBe(1)
-        ->and(app('db')->table('verdict_evidence')->where('stage', 'rate_limit')->where('disposition', 'throttle')->count())->toBe(1);
+        ->and(app('db')->table(verdictTable('rate_limits'))->count())->toBe(1)
+        ->and(app('db')->table(verdictTable('rate_limits'))->value('attempts'))->toBe(1)
+        ->and(app('db')->table(verdictTable('evidence'))->where('stage', 'rate_limit')->where('disposition', 'throttle')->count())->toBe(1);
 });
 
 it('records a context release performed by a queued worker', function (): void {
@@ -369,7 +369,7 @@ it('records a context release performed by a queued worker', function (): void {
 
     runQueuedGate(queuedGateAgent([new ToolCall('queued-release', 'QueuedGateTool', ['operation_id' => 1001]), 'done']));
 
-    expect(app('db')->table('verdict_evidence')->where('record_type', 'context_release')->count())->toBe(1)
-        ->and(app('db')->table('verdict_evidence')->where('record_type', 'context_release')->value('disposition'))->toBe('permit')
-        ->and(app('db')->table('verdict_evidence')->where('record_type', 'context_release')->value('released_path_fingerprints'))->not->toContain('first_name');
+    expect(app('db')->table(verdictTable('evidence'))->where('record_type', 'context_release')->count())->toBe(1)
+        ->and(app('db')->table(verdictTable('evidence'))->where('record_type', 'context_release')->value('disposition'))->toBe('permit')
+        ->and(app('db')->table(verdictTable('evidence'))->where('record_type', 'context_release')->value('released_path_fingerprints'))->not->toContain('first_name');
 });

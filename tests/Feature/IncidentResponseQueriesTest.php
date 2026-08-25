@@ -46,12 +46,12 @@ it('runs every query documented in docs/incident-response.md against the publish
     ];
 
     $tables = [
-        'verdict_evidence',
-        'verdict_provenance_derivations',
-        'verdict_approval_receipts',
-        'verdict_capability_configurations',
-        'verdict_rate_limit_buckets',
-        'verdict_execution_claims',
+        verdictTable('evidence'),
+        verdictTable('derivations'),
+        verdictTable('approvals'),
+        verdictTable('capability_configurations'),
+        verdictTable('rate_limits'),
+        verdictTable('execution_claims'),
     ];
 
     // Dropped before and after: these tables are created by other suites with their own hand-rolled
@@ -142,8 +142,8 @@ it('runs every query documented in docs/incident-response.md against the publish
         ->and($described[0]->component_label)->toBe('kb-article-88');
 
     // Step 2's warning: provenance rows carry the invocation id in correlation_id.
-    expect($connection->table('verdict_evidence')->where('record_type', 'provenance')->count())->toBe(2)
-        ->and($connection->table('verdict_evidence')->where('record_type', 'provenance')->where('invocation_id', $invocationId)->count())->toBe(2);
+    expect($connection->table(verdictTable('evidence'))->where('record_type', 'provenance')->count())->toBe(2)
+        ->and($connection->table(verdictTable('evidence'))->where('record_type', 'provenance')->where('invocation_id', $invocationId)->count())->toBe(2);
 
     foreach ($tables as $table) {
         $connection->getSchemaBuilder()->dropIfExists($table);

@@ -13,8 +13,8 @@ use Illuminate\Database\Schema\Blueprint;
 
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_execution_claims');
-    $schema->create('verdict_execution_claims', function (Blueprint $table): void {
+    $schema->dropIfExists(verdictTable('execution_claims'));
+    $schema->create(verdictTable('execution_claims'), function (Blueprint $table): void {
         $table->string('id', 64)->primary();
         $table->string('capability');
         $table->string('policy');
@@ -32,7 +32,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
-    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_execution_claims');
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('execution_claims'));
 });
 
 function databaseExecutionClaimStore(): DatabaseExecutionClaimStore
@@ -71,7 +71,7 @@ it('atomically admits one claim and rejects its completed duplicate', function (
         ->toBe(ExecutionClaimOutcome::Completed)
         ->and($store->claim(databaseExecutionClaim('claim-2'))->outcome)
         ->toBe(ExecutionClaimOutcome::DuplicateCompleted)
-        ->and(app(DatabaseManager::class)->connection()->table('verdict_execution_claims')->count())
+        ->and(app(DatabaseManager::class)->connection()->table(verdictTable('execution_claims'))->count())
         ->toBe(1);
 });
 
@@ -135,5 +135,5 @@ it('rejects claim mutations inside an outer transaction on the store connection'
     }
 
     expect($connection->transactionLevel())->toBe(0)
-        ->and($connection->table('verdict_execution_claims')->count())->toBe(0);
+        ->and($connection->table(verdictTable('execution_claims'))->count())->toBe(0);
 });

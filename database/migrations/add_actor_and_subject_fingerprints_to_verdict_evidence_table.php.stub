@@ -10,7 +10,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('verdict_evidence', function (Blueprint $table): void {
+        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
             $table->char('actor_fingerprint', 64)->nullable();
             $table->char('subject_fingerprint', 64)->nullable();
             $table->index('actor_fingerprint', 'verdict_evidence_actor_fingerprint_index');
@@ -20,7 +20,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('verdict_evidence', function (Blueprint $table): void {
+        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
             $table->dropIndex('verdict_evidence_actor_fingerprint_index');
             $table->dropIndex('verdict_evidence_subject_fingerprint_index');
             $table->dropColumn(['actor_fingerprint', 'subject_fingerprint']);

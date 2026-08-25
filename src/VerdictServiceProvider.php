@@ -193,10 +193,12 @@ final class VerdictServiceProvider extends ServiceProvider
             if ($recorder === DatabaseEvidenceRecorder::class) {
                 $connection = config('verdict.evidence.connection');
                 $table = config('verdict.evidence.table', 'verdict_evidence');
+                $derivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations');
 
                 return new DatabaseEvidenceRecorder(
                     connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
                     table: is_string($table) ? $table : 'verdict_evidence',
+                    derivationsTable: is_string($derivations) ? $derivations : 'verdict_provenance_derivations',
                 );
             }
 
@@ -284,6 +286,7 @@ final class VerdictServiceProvider extends ServiceProvider
                     fallback: new DatabaseEvidenceRecorder(
                         connection: $connection,
                         table: is_string($fallbackTable) ? $fallbackTable : 'verdict_evidence',
+                        derivationsTable: is_string($fallbackDerivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations')) ? $fallbackDerivations : 'verdict_provenance_derivations',
                     ),
                     connection: $connection,
                     events: $app->make(Dispatcher::class),

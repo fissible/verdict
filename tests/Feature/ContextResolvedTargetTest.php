@@ -180,8 +180,8 @@ it('preserves the target source through every builder method', function (): void
 
 afterEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_evidence');
-    $schema->dropIfExists('verdict_provenance_derivations');
+    $schema->dropIfExists(verdictTable('evidence'));
+    $schema->dropIfExists(verdictTable('derivations'));
 });
 
 it('persists the target source to the durable evidence store', function (): void {
@@ -192,8 +192,8 @@ it('persists the target source to the durable evidence store', function (): void
     // without both halves the file both inherits and leaves behind state, and which of those bites
     // depends on the random test order.
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists('verdict_evidence');
-    $schema->dropIfExists('verdict_provenance_derivations');
+    $schema->dropIfExists(verdictTable('evidence'));
+    $schema->dropIfExists(verdictTable('derivations'));
 
     (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub')->up();
@@ -207,7 +207,7 @@ it('persists the target source to the durable evidence store', function (): void
 
     $recorder = new DatabaseEvidenceRecorder(
         connection: app(DatabaseManager::class)->connection(),
-        table: 'verdict_evidence',
+        table: verdictTable('evidence'),
     );
 
     $this->app->instance(EvidenceRecorder::class, $recorder);
@@ -225,7 +225,7 @@ it('persists the target source to the durable evidence store', function (): void
     app(VerdictManager::class)->runBound(targetSourceEnvelope(1001, 1002));
 
     // The query the field exists to support: find decisions by resolution path.
-    $rows = DB::table('verdict_evidence')->where('target_source', TargetSource::Context->value)->get();
+    $rows = DB::table(verdictTable('evidence'))->where('target_source', TargetSource::Context->value)->get();
 
     expect($rows)->not->toBeEmpty();
 });
