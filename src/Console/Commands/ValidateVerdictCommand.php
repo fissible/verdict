@@ -7,9 +7,11 @@ namespace Fissible\Verdict\Console\Commands;
 use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
+use Fissible\Verdict\Capabilities\CapabilityConfigurationStoreSelection;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
+use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\UnaffirmedDefinition;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
@@ -206,10 +208,27 @@ final class ValidateVerdictCommand extends Command
         // applications routing evidence through a custom writer), so this warns rather than errors.
         // The runtime once-per-process warning (ConsequentialActionUnrecorded) is the louder,
         // action-scoped signal; this is the deploy-time one. See #194.
-        if (config('verdict.evidence.recorder', NullEvidenceRecorder::class) === NullEvidenceRecorder::class) {
+        $recorder = config('verdict.evidence.recorder', NullEvidenceRecorder::class);
+        if ($recorder === NullEvidenceRecorder::class) {
             $warnings[] = 'Evidence is going to a no-op evidence recorder (NullEvidenceRecorder), the shipped default; '
                 .'consequential decisions — confirmations and at-most-once claims — are recorded nowhere. '
                 .'Configure a durable recorder via verdict.evidence.recorder to retain an audit trail.';
+        }
+
+        // Advisory: the silent-mismatch case of #310. With the store key unset, Verdict selects the
+        // capability-configuration store by the recorder's declared capability (the
+        // DurableEvidenceRecorder marker) — a recorder that declares nothing gets the no-op store,
+        // and configuration fingerprints on whatever evidence it retains become permanently
+        // unexpandable. Legal (the recorder may genuinely retain nothing), so this warns rather
+        // than errors, and it mirrors the provider's fall-through by reading configuration, not
+        // resolved bindings, like every check in this command.
+        $effectiveStore = config('verdict.capability_configurations.store')
+            ?? CapabilityConfigurationStoreSelection::forRecorder($recorder);
+        if ($recorder !== NullEvidenceRecorder::class && $effectiveStore === NullCapabilityConfigurationStore::class) {
+            $warnings[] = 'Evidence is being recorded, but capability configuration fingerprints are going to the '
+                .'no-op configuration store: fingerprints on retained evidence will be permanently unexpandable. '
+                .'If the recorder retains evidence, implement the DurableEvidenceRecorder contract on it '
+                .'or set verdict.capability_configurations.store explicitly.';
         }
 
         // Advisory: config/verdict.php states in comments that the in-memory adapters are unsafe
