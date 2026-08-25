@@ -22,28 +22,7 @@ final class CanonicalJson
 {
     public static function encode(mixed $value, string $label): string
     {
-        $normalized = self::normalize($value, $label);
-
-        // json_encode renders floats according to serialize_precision, so the same value
-        // fingerprints differently across deployments that set it differently — and across one
-        // deployment either side of an ini change, which leaves an already-issued approval
-        // impossible to consume. Pinned to PHP's own default rather than to a fixed digit count, so
-        // that deployments on the default (every deployment since PHP 7.1 that has not changed it)
-        // keep the digests they have already persisted.
-        $caller = ini_get('serialize_precision');
-        $pinned = $caller !== '-1';
-
-        if ($pinned) {
-            ini_set('serialize_precision', '-1');
-        }
-
-        try {
-            return json_encode($normalized, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
-        } finally {
-            if ($pinned && is_string($caller)) {
-                ini_set('serialize_precision', $caller);
-            }
-        }
+        return self::encodeNormalized(self::normalize($value, $label));
     }
 
     private static function normalize(mixed $value, string $label): mixed
@@ -69,5 +48,100 @@ final class CanonicalJson
         }
 
         return array_map(static fn (mixed $item): mixed => self::normalize($item, $label), $value);
+    }
+
+    private static function encodeNormalized(mixed $value): string
+    {
+        if ($value === null) {
+            return 'null';
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        if (is_float($value)) {
+            return self::floatToken($value);
+        }
+
+        if (is_string($value)) {
+            return json_encode($value, JSON_THROW_ON_ERROR);
+        }
+
+        if (array_is_list($value)) {
+            return '['.implode(',', array_map(self::encodeNormalized(...), $value)).']';
+        }
+
+        $members = [];
+        foreach ($value as $key => $item) {
+            $members[] = json_encode((string) $key, JSON_THROW_ON_ERROR).':'.self::encodeNormalized($item);
+        }
+
+        return '{'.implode(',', $members).'}';
+    }
+
+    private static function floatToken(float $value): string
+    {
+        if (! is_finite($value)) {
+            // Preserve json_encode's rejection and exception type for NaN and infinities.
+            return json_encode($value, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
+        }
+
+        // Start at one significant digit and retain the first representation that parses back to
+        // the original IEEE-754 value. This matches the shortest-round-trip representation PHP's
+        // json_encode uses at serialize_precision=-1 without reading or changing that INI value.
+        $token = '';
+        for ($significantDigits = 1; $significantDigits <= 17; $significantDigits++) {
+            $candidate = sprintf('%.'.$significantDigits.'g', $value);
+
+            if ((float) $candidate === $value) {
+                $token = strtolower($candidate);
+
+                break;
+            }
+        }
+
+        $token = preg_replace('/e([+-])0+(\d+)/', 'e$1$2', $token) ?? $token;
+        $token = self::expandLegacyJsonExponent($token);
+
+        if (! str_contains($token, '.')) {
+            $exponent = strpos($token, 'e');
+            if ($exponent === false) {
+                return $token.'.0';
+            }
+
+            return substr($token, 0, $exponent).'.0'.substr($token, $exponent);
+        }
+
+        return $token;
+    }
+
+    private static function expandLegacyJsonExponent(string $token): string
+    {
+        if (! preg_match('/^(-?)(\d+)(?:\.(\d+))?e([+-]?\d+)$/', $token, $parts)) {
+            return $token;
+        }
+
+        $exponent = (int) $parts[4];
+        if ($exponent < -4 || $exponent > 16) {
+            return $token;
+        }
+
+        $digits = $parts[2].$parts[3];
+        $decimalPosition = strlen($parts[2]) + $exponent;
+
+        if ($decimalPosition <= 0) {
+            return $parts[1].'0.'.str_repeat('0', -$decimalPosition).$digits;
+        }
+
+        if ($decimalPosition >= strlen($digits)) {
+            return $parts[1].$digits.str_repeat('0', $decimalPosition - strlen($digits));
+        }
+
+        return $parts[1].substr($digits, 0, $decimalPosition).'.'.substr($digits, $decimalPosition);
     }
 }

@@ -4,6 +4,12 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Canonical fingerprints no longer mutate PHP process state (#308).** Float tokens are now emitted
+  locally in the same shortest round-trippable form as the previous `serialize_precision=-1` path,
+  including its JSON exponent and zero-fraction conventions. `CanonicalJson` no longer reads or writes
+  `serialize_precision`, so concurrent encodes cannot observe one another's temporary INI setting. The
+  compatibility suite pins existing fingerprints and checks identical output under 17, -1, 3, and 0.
+
 - **Per-receipt authorization is now expressible — and required (#305).** Receipts capture the
   application's binding identifiers at issue time: whatever the application places in
   `ActionContext(approvalContext: ['tenant_id' => …, 'conversation_id' => …])` is carried
