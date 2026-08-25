@@ -372,11 +372,16 @@ Reading it honestly:
 - **The `e.stage <> 'intent'` exclusion is load-bearing.** The intent's own evidence mirror also
   references the intent id; counting it would hide exactly the gap being looked for. An outcome is
   any *later* record — a rate-limit consumption or refusal, an approval consumption, a claim
-  admission or finalization.
-- **A hit is a gap in the record, not proof of a rogue action.** Denials at gates 10–12 also write
-  outcome rows referencing the intent, so a hit means the fail-open outcome writes failed
-  (`EvidenceWriteFailed` should correlate) or the process died between the intent commit and the next
-  record. Either way the intent row carries the full standalone identity to investigate from.
+  admission or finalization, or the `intent_concluded` record a claim-less run writes around a
+  successful executor return. The full set of stages that may carry `intent_id` is pinned by test
+  (`ActionIntentPipelineTest`), so a future record type cannot silently satisfy this anti-join.
+- **A hit is a gap in the record, not proof of a rogue action — with one deliberate exception.**
+  Denials at gates 10–12 also write outcome rows referencing the intent, so a hit usually means the
+  fail-open outcome writes failed (`EvidenceWriteFailed` should correlate) or the process died
+  between the intent commit and the next record. The exception: a run with no execution-claim policy
+  whose executor *threw* writes no conclusion, deliberately — investigate it like any gap; the
+  intent row carries the full standalone identity to start from. Pair the lever with `atMostOnce()`
+  where you want failures accounted positively (claim finalization marks them indeterminate).
 - **`:grace_cutoff` excludes in-flight actions.** An intent committed milliseconds ago has no outcome
   yet because the action is still running. A cutoff of now minus your slowest plausible executor is
   the starting point.

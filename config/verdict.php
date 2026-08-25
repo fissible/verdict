@@ -200,6 +200,11 @@ return [
         'required' => false,
         // Per-capability override in either direction: ->requiresIntentRecord() / (false).
         //
+        // Cost, stated plainly: every attempt that reaches the intent gate commits one durable
+        // row plus a fail-open evidence mirror — including attempts a later gate denies. Storage
+        // grows with attempts, not successes, and no pruning command ships (see the retention
+        // note below).
+        //
         // InMemoryActionIntentStore is only for tests and local development: process-local state
         // cannot make the durability promise this lever exists to give.
         // Database intent writes require an independently committed connection.

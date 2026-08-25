@@ -192,8 +192,21 @@ passed and before the rate-limit consume (between steps 9 and 10 of ADR 0003's o
 the pipeline returns a policy-shaped denial (stage `intent`), dispatches `ActionIntentWriteFailed`, and
 consumes nothing: no unit, no receipt, no claim. The record is write-once, carries the full standalone
 identity (capability, configuration fingerprint, actor/subject/execution-target/argument fingerprints,
-invocation correlation), and has no status column — the outcome record remains the sole authority on what
-happened, and an intent with no outcome referencing it *is* the gap signal.
+invocation correlation — the execution-target fingerprint read back from the target-refresh decision
+gate 7 validated, never recomputed from the live resolver), and has no status column — the outcome
+record remains the sole authority on what happened, and an intent with no outcome referencing it *is*
+the gap signal.
+
+The guarantee is scoped to the execution pipeline's mutating phase. Approval-receipt *issuance*
+(`requestConfirmation()`) writes durable security state outside the gate, deliberately: issuance is
+itself the durable record of the request — the receipt row records who asked for what — and an
+unrecorded ask denies nothing. The gate covers the pipeline that later consumes that receipt.
+
+How a run *ended* is recorded by execution-claim finalization when a claim policy exists. A run with no
+claim policy writes `verdict.intent.concluded` around a successful executor return instead — the same
+admission-side-belief carve-out as `claim-completed`, fail-open like every post-mutation write — so a
+healthy claim-less success is never a false gap in the verification query. A claim-less run whose
+executor throws is deliberately left unconcluded: that flagged gap is the lever working.
 
 **Why this keeps decision point 2 intact with no exception clause.** Evidence is still never an
 authorization gate. The thing that gates is an operational admission control, in the layer where claims

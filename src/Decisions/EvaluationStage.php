@@ -11,6 +11,7 @@ enum EvaluationStage: string
     case TargetRefresh = 'target_refresh';
     case Execution = 'execution';
     case Intent = 'intent';
+    case IntentConcluded = 'intent_concluded';
     case RateLimit = 'rate_limit';
     case ExecutionClaim = 'execution_claim';
 }

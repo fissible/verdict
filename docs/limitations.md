@@ -139,16 +139,26 @@ A passing verification establishes that the retained chain verifies against its 
 
 The fail-closed intent lever ([#160](https://github.com/fissible/verdict/issues/160):
 `verdict.intents.required`, or `->requiresIntentRecord()` per capability) guarantees exactly this: **no
-security-state mutation begins unless a durable, standalone intent record for that action has been
-committed.** If the intent write fails, the action is denied with nothing consumed. Three things it
+protected action enters the execution pipeline's mutating phase — the rate-limit consume, the receipt
+consume, the claim admission — unless a durable, standalone intent record for that action has been
+committed.** If the intent write fails, the action is denied with nothing consumed. Four things it
 deliberately does not guarantee:
 
+- **Approval-receipt issuance is outside the gate.** `requestConfirmation()` writes the approval
+  receipt — durable security state — before any intent exists, because issuance *is* the durable
+  record of that request: the receipt row records who asked for what, and an unrecorded ask denies
+  nothing. The intent gate covers the execution pipeline that later consumes the receipt, not the
+  pause that issued it.
+
 - **Outcome records stay fail-open.** Evidence written after a committed mutation — the rate-limit
-  consumption, the receipt consumption, the claim admission and finalization — keeps its
-  [ADR 0007](adr/0007-evidence-layering.md) (#153) posture: `EvidenceWriteFailed`, and the flow
-  continues. The intent row makes a missing outcome *detectable* (an intent id no outcome record
+  consumption, the receipt consumption, the claim admission and finalization, and the
+  `verdict.intent.concluded` record a claim-less run writes around a successful executor return —
+  keeps its [ADR 0007](adr/0007-evidence-layering.md) (#153) posture: `EvidenceWriteFailed`, and the
+  flow continues. The intent row makes a missing outcome *detectable* (an intent id no outcome record
   references — see the [scheduled verification query](incident-response.md#scheduled-verification-intents-with-no-outcome)),
-  not impossible.
+  not impossible. How a run ended is recorded by claim finalization when an execution-claim policy
+  exists and by `verdict.intent.concluded` otherwise; a claim-less run whose executor *throws* is
+  deliberately left unconcluded — it stays flagged until investigated, which is the lever working.
 - **Nothing can fail closed after a successful executor.** The side effect has happened;
   `ExecutionCompletedWithUnfinalizedClaim` and `EvidenceWriteFailed` keep their semantics. The intent
   guarantees that gap is attributable, never that it is prevented.

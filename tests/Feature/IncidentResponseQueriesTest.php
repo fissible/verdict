@@ -168,6 +168,7 @@ it('runs every query documented in docs/incident-response.md against the publish
         ['id' => str_repeat('a', 64), 'at' => $intentAt],
         ['id' => str_repeat('b', 64), 'at' => $intentAt],
         ['id' => str_repeat('c', 64), 'at' => new DateTimeImmutable('2026-08-14 14:31:59', new DateTimeZone('UTC'))],
+        ['id' => str_repeat('d', 64), 'at' => $intentAt],
     ] as $row) {
         $intentStore->record(new ActionIntent(
             id: $row['id'],
@@ -192,7 +193,8 @@ it('runs every query documented in docs/incident-response.md against the publish
         decision: Decision::permit('Permitted.'),
         stage: EvaluationStage::RateLimit,
     );
-    // The covered intent gets an outcome record; the orphan gets only its own mirror.
+    // The covered intent gets an outcome record; the orphan gets only its own mirror; the
+    // claim-less success is covered by its verdict.intent.concluded record alone.
     $recorder->record(DecisionEvidence::fromEvaluation($intentEvaluation, $invocationId, str_repeat('a', 64)));
     $recorder->record(DecisionEvidence::fromEvaluation(
         new Evaluation(
@@ -204,6 +206,17 @@ it('runs every query documented in docs/incident-response.md against the publish
         ),
         $invocationId,
         str_repeat('b', 64),
+    ));
+    $recorder->record(DecisionEvidence::fromEvaluation(
+        new Evaluation(
+            envelope: $intentEvaluation->envelope,
+            capability: null,
+            target: null,
+            decision: Decision::permit('The write-ahead intent was concluded around a successful executor return.'),
+            stage: EvaluationStage::IntentConcluded,
+        ),
+        $invocationId,
+        str_repeat('d', 64),
     ));
 
     $gaps = $connection->select(

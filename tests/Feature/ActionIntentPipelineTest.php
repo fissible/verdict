@@ -21,6 +21,7 @@ use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\Intents\ActionIntent;
 use Fissible\Verdict\Intents\Events\ActionIntentWriteFailed;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
+use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Support\Facades\Event;
 
@@ -300,4 +301,176 @@ it('honors a capability opt-out while the global lever is on', function (): void
 
     expect($result->executed)->toBeTrue()
         ->and(intentStageEvidence('intent'))->toBe([]);
+});
+
+it('adds no identity resolution to the lever-off path, and none for the intent row when on', function (): void {
+    // Review round, findings 2 and 5: the intent row reuses the execution-target fingerprint
+    // gate 7 actually validated (from the target-refresh decision), so gate 9.5 makes no third
+    // call into the application's identity resolver — with the lever off OR on.
+    $identityCalls = 0;
+
+    $capability = Capability::usingPolicy(
+        name: 'orders.cancel',
+        ability: 'cancel',
+        resolveTarget: fn (ActionEnvelope $envelope): IntentPipelineTarget => new IntentPipelineTarget(7001),
+    )->executionTarget(ExecutionTargetPolicy::acceptStaleSnapshot(
+        name: 'counting-snapshot',
+        identityUsing: function (ActionEnvelope $envelope, IntentPipelineTarget $target) use (&$identityCalls): array {
+            $identityCalls++;
+
+            return ['id' => $target->id];
+        },
+    ))->executeUsing(fn (AuthorizedAction $action): string => 'cancelled');
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability($capability);
+
+    $verdict->runBound(intentPipelineEnvelope());
+    // Gate 5 (proposal fingerprint) and gate 7 (execution fingerprint): exactly two.
+    expect($identityCalls)->toBe(2);
+});
+
+it('records on the intent row the fingerprint gate 7 validated, not a recomputation', function (): void {
+    config()->set('verdict.intents.required', true);
+
+    // A non-pure identity resolver: gate 5 and gate 7 agree, any later call diverges. The intent
+    // row must carry the value the pipeline checked, and the resolver must not be consulted again.
+    $identityCalls = 0;
+
+    $capability = Capability::usingPolicy(
+        name: 'orders.cancel',
+        ability: 'cancel',
+        resolveTarget: fn (ActionEnvelope $envelope): IntentPipelineTarget => new IntentPipelineTarget(7001),
+    )->executionTarget(ExecutionTargetPolicy::acceptStaleSnapshot(
+        name: 'impure-snapshot',
+        identityUsing: function (ActionEnvelope $envelope, IntentPipelineTarget $target) use (&$identityCalls): array {
+            $identityCalls++;
+
+            return $identityCalls <= 2 ? ['id' => $target->id] : ['id' => 'diverged'];
+        },
+    ))->executeUsing(fn (AuthorizedAction $action): string => 'cancelled');
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability($capability);
+
+    $result = $verdict->runBound(intentPipelineEnvelope());
+
+    $mirror = intentStageEvidence('intent')[0] ?? null;
+    $refresh = intentStageEvidence('target_refresh')[0] ?? null;
+    $intent = app(ActionIntentStore::class)->find((string) $mirror?->intentId);
+
+    expect($result->executed)->toBeTrue()
+        ->and($identityCalls)->toBe(2)
+        ->and($intent->executionTargetIdentityFingerprint)->toBe($refresh?->executionTargetIdentityFingerprint);
+});
+
+it('concludes a claim-less intent-gated run so a healthy success is never a verification gap', function (): void {
+    // Review round, finding 1: with no rate-limit, confirmation, or claim policy, nothing after
+    // the intent gate wrote evidence — so the documented scheduled-verification query flagged
+    // every healthy success forever. A claim-less intent-gated run now records
+    // verdict.intent.concluded around a successful executor return, referencing the intent.
+    config()->set('verdict.intents.required', true);
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(intentPipelineCapability());
+
+    $result = $verdict->runBound(intentPipelineEnvelope());
+
+    $mirror = intentStageEvidence('intent')[0] ?? null;
+    $concluded = intentStageEvidence('intent_concluded');
+
+    expect($result->executed)->toBeTrue()
+        ->and($concluded)->toHaveCount(1)
+        ->and($concluded[0]->disposition)->toBe('permit')
+        ->and($concluded[0]->intentId)->toBe($mirror?->intentId)
+        ->and($concluded[0]->claimType?->value)->toBe('verdict.intent.concluded');
+});
+
+it('does not conclude when a claim policy exists: claim finalization is the account', function (): void {
+    config()->set('verdict.intents.required', true);
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(intentPipelineCapability()->atMostOnce(ExecutionClaimPolicy::named(
+        'cancel-order',
+        fn (ActionEnvelope $envelope, IntentPipelineTarget $target): array => ['order_id' => $target->id],
+    )));
+
+    $result = $verdict->runBound(intentPipelineEnvelope());
+
+    expect($result->executed)->toBeTrue()
+        ->and(intentStageEvidence('intent_concluded'))->toBe([])
+        ->and(intentStageEvidence('execution_claim'))->not->toBe([]);
+});
+
+it('leaves a claim-less executor failure unconcluded: the flagged gap is the lever working', function (): void {
+    config()->set('verdict.intents.required', true);
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(
+        Capability::usingPolicy(
+            name: 'orders.cancel',
+            ability: 'cancel',
+            resolveTarget: fn (ActionEnvelope $envelope): IntentPipelineTarget => new IntentPipelineTarget(7001),
+        )->executionTarget(acceptTestSnapshot('intent-target-snapshot'))
+            ->executeUsing(function (AuthorizedAction $action): string {
+                throw new RuntimeException('The executor failed.');
+            }),
+    );
+
+    expect(fn () => $verdict->runBound(intentPipelineEnvelope()))->toThrow(RuntimeException::class)
+        ->and(intentStageEvidence('intent'))->toHaveCount(1)
+        ->and(intentStageEvidence('intent_concluded'))->toBe([]);
+});
+
+it('never concludes while the lever is off', function (): void {
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(intentPipelineCapability());
+
+    $result = $verdict->runBound(intentPipelineEnvelope());
+
+    expect($result->executed)->toBeTrue()
+        ->and(intentStageEvidence('intent_concluded'))->toBe([]);
+});
+
+it('confines the intent reference to the documented outcome stages plus the intent records themselves', function (): void {
+    // Review round, finding 9: the scheduled-verification query defines an outcome negatively
+    // (stage <> 'intent'). This pins the positive set — the stages that may carry intent_id —
+    // so a future record type that threads the reference without being an outcome fails here
+    // and forces the query documentation to move with it.
+    config()->set('verdict.intents.required', true);
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(
+        intentPipelineCapability()
+            ->rateLimit(intentPipelineRateLimit())
+            ->atMostOnce(ExecutionClaimPolicy::named(
+                'cancel-order',
+                fn (ActionEnvelope $envelope, IntentPipelineTarget $target): array => ['order_id' => $target->id],
+            )),
+    );
+    $verdict->capability(
+        Capability::usingPolicy(
+            name: 'orders.note',
+            ability: 'note',
+            resolveTarget: fn (ActionEnvelope $envelope): IntentPipelineTarget => new IntentPipelineTarget(1),
+        )->executionTarget(acceptTestSnapshot('note-snapshot'))
+            ->executeUsing(fn (AuthorizedAction $action): string => 'noted'),
+    );
+
+    $verdict->runBound(intentPipelineEnvelope());
+    $verdict->runBound(ActionEnvelope::wrap(
+        proposal: new ActionProposal('orders.note', ['note' => 'n']),
+        context: new ActionContext(72),
+    ));
+
+    $recorder = app(EvidenceWriter::class);
+    assert($recorder instanceof InMemoryEvidenceRecorder);
+
+    $stagesCarryingIntent = array_values(array_unique(array_map(
+        fn (DecisionEvidence $e): string => $e->stage,
+        array_filter($recorder->all(), fn (DecisionEvidence $e): bool => $e->intentId !== null),
+    )));
+    sort($stagesCarryingIntent);
+
+    expect($stagesCarryingIntent)->toBe(['execution_claim', 'intent', 'intent_concluded', 'rate_limit']);
 });

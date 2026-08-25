@@ -243,6 +243,8 @@ final readonly class VerdictManager
                 $proposalEvaluation,
                 $this->approvals->validate($proposalEvaluation),
                 ApprovalEvidencePhase::ProposalValidation,
+                // Gate 4 precedes the intent gate; there is no intent to reference yet.
+                intentId: null,
             );
 
             if (! $approvalEvaluation->decision->permitsExecution()) {
@@ -273,6 +275,8 @@ final readonly class VerdictManager
                 $executionEvaluation,
                 $this->approvals->validate($executionEvaluation),
                 ApprovalEvidencePhase::ExecutionValidation,
+                // Gate 9 precedes the intent gate; there is no intent to reference yet.
+                intentId: null,
             );
 
             if (! $approvalEvaluation->decision->permitsExecution()) {
@@ -284,14 +288,15 @@ final readonly class VerdictManager
         // write-ahead intent before the first mutating gate. Placement is the point — every
         // identity the record needs exists (steps 6-9 have run), and abandoning here is genuinely
         // fail-closed: no unit consumed, no receipt spent, no claim admitted, cost of one retry.
+        //
+        // The execution-target fingerprint is read back from the refresh decision, never
+        // recomputed: recomputing would consult the application's identity resolver a third time
+        // on every action — lever on or off — and a non-pure resolver could hand the intent a
+        // fingerprint the pipeline never validated.
+        $refreshedFingerprint = $refreshEvaluation->decision->metadata['execution_target_identity_fingerprint'] ?? null;
         $intentGate = $this->intentGate(
             $executionEvaluation,
-            $this->targetIdentityFingerprint(
-                $capability,
-                $targetPolicy,
-                $executionEvaluation,
-                $executionEvaluation->target,
-            ),
+            is_string($refreshedFingerprint) ? $refreshedFingerprint : null,
         );
 
         if ($intentGate instanceof ExecutionResult) {
@@ -404,7 +409,7 @@ final readonly class VerdictManager
         return $evaluation;
     }
 
-    private function rateLimit(Evaluation $evaluation, ?string $intentId = null): ?Evaluation
+    private function rateLimit(Evaluation $evaluation, ?string $intentId): ?Evaluation
     {
         $capability = $evaluation->capability;
 
@@ -495,7 +500,7 @@ final readonly class VerdictManager
     }
 
     /** @param callable(?ExecutionClaimAdmission): mixed $executor */
-    private function executeAfterRateLimit(Evaluation $evaluation, callable $executor, ?string $intentId = null): ExecutionResult
+    private function executeAfterRateLimit(Evaluation $evaluation, callable $executor, ?string $intentId): ExecutionResult
     {
         $admission = $this->claimExecution($evaluation, $intentId);
 
@@ -556,6 +561,20 @@ final readonly class VerdictManager
             }
 
             $this->recordClaimDecision($evaluation, $decision, $intentId);
+        } elseif ($intentId !== null) {
+            // A claim-less intent-gated run has no finalization row, so without this record the
+            // scheduled-verification query would flag every healthy success as a gap forever.
+            // Claim finalization is the account when a claim policy exists; this is the account
+            // otherwise — an admission-side belief around a successful executor return, fail-open
+            // like every post-mutation write. An executor throw deliberately leaves no conclusion:
+            // for the claim-less shape, that flagged gap is the lever working.
+            $this->recordCommitted(new Evaluation(
+                envelope: $evaluation->envelope,
+                capability: $evaluation->capability,
+                target: $evaluation->target,
+                decision: Decision::permit('The write-ahead intent was concluded around a successful executor return.'),
+                stage: EvaluationStage::IntentConcluded,
+            ), $intentId);
         }
 
         return ExecutionResult::executed($evaluation, $output);
@@ -565,7 +584,7 @@ final readonly class VerdictManager
         Evaluation $evaluation,
         ApprovalTransition $transition,
         ApprovalEvidencePhase $phase,
-        ?string $intentId = null,
+        ?string $intentId,
     ): Evaluation {
         $succeeded = match ($phase) {
             ApprovalEvidencePhase::ProposalValidation,
@@ -686,7 +705,7 @@ final readonly class VerdictManager
         ]);
     }
 
-    private function claimExecution(Evaluation $evaluation, ?string $intentId = null): ?ExecutionClaimAdmission
+    private function claimExecution(Evaluation $evaluation, ?string $intentId): ?ExecutionClaimAdmission
     {
         $capability = $evaluation->capability;
 
@@ -711,8 +730,12 @@ final readonly class VerdictManager
      * See ADR 0007's Updates (#149) and (#153). Before a mutation, abandoning on an evidence
      * failure is fail-closed and costs only a retry, so gates 1-9 keep the original propagation
      * behavior. After one, abandoning moves state and tells the caller it did not.
+     *
+     * `$intentId` deliberately has no default: every post-gate write runs after the intent gate,
+     * so each call site must decide its intent reference. A silently-null reference would
+     * manufacture false gaps in the scheduled-verification query (#160).
      */
-    private function recordCommitted(Evaluation $evaluation, ?string $intentId = null): Evaluation
+    private function recordCommitted(Evaluation $evaluation, ?string $intentId): Evaluation
     {
         try {
             return $this->record($evaluation, $intentId);
@@ -728,7 +751,7 @@ final readonly class VerdictManager
         }
     }
 
-    private function recordClaimDecision(Evaluation $evaluation, Decision $decision, ?string $intentId = null): Evaluation
+    private function recordClaimDecision(Evaluation $evaluation, Decision $decision, ?string $intentId): Evaluation
     {
         // Both call sites follow a committed mutation: gate 12 has admitted the claim, and gate 14
         // has transitioned it. Neither may let an evidence failure rewrite that.

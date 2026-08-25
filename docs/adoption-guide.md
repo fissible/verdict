@@ -190,12 +190,23 @@ Capability::usingPolicy('orders.lookup', 'view', $resolveTarget)
     ->requiresIntentRecord(false);    // tolerate an intent-store outage for lookups
 ```
 
-What the lever buys, precisely: **no security-state mutation begins unless a durable intent record for
-that action has been committed** — written between the last non-mutating gate and the rate-limit
-consume, so a failed write denies with nothing consumed and costs one retry. Publish and run the
-`create_verdict_action_intents_table` migration (tag `verdict-intent-migrations`), wire
-`ActionIntentWriteFailed` to paging, and schedule the
+What the lever buys, precisely: **no protected action enters the execution pipeline's mutating phase
+unless a durable intent record for that action has been committed** — written between the last
+non-mutating gate and the rate-limit consume, so a failed write denies with nothing consumed and
+costs one retry. Publish and run **both** migrations: the intent table (tag
+`verdict-intent-migrations`) *and* the evidence `intent_id` column
+(`add_intent_id_to_verdict_evidence_table`, in tag `verdict-evidence-migrations` — or publish
+everything at once with `verdict-migrations`). The evidence column is not optional and not
+lever-gated: `DatabaseEvidenceRecorder` writes it on every evidence insert, so any deployment using
+a database-backed recorder must run that migration on upgrade regardless of the lever. Then wire
+`ActionIntentWriteFailed` to paging and schedule the
 [intents-with-no-outcome query](incident-response.md#scheduled-verification-intents-with-no-outcome).
+
+Budget for the write: every attempt that reaches the intent gate commits one durable row plus a
+fail-open evidence mirror — including attempts a later gate then denies, which is the point (a
+throttled attempt is still an attempt somebody made). Storage grows with *attempts*, not successes,
+and Verdict ships no pruning command for the table; decide the archive window with your compliance
+regime before enabling the lever fleet-wide.
 `verdict:validate` fails when a capability requires the intent record and the table is missing. Read
 [what the lever does not guarantee](limitations.md#the-intent-lever-guarantees-a-pre-mutation-record-not-an-outcome-record)
 before presenting it to an auditor — outcome records stay fail-open, nothing fails closed after the
