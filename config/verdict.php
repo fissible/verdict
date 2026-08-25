@@ -29,8 +29,11 @@ return [
         // back into the declared configuration that produced it.
         // This durable, content-addressed registry expands configuration_fingerprint values in
         // evidence into readable declared policy configuration. Null selects the database store
-        // automatically for Verdict's DatabaseEvidenceRecorder and AttestEvidenceRecorder, and a
-        // no-op store otherwise. Do not use a cache as the only durable store: Redis eviction
+        // automatically for any recorder that implements the DurableEvidenceRecorder marker
+        // contract (both shipped durable recorders do; a custom durable recorder opts in by
+        // implementing it), and a no-op store otherwise — verdict:validate warns when a recorder
+        // that declares nothing meets that no-op fall-through (#310).
+        // Do not use a cache as the only durable store: Redis eviction
         // would orphan surviving evidence. Object storage is likewise not the default because
         // registration is on the authorization setup path. ADR 0017 explains those trade-offs.
         // This table is intentionally never pruned with evidence.

@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Evidence;
 use Closure;
 use DateTimeImmutable;
 use Fissible\AttestLaravel\Support\AttestRegistry;
+use Fissible\Verdict\Contracts\DurableEvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\Events\ChainWriteFailed;
 use Fissible\Verdict\Exceptions\EvidenceChainWriteFailed;
@@ -16,7 +17,7 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Throwable;
 
-final class AttestEvidenceRecorder implements EvidenceRecorder
+final class AttestEvidenceRecorder implements DurableEvidenceRecorder, EvidenceRecorder
 {
     public function __construct(
         private readonly AttestRegistry $attest,
