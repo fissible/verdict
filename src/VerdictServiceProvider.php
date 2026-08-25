@@ -9,6 +9,10 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Approvals\DatabaseApprovalStatusReader;
+use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
+use Fissible\Verdict\Approvals\InMemoryApprovalStatusReader;
+use Fissible\Verdict\Approvals\StoreBackedApprovalStatusReader;
 use Fissible\Verdict\Approvals\StrictProvenanceGuard;
 use Fissible\Verdict\Capabilities\CapabilityConfigurationStoreSelection;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
@@ -30,6 +34,7 @@ use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Contracts\AttestChainResolver;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
@@ -167,6 +172,10 @@ final class VerdictServiceProvider extends ServiceProvider
 
             return $instance;
         });
+
+        $this->app->singleton(ApprovalStatusReader::class, fn (Container $app): ApprovalStatusReader => $this->approvalStatusReader(
+            $app->make(ApprovalReceiptStore::class),
+        ));
 
         $this->app->scoped(ApprovalManager::class, function (Container $app): ApprovalManager {
             $ttl = config('verdict.approvals.ttl_seconds', 900);
@@ -491,6 +500,30 @@ final class VerdictServiceProvider extends ServiceProvider
                     : null,
             );
         });
+    }
+
+    /**
+     * Paired by store (ADR 0031 §2): a store that implements the reader contract itself is its
+     * own pairing; the shipped database and in-memory readers own enumeration for their stores,
+     * each on the store's own connection/state; any other store gets the store-backed status
+     * reads, and its owner adds enumeration by implementing the contract (or binding
+     * ApprovalStatusReader directly). verdict:validate names the enumeration-less pairing.
+     */
+    private function approvalStatusReader(ApprovalReceiptStore $store): ApprovalStatusReader
+    {
+        if ($store instanceof ApprovalStatusReader) {
+            return $store;
+        }
+
+        if ($store instanceof DatabaseApprovalReceiptStore) {
+            return new DatabaseApprovalStatusReader($store);
+        }
+
+        if ($store instanceof InMemoryApprovalReceiptStore) {
+            return new InMemoryApprovalStatusReader($store);
+        }
+
+        return new StoreBackedApprovalStatusReader($store);
     }
 
     /**

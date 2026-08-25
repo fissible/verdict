@@ -257,6 +257,12 @@ Two things to know before querying, both of which surprise people.
 `verdict_approval_receipts` is *operational state* — an authoritative store that gates execution. No
 `EvidenceRecorder` writes it, and no recorder chains it, including the tamper-evident one.
 
+**In-app reads have a contract.** When the investigation runs inside the application (tinker, an
+artisan command), prefer `ApprovalStatusReader` — `statusFor()` / `pendingWithin()`
+([ADR 0031](adr/0031-approval-reads-are-observational-and-scoped.md)) — over raw table queries: it
+returns DTOs with the decoded `approval_context` and survives schema evolution. The SQL below is
+for offline forensics against a copied database, where no container is available.
+
 **There is no direct join.** `verdict_evidence.approval_receipt_fingerprint` holds
 `hash('sha256', $receipt->id)`, not the id. The same is true of `execution_claim_fingerprint`
 (SHA-256 of the claim id) and `idempotency_key_fingerprint` (SHA-256 of the key). To connect a decision row to
