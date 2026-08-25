@@ -12,6 +12,7 @@ use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
+use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\ReleasePolicy;
 use Fissible\Verdict\Context\Trust;
@@ -29,6 +30,8 @@ use Fissible\Verdict\RateLimits\RateLimitConsumption;
 use Fissible\Verdict\RateLimits\RateLimitOutcome;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
+use Fissible\Verdict\Tests\Support\DurableCustomEvidenceRecorder;
+use Fissible\Verdict\Tests\Support\VolatileCustomEvidenceRecorder;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
 
@@ -525,4 +528,51 @@ it('reports an unreachable capability-configuration database as uninspectable, n
         ->expectsOutputToContain('Configured capability-configuration store could not inspect its table.')
         ->doesntExpectOutputToContain('requires missing table')
         ->assertExitCode(1);
+});
+
+/**
+ * #310, second half: the silent-mismatch case named at deploy time. A recorder that retains
+ * evidence while the no-op configuration store is selected leaves configuration fingerprints on
+ * that evidence permanently unexpandable — legal, but almost certainly unintended, so advisory.
+ */
+it('warns when evidence is recorded but configuration fingerprints go to the no-op store', function (): void {
+    config()->set('verdict.evidence.recorder', VolatileCustomEvidenceRecorder::class);
+    config()->set('verdict.capability_configurations.store', null);
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('permanently unexpandable. If the recorder retains evidence, implement the DurableEvidenceRecorder contract')
+        ->assertExitCode(0);
+});
+
+it('does not warn about unexpandable fingerprints when the recorder declares durability', function (): void {
+    config()->set('verdict.evidence.recorder', DurableCustomEvidenceRecorder::class);
+    config()->set('verdict.capability_configurations.store', null);
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('permanently unexpandable')
+        ->assertExitCode(0);
+});
+
+it('does not warn about unexpandable fingerprints under the shipped no-op recorder default', function (): void {
+    config()->set('verdict.evidence.recorder', NullEvidenceRecorder::class);
+    config()->set('verdict.capability_configurations.store', null);
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('permanently unexpandable')
+        ->assertExitCode(0);
+});
+
+/**
+ * Review of #319: an explicitly-set no-op store is a declared choice, not the silent fall-through
+ * this warning exists for — and the warning's remedy ("set the store explicitly") would be
+ * nonsensical advice for a deployment that already did. All three documentation locations
+ * describe only the unset case; this pins the code to them.
+ */
+it('does not warn about unexpandable fingerprints when the no-op store is an explicit choice', function (): void {
+    config()->set('verdict.evidence.recorder', VolatileCustomEvidenceRecorder::class);
+    config()->set('verdict.capability_configurations.store', NullCapabilityConfigurationStore::class);
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('permanently unexpandable')
+        ->assertExitCode(0);
 });

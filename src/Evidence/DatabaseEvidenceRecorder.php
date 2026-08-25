@@ -9,12 +9,13 @@ use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Contracts\DurableEvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use LogicException;
 
-final readonly class DatabaseEvidenceRecorder implements EvidenceRecorder
+final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder, EvidenceRecorder
 {
     public function __construct(
         private ConnectionInterface $connection,

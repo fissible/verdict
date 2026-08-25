@@ -10,11 +10,11 @@ use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\StrictProvenanceGuard;
+use Fissible\Verdict\Capabilities\CapabilityConfigurationStoreSelection;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistrar;
 use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
-use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
 use Fissible\Verdict\Console\Commands\CompareEvaluationCommand;
 use Fissible\Verdict\Console\Commands\CreateEvaluationBaselineCommand;
 use Fissible\Verdict\Console\Commands\ListExecutionClaimsCommand;
@@ -81,10 +81,12 @@ final class VerdictServiceProvider extends ServiceProvider
             $store = config('verdict.capability_configurations.store');
 
             if ($store === null) {
-                $recorder = config('verdict.evidence.recorder', NullEvidenceRecorder::class);
-                $store = in_array($recorder, [DatabaseEvidenceRecorder::class, AttestEvidenceRecorder::class], true)
-                    ? DatabaseCapabilityConfigurationStore::class
-                    : NullCapabilityConfigurationStore::class;
+                // By declared capability (the DurableEvidenceRecorder marker), not class name —
+                // see CapabilityConfigurationStoreSelection (#310). verdict:validate warns when a
+                // recorder that declares nothing falls through to the no-op store here.
+                $store = CapabilityConfigurationStoreSelection::forRecorder(
+                    config('verdict.evidence.recorder', NullEvidenceRecorder::class),
+                );
             }
 
             if (! is_string($store)) {
