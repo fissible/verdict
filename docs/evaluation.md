@@ -169,6 +169,7 @@ draws, so the runner stores no pair counts at all and reports per-arm marginals 
 table would present marginals as joint observations no matter what a nearby line said.
 
 **A filtered-permit case scores by facet ([#276](https://github.com/fissible/verdict/issues/276)).** For a `filteredPermitAttack()` case, a Failed trial whose failing assertions are *all* utility-facet — the forbidden row was absent, the predicate observed and declared, and only the owned-identity oracle missed — is **over-restricted**: the guard held and the model under-delivered. The per-arm score counts it as passed and names it beside the case (`26 passed / 0 failed … ; 4 over-restricted`), so it neither reads as a guarded breach nor suppresses the zero-breach bound; any security-facet failure still scores as failed. A blocked-outcome case never takes this path — its security assertions are the case. Every Failed trial, over-restricted or not, also retains *which* assertions failed and in how many trials (`failed assertions … output_includes_expected_value ×4`, and `failed_assertions` in the report), so a failed case is attributable from the run's own output rather than from an isolated re-run. The first suite v2 live run, recorded before this change, shows the conflation it removes.
+
 The utility cost this facet measures has a published precedent from the closest design relative:
 [CaMeL](https://arxiv.org/abs/2503.18813) (*Defeating Prompt Injections by Design*) reports 77% vs
 84% AgentDojo utility with its security layer on — the same "the guard held and the task under-delivered"
@@ -189,7 +190,9 @@ model and run — so the printed bound is a working approximation over correlate
 confidence interval. The named correction for exactly this structure is clustered standard errors
 ([Miller, *Adding Error Bars to Evals*, arXiv:2411.00640](https://arxiv.org/abs/2411.00640)); the
 harness does not compute them (recording the caveat, not the machinery, is [#296](https://github.com/fissible/verdict/issues/296)'s
-deliberate scope), so read every bound on this page with that grain of salt stated rather than implied. Both the typed sampling mode and the reset are **application-attested**: Verdict
+deliberate scope), so read every bound on this page with that grain of salt stated rather than implied.
+
+Both the typed sampling mode and the reset are **application-attested**: Verdict
 requires the declarations and refuses their absence, but cannot verify them — the one direction it can
 verify is a control observation carrying a Verdict disposition, which refuses the whole run as
 accidentally guarded. See [ADR 0023](adr/0023-unguarded-control-arm-pairing-and-opt-in.md).
@@ -239,11 +242,13 @@ instrument rationale beside the first recorded run) rather than as a bibliograph
 critiques are worth naming here because they are about *this kind of page* as a whole:
 
 - [*Measuring Security Without Fooling Ourselves*](https://arxiv.org/abs/2605.22568) (Abdelnabi et
-  al.) names three ways security benchmarks fool their authors; this harness's standing answers are,
-  in the same order, the deterministic tool-layer oracle (outcomes are asserted at the boundary, not
-  judged by a model), versioned packs and baselines ([#148](https://github.com/fissible/verdict/issues/148) —
-  goalposts move visibly or not at all), and repeated runs behind per-case coverage floors
-  (ADR 0021/0022) so a rate never rests on a case that was quietly unmeasured.
+  al.) names three ways security benchmarks fool their authors — **benchmark vulnerabilities,
+  temporal staleness, and runtime uncertainty** — and this harness's standing answers map one-to-one:
+  benchmark vulnerabilities → the deterministic tool-layer oracle (outcomes are asserted at the
+  boundary, not judged by a model); temporal staleness → versioned packs and baselines
+  ([#148](https://github.com/fissible/verdict/issues/148) — goalposts move visibly or not at all);
+  runtime uncertainty → repeated runs behind per-case coverage floors (ADR 0021/0022), so a rate
+  never rests on a case that was quietly unmeasured.
 - The [Agentic Benchmark Checklist](https://arxiv.org/abs/2507.02825) is the closest thing to a peer
   standard for pack methodology. Scoring this harness against it item by item is deliberately not
   done inline here — it is a standalone exercise, and doing it honestly means recording the misses.
