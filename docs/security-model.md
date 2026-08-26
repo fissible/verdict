@@ -93,6 +93,8 @@ Evidence recording is opt-in: `verdict.evidence.recorder` ships as `NullEvidence
 
 The absence is made visible where it matters most, rather than left silent. When a capability requiring confirmation or at-most-once execution runs under the no-op recorder — the cases where a lost record means an approval nobody can prove was granted, or a claim whose admission history is unrecoverable — Verdict dispatches `ConsequentialActionUnrecorded` once per process. `verdict:validate` reports the same configuration at deploy time (advisory; pass `--strict` to fail CI on it). Both are advisory signals about a legal configuration, not gates: a no-op recorder never throws.
 
+A deployment that would rather fail than act unrecorded has a lever, and it is deliberately not a throw posture on evidence writes. `verdict.intents.required` — or `->requiresIntentRecord()` per capability — commits a durable **intent record** before any mutating gate runs, and denies with nothing consumed if that write fails. Evidence does not become an authorization gate: what gates is an operational row in the layer where receipts and claims already live, and the evidence layer mirrors it afterwards, fail-open, exactly as it does for every other outcome. [ADR 0007](adr/0007-evidence-layering.md)'s Update (#160) records the decision; [limitations](limitations.md#the-intent-lever-guarantees-a-pre-mutation-record-not-an-outcome-record) states plainly what the lever does and does not guarantee.
+
 <!-- @verdict-claim security.target-freshness tested -->
 ## Target freshness and TOCTOU
 

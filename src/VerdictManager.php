@@ -41,6 +41,7 @@ use Fissible\Verdict\ExecutionClaims\ExecutionClaimAdmission;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
 use Fissible\Verdict\Intents\ActionIntentManager;
 use Fissible\Verdict\Intents\Events\ActionIntentWriteFailed;
+use Fissible\Verdict\Intents\IntentGateOutcome;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
 use Fissible\Verdict\LaravelAi\InvocationContext;
@@ -294,18 +295,16 @@ final readonly class VerdictManager
         // on every action — lever on or off — and a non-pure resolver could hand the intent a
         // fingerprint the pipeline never validated.
         $refreshedFingerprint = $refreshEvaluation->decision->metadata['execution_target_identity_fingerprint'] ?? null;
-        $intentGate = $this->intentGate(
+        $intent = $this->intentGate(
             $executionEvaluation,
             is_string($refreshedFingerprint) ? $refreshedFingerprint : null,
         );
 
-        if ($intentGate instanceof ExecutionResult) {
-            return $intentGate;
+        if ($intent->denial !== null) {
+            return $intent->denial;
         }
 
-        $intentId = $intentGate;
-
-        $rateLimitEvaluation = $this->rateLimit($executionEvaluation, $intentId);
+        $rateLimitEvaluation = $this->rateLimit($executionEvaluation, $intent->intentId);
 
         if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
             return ExecutionResult::denied($rateLimitEvaluation);
@@ -316,7 +315,7 @@ final readonly class VerdictManager
                 $executionEvaluation,
                 $this->approvals->consume($executionEvaluation),
                 ApprovalEvidencePhase::Consumption,
-                $intentId,
+                $intent->intentId,
             );
 
             if (! $approvalEvaluation->decision->permitsExecution()) {
@@ -332,7 +331,7 @@ final readonly class VerdictManager
                     $admission?->claim()?->id,
                 ),
             ),
-            $intentId,
+            $intent->intentId,
         );
     }
 
@@ -431,15 +430,13 @@ final readonly class VerdictManager
     {
         // The unbound path runs the same intent gate (#160); it has no execution-target refresh,
         // so the intent records no target identity fingerprint.
-        $intentGate = $this->intentGate($evaluation, null);
+        $intent = $this->intentGate($evaluation, null);
 
-        if ($intentGate instanceof ExecutionResult) {
-            return $intentGate;
+        if ($intent->denial !== null) {
+            return $intent->denial;
         }
 
-        $intentId = $intentGate;
-
-        $rateLimitEvaluation = $this->rateLimit($evaluation, $intentId);
+        $rateLimitEvaluation = $this->rateLimit($evaluation, $intent->intentId);
 
         if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
             return ExecutionResult::denied($rateLimitEvaluation);
@@ -448,21 +445,24 @@ final readonly class VerdictManager
         return $this->executeAfterRateLimit(
             $evaluation,
             fn (?ExecutionClaimAdmission $admission): mixed => $executor(),
-            $intentId,
+            $intent->intentId,
         );
     }
 
     /**
-     * Run the write-ahead intent gate (#160): null when the effective posture does not require an
-     * intent, the committed intent's id when it does and the write succeeded, or a denied
-     * ExecutionResult when the write failed — with nothing consumed, at the cost of one retry.
+     * Run the write-ahead intent gate (#160).
+     *
+     * Reports through {@see IntentGateOutcome} rather than a union, so a caller cannot mistake a
+     * refusal for an intent id: proceeding with no intent (the effective posture does not require
+     * one), proceeding with the committed intent's id, or a denial to return verbatim — nothing
+     * consumed, at the cost of one retry.
      */
-    private function intentGate(Evaluation $evaluation, ?string $executionTargetIdentityFingerprint): ExecutionResult|string|null
+    private function intentGate(Evaluation $evaluation, ?string $executionTargetIdentityFingerprint): IntentGateOutcome
     {
         $capability = $evaluation->capability;
 
         if ($capability === null || ! $this->intents->required($capability)) {
-            return null;
+            return IntentGateOutcome::proceed(null);
         }
 
         $admission = $this->intents->record(
@@ -488,7 +488,7 @@ final readonly class VerdictManager
                 message: $admission->failureMessage ?? 'The intent store refused the write.',
             ));
 
-            return ExecutionResult::denied($this->record($intentEvaluation));
+            return IntentGateOutcome::refused(ExecutionResult::denied($this->record($intentEvaluation)));
         }
 
         // The intent row is committed operational state; its evidence mirror is deliberately
@@ -496,7 +496,7 @@ final readonly class VerdictManager
         // mirror also references the intent id, so a verification query can pair them.
         $this->recordCommitted($intentEvaluation, $admission->intent->id);
 
-        return $admission->intent->id;
+        return IntentGateOutcome::proceed($admission->intent->id);
     }
 
     /** @param callable(?ExecutionClaimAdmission): mixed $executor */
