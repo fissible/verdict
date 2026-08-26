@@ -129,7 +129,7 @@ it('passes the full pack for a secure runner with tool and side-effect telemetry
     ))->run();
 
     expect($result->passed())->toBeTrue()
-        ->and($result->score(CasePurpose::Security)->passed)->toBe(6)
+        ->and($result->score(CasePurpose::Security)->passed)->toBe(7)
         ->and($result->score(CasePurpose::Utility)->passed)->toBe(5);
 });
 
