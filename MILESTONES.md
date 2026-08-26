@@ -504,14 +504,15 @@ with design), so it follows the v0.12.0 hardening batch rather than leading the 
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#304](https://github.com/fissible/verdict/issues/304) Privacy-safe observation: did a registered secret marker appear in an executed argument? | M | none | open — `scope: design`; the #294 prerequisite |
-| [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | #304 | blocked by #304; builds on it with the existing filtered-permit utility arm |
+| [#304](https://github.com/fissible/verdict/issues/304) Privacy-safe observation: did a registered secret marker appear in an executed argument? | M | none | ✅ Shipped — ADR 0032 (PR #332) + build (PR #334) |
+| [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | #304 ✅ | unblocked — builds on #304's observation with the existing filtered-permit utility arm |
 | [#295](https://github.com/fissible/verdict/issues/295) Check-to-use digest binding (TOCTOU) | M–L | new cross-call primitive | open — `scope: design` |
 | [#324](https://github.com/fissible/verdict/issues/324) laravel/ai compatibility contract: adapter boundary, named contract tests, published matrix | L | none | open — `scope: design` |
 | [#322](https://github.com/fissible/verdict/issues/322) Durability checks read `verdict.evidence.recorder` while runtime honors the writer override — one blind spot, three sites | S | none | open — from the v0.12.0 review round |
 | [#311](https://github.com/fissible/verdict/issues/311) Low-severity hardening batch from the external review | S–M (batch) | none | open — triage batch; items split out when picked up |
 | [#315](https://github.com/fissible/verdict/issues/315) Named indexes keep default-derived names — two renamed installs collide on PostgreSQL | S | #290 ✅ | open |
 | [#321](https://github.com/fissible/verdict/issues/321) Housekeeping: `verdict:evidence:verify` option forwarding; validate double-reads authorizer config | XS–S | none | open |
+| [#335](https://github.com/fissible/verdict/issues/335) `recorded_at` stamped in the application timezone but read back as UTC | XS–S | none | open — filed without a milestone; attached here, found by verdict-console VC-13 |
 
 **Attack-surface track.** #304 is design-first: a boundary observation that records only a boolean match
 per registered secret marker (never raw arguments or fragments — ADR 0008-clean), and that defines its
