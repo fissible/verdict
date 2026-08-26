@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Capabilities;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Fissible\Verdict\Capabilities\Events\CapabilityConfigurationUnrecorded;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
@@ -66,7 +67,8 @@ final class DatabaseCapabilityConfigurationStore implements CapabilityConfigurat
                 'configuration_fingerprint' => $configuration->fingerprint,
                 'capability' => $configuration->capability,
                 'configuration' => ArgumentFingerprint::canonicalJson($configuration->declared),
-                'first_seen_at' => new DateTimeImmutable,
+                // This timezone-naive column is formatted in the object's zone by Laravel bindings, so mint UTC.
+                'first_seen_at' => new DateTimeImmutable('now', new DateTimeZone('UTC')),
             ]);
         } catch (QueryException|LostConnectionException $exception) {
             // A failing write (read-only filesystem, full disk, a schema the host has not migrated
