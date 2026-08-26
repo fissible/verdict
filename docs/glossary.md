@@ -134,6 +134,21 @@ Used in `src/Evidence/ArgumentFingerprint.php`, ADR 0008.
 Competing meaning: a biometric identifier. In Verdict it is a deterministic
 security-state identity.
 
+## Intent record
+
+Write-once operational security state, committed before a guarded action's
+mutating phase begins when the fail-closed lever is on. It is not evidence: this
+row gates admission, and the evidence layer mirrors it afterwards. The outcome
+record stays the sole authority on what happened, so an intent that no outcome
+references is a gap signal rather than a completed action.
+
+Used in `src/Intents/`, ADR 0007's Update (#160), `docs/incident-response.md`.
+
+Competing meaning: what an actor meant to do — the sense in
+[limitations](limitations.md#authorization-bounds-authority-not-intent), where
+Verdict bounds authority rather than intent. An intent record makes no claim
+about anyone's purpose; it records that an action was about to act.
+
 ## Provenance
 
 The recorded history of prompts and tool results, retained as structured facts
