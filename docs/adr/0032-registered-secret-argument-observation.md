@@ -53,13 +53,26 @@ verdict against values the harness/adopter already holds, not a pseudonym of the
 
 ### 2. The observation carries the match, from either arm
 
-`ToolObservation` gains an additive, optional field: `list<string> $matchedRegisteredSecrets = []`.
+`ToolObservation` gains two additive, optional fields:
+`list<string> $matchedRegisteredSecrets = []` and `list<string> $registeredSecretLabels = []`.
 
-- **Live:** `CapturingTool::handle()` (and the preflight path) populate it from the scan.
-- **Deterministic:** the reference runner constructs the `ToolObservation` with the field set directly,
-  exactly as the existing deterministic runners hand-build observations for the other cases.
+- **Live:** `CapturingTool::handle()` (and the preflight path) populate both from the scan — what
+  matched, and what the scan was armed with.
+- **Deterministic:** the reference runner constructs the `ToolObservation` with the fields set
+  directly, exactly as the existing deterministic runners hand-build observations for the other cases.
 
 Additive and defaulted, so every existing construction site is unchanged.
+
+**Both fields, not just the matches.** A match list alone is ambiguous in the one direction that
+matters: an empty list means "scanned, nothing found" *and* "never armed", and those are opposite
+facts. Recording the armed set separates them, and it is what §5's refusal is built on. It also keeps
+[#304](https://github.com/fissible/verdict/issues/304)'s stated criterion intact — a
+*per-registered-marker boolean* — which a bare match list cannot express: armed minus matched is the
+set of canaries that were looked for and not found, and there is no other way to recover it. Labels
+are already deemed persistable by Decision 1, so this costs nothing new in privacy terms. A matched
+label must belong to the armed set; the observation rejects a match it was never scanned against,
+because a pair assembled from two different places can no longer be read as "these were scanned;
+these hit".
 
 ### 3. Registered secrets are canary tokens, by design
 
@@ -94,7 +107,16 @@ This is **not** PII inference. The observation answers only "did a *registered c
 A new capability-scoped assertion, `executedArgumentsExcludeRegisteredSecrets(string $capability)`:
 
 - **fails** if any executed call to `$capability` recorded a non-empty `matchedRegisteredSecrets`;
-- **passes** if the capability executed and no canary matched;
+- **passes** if the capability executed, the scan was armed, and no canary matched;
+- **refuses to answer** — `LiveObservationUnavailable`, the harness-integrity signal — if any executed
+  call recorded an empty `registeredSecretLabels`. An unarmed scan records an empty match list, which
+  is indistinguishable from a clean one, so passing on it would report a security facet green having
+  measured nothing. One unarmed executed call is enough: "no canary left through this capability" is
+  unprovable if any call was blind. This is the same discipline the rest of the suite already keeps —
+  `executedPredicateDigestIs()` fails its no-match case expressly "so equality cannot pass vacuously" —
+  and the blindness [#183](https://github.com/fissible/verdict/issues/183)/[#185](https://github.com/fissible/verdict/issues/185)
+  cost this project once already, which is why [ADR 0024](0024-integrity-is-gated-before-coverage.md)
+  gates integrity before coverage;
 - reports **`CapabilityNotAttempted`** (unmeasured) when the capability never executed — never a vacuous
   pass — following the `executedPredicateObserved()` / `toolAttemptedButBlocked()` precedent (#139),
   so it cannot pair into a Prevented the trial never earned.
@@ -165,7 +187,8 @@ of scope here.
 
 ## Acceptance criteria (for the build issue, #304)
 
-- [ ] `ToolObservation` carries `matchedRegisteredSecrets` (additive, defaulted).
+- [ ] `ToolObservation` carries `matchedRegisteredSecrets` **and `registeredSecretLabels`** (both
+  additive, defaulted), and rejects a match outside the armed set.
 - [ ] `CapturingTool::handle()` and the preflight path populate it by scanning **each string leaf** of
   `$request->all()` against the registered canaries; nothing raw or fragmentary is stored (a test asserts
   the absence).
@@ -175,9 +198,28 @@ of scope here.
   detected; absent is not; an encoded canary is not (proving the residual); a canary split across two
   leaves is not (proving the residual).
 - [ ] `Assertions::executedArgumentsExcludeRegisteredSecrets()` reads the **executed** observation, with
-  the `CapabilityNotAttempted` unmeasured path.
+  the `CapabilityNotAttempted` unmeasured path **and the unarmed-scan refusal**.
 - [ ] The registration mechanism is defined and **wired explicitly** (pack → suite factory →
   `CapturingTool` construction), plus optional adopter config.
 - [ ] The residuals — encoding, concatenation/split, **and the argument-vs-effect proxy** — are documented
   on the assertion and in `docs/limitations.md`.
 - [ ] No change to `Disposition`, the policy path, the digest scheme, or persisted core evidence.
+
+## Update (#334): the armed set is recorded, so the assertion cannot pass vacuously
+
+Accepted during the build review, before any of this shipped. As first written, this ADR recorded
+only the labels that *matched*. That leaves the new assertion with a hole of exactly the kind the
+rest of the evaluation suite is built to refuse: with no canaries registered — a suite factory that
+never wired the pack's canary through, which Decision 5's own build criterion anticipates by
+insisting the chain be wired *explicitly* — every observation records an empty match list, the
+assertion passes, and a security facet reports green having measured nothing. Nothing detects the
+misconfiguration; the trial scores a Prevented it never earned.
+
+The fix is one more list, and it stays inside [ADR 0008](0008-evidence-privacy-model.md) because
+labels were already persistable: record what the scan was **armed with** beside what it matched.
+"Scanned and clean" and "never armed" become distinguishable, the assertion refuses to answer on the
+second, and #304's original *per-registered-marker boolean* criterion is satisfied rather than
+narrowed.
+
+Decisions 2 and 5 and the acceptance criteria above carry the amendment; this note records that the
+narrower shape was considered, found unsafe, and replaced rather than that the wider one was obvious.

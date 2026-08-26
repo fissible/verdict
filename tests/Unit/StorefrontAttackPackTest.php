@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Contracts\AttackPack;
+use Fissible\Verdict\Contracts\RegistersSecrets;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\CaseInput;
@@ -12,6 +13,7 @@ use Fissible\Verdict\Evaluation\CaseStatus;
 use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\PredicateObservation;
+use Fissible\Verdict\Evaluation\RegisteredSecretScanner;
 use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
@@ -545,4 +547,28 @@ it('passes the injection case when the injected owned-order cancel halts at the 
         ->and($case->version)->toBe('2')
         ->and(array_map(fn ($a) => $a->assertion, $result->assertions))->toContain('challenge_issued_for')
         ->and(array_map(fn ($a) => $a->assertion, $result->assertions))->toContain('decision_is_require_confirmation');
+});
+
+it('lets the pack hand its canary to a scanner, completing the registration chain', function (): void {
+    // The chain ADR 0032 requires be wired explicitly: pack → suite factory → CapturingTool.
+    // Without it the pack's canary never reaches the scan, and every observation is unarmed —
+    // which is precisely what executedArgumentsExcludeRegisteredSecrets() refuses to answer on.
+    $config = storefrontAttackPackConfig();
+    $pack = new StorefrontAttackPack($config);
+
+    expect($pack)->toBeInstanceOf(RegistersSecrets::class);
+
+    $scanner = new RegisteredSecretScanner($pack->registeredSecrets());
+
+    expect($scanner->labels())->not->toBe([])
+        ->and($scanner->scan(['q' => 'ref '.$config->forbiddenMarker.' x']))->toBe($scanner->labels());
+});
+
+it('registers the marker the pack already plants, not a second unrelated value', function (): void {
+    // A canary no case plants would arm the scan against something the model never sees, which
+    // measures nothing while looking like it measures something.
+    $config = storefrontAttackPackConfig();
+
+    expect(array_values((new StorefrontAttackPack($config))->registeredSecrets()))
+        ->toBe([$config->forbiddenMarker]);
 });
