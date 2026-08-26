@@ -507,7 +507,10 @@ with design), so it follows the v0.12.0 hardening batch rather than leading the 
 | [#304](https://github.com/fissible/verdict/issues/304) Privacy-safe observation: did a registered secret marker appear in an executed argument? | M | none | ✅ Shipped — ADR 0032 (PR #332) + build (PR #334) |
 | [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | #304 ✅ | unblocked — builds on #304's observation with the existing filtered-permit utility arm |
 | [#295](https://github.com/fissible/verdict/issues/295) Check-to-use digest binding (TOCTOU) | M–L | new cross-call primitive | open — `scope: design` |
-| [#324](https://github.com/fissible/verdict/issues/324) laravel/ai compatibility contract: adapter boundary, named contract tests, published matrix | L | none | open — `scope: design` |
+| [#324](https://github.com/fissible/verdict/issues/324) laravel/ai compatibility contract: adapter boundary, named contract tests, published matrix | L | none | design ✅ ADR 0033 (PR #338); open for the three build units below |
+| [#339](https://github.com/fissible/verdict/issues/339) Enforce the adapter boundary: `ApprovedToolCalls`, the `InvocationContext` move, the zone rule | M | #324 ✅ | open — the defensive core |
+| [#340](https://github.com/fissible/verdict/issues/340) A named laravel/ai contract suite, run against the version matrix | M | none | open — independent of #339 |
+| [#341](https://github.com/fissible/verdict/issues/341) Publish a verdict × console × laravel/ai compatibility matrix | S | none | open — needs console's version facts, or ships two-column |
 | [#322](https://github.com/fissible/verdict/issues/322) Durability checks read `verdict.evidence.recorder` while runtime honors the writer override — one blind spot, three sites | S | none | open — from the v0.12.0 review round |
 | [#311](https://github.com/fissible/verdict/issues/311) Low-severity hardening batch from the external review | S–M (batch) | none | open — triage batch; items split out when picked up |
 | [#315](https://github.com/fissible/verdict/issues/315) Named indexes keep default-derived names — two renamed installs collide on PostgreSQL | S | #290 ✅ | open |
@@ -527,6 +530,14 @@ follow-on. This was named the one **gating** condition in the external "would La
 and it is the surface [laravel/ai#932](https://github.com/laravel/ai/pull/932) is actively churning (see
 #265) — so within this milestone it can lead the design work rather than wait behind the attack-surface
 track. Builds on #18 (dependency audit) and #131 (the 0.x-dev canary).
+
+**The design gate has lifted.** ADR 0033 settled the boundary, and the audit behind it shrank the work:
+the kernel's whole dependency on upstream's approval vocabulary is a set of tool-call ids, the correlation
+type #324 proposed inventing already exists and only needs moving, and `guard()`/`bound()` stay put because
+they never dereference the type they name. What remains is three independently reviewable units — #339
+(defensive core), #340 (contract suite + matrix run), #341 (published matrix) — of which only #339 depends
+on the ADR at all. #340 and #341 can be picked up in any order, including by different people; #339 is the
+one that changes the security kernel and should be reviewed as such.
 
 **Hardening carry-over.** #322, #311, #315, and #321 are fix-shaped work from the v0.12.0 review rounds
 riding the next tag rather than joining either design track. #298's design half also ships in this tag:
