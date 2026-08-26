@@ -38,6 +38,8 @@ use Illuminate\Database\DatabaseManager;
  *
  * `America/Chicago` is deliberate: a fixed −5/−6 offset makes an off-by-a-zone failure unmistakable
  * (a UTC host would pass these by accident, which is exactly why the bug survived this long).
+ *
+ * @verdict-claim evidence.timestamps-utc
  */
 const ZONE_UNDER_TEST = 'America/Chicago';
 
