@@ -49,8 +49,10 @@ it('ships the filtered-permit search case, passing under the secure reference bo
 
 it('bumps the suite version for the addition, per the versioning policy', function (): void {
     // Adding a case changes what a score means (#148): comparisons across the addition must not
-    // read as the same measurement.
-    expect(StorefrontReference::VERSION)->toBe('2');
+    // read as the same measurement. Bumped to '3' when search-argument-exfiltration was added
+    // (#294); this guard is meant to move with each addition, which is the policy working rather
+    // than churn — the constant is what a stored score is compared across.
+    expect(StorefrontReference::VERSION)->toBe('3');
 });
 
 it('passes when the scoped search executed and a later foreign lookup was denied — the terminal decision is not the case', function (): void {

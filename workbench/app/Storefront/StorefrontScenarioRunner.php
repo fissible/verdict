@@ -18,6 +18,7 @@ use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\ChallengeObservation;
 use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
 use Fissible\Verdict\Evaluation\Observation;
+use Fissible\Verdict\Evaluation\RegisteredSecretScanner;
 use Fissible\Verdict\Evaluation\ReproductionMetadata;
 use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\StorefrontAttackPack;
@@ -512,13 +513,21 @@ final readonly class StorefrontScenarioRunner
                 app(DatabaseManager::class)->connection(),
             ),
         ));
+        // Only the pack knows which values are deliberately planted canaries. Keep that
+        // registration at the suite boundary and pass the armed scanner into the runner; an
+        // empty match list from an unarmed scanner is intentionally not evidence of a clean
+        // executed argument.
+        $registeredSecrets = new RegisteredSecretScanner($pack->registeredSecrets());
 
         return (new SecuritySuite(
             name: 'storefront-captured-proposal',
-            // v2: cross-principal-order-search added (#251) — adding a case changes what a score
-            // means, per the versioning policy (#148).
-            version: '2',
-            cases: $pack->cases($this->evaluationObservation(...)),
+            // v3: cross-principal-order-search (#251) and search-argument-exfiltration (#294)
+            // added — adding a case changes what a score means, per the versioning policy (#148).
+            version: '3',
+            cases: $pack->cases(fn (CaseInput $input): Observation => $this->evaluationObservation(
+                $input,
+                $registeredSecrets,
+            )),
             toolShapes: $pack->expressibleToolShapes(),
             reproduction: new ReproductionMetadata([
                 'runner' => 'captured-proposal',
@@ -527,7 +536,7 @@ final readonly class StorefrontScenarioRunner
         ))->run()->report()->toArray();
     }
 
-    private function evaluationObservation(CaseInput $input): Observation
+    private function evaluationObservation(CaseInput $input, RegisteredSecretScanner $registeredSecrets): Observation
     {
         $operation = $input->trustedSetup['operation'] ?? 'lookup';
 
@@ -539,8 +548,11 @@ final readonly class StorefrontScenarioRunner
         // with foreign_order_id/owned_search_order_id and carries NO 'order_id' — deliberately,
         // because the live prompt builder appends a record id to the request wherever one appears,
         // which would turn the filter-shaped case back into the record-keyed one (#251 round 6).
-        if ($operation === 'order_search') {
-            return $this->observeOrderSearch($input);
+        if ($operation === 'order_search' || $operation === 'search_argument_exfiltration') {
+            return $this->observeOrderSearch(
+                $input,
+                $operation === 'search_argument_exfiltration' ? $registeredSecrets : null,
+            );
         }
 
         $actorId = $this->requireTrustedInt($input, 'actor_id');
@@ -574,12 +586,17 @@ final readonly class StorefrontScenarioRunner
      * one derives from the pack's declared predicate: the non-tautological comparison the
      * reference runner's simulation cannot make.
      */
-    private function observeOrderSearch(CaseInput $input): Observation
+    private function observeOrderSearch(CaseInput $input, ?RegisteredSecretScanner $registeredSecrets = null): Observation
     {
-        $foreignOrderId = $this->requireTrustedInt($input, 'foreign_order_id');
+        // The cross-principal search proves the two-sided scoped result. The argument-
+        // exfiltration case is also set-shaped but needs no foreign order: it proves that the
+        // real, ordinary filter reaches the real executor without carrying the prompt canary.
+        if (array_key_exists('foreign_order_id', $input->trustedSetup)) {
+            $foreignOrderId = $this->requireTrustedInt($input, 'foreign_order_id');
 
-        if ($this->catalog->order($foreignOrderId)->customerId !== $this->requireTrustedInt($input, 'foreign_order_owner_id')) {
-            throw new LogicException('The CaseInput foreign_order_owner_id does not match the storefront fixture.');
+            if ($this->catalog->order($foreignOrderId)->customerId !== $this->requireTrustedInt($input, 'foreign_order_owner_id')) {
+                throw new LogicException('The CaseInput foreign_order_owner_id does not match the storefront fixture.');
+            }
         }
 
         $connection = app(DatabaseManager::class)->connection();
@@ -618,6 +635,8 @@ final readonly class StorefrontScenarioRunner
                 ArgumentFingerprint::make($arguments),
                 $result->evaluation->decision->disposition,
                 $result->executed,
+                $registeredSecrets?->scan($arguments) ?? [],
+                $registeredSecrets?->labels() ?? [],
             )],
             predicates: $observed,
         );
