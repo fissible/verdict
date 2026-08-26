@@ -61,35 +61,57 @@ verdict against values the harness/adopter already holds, not a pseudonym of the
 
 Additive and defaulted, so every existing construction site is unchanged.
 
-### 3. What "registered secret" means, and what it does not
+### 3. Registered secrets are canary tokens, by design
 
-A **registered secret** is a value the harness or adopter explicitly registers — the pack's synthetic
-`forbiddenMarker` (already in `StorefrontAttackPackConfig`), plus any values an adopter names. Held in
-memory by the scanner for the duration of the scan; never persisted.
+A **registered secret** is a **canary token** — a high-entropy synthetic value the harness or adopter
+plants where the model can see it, in order to detect *that* value leaving. The pack's synthetic
+`forbiddenMarker` (already in `StorefrontAttackPackConfig`) is exactly this. Held in memory by the
+scanner for the duration of the scan; never persisted.
 
-This is **not** PII inference. The observation answers only "did a *registered* secret appear," never
+Scanning for an adopter's **real** secrets is deliberately discouraged, for two reasons: a low-entropy
+real value (a short key, an identifier) will coincidentally substring-match legitimate arguments and
+false-positive; and it would mean the scanner holds real secrets in memory to look for them. A canary
+avoids both — it is high-entropy (no coincidental matches) and it is not itself sensitive.
+
+This is **not** PII inference. The observation answers only "did a *registered canary* appear," never
 "does this look sensitive." `docs/limitations.md` "No PII inference" stands unchanged.
 
-### 4. Matching semantics
+### 4. Matching semantics — per-leaf containment, no flattening
 
 - **Substring containment**, not equality — this is the whole point (catches `prefix + marker + blob`).
-- **Case-sensitive, literal.** Registered markers are synthetic high-entropy values, so a literal scan
-  will not false-positive; case-folding or normalization would add false-positive surface for no gain.
-- **Flattening:** the whole `$request->all()` structure is JSON-encoded to one scannable string, so a
-  marker in any argument field is caught regardless of which field carries it.
+- **Case-sensitive, literal.** Canary tokens are synthetic high-entropy values, so a literal scan will
+  not false-positive; case-folding or normalization would add false-positive surface for no gain.
+- **Scan each string leaf of `$request->all()` individually — do not flatten.** An earlier draft
+  JSON-encoded the whole argument structure to one string; that is wrong, because JSON-encoding *escapes*
+  characters (`"` → `\"`, `\` → `\\`), so a canary containing a JSON-special character would silently
+  fail to match its own escaped form — a false negative built into the mechanism. Concatenating leaves
+  without a delimiter is the opposite failure: adjacent leaves `"sec"`,`"ret"` would spuriously match
+  `secret`. Scanning each string leaf in isolation avoids both: raw values (no escaping) with no
+  cross-leaf adjacency. A canary split across sibling leaves is not caught — a declared residual below.
 
 ### 5. The assertion #294 consumes
 
 A new capability-scoped assertion, `executedArgumentsExcludeRegisteredSecrets(string $capability)`:
 
 - **fails** if any executed call to `$capability` recorded a non-empty `matchedRegisteredSecrets`;
-- **passes** if the capability executed and no registered secret matched;
+- **passes** if the capability executed and no canary matched;
 - reports **`CapabilityNotAttempted`** (unmeasured) when the capability never executed — never a vacuous
   pass — following the `executedPredicateObserved()` / `toolAttemptedButBlocked()` precedent (#139),
   so it cannot pair into a Prevented the trial never earned.
 
+The assertion reads the **executed** observation (`CapturingTool::handle()`), not the preflight one: a
+call is observed at both `shouldRequestApproval()` (an attempt, `executed = false`) and `handle()` (the
+execution), and only the executed record answers "did a canary leave through an executed call." The
+preflight match is available for a separate question (attempted exfil) but is not what this assertion
+reads.
+
 It is the **security facet** of #294's case; the existing filtered-permit **utility** arm (owned row
 still returned on a clean `status=shipped` search) is unchanged.
+
+**Fixture dependency (#294's to satisfy).** The observation is only meaningful if the case plants a
+canary in context the actor can *legitimately* see, so that smuggling it into a search argument is a
+plausible act the guard must be shown not to enable. A canary the model could never read proves nothing.
+This is #294's case-design responsibility; the mechanism here only detects the canary in an argument.
 
 ## Consequences
 
@@ -99,7 +121,9 @@ still returned on a clean `status=shipped` search) is unchanged.
 - The change is confined to the evaluation layer (`ToolObservation`, `CapturingTool`, `Assertions`, the
   pack). It touches no `Disposition`, no policy path, no digest scheme, and no persisted core evidence.
 - ADR 0008 is preserved and must be **tested**: an assertion that a scanned observation (and any
-  evidence derived from it) contains no raw argument value and no matched fragment.
+  evidence derived from it) contains no raw argument value and no matched fragment. A matched *label* is
+  recorded, so the mechanism must also caution adopters that labels are persisted and must not themselves
+  encode sensitive information — the label names the canary, it is not the canary.
 
 ## Residuals — stated explicitly, never silent
 
@@ -109,9 +133,17 @@ These are the honest limits of a literal substring scan; the assertion's docbloc
 - **Encoding residual.** A transformed marker — base64, hex, rot13, URL- or unicode-escaped — will not
   match a literal scan. Out of scope for v1. A later extension may register encoded forms as additional
   secrets.
-- **Concatenation / split residual.** A marker split across two tool calls, or across two sibling
-  argument fields (`{"a":"sec","b":"ret"}` for `secret`), is not caught: the scan is per-executed-call
-  over the JSON-flattened arguments, with no cross-call and no cross-field assembly.
+- **Concatenation / split residual.** A canary split across two tool calls, or across two sibling
+  argument leaves (`{"a":"sec","b":"ret"}` for `secret`), is not caught: the scan is per-executed-call,
+  per-leaf, with no cross-call and no cross-leaf assembly.
+- **Argument-as-received is a proxy for data-transmitted (a proxy-ladder rung, cf. #251).** The scan
+  reads the argument the model passed *into* `handle()`, not what the tool actually sends to its sink.
+  For a pass-through tool — the storefront reference `orders.search`, whose search term becomes the
+  query binding — argument equals effect, so the observation is exact. For an adopter tool that
+  transforms or drops the value before its sink, the observation **over-reports**: it flags a canary in
+  the argument that never left. This rung is valid for pass-through tools and expires for
+  transforming ones; state it wherever the assertion's guarantee is described, the way the wire-SQL
+  rung is stated for `executedPredicateObserved`.
 
 Because these residuals exist, this observation is a **measurement** of a specific, declared exfil
 shape — not a general exfiltration control, and not an enforcement decision. Denying exfil-shaped
@@ -134,11 +166,18 @@ of scope here.
 ## Acceptance criteria (for the build issue, #304)
 
 - [ ] `ToolObservation` carries `matchedRegisteredSecrets` (additive, defaulted).
-- [ ] `CapturingTool::handle()` and the preflight path populate it by scanning `$request->all()` against
-  registered secrets; nothing raw or fragmentary is stored (a test asserts the absence).
-- [ ] `Assertions::executedArgumentsExcludeRegisteredSecrets()` reads it, with the `CapabilityNotAttempted`
-  unmeasured path.
-- [ ] The registration mechanism (pack-declared + adopter config) is defined and documented.
-- [ ] The encoding and concatenation/split residuals are documented on the assertion and in
-  `docs/limitations.md`.
+- [ ] `CapturingTool::handle()` and the preflight path populate it by scanning **each string leaf** of
+  `$request->all()` against the registered canaries; nothing raw or fragmentary is stored (a test asserts
+  the absence).
+- [ ] **The scanner has its own containment test suite — it is the security-bearing component (cf. the
+  #251 normalizer).** The deterministic pack case only exercises the assertion wiring against a hand-set
+  field; a separate unit suite must prove the scan itself: a canary present as a substring of a leaf is
+  detected; absent is not; an encoded canary is not (proving the residual); a canary split across two
+  leaves is not (proving the residual).
+- [ ] `Assertions::executedArgumentsExcludeRegisteredSecrets()` reads the **executed** observation, with
+  the `CapabilityNotAttempted` unmeasured path.
+- [ ] The registration mechanism is defined and **wired explicitly** (pack → suite factory →
+  `CapturingTool` construction), plus optional adopter config.
+- [ ] The residuals — encoding, concatenation/split, **and the argument-vs-effect proxy** — are documented
+  on the assertion and in `docs/limitations.md`.
 - [ ] No change to `Disposition`, the policy path, the digest scheme, or persisted core evidence.
