@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Evidence;
 
 use Closure;
 use DateTimeImmutable;
+use DateTimeZone;
 use Fissible\AttestLaravel\Support\AttestRegistry;
 use Fissible\Verdict\Contracts\DurableEvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
@@ -255,7 +256,8 @@ final class AttestEvidenceRecorder implements DurableEvidenceRecorder, EvidenceR
                     'attempts' => $attempts,
                     'error' => $error?->getMessage(),
                 ], JSON_THROW_ON_ERROR),
-                'recorded_at' => new DateTimeImmutable,
+                // This timezone-naive column is formatted in the object's zone by Laravel bindings, so mint UTC.
+                'recorded_at' => new DateTimeImmutable('now', new DateTimeZone('UTC')),
             ]);
         } catch (Throwable) {
             // Best-effort fallback; do not let a broken fallback path itself block the caller.

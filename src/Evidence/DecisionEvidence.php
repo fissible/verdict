@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Evidence;
 
 use DateTimeImmutable;
+use DateTimeZone;
 use Fissible\Verdict\Decisions\Evaluation;
 
 final readonly class DecisionEvidence
@@ -167,7 +168,8 @@ final readonly class DecisionEvidence
             executionClaimAttempt: is_int($evaluation->decision->metadata['execution_claim_attempt'] ?? null)
                 ? $evaluation->decision->metadata['execution_claim_attempt']
                 : null,
-            recordedAt: new DateTimeImmutable,
+            // This timezone-naive column is formatted in the object's zone by Laravel bindings, so mint UTC.
+            recordedAt: new DateTimeImmutable('now', new DateTimeZone('UTC')),
             invocationId: $invocationId,
             // Read from the envelope's proposal metadata, not $evaluation->decision->metadata like
             // the fields above: tool_kind identifies which Verdict Laravel AI tool primitive

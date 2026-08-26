@@ -4,6 +4,11 @@ Verdict deliberately secures a narrow boundary: application actions that are reg
 
 ## What Verdict does not guarantee
 
+<!-- @verdict-claim evidence.timestamps-utc tested -->
+### Historical evidence rows may have ambiguous timezone semantics
+
+Rows written while a non-UTC application timezone was active are already shifted, are not migrated, and carry no source-timezone marker, so a mixed table cannot identify which rows are which. New evidence write timestamps are minted in UTC before Laravel formats timezone-naive database columns.
+
 <!-- @verdict-claim limitation.toctou untestable reason="A package cannot exhaustively prove the absence of concurrent external changes." -->
 ### No complete TOCTOU protection
 

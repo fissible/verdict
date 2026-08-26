@@ -4,6 +4,10 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- Fix evidence writes on applications with a non-UTC timezone: newly persisted, timezone-naive
+  timestamps are now minted in UTC before Laravel binds them. This is forward-only; existing rows
+  written on non-UTC hosts are already shifted and are not migrated.
+
 - **A privacy-safe registered-secret argument observation (#304, ADR 0032).** The evaluation harness
   can now answer "did a registered canary appear in an executed tool argument?" — the observation
   #294's exfiltration case needs and none of the existing observables could express (a shape check
