@@ -682,7 +682,11 @@ the strategy keeps being exercised on each upstream minor. The dependency watch 
 
 **The pinning pool** is the contributor-ready section above: every guarantee that holds today but is not
 pinned by a test, plus the hardening that makes an allowlist explainable. Suggested pickup order is stated
-there; #156 and #160 carry `scope: design` and need a decision before code.
+there; #156 carries `scope: design` and needs a decision before code.
+[#160](https://github.com/fissible/verdict/issues/160)'s design settled on the issue and shipped as the
+write-ahead intent lever (PR #330, ADR 0007 Update); its review round's two code-health deferrals —
+`intentGate()`'s return shape and `Capability`'s wither boilerplate — are recorded as
+[#331](https://github.com/fissible/verdict/issues/331) in this milestone.
 
 **What this milestone cannot contain:** the real-application-feedback criterion is not backlog. It arrives
 through adoption — [#237](https://github.com/fissible/verdict/issues/237) is the nearest instrument;
