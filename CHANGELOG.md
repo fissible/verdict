@@ -4,6 +4,23 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **A privacy-safe registered-secret argument observation (#304, ADR 0032).** The evaluation harness
+  can now answer "did a registered canary appear in an executed tool argument?" — the observation
+  #294's exfiltration case needs and none of the existing observables could express (a shape check
+  passes a marker riding in a legitimate value; an equality check forbids the query variation a
+  search tool exists for; raw values are hashed away by design). New `RegisteredSecretScanner` scans
+  each **string leaf** of the arguments for **substring containment** and records only matched
+  **labels** — never a value, never a fragment, never the argument, so ADR 0008 is preserved.
+  `ToolObservation` gains `matchedRegisteredSecrets` **and `registeredSecretLabels`** (both additive
+  and defaulted); the second is what lets "scanned and clean" be told from "never armed", so the new
+  `Assertions::executedArgumentsExcludeRegisteredSecrets()` refuses to answer on an unarmed scan
+  rather than passing vacuously — the failure mode #183/#185 already cost this project. `CapturingTool`
+  scans both the executed call and the approval preflight; `RegistersSecrets` lets a pack declare the
+  canary it already plants, completing the pack → suite factory → tool chain. The encoding, split,
+  non-string, and argument-vs-effect residuals are documented in `docs/limitations.md` and each pinned
+  by a passing negative test. Evaluation layer only: no `Disposition`, policy path, digest scheme, or
+  persisted core evidence changes.
+
 - **A fail-closed lever for deployments that must not act unrecorded (#160, ADR 0007 Update).** Not a
   throw posture on evidence writes — a **write-ahead intent record** in the operational layer. With
   `verdict.intents.required` (default off) or `->requiresIntentRecord()` per capability (overridable in

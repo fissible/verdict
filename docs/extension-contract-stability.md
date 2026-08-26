@@ -31,6 +31,7 @@ used by an implementation part of Verdict's public API.
 | `ExecutionClaimStore` | Stable | `DatabaseExecutionClaimStore`, `InMemoryExecutionClaimStore` | Store exactly-once execution claims in a durable or external backend. |
 | `ExecutionWindow` | Experimental | `ConnectionPredicateCapture` | Observe capability executor invocations — the seam `VerdictManager` opens around exactly the executor call, used by the evaluation harness's predicate capture. Implementations must return the execution's result unchanged and let its exceptions propagate. |
 | `ObservationAssertion` | Experimental | `CallbackAssertion` | Define an assertion for a capability evaluation observation. |
+| `RegistersSecrets` | Experimental | `StorefrontAttackPack` | Declare the canary tokens an attack pack plants, so an argument scan can be armed with them (ADR 0032). Labels are persisted; values never are. |
 | `PrunableRateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Opt a `RateLimitStore` into expired-bucket cleanup. |
 | `RateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Store rate-limit consumption in a durable or external backend. |
 

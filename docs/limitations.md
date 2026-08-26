@@ -95,6 +95,36 @@ Content and component fingerprints are deterministic. A hash of a predictable pr
 
 Actor and subject fingerprints have the same boundary. `ProvidesVerdictIdentity::verdictIdentity()` is an application-supplied correlation string, not an authentication assertion: Verdict does not verify that the string identifies the actor, subject, or any delegated authority. It records only the fingerprint, never the raw value, just as an approval's `approvedBy` is application-supplied rather than authenticated by Verdict. The required approval decision authorizer (`verdict.approvals.authorizer`) gates *whether* a decision maker may finalize a receipt, but the identifier string it stores remains attestation by the application.
 
+<!-- @verdict-claim limitation.registered-secret-scan tested -->
+### A registered-secret scan detects one declared shape of exfiltration, not exfiltration
+
+The evaluation harness can observe whether a **registered canary** — a high-entropy synthetic value
+planted where the model can see it — appeared in a tool call's executed arguments
+([ADR 0032](adr/0032-registered-secret-argument-observation.md), for
+[#294](https://github.com/fissible/verdict/issues/294)). It records only the matched *labels*, never
+the argument and never a fragment, so it stays inside the evidence privacy model above.
+
+It is a measurement of a declared attack shape, not a control and not a data-loss-prevention
+feature. Four limits, each pinned by a passing negative test rather than asserted:
+
+- **Encoding.** A transformed canary — base64, hex, rot13, URL- or unicode-escaped — does not match
+  a literal scan.
+- **Split.** A canary divided across two sibling argument leaves, or across two tool calls, is not
+  caught: the scan is per-call and per-leaf, with no assembly. Leaves are deliberately never
+  concatenated, because joining them would make adjacent values match a canary they do not contain.
+- **Type.** Only string leaves are scanned; a canary coerced into a non-string leaf is not seen.
+- **Argument, not effect.** The scan reads what the model passed *into* the tool, which is a proxy
+  for what the tool transmits. For a pass-through tool (a search term that becomes the query
+  binding) argument equals effect and the observation is exact; for a tool that transforms or drops
+  the value before its sink, the observation over-reports — flagging a canary that never left.
+
+Absence of detection is therefore never proof that nothing was exfiltrated. Scanning for an
+adopter's **real** secrets is discouraged for two reasons: a low-entropy real value will
+coincidentally substring-match legitimate arguments, and it would mean holding real secrets in
+memory to look for them. A canary avoids both. This remains outside
+[no PII inference](#no-pii-inference): the observation answers "did a *registered* canary appear",
+never "does this look sensitive".
+
 <!-- @verdict-claim limitation.redaction-subtree-allowlist tested -->
 ### Redaction validation does not reach inside a subtree allowlist
 
