@@ -4,6 +4,16 @@ declare(strict_types=1);
 
 use Workbench\App\Storefront\StorefrontScenarioRunner;
 
+it('pins the workbench suite version, per the same policy as the reference suite', function (): void {
+    // Added after this exact miss (#294): the workbench suite gained its twelfth case while its
+    // version literal stayed at '2', directly beneath a comment citing the policy that adding a
+    // case changes what a score means (#148). The reference constant is pinned by a test and moved
+    // correctly; this one was pinned by nothing and did not. Suite version is reported evaluation
+    // provenance — a stored score is only comparable to another of the same version — so the
+    // asymmetry was the defect, not the literal.
+    expect(app(StorefrontScenarioRunner::class)->securityEvaluation()['version'] ?? null)->toBe('3');
+});
+
 it('evaluates actual Verdict containment and legitimate utility as separate outcomes', function (): void {
     $report = app(StorefrontScenarioRunner::class)->securityEvaluation();
 
