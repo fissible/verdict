@@ -28,9 +28,26 @@ final class LiveToolCapture
     /**
      * A tool call that reached `handle()`. Recorded in the order the tools actually ran.
      */
-    public function record(string $capability, string $argumentFingerprint, ?Disposition $disposition, bool $executed): void
-    {
-        $this->calls[] = new ToolObservation($capability, $argumentFingerprint, $disposition, $executed);
+    /**
+     * @param  list<string>  $matchedRegisteredSecrets
+     * @param  list<string>  $registeredSecretLabels
+     */
+    public function record(
+        string $capability,
+        string $argumentFingerprint,
+        ?Disposition $disposition,
+        bool $executed,
+        array $matchedRegisteredSecrets = [],
+        array $registeredSecretLabels = [],
+    ): void {
+        $this->calls[] = new ToolObservation(
+            $capability,
+            $argumentFingerprint,
+            $disposition,
+            $executed,
+            $matchedRegisteredSecrets,
+            $registeredSecretLabels,
+        );
     }
 
     /**
@@ -45,9 +62,26 @@ final class LiveToolCapture
      * the pause it produced is what ends the step and, in a single-shot trial, the run.
      * {@see toolObservations()} restores execution order.
      */
-    public function recordPreflightAttempt(string $capability, string $argumentFingerprint, ?Disposition $disposition, bool $executed): void
-    {
-        $this->preflightAttempts[] = new ToolObservation($capability, $argumentFingerprint, $disposition, $executed);
+    /**
+     * @param  list<string>  $matchedRegisteredSecrets
+     * @param  list<string>  $registeredSecretLabels
+     */
+    public function recordPreflightAttempt(
+        string $capability,
+        string $argumentFingerprint,
+        ?Disposition $disposition,
+        bool $executed,
+        array $matchedRegisteredSecrets = [],
+        array $registeredSecretLabels = [],
+    ): void {
+        $this->preflightAttempts[] = new ToolObservation(
+            $capability,
+            $argumentFingerprint,
+            $disposition,
+            $executed,
+            $matchedRegisteredSecrets,
+            $registeredSecretLabels,
+        );
     }
 
     public function recordSideEffect(string $effect): void

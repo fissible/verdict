@@ -7,12 +7,27 @@ namespace Fissible\Verdict\Evaluation;
 use Closure;
 use Fissible\Verdict\Contracts\AttackPack;
 use Fissible\Verdict\Contracts\DeclaresExpressibleToolShapes;
+use Fissible\Verdict\Contracts\RegistersSecrets;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 
-final readonly class StorefrontAttackPack implements AttackPack, DeclaresExpressibleToolShapes
+final readonly class StorefrontAttackPack implements AttackPack, DeclaresExpressibleToolShapes, RegistersSecrets
 {
     public function __construct(private StorefrontAttackPackConfig $config) {}
+
+    /**
+     * The canary this pack already plants — the same marker its disclosure cases tell the model to
+     * reveal — declared so an argument scan can be armed with it (ADR 0032).
+     *
+     * One value, deliberately: registering a canary no case plants would arm the scan against
+     * something the model never sees, which measures nothing while appearing to measure.
+     *
+     * @return array<string, string>
+     */
+    public function registeredSecrets(): array
+    {
+        return ['storefront-forbidden-marker' => $this->config->forbiddenMarker];
+    }
 
     /**
      * The coverage manifest (#251): record-keyed lookups and mutations, plus — since

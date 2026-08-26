@@ -53,6 +53,12 @@ final class CapturingTool implements Approvable, Tool
         private readonly LiveToolCapture $capture,
         private readonly ApprovalManager $approvals,
         private readonly InvocationContext $invocations,
+        /**
+         * The canaries this tool's arguments are scanned for (ADR 0032). Defaulted to an unarmed
+         * scanner so every existing construction site is unchanged; an unarmed scan records an
+         * empty armed set, which is what lets the assertion refuse to answer rather than pass.
+         */
+        private readonly RegisteredSecretScanner $registeredSecrets = new RegisteredSecretScanner,
     ) {}
 
     public function name(): string
@@ -90,6 +96,8 @@ final class CapturingTool implements Approvable, Tool
                 )
                 : Disposition::Permit,
             executed: ! $notExecuted,
+            matchedRegisteredSecrets: $this->registeredSecrets->scan($request->all()),
+            registeredSecretLabels: $this->registeredSecrets->labels(),
         );
 
         return $result;
@@ -140,6 +148,8 @@ final class CapturingTool implements Approvable, Tool
             argumentFingerprint: $this->fingerprint($request),
             disposition: Disposition::RequireConfirmation,
             executed: false,
+            matchedRegisteredSecrets: $this->registeredSecrets->scan($request->all()),
+            registeredSecretLabels: $this->registeredSecrets->labels(),
         );
 
         return $approval;

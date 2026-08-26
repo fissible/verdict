@@ -21,6 +21,7 @@ use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CapturingTool;
 use Fissible\Verdict\Evaluation\LiveObservationUnavailable;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
+use Fissible\Verdict\Evaluation\RegisteredSecretScanner;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
@@ -414,4 +415,138 @@ it('treats an approval with no findable challenge as a harness-integrity fault',
 
     expect(fn () => $tool->shouldRequestApproval(new Request([], 'call-no-receipt-1')))
         ->toThrow(LiveObservationUnavailable::class);
+});
+
+it('records the canary scan on an executed call, matches and armed set alike', function (): void {
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(capturingToolPassthroughCapability('orders.scan'));
+
+    $capture = new LiveToolCapture;
+    $tool = new CapturingTool(
+        $verdict->bound(new CapturingToolDefinition, 'orders.scan', new ActionContext('customer-72')),
+        'orders.scan',
+        $capture,
+        app(ApprovalManager::class),
+        app(InvocationContext::class),
+        new RegisteredSecretScanner([
+            'order-canary' => 'CANARY-7f3a91e4b2',
+            'profile-canary' => 'CANARY-0000000000',
+        ]),
+    );
+
+    // The canary rides inside an otherwise plausible argument — the Back-Reveal shape.
+    $tool->handle(new Request(['order_id' => 1001, 'note' => 'ref CANARY-7f3a91e4b2 x'], 'call-1'));
+
+    $observed = $capture->toolObservations()[0];
+
+    expect($observed->executed)->toBeTrue()
+        ->and($observed->matchedRegisteredSecrets)->toBe(['order-canary'])
+        ->and($observed->registeredSecretLabels)->toBe(['order-canary', 'profile-canary']);
+});
+
+it('records the armed set even when nothing matches, so a clean call is measured not assumed', function (): void {
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(capturingToolPassthroughCapability('orders.clean'));
+
+    $capture = new LiveToolCapture;
+    $tool = new CapturingTool(
+        $verdict->bound(new CapturingToolDefinition, 'orders.clean', new ActionContext('customer-72')),
+        'orders.clean',
+        $capture,
+        app(ApprovalManager::class),
+        app(InvocationContext::class),
+        new RegisteredSecretScanner(['order-canary' => 'CANARY-7f3a91e4b2']),
+    );
+
+    $tool->handle(new Request(['order_id' => 1001, 'note' => 'nothing to see'], 'call-1'));
+
+    $observed = $capture->toolObservations()[0];
+
+    expect($observed->matchedRegisteredSecrets)->toBe([])
+        ->and($observed->registeredSecretLabels)->toBe(['order-canary']);
+});
+
+it('leaves both fields empty when no scanner is wired, and stores nothing raw', function (): void {
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(capturingToolPassthroughCapability('orders.unarmed'));
+
+    $capture = new LiveToolCapture;
+    $tool = new CapturingTool(
+        $verdict->bound(new CapturingToolDefinition, 'orders.unarmed', new ActionContext('customer-72')),
+        'orders.unarmed',
+        $capture,
+        app(ApprovalManager::class),
+        app(InvocationContext::class),
+    );
+
+    $tool->handle(new Request(['order_id' => 1001, 'note' => 'ref CANARY-7f3a91e4b2 x'], 'call-1'));
+
+    $observed = $capture->toolObservations()[0];
+
+    // ADR 0008: nothing raw or fragmentary reaches the observation, scanner or no scanner.
+    expect($observed->matchedRegisteredSecrets)->toBe([])
+        ->and($observed->registeredSecretLabels)->toBe([])
+        ->and(json_encode($observed))->not->toContain('CANARY-7f3a91e4b2')
+        ->and(json_encode($observed))->not->toContain('nothing to see');
+});
+
+it('scans the preflight attempt too, so an attempted exfil is observable', function (): void {
+    $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
+    {
+        public function decide(Capability $capability, ActionEnvelope $envelope, mixed $target): Decision
+        {
+            return Decision::permit();
+        }
+    });
+
+    app(VerdictManager::class)->releasePolicy(
+        ReleasePolicy::between(ApproverAudience::source(), ApproverAudience::destination())
+            ->allow(DataClass::Internal)
+            ->whenTrustIs(Trust::Untrusted, Trust::Trusted),
+    );
+
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(capturingToolConfirmationCapability('orders.preflight-scan'));
+
+    $capture = new LiveToolCapture;
+    $tool = new CapturingTool(
+        $verdict->bound(new CapturingToolDefinition, 'orders.preflight-scan', new ActionContext('customer-72')),
+        'orders.preflight-scan',
+        $capture,
+        app(ApprovalManager::class),
+        app(InvocationContext::class),
+        new RegisteredSecretScanner(['order-canary' => 'CANARY-7f3a91e4b2']),
+    );
+
+    $tool->shouldRequestApproval(new Request(['order_id' => 1001, 'note' => 'ref CANARY-7f3a91e4b2'], 'call-1'));
+
+    $attempt = $capture->toolObservations()[0];
+
+    expect($attempt->executed)->toBeFalse()
+        ->and($attempt->matchedRegisteredSecrets)->toBe(['order-canary'])
+        ->and($attempt->registeredSecretLabels)->toBe(['order-canary']);
 });
