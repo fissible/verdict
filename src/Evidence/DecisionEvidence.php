@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Evidence;
 
 use DateTimeImmutable;
-use Fissible\Verdict\Contracts\ProvidesVerdictIdentity;
 use Fissible\Verdict\Decisions\Evaluation;
-use InvalidArgumentException;
 
 final readonly class DecisionEvidence
 {
@@ -80,6 +78,13 @@ final readonly class DecisionEvidence
         public ?string $toolDescriptionFingerprint = null,
         public ?string $invocationToolDescriptionFingerprint = null,
         public ?bool $toolDescriptionMatched = null,
+        /**
+         * The write-ahead intent record this outcome references, when the intent lever was on for
+         * this action (#160). A correlation pointer into the operational layer, deliberately
+         * outside the record digest (see {@see RecordDigest}): the digest is this record's content
+         * identity, and the intent row's own integrity lives in the layer that gates on it.
+         */
+        public ?string $intentId = null,
     ) {
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
@@ -97,9 +102,10 @@ final readonly class DecisionEvidence
         $this->recordDigest = RecordDigest::for($this);
     }
 
-    public static function fromEvaluation(Evaluation $evaluation, ?string $invocationId = null): self
+    public static function fromEvaluation(Evaluation $evaluation, ?string $invocationId = null, ?string $intentId = null): self
     {
         return new self(
+            intentId: $intentId,
             envelopeId: $evaluation->envelope->id,
             capability: $evaluation->envelope->proposal->capability,
             stage: $evaluation->stage->value,
@@ -205,16 +211,6 @@ final readonly class DecisionEvidence
 
     private static function identityFingerprint(mixed $identity): ?string
     {
-        if (! $identity instanceof ProvidesVerdictIdentity) {
-            return null;
-        }
-
-        $canonicalIdentity = $identity->verdictIdentity();
-
-        if ($canonicalIdentity === '') {
-            throw new InvalidArgumentException('Verdict identities must not be empty.');
-        }
-
-        return hash('sha256', $canonicalIdentity);
+        return IdentityFingerprint::for($identity);
     }
 }

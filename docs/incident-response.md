@@ -349,6 +349,46 @@ The four limits worth stating explicitly in any write-up:
 4. Unless a verified tamper-evident chain covered the rows you read, the reconstruction assumes the store was
    not edited.
 
+## Scheduled verification: intents with no outcome
+
+Separate from any single incident: a deployment running the fail-closed intent lever
+([#160](https://github.com/fissible/verdict/issues/160), `verdict.intents.required` or
+`->requiresIntentRecord()`) should run this on a schedule. Every record written after the intent gate
+carries the intent's id, so an intent no outcome record references is the gap signal the lever exists
+to make visible — an action that entered its mutating phase and left no account of how it ended.
+
+```sql
+SELECT i.id, i.capability, i.invocation_id, i.recorded_at
+  FROM verdict_action_intents i
+  LEFT JOIN verdict_evidence e
+    ON e.intent_id = i.id AND e.stage <> 'intent'
+ WHERE e.id IS NULL
+   AND i.recorded_at < :grace_cutoff
+ ORDER BY i.recorded_at
+```
+
+Reading it honestly:
+
+- **The `e.stage <> 'intent'` exclusion is load-bearing.** The intent's own evidence mirror also
+  references the intent id; counting it would hide exactly the gap being looked for. An outcome is
+  any *later* record — a rate-limit consumption or refusal, an approval consumption, a claim
+  admission or finalization, or the `intent_concluded` record a claim-less run writes around a
+  successful executor return. The full set of stages that may carry `intent_id` is pinned by test
+  (`ActionIntentPipelineTest`), so a future record type cannot silently satisfy this anti-join.
+- **A hit is a gap in the record, not proof of a rogue action — with one deliberate exception.**
+  Denials at gates 10–12 also write outcome rows referencing the intent, so a hit usually means the
+  fail-open outcome writes failed (`EvidenceWriteFailed` should correlate) or the process died
+  between the intent commit and the next record. The exception: a run with no execution-claim policy
+  whose executor *threw* writes no conclusion, deliberately — investigate it like any gap; the
+  intent row carries the full standalone identity to start from. Pair the lever with `atMostOnce()`
+  where you want failures accounted positively (claim finalization marks them indeterminate).
+- **`:grace_cutoff` excludes in-flight actions.** An intent committed milliseconds ago has no outcome
+  yet because the action is still running. A cutoff of now minus your slowest plausible executor is
+  the starting point.
+- **The join assumes one database.** `verdict_action_intents` lives on the intents store's connection
+  and `verdict_evidence` on the evidence connection; if those differ, select the intent ids from one,
+  the referenced `intent_id`s from the other, and anti-join application-side.
+
 ## Quick reference
 
 Joins that work:

@@ -406,3 +406,13 @@ The API-level choices are accepted. Slice 1 implementation must still verify:
    persisting raw receipt identifiers or bindings.
 4. Whether the future transaction boundary can preserve independently durable execution claims on
    common Laravel database configurations; this remains deferred to Slice 2.
+
+## Update (#160): an optional write-ahead intent record between steps 9 and 10
+
+For capabilities whose effective posture requires it (`verdict.intents.required` /
+`->requiresIntentRecord()`), Verdict commits a write-once intent record after step 9 and before
+step 10 — after every identity the record needs exists, and before anything mutates, so abandoning
+on a failed write is fail-closed at the cost of one retry. The numbering above is unchanged;
+[ADR 0007](0007-evidence-layering.md)'s Update (#160) owns the decision. Nothing after step 8 may
+use the proposal-stage target, and the intent record does not: it fingerprints the execution
+target.

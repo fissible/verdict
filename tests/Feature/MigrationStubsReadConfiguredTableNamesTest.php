@@ -65,6 +65,7 @@ function verdictRenamedTableConfig(): array
         'verdict.evidence.derivations_table' => 'renamed_provenance_derivations',
         'verdict.rate_limits.table' => 'renamed_rate_limit_buckets',
         'verdict.execution_claims.table' => 'renamed_execution_claims',
+        'verdict.intents.table' => 'renamed_action_intents',
     ];
 }
 
@@ -78,6 +79,7 @@ function verdictCreateStubsByRenamedTable(): array
         'renamed_provenance_derivations' => 'create_verdict_provenance_derivations_table.php.stub',
         'renamed_rate_limit_buckets' => 'create_verdict_rate_limit_buckets_table.php.stub',
         'renamed_execution_claims' => 'create_verdict_execution_claims_table.php.stub',
+        'renamed_action_intents' => 'create_verdict_action_intents_table.php.stub',
     ];
 }
 
@@ -164,6 +166,7 @@ it('records evidence and derivations into the renamed tables through the provide
         'add_tool_kind_to_verdict_evidence_table.php.stub',
         'add_target_source_to_verdict_evidence_table.php.stub',
         'add_record_identity_to_verdict_evidence_table.php.stub',
+        'add_intent_id_to_verdict_evidence_table.php.stub',
     ] as $stub) {
         (require __DIR__.'/../../database/migrations/'.$stub)->up();
     }

@@ -30,6 +30,7 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
             'record_type' => 'decision',
             'correlation_id' => $evidence->envelopeId,
             'invocation_id' => $evidence->invocationId,
+            'intent_id' => $evidence->intentId,
             'capability' => $evidence->capability,
             'tool_kind' => $evidence->toolKind,
             'configuration_fingerprint' => $evidence->configurationFingerprint,

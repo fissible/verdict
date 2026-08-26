@@ -56,7 +56,7 @@ final class RecordDigest
      * Public because reproducibility is the point: a third party holding this list and
      * `CanonicalJson` re-derives the digest offline, without Attest and without Verdict's recorder.
      *
-     * Two deliberate exclusions:
+     * Three deliberate exclusions:
      *
      * - **`reason`** is operator-facing and application-controllable, the record's one free-text
      *   field. Folding it in would let an application change a record's identity by rewording a
@@ -64,6 +64,12 @@ final class RecordDigest
      * - **`claimType`** is derived from fields already in this list, so including it would be
      *   redundant — and would make a correction to the vocabulary change the identity of records
      *   whose content never changed.
+     * - **`intentId`** (#160) is a correlation pointer into the operational layer, not part of
+     *   what this record claims — and the field set is frozen under this scheme, so admitting it
+     *   would silently change the identity of every record already published. The consequence is
+     *   stated rather than implied away: the intent reference is outside the attested content,
+     *   and tamper-evidence over the intent row itself lives in the operational layer that gates
+     *   on it, not in this digest.
      *
      * The idempotency key enters as its fingerprint, never raw: that is what the row persists, so a
      * digest over the raw value could not be re-derived from a stored record.

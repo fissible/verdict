@@ -32,6 +32,7 @@ use Fissible\Verdict\Console\Commands\VerifyEvidenceCommand;
 use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\FieldProjector;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
+use Fissible\Verdict\Contracts\ActionIntentStore;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalStatusReader;
@@ -53,6 +54,8 @@ use Fissible\Verdict\Evidence\NullRecorderWarning;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
+use Fissible\Verdict\Intents\ActionIntentManager;
+use Fissible\Verdict\Intents\DatabaseActionIntentStore;
 use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
 use Fissible\Verdict\LaravelAi\RecordAgentPromptProvenance;
@@ -436,6 +439,38 @@ final class VerdictServiceProvider extends ServiceProvider
             clock: $app->make(Clock::class),
         ));
 
+        $this->app->singleton(ActionIntentStore::class, function (Container $app): ActionIntentStore {
+            $store = config('verdict.intents.store', DatabaseActionIntentStore::class);
+
+            if (! is_string($store)) {
+                throw new LogicException('The Verdict action-intent store configuration must contain a class name.');
+            }
+
+            if ($store === DatabaseActionIntentStore::class) {
+                $connection = config('verdict.intents.connection');
+                $table = config('verdict.intents.table', 'verdict_action_intents');
+
+                return new DatabaseActionIntentStore(
+                    connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                    table: is_string($table) ? $table : 'verdict_action_intents',
+                );
+            }
+
+            $instance = $app->make($store);
+
+            if (! $instance instanceof ActionIntentStore) {
+                throw new LogicException("The [{$store}] action-intent store must implement ".ActionIntentStore::class.'.');
+            }
+
+            return $instance;
+        });
+
+        $this->app->scoped(ActionIntentManager::class, fn (Container $app): ActionIntentManager => new ActionIntentManager(
+            store: $app->make(ActionIntentStore::class),
+            clock: $app->make(Clock::class),
+            globallyRequired: (bool) config('verdict.intents.required', false),
+        ));
+
         $this->app->scoped(ContextReleaseManager::class, fn (Container $app): ContextReleaseManager => new ContextReleaseManager(
             policies: $app->make(ReleasePolicyRegistry::class),
             projector: $app->make(FieldProjector::class),
@@ -488,6 +523,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 executionClaims: $app->make(ExecutionClaimManager::class),
                 provenance: $app->make(ProvenanceLedger::class),
                 invocations: $app->make(InvocationContext::class),
+                intents: $app->make(ActionIntentManager::class),
                 strictProvenance: $app->make(StrictProvenanceGuard::class),
                 deniedMessage: is_string($message) ? $message : 'This action was not authorized.',
                 events: $app->make(Dispatcher::class),
@@ -614,6 +650,7 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations/add_target_source_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_16_000011_add_target_source_to_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/add_tool_description_fingerprints_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_17_000013_add_tool_description_fingerprints_to_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/add_record_identity_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_19_000014_add_record_identity_to_verdict_evidence_table.php'),
+            __DIR__.'/../database/migrations/add_intent_id_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_25_000015_add_intent_id_to_verdict_evidence_table.php'),
         ];
         $rateLimitMigration = [
             __DIR__.'/../database/migrations/create_verdict_rate_limit_buckets_table.php.stub' => database_path('migrations/2026_08_01_000002_create_verdict_rate_limit_buckets_table.php'),
@@ -624,9 +661,12 @@ final class VerdictServiceProvider extends ServiceProvider
         $capabilityConfigurationMigration = [
             __DIR__.'/../database/migrations/create_verdict_capability_configurations_table.php.stub' => database_path('migrations/2026_08_10_000009_create_verdict_capability_configurations_table.php'),
         ];
+        $intentMigration = [
+            __DIR__.'/../database/migrations/create_verdict_action_intents_table.php.stub' => database_path('migrations/2026_08_25_000016_create_verdict_action_intents_table.php'),
+        ];
 
         $this->publishesMigrations(
-            [...$approvalMigration, ...$evidenceMigration, ...$rateLimitMigration, ...$executionClaimMigration, ...$capabilityConfigurationMigration],
+            [...$approvalMigration, ...$evidenceMigration, ...$rateLimitMigration, ...$executionClaimMigration, ...$capabilityConfigurationMigration, ...$intentMigration],
             ['verdict', 'verdict-migrations'],
         );
         $this->publishesMigrations($approvalMigration, 'verdict-approval-migrations');
@@ -634,5 +674,6 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->publishesMigrations($rateLimitMigration, 'verdict-rate-limit-migrations');
         $this->publishesMigrations($executionClaimMigration, 'verdict-execution-claim-migrations');
         $this->publishesMigrations($capabilityConfigurationMigration, 'verdict-capability-configuration-migrations');
+        $this->publishesMigrations($intentMigration, 'verdict-intent-migrations');
     }
 }

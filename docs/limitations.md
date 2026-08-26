@@ -134,6 +134,45 @@ When a deployment adopts a tamper-evident recorder (tracked by [#11](https://git
 
 A passing verification establishes that the retained chain verifies against its recorded head and signing key; it does not identify a change or actor, and it does not protect against someone who also controls the signing key. A verification failure is an incident to investigate, not a retry. The selected recorder's verifier can provide an event or non-zero exit status; the application owns routing that result to PagerDuty, Slack, email, or another operator channel. If automation is not yet possible, document a named person and recurring manual cadence: that is weaker than scheduling, but materially better than leaving verification implicit.
 
+<!-- @verdict-claim limitation.intent-pre-mutation-only tested -->
+### The intent lever guarantees a pre-mutation record, not an outcome record
+
+The fail-closed intent lever ([#160](https://github.com/fissible/verdict/issues/160):
+`verdict.intents.required`, or `->requiresIntentRecord()` per capability) guarantees exactly this: **no
+protected action enters the execution pipeline's mutating phase — the rate-limit consume, the receipt
+consume, the claim admission — unless a durable, standalone intent record for that action has been
+committed.** If the intent write fails, the action is denied with nothing consumed. Four things it
+deliberately does not guarantee:
+
+- **Approval-receipt issuance is outside the gate.** `requestConfirmation()` writes the approval
+  receipt — durable security state — before any intent exists, because issuance *is* the durable
+  record of that request: the receipt row records who asked for what, and an unrecorded ask denies
+  nothing. The intent gate covers the execution pipeline that later consumes the receipt, not the
+  pause that issued it.
+
+- **Outcome records stay fail-open.** Evidence written after a committed mutation — the rate-limit
+  consumption, the receipt consumption, the claim admission and finalization, and the
+  `verdict.intent.concluded` record a claim-less run writes around a successful executor return —
+  keeps its [ADR 0007](adr/0007-evidence-layering.md) (#153) posture: `EvidenceWriteFailed`, and the
+  flow continues. The intent row makes a missing outcome *detectable* (an intent id no outcome record
+  references — see the [scheduled verification query](incident-response.md#scheduled-verification-intents-with-no-outcome)),
+  not impossible. How a run ended is recorded by claim finalization when an execution-claim policy
+  exists and by `verdict.intent.concluded` otherwise; a claim-less run whose executor *throws* is
+  deliberately left unconcluded — it stays flagged until investigated, which is the lever working.
+- **Nothing can fail closed after a successful executor.** The side effect has happened;
+  `ExecutionCompletedWithUnfinalizedClaim` and `EvidenceWriteFailed` keep their semantics. The intent
+  guarantees that gap is attributable, never that it is prevented.
+- **With tamper-evidence on, the hash-chained copy of the intent is the mirror, not the gate.** The
+  row that gates execution is operational security state on the intents store's connection; the
+  evidence layer mirrors it afterwards, fail-open, and only that mirror is chained. A compliance
+  regime that requires the chained record *itself* to gate execution is not served by this design —
+  the chain head is a single contended row, and gating every guarded mutation on it would serialize
+  the pipeline through it.
+
+Intent rows are also the record a fail-closed deployment exists to keep, so Verdict ships no pruning
+command for them; retention is the application's compliance decision, in the spirit of
+[ADR 0009](adr/0009-execution-claim-retention.md) — archive before removing.
+
 <!-- @verdict-claim limitation.configuration-logic tested -->
 ### A configuration fingerprint does not cover resolver or executor logic
 

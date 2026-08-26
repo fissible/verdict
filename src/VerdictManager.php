@@ -39,6 +39,8 @@ use Fissible\Verdict\Exceptions\ExecutionCompletedWithUnfinalizedClaim;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimAdmission;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
+use Fissible\Verdict\Intents\ActionIntentManager;
+use Fissible\Verdict\Intents\Events\ActionIntentWriteFailed;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
 use Fissible\Verdict\LaravelAi\InvocationContext;
@@ -68,6 +70,7 @@ final readonly class VerdictManager
         private ExecutionClaimManager $executionClaims,
         private ProvenanceLedger $provenance,
         private InvocationContext $invocations,
+        private ActionIntentManager $intents,
         private StrictProvenanceGuard $strictProvenance,
         private string $deniedMessage,
         private Dispatcher $events,
@@ -240,6 +243,8 @@ final readonly class VerdictManager
                 $proposalEvaluation,
                 $this->approvals->validate($proposalEvaluation),
                 ApprovalEvidencePhase::ProposalValidation,
+                // Gate 4 precedes the intent gate; there is no intent to reference yet.
+                intentId: null,
             );
 
             if (! $approvalEvaluation->decision->permitsExecution()) {
@@ -270,6 +275,8 @@ final readonly class VerdictManager
                 $executionEvaluation,
                 $this->approvals->validate($executionEvaluation),
                 ApprovalEvidencePhase::ExecutionValidation,
+                // Gate 9 precedes the intent gate; there is no intent to reference yet.
+                intentId: null,
             );
 
             if (! $approvalEvaluation->decision->permitsExecution()) {
@@ -277,7 +284,28 @@ final readonly class VerdictManager
             }
         }
 
-        $rateLimitEvaluation = $this->rateLimit($executionEvaluation);
+        // Gate 9.5 (#160): for capabilities whose effective posture requires it, commit the
+        // write-ahead intent before the first mutating gate. Placement is the point — every
+        // identity the record needs exists (steps 6-9 have run), and abandoning here is genuinely
+        // fail-closed: no unit consumed, no receipt spent, no claim admitted, cost of one retry.
+        //
+        // The execution-target fingerprint is read back from the refresh decision, never
+        // recomputed: recomputing would consult the application's identity resolver a third time
+        // on every action — lever on or off — and a non-pure resolver could hand the intent a
+        // fingerprint the pipeline never validated.
+        $refreshedFingerprint = $refreshEvaluation->decision->metadata['execution_target_identity_fingerprint'] ?? null;
+        $intentGate = $this->intentGate(
+            $executionEvaluation,
+            is_string($refreshedFingerprint) ? $refreshedFingerprint : null,
+        );
+
+        if ($intentGate instanceof ExecutionResult) {
+            return $intentGate;
+        }
+
+        $intentId = $intentGate;
+
+        $rateLimitEvaluation = $this->rateLimit($executionEvaluation, $intentId);
 
         if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
             return ExecutionResult::denied($rateLimitEvaluation);
@@ -288,6 +316,7 @@ final readonly class VerdictManager
                 $executionEvaluation,
                 $this->approvals->consume($executionEvaluation),
                 ApprovalEvidencePhase::Consumption,
+                $intentId,
             );
 
             if (! $approvalEvaluation->decision->permitsExecution()) {
@@ -303,6 +332,7 @@ final readonly class VerdictManager
                     $admission?->claim()?->id,
                 ),
             ),
+            $intentId,
         );
     }
 
@@ -368,17 +398,18 @@ final readonly class VerdictManager
         return $this->provenance;
     }
 
-    private function record(Evaluation $evaluation): Evaluation
+    private function record(Evaluation $evaluation, ?string $intentId = null): Evaluation
     {
         $this->evidence->record(DecisionEvidence::fromEvaluation(
             $evaluation,
             $this->invocations->current(),
+            $intentId,
         ));
 
         return $evaluation;
     }
 
-    private function rateLimit(Evaluation $evaluation): ?Evaluation
+    private function rateLimit(Evaluation $evaluation, ?string $intentId): ?Evaluation
     {
         $capability = $evaluation->capability;
 
@@ -392,13 +423,23 @@ final readonly class VerdictManager
             target: $evaluation->target,
             decision: $this->rateLimits->consume($capability, $evaluation->envelope, $evaluation->target),
             stage: EvaluationStage::RateLimit,
-        ));
+        ), $intentId);
     }
 
     /** @param callable(): mixed $executor */
     private function execute(Evaluation $evaluation, callable $executor): ExecutionResult
     {
-        $rateLimitEvaluation = $this->rateLimit($evaluation);
+        // The unbound path runs the same intent gate (#160); it has no execution-target refresh,
+        // so the intent records no target identity fingerprint.
+        $intentGate = $this->intentGate($evaluation, null);
+
+        if ($intentGate instanceof ExecutionResult) {
+            return $intentGate;
+        }
+
+        $intentId = $intentGate;
+
+        $rateLimitEvaluation = $this->rateLimit($evaluation, $intentId);
 
         if ($rateLimitEvaluation !== null && ! $rateLimitEvaluation->decision->permitsExecution()) {
             return ExecutionResult::denied($rateLimitEvaluation);
@@ -407,13 +448,61 @@ final readonly class VerdictManager
         return $this->executeAfterRateLimit(
             $evaluation,
             fn (?ExecutionClaimAdmission $admission): mixed => $executor(),
+            $intentId,
         );
     }
 
-    /** @param callable(?ExecutionClaimAdmission): mixed $executor */
-    private function executeAfterRateLimit(Evaluation $evaluation, callable $executor): ExecutionResult
+    /**
+     * Run the write-ahead intent gate (#160): null when the effective posture does not require an
+     * intent, the committed intent's id when it does and the write succeeded, or a denied
+     * ExecutionResult when the write failed — with nothing consumed, at the cost of one retry.
+     */
+    private function intentGate(Evaluation $evaluation, ?string $executionTargetIdentityFingerprint): ExecutionResult|string|null
     {
-        $admission = $this->claimExecution($evaluation);
+        $capability = $evaluation->capability;
+
+        if ($capability === null || ! $this->intents->required($capability)) {
+            return null;
+        }
+
+        $admission = $this->intents->record(
+            $evaluation,
+            $executionTargetIdentityFingerprint,
+            $this->invocations->current(),
+        );
+        $intentEvaluation = new Evaluation(
+            envelope: $evaluation->envelope,
+            capability: $capability,
+            target: $evaluation->target,
+            decision: $admission->decision,
+            stage: EvaluationStage::Intent,
+        );
+
+        if ($admission->intent === null) {
+            // A store outage under the lever means denied actions plus this alert — never an
+            // unrecorded mutation, never orphaned state. The denial evidence keeps gates 1-9's
+            // pre-mutation propagation behavior (ADR 0007).
+            $this->events->dispatch(new ActionIntentWriteFailed(
+                capability: $capability->name,
+                invocationId: $this->invocations->current(),
+                message: $admission->failureMessage ?? 'The intent store refused the write.',
+            ));
+
+            return ExecutionResult::denied($this->record($intentEvaluation));
+        }
+
+        // The intent row is committed operational state; its evidence mirror is deliberately
+        // fail-open (EvidenceWriteFailed), the same posture as every outcome write (#153). The
+        // mirror also references the intent id, so a verification query can pair them.
+        $this->recordCommitted($intentEvaluation, $admission->intent->id);
+
+        return $admission->intent->id;
+    }
+
+    /** @param callable(?ExecutionClaimAdmission): mixed $executor */
+    private function executeAfterRateLimit(Evaluation $evaluation, callable $executor, ?string $intentId): ExecutionResult
+    {
+        $admission = $this->claimExecution($evaluation, $intentId);
 
         if ($admission !== null && ! $admission->admitted()) {
             return ExecutionResult::denied(new Evaluation(
@@ -443,6 +532,7 @@ final readonly class VerdictManager
                     $this->recordClaimDecision(
                         $evaluation,
                         $this->executionClaims->markIndeterminate($admission),
+                        $intentId,
                     );
                 } catch (Throwable $finalizationFailure) {
                     throw ExecutionClaimFinalizationFailed::fromFailures(
@@ -470,7 +560,21 @@ final readonly class VerdictManager
                 );
             }
 
-            $this->recordClaimDecision($evaluation, $decision);
+            $this->recordClaimDecision($evaluation, $decision, $intentId);
+        } elseif ($intentId !== null) {
+            // A claim-less intent-gated run has no finalization row, so without this record the
+            // scheduled-verification query would flag every healthy success as a gap forever.
+            // Claim finalization is the account when a claim policy exists; this is the account
+            // otherwise — an admission-side belief around a successful executor return, fail-open
+            // like every post-mutation write. An executor throw deliberately leaves no conclusion:
+            // for the claim-less shape, that flagged gap is the lever working.
+            $this->recordCommitted(new Evaluation(
+                envelope: $evaluation->envelope,
+                capability: $evaluation->capability,
+                target: $evaluation->target,
+                decision: Decision::permit('The write-ahead intent was concluded around a successful executor return.'),
+                stage: EvaluationStage::IntentConcluded,
+            ), $intentId);
         }
 
         return ExecutionResult::executed($evaluation, $output);
@@ -480,6 +584,7 @@ final readonly class VerdictManager
         Evaluation $evaluation,
         ApprovalTransition $transition,
         ApprovalEvidencePhase $phase,
+        ?string $intentId,
     ): Evaluation {
         $succeeded = match ($phase) {
             ApprovalEvidencePhase::ProposalValidation,
@@ -516,7 +621,7 @@ final readonly class VerdictManager
                     $metadata,
                 ),
             stage: EvaluationStage::Approval,
-        ));
+        ), $intentId);
     }
 
     private function refreshTarget(
@@ -600,7 +705,7 @@ final readonly class VerdictManager
         ]);
     }
 
-    private function claimExecution(Evaluation $evaluation): ?ExecutionClaimAdmission
+    private function claimExecution(Evaluation $evaluation, ?string $intentId): ?ExecutionClaimAdmission
     {
         $capability = $evaluation->capability;
 
@@ -613,7 +718,7 @@ final readonly class VerdictManager
             $evaluation->envelope,
             $evaluation->target,
         );
-        $this->recordClaimDecision($evaluation, $admission->decision);
+        $this->recordClaimDecision($evaluation, $admission->decision, $intentId);
 
         return $admission;
     }
@@ -625,11 +730,15 @@ final readonly class VerdictManager
      * See ADR 0007's Updates (#149) and (#153). Before a mutation, abandoning on an evidence
      * failure is fail-closed and costs only a retry, so gates 1-9 keep the original propagation
      * behavior. After one, abandoning moves state and tells the caller it did not.
+     *
+     * `$intentId` deliberately has no default: every post-gate write runs after the intent gate,
+     * so each call site must decide its intent reference. A silently-null reference would
+     * manufacture false gaps in the scheduled-verification query (#160).
      */
-    private function recordCommitted(Evaluation $evaluation): Evaluation
+    private function recordCommitted(Evaluation $evaluation, ?string $intentId): Evaluation
     {
         try {
-            return $this->record($evaluation);
+            return $this->record($evaluation, $intentId);
         } catch (Throwable $evidenceFailure) {
             $this->events->dispatch(new EvidenceWriteFailed(
                 capability: $evaluation->envelope->proposal->capability,
@@ -642,7 +751,7 @@ final readonly class VerdictManager
         }
     }
 
-    private function recordClaimDecision(Evaluation $evaluation, Decision $decision): Evaluation
+    private function recordClaimDecision(Evaluation $evaluation, Decision $decision, ?string $intentId): Evaluation
     {
         // Both call sites follow a committed mutation: gate 12 has admitted the claim, and gate 14
         // has transitioned it. Neither may let an evidence failure rewrite that.
@@ -652,6 +761,6 @@ final readonly class VerdictManager
             target: $evaluation->target,
             decision: $decision,
             stage: EvaluationStage::ExecutionClaim,
-        ));
+        ), $intentId);
     }
 }

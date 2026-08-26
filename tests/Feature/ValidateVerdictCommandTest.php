@@ -26,6 +26,8 @@ use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\Facades\Verdict;
+use Fissible\Verdict\Intents\DatabaseActionIntentStore;
+use Fissible\Verdict\Intents\InMemoryActionIntentStore;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitConsumption;
@@ -400,7 +402,7 @@ it('does not warn about non-durable adapters in the testing environment', functi
 
 /**
  * Every adapter must be overridden here, not just the interesting one: TestCase::defineEnvironment binds
- * all five to their in-memory implementations, so a partial override leaves the others warning and the
+ * all six to their in-memory implementations, so a partial override leaves the others warning and the
  * assertion passes or fails for the wrong reason.
  */
 it('does not warn about durable adapters configured in production', function (): void {
@@ -410,6 +412,7 @@ it('does not warn about durable adapters configured in production', function ():
     config()->set('verdict.rate_limits.store', DatabaseRateLimitStore::class);
     config()->set('verdict.execution_claims.store', DatabaseExecutionClaimStore::class);
     config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
+    config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
 
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('non-durable')
@@ -439,6 +442,8 @@ it('reads configuration rather than resolved container bindings, and says so', f
     config()->set('verdict.rate_limits.store', DatabaseRateLimitStore::class);
     config()->set('verdict.execution_claims.store', DatabaseExecutionClaimStore::class);
     config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
+
+    config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
 
     // Declared durable, resolved non-durable. The audit reads the declaration.
     $this->app->instance(RateLimitStore::class, new InMemoryRateLimitStore);
@@ -602,5 +607,55 @@ it('does not warn about unexpandable fingerprints when the no-op store is an exp
 
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('permanently unexpandable')
+        ->assertExitCode(0);
+});
+
+it('fails CI when a capability requires an intent record and the intent table is missing', function (): void {
+    config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
+    config()->set('verdict.intents.table', 'missing_verdict_action_intents');
+
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.recorded', 'cancel', fn (ActionEnvelope $envelope): int => 1)
+            ->requiresIntentRecord(),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('Configured action-intent store requires missing table [missing_verdict_action_intents]')
+        ->assertExitCode(1);
+});
+
+it('audits the intent store under the global lever even when no capability declares a posture', function (): void {
+    config()->set('verdict.intents.required', true);
+    config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
+    config()->set('verdict.intents.table', 'missing_verdict_action_intents');
+
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.plain', 'view', fn (ActionEnvelope $envelope): int => 1),
+    );
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('Configured action-intent store requires missing table [missing_verdict_action_intents]')
+        ->assertExitCode(1);
+});
+
+it('does not audit the intent store when no capability needs an intent record', function (): void {
+    config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
+    config()->set('verdict.intents.table', 'missing_verdict_action_intents');
+
+    app(CapabilityRegistry::class)->register(
+        Capability::usingPolicy('orders.plain', 'view', fn (ActionEnvelope $envelope): int => 1),
+    );
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('Configured action-intent store')
+        ->assertExitCode(0);
+});
+
+it('warns that an in-memory intent store cannot make the durability promise', function (): void {
+    $this->app->detectEnvironment(fn (): string => 'production');
+    config()->set('verdict.intents.store', InMemoryActionIntentStore::class);
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('verdict.intents.store')
         ->assertExitCode(0);
 });

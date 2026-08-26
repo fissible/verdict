@@ -35,6 +35,7 @@ function verdictTable(string $area): string
         'derivations' => ['verdict.evidence.derivations_table', 'verdict_provenance_derivations'],
         'rate_limits' => ['verdict.rate_limits.table', 'verdict_rate_limit_buckets'],
         'execution_claims' => ['verdict.execution_claims.table', 'verdict_execution_claims'],
+        'intents' => ['verdict.intents.table', 'verdict_action_intents'],
     ];
 
     [$key, $default] = $map[$area] ?? throw new InvalidArgumentException("Unknown Verdict table area [{$area}].");

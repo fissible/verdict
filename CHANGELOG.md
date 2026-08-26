@@ -4,6 +4,36 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **A fail-closed lever for deployments that must not act unrecorded (#160, ADR 0007 Update).** Not a
+  throw posture on evidence writes — a **write-ahead intent record** in the operational layer. With
+  `verdict.intents.required` (default off) or `->requiresIntentRecord()` per capability (overridable in
+  either direction; the declared posture enters the configuration fingerprint sparsely, so upgrading
+  changes no existing fingerprint), Verdict commits a write-once `ActionIntent` row — full standalone
+  identity: capability, configuration/actor/subject/execution-target/argument fingerprints, invocation
+  correlation — through `SecurityStateTransaction` after the last non-mutating gate and before the
+  rate-limit consume. A failed write denies (stage `intent`, `verdict.intent.refused`) with nothing
+  consumed and dispatches `ActionIntentWriteFailed`; a committed intent is mirrored as evidence
+  fail-open (`verdict.intent.recorded`), and every subsequent record carries `intent_id` (a
+  digest-excluded correlation column), so the documented scheduled-verification query enumerates
+  intents no outcome references. New `ActionIntentStore` contract (write-once: `record()` + `find()`)
+  with database/in-memory stores, `verdict.intents` config block, migration stubs
+  (`create_verdict_action_intents_table`, `add_intent_id_to_verdict_evidence_table`),
+  `verdict:validate` coverage (missing-table error, non-durable advisory), and the plainly stated
+  bounds: the guarantee is scoped to the execution pipeline's mutating phase (approval-receipt
+  issuance sits outside it — the receipt row is itself the durable record of the request), outcome
+  writes stay fail-open, nothing fails closed after the executor, and with tamper-evidence on the
+  chained copy is the mirror, not the gate. A run with no execution-claim policy records
+  `verdict.intent.concluded` around a successful executor return — claim finalization is the account
+  otherwise — so a healthy claim-less success is never a false gap in the scheduled-verification
+  query, while a claim-less executor failure deliberately stays flagged. The intent row reuses the
+  execution-target fingerprint gate 7 validated (no third identity-resolver call, lever on or off).
+  Default off: the lever untouched is byte-for-byte the #153 posture, locked by test.
+
+  **Upgrade note:** the evidence table gains an `intent_id` column and `DatabaseEvidenceRecorder`
+  writes it on every insert — deployments using a database-backed recorder must publish and run
+  `add_intent_id_to_verdict_evidence_table` (tag `verdict-evidence-migrations`, or `verdict-migrations`)
+  on upgrade, whether or not the intent lever is enabled.
+
 - **Approval status reads have a contract (#327, ADR 0031).** New
   `Fissible\Verdict\Contracts\ApprovalStatusReader` — the observational read seam over approval
   receipts: `statusFor()` and `statusForToolCall()` return an `ApprovalStatusView` DTO (never a row;

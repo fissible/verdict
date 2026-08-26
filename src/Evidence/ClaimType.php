@@ -73,6 +73,24 @@ enum ClaimType: string
     /** A semantic rate limit refused this attempt. */
     case RateLimitRefusal = 'verdict.rate-limit.refusal';
 
+    /**
+     * A write-ahead intent record was committed before any security state was consumed (#160).
+     * This is the mirror of an operational row, not the row itself; it claims the intent exists,
+     * not that anything ran.
+     */
+    case IntentRecorded = 'verdict.intent.recorded';
+
+    /** The pre-mutation intent write failed, so the action was refused with nothing consumed. */
+    case IntentRefused = 'verdict.intent.refused';
+
+    /**
+     * Verdict marked its own write-ahead intent concluded around a successful executor return, on
+     * a run with no execution-claim policy (claim finalization is the account otherwise). An
+     * admission-side belief, never a receipt from the executor, carrying no result — the same
+     * carve-out as claim-completed.
+     */
+    case IntentConcluded = 'verdict.intent.concluded';
+
     /** An at-most-once claim was admitted: the action was handed to its executor. Nothing has run yet. */
     case ExecutionClaimAdmitted = 'verdict.execution.claim-admitted';
 
@@ -115,6 +133,14 @@ enum ClaimType: string
         return match ($resolvedStage) {
             EvaluationStage::Proposal => self::AuthorizationDecision,
             EvaluationStage::Execution => self::ExecutionAdmission,
+            EvaluationStage::Intent => match ($resolvedDisposition) {
+                Disposition::Permit => self::IntentRecorded,
+                Disposition::Deny => self::IntentRefused,
+                default => null,
+            },
+            EvaluationStage::IntentConcluded => $resolvedDisposition === Disposition::Permit
+                ? self::IntentConcluded
+                : null,
             EvaluationStage::TargetRefresh => match ($resolvedDisposition) {
                 Disposition::Permit, Disposition::Deny => self::TargetRefresh,
                 default => null,
@@ -190,6 +216,12 @@ enum ClaimType: string
             // VerdictManager::refreshTarget() mints only permit (identity matched) or deny.
             EvaluationStage::TargetRefresh => ! in_array($disposition, [Disposition::Permit, Disposition::Deny], true),
 
+            // ActionIntentAdmission mints only permit (recorded) or deny (refused).
+            EvaluationStage::Intent => ! in_array($disposition, [Disposition::Permit, Disposition::Deny], true),
+
+            // The conclusion record is written only around a successful executor return.
+            EvaluationStage::IntentConcluded => $disposition !== Disposition::Permit,
+
             // RateLimitManager::consume() mints only permit or throttle.
             EvaluationStage::RateLimit => ! in_array($disposition, [Disposition::Permit, Disposition::Throttle], true),
 
@@ -217,6 +249,9 @@ enum ClaimType: string
             self::TargetRefresh => 'The execution-time target identity was compared against the proposal target.',
             self::RateLimitConsumption => 'A semantic rate-limit budget was consumed by this attempt.',
             self::RateLimitRefusal => 'A semantic rate limit refused this attempt.',
+            self::IntentRecorded => 'A write-ahead intent record was committed before any security state was consumed; nothing has run.',
+            self::IntentRefused => 'The pre-mutation intent write failed, so the action was refused with nothing consumed.',
+            self::IntentConcluded => 'Verdict marked its own write-ahead intent concluded around a successful executor return: an admission-side belief, never a receipt from the executor, carrying no result.',
             self::ExecutionClaimAdmitted => 'An at-most-once claim was admitted and the action handed to its executor; nothing has run.',
             self::ExecutionClaimCompleted => 'Verdict marked its own at-most-once claim complete around a successful return: an admission-side belief, never a receipt from the executor, carrying no result.',
             self::ExecutionClaimRefused => 'An at-most-once claim refused a duplicate logical action.',

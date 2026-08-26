@@ -10,6 +10,8 @@ Status: Accepted
   point 2 states two rules that collide on the post-execution path; see the first Update below.
 - [#153](https://github.com/fissible/verdict/issues/153) found the same collision at the three mutating
   gates, where it also strands an execution claim; see the second Update below.
+- [#160](https://github.com/fissible/verdict/issues/160) (implemented) added the opt-in fail-closed
+  departure the second Update deliberately deferred; see the third Update below.
 
 ## Context
 
@@ -173,6 +175,67 @@ real change in posture for a deployment that would rather fail closed than act u
 has a precedent for that preference in the attest recorder's `on_failure: 'alert' | 'throw'`. A general
 fail-closed lever is deliberately **not** introduced here — inventing a configuration surface alongside a
 behavioral fix is how a reasoned change acquires an unexamined one — and is tracked separately.
+
+## Update (#160): the fail-closed departure exists, as a pre-mutation admission control in the operational layer
+
+The Update above ends by naming the deliberate consequence: an evidence-store outage no longer halts
+protected actions, and a deployment that would rather fail closed than act unrecorded had no lever. #160
+adds that lever — and the shape matters more than the switch. It is **not** a throw posture on the
+evidence writes this ADR made non-propagating. It is a **write-ahead intent record**, and it lives in the
+operational layer, not the evidence layer.
+
+**The lever.** `verdict.intents.required` (global, default off) with `->requiresIntentRecord()` /
+`->requiresIntentRecord(false)` as a per-capability override in either direction. For a capability whose
+effective posture requires it, Verdict commits one `ActionIntent` row — through
+`SecurityStateTransaction`, on the intents store's own connection — after every non-mutating gate has
+passed and before the rate-limit consume (between steps 9 and 10 of ADR 0003's order). On write failure
+the pipeline returns a policy-shaped denial (stage `intent`), dispatches `ActionIntentWriteFailed`, and
+consumes nothing: no unit, no receipt, no claim. The record is write-once, carries the full standalone
+identity (capability, configuration fingerprint, actor/subject/execution-target/argument fingerprints,
+invocation correlation — the execution-target fingerprint read back from the target-refresh decision
+gate 7 validated, never recomputed from the live resolver), and has no status column — the outcome
+record remains the sole authority on what happened, and an intent with no outcome referencing it *is*
+the gap signal.
+
+The guarantee is scoped to the execution pipeline's mutating phase. Approval-receipt *issuance*
+(`requestConfirmation()`) writes durable security state outside the gate, deliberately: issuance is
+itself the durable record of the request — the receipt row records who asked for what — and an
+unrecorded ask denies nothing. The gate covers the pipeline that later consumes that receipt.
+
+How a run *ended* is recorded by execution-claim finalization when a claim policy exists. A run with no
+claim policy writes `verdict.intent.concluded` around a successful executor return instead — the same
+admission-side-belief carve-out as `claim-completed`, fail-open like every post-mutation write — so a
+healthy claim-less success is never a false gap in the verification query. A claim-less run whose
+executor throws is deliberately left unconcluded: that flagged gap is the lever working.
+
+**Why this keeps decision point 2 intact with no exception clause.** Evidence is still never an
+authorization gate. The thing that gates is an operational admission control, in the layer where claims
+and receipts already live. The evidence layer *mirrors* the committed intent afterwards, fail-open
+(`EvidenceWriteFailed`), exactly the posture the outcome writes have under the Update (#153) — and every
+record written after the intent gate carries the intent id, so scheduled verification can enumerate
+intents no outcome references with one query (docs/incident-response.md).
+
+**What the non-default posture does not achieve, stated so nobody infers it.**
+
+- It does not buy "no outcome record, no action". Nothing can: outcome writes stay fail-open per (#153),
+  and the post-execution path cannot fail closed because the side effect has happened. What the intent
+  row buys is that both gaps are *detectable and attributable* rather than silent.
+- With tamper-evidence on, the hash-chained copy of the intent is the mirror, not the gate. A regime
+  that requires the chained record itself to gate execution is not served: the chain head is a single
+  contended row (ADR 0016), and gating every guarded mutation on it would serialize the pipeline.
+- The pre-#153 orphaned-state problem does not return. Placement is the reason: at the intent gate
+  nothing has mutated, so abandoning is genuinely fail-closed at the cost of one retry — the exact
+  property this ADR's Updates used to draw the line at "committed mutation".
+
+**Relationship to `verdict.evidence.attest.on_failure`.** They sit beside each other with a layer
+boundary, and neither replaces the other: `on_failure` governs evidence-layer writes — a record that
+already exists gaining attestation, including the intent's mirror; the intent lever governs the
+pre-mutation operational write. They never express the same preference. Both config comments state the
+boundary.
+
+**Retention.** Intent rows get ADR 0009's reasoning, not a pruning command: they are the record a
+fail-closed deployment exists to keep, the retention window is the application's compliance decision,
+and archiving precedes removal.
 
 ## Consequences
 

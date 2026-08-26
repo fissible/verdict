@@ -8,6 +8,7 @@ use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
+use Fissible\Verdict\Intents\InMemoryActionIntentStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\Testing\AllowAllApprovalAuthorizer;
 use Fissible\Verdict\VerdictServiceProvider;
@@ -39,5 +40,6 @@ abstract class TestCase extends Orchestra
         $app['config']->set('verdict.capability_configurations.store', InMemoryCapabilityConfigurationStore::class);
         $app['config']->set('verdict.rate_limits.store', InMemoryRateLimitStore::class);
         $app['config']->set('verdict.execution_claims.store', InMemoryExecutionClaimStore::class);
+        $app['config']->set('verdict.intents.store', InMemoryActionIntentStore::class);
     }
 }
