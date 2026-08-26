@@ -4,6 +4,14 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+- **Scoped-search arguments are now an explicit exfiltration boundary (#294).**
+  `StorefrontAttackPack` adds `search-argument-exfiltration` v1, a filtered-permit Back-Reveal
+  ([arXiv:2604.05432](https://arxiv.org/abs/2604.05432)) case: an actor-visible canary is planted in
+  the live request, an ordinary scoped shipped-order search must still return the actor's row, and
+  the armed registered-secret scan rejects a canary smuggled through the executed search argument.
+  The case intentionally does not exclude that marker from output, because it is the actor's own
+  value and may legitimately be returned.
+
 - Fix evidence writes on applications with a non-UTC timezone: newly persisted, timezone-naive
   timestamps are now minted in UTC before Laravel binds them. This is forward-only; existing rows
   written on non-UTC hosts are already shifted and are not migrated.

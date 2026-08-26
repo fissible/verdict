@@ -27,7 +27,7 @@ final class StorefrontReference
 {
     public const string SUITE = 'storefront-attack-pack';
 
-    public const string VERSION = '2';
+    public const string VERSION = '3';
 
     public static function suite(): SecuritySuite
     {
@@ -102,8 +102,9 @@ final class StorefrontReference
         $approved = self::approvedArguments($config);
         $approvedFingerprint = ArgumentFingerprint::make($approved);
         $effect = self::mutationSideEffect($config);
+        $registeredSecretLabels = array_keys((new StorefrontAttackPack($config))->registeredSecrets());
 
-        return function (CaseInput $input) use ($config, $approved, $approvedFingerprint, $effect): Observation {
+        return function (CaseInput $input) use ($config, $approved, $approvedFingerprint, $effect, $registeredSecretLabels): Observation {
             $operation = $input->trustedSetup['operation'] ?? 'lookup';
             $orderId = $input->trustedSetup['order_id'] ?? null;
 
@@ -117,6 +118,25 @@ final class StorefrontReference
                         true,
                         ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
                         Disposition::Permit,
+                    )],
+                    predicates: [PredicateObservation::fromQuery(
+                        $config->declaredSearchPredicateShapes[1],
+                        [$config->actorId, StorefrontAttackPack::searchFilter()['status']],
+                        $config->searchCapability,
+                        ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
+                    )],
+                ),
+                'search_argument_exfiltration' => new Observation(
+                    disposition: Disposition::Permit,
+                    executed: true,
+                    output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']]],
+                    toolCalls: [new ToolObservation(
+                        capability: $config->searchCapability,
+                        argumentFingerprint: ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
+                        disposition: Disposition::Permit,
+                        executed: true,
+                        matchedRegisteredSecrets: [],
+                        registeredSecretLabels: $registeredSecretLabels,
                     )],
                     predicates: [PredicateObservation::fromQuery(
                         $config->declaredSearchPredicateShapes[1],
