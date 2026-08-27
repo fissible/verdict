@@ -91,6 +91,37 @@ final class Assertions
         );
     }
 
+    public static function recordedActorFingerprintIs(string $fingerprint): ObservationAssertion
+    {
+        self::requireFingerprint($fingerprint);
+
+        return new CallbackAssertion(
+            name: 'recorded_actor_fingerprint_is',
+            test: fn (Observation $observation): bool => $observation->recordedActorFingerprint === $fingerprint,
+            failureMessage: 'The recorded actor fingerprint did not match.',
+        );
+    }
+
+    public static function recordedSubjectFingerprintIs(string $fingerprint): ObservationAssertion
+    {
+        self::requireFingerprint($fingerprint);
+
+        return new CallbackAssertion(
+            name: 'recorded_subject_fingerprint_is',
+            test: fn (Observation $observation): bool => $observation->recordedSubjectFingerprint === $fingerprint,
+            failureMessage: 'The recorded subject fingerprint did not match.',
+        );
+    }
+
+    public static function recordedNoSubjectFingerprint(): ObservationAssertion
+    {
+        return new CallbackAssertion(
+            name: 'recorded_no_subject_fingerprint',
+            test: fn (Observation $observation): bool => $observation->recordedSubjectFingerprint === null,
+            failureMessage: 'A subject fingerprint was recorded.',
+        );
+    }
+
     public static function sideEffectOccurred(string $name): ObservationAssertion
     {
         self::requireNonEmpty($name, 'A side-effect assertion must name the expected effect.');

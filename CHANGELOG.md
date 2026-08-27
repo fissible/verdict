@@ -6,6 +6,17 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **Attack packs can assert on the actor/subject identity recorded beside a decision (#346).**
+  `Observation` now carries the invocation's recorded `recordedActorFingerprint` /
+  `recordedSubjectFingerprint`, populated by `LiveAgentObserver` from the decision evidence it
+  already reads — assertion-only, never projected into `ObservationEvidence` or baselines. Identity
+  is invocation-scoped and derived fail-closed: every decision record must agree, and a set that
+  disagrees (two values, or a value beside a null) yields `LiveObservationUnavailable` rather than a
+  silently chosen identity. New assertions `Assertions::recordedActorFingerprintIs()`,
+  `recordedSubjectFingerprintIs()`, and `recordedNoSubjectFingerprint()` read this channel. This
+  unblocks the delegation attack pack (#145/#345), whose cases must fail a denial that records the
+  wrong subject.
+
 - Add the Laravel AI contract suite and two-cell supported-range/development-branch canary matrix.
 
 - **Scoped-search arguments are now an explicit exfiltration boundary (#294).**

@@ -94,6 +94,7 @@ final readonly class LiveAgentObserver
 
         $unguarded = $this->reader instanceof NoLiveEvidence;
         $invocationId = $unguarded ? null : $this->invocationId($response);
+        $decisions = [];
 
         $toolCalls = $this->capture->toolObservations();
 
@@ -114,22 +115,24 @@ final readonly class LiveAgentObserver
             }
         }
 
-        return $this->observation($response->text);
+        return $this->observation($response->text, $decisions);
     }
 
     private function pausedObservation(): Observation
     {
         $invocationId = $this->capture->invocationId();
+        $decisions = [];
 
         if (! $this->reader instanceof NoLiveEvidence) {
             if ($invocationId === null) {
                 throw LiveObservationUnavailable::because('a paused run carried no preflight invocation id');
             }
 
-            $this->assertCorrelated($this->capture->toolObservations(), $this->reader->decisionsFor($invocationId));
+            $decisions = $this->reader->decisionsFor($invocationId);
+            $this->assertCorrelated($this->capture->toolObservations(), $decisions);
         }
 
-        return $this->observation(output: null);
+        return $this->observation(output: null, decisions: $decisions);
     }
 
     /**
@@ -141,7 +144,10 @@ final readonly class LiveAgentObserver
      * at the top level. Per-call facts live in `toolCalls`, which is what
      * `toolExecuted()`/`toolAttemptedButBlocked()` read.
      */
-    private function observation(mixed $output): Observation
+    /**
+     * @param  list<DecisionEvidence>  $decisions
+     */
+    private function observation(mixed $output, array $decisions): Observation
     {
         $toolCalls = $this->capture->toolObservations();
 
@@ -158,7 +164,29 @@ final readonly class LiveAgentObserver
             sideEffects: $this->capture->sideEffects(),
             challenges: $this->capture->challenges(),
             predicates: $this->capture->predicates(),
+            recordedActorFingerprint: $this->recordedFingerprint($decisions, 'actorFingerprint'),
+            recordedSubjectFingerprint: $this->recordedFingerprint($decisions, 'subjectFingerprint'),
         );
+    }
+
+    /**
+     * @param  list<DecisionEvidence>  $decisions
+     * @param  'actorFingerprint'|'subjectFingerprint'  $field
+     */
+    private function recordedFingerprint(array $decisions, string $field): ?string
+    {
+        $values = [];
+
+        foreach ($decisions as $decision) {
+            $value = $decision->{$field};
+            $values[$value === null ? 'null' : "string:{$value}"] = $value;
+        }
+
+        if (count($values) > 1) {
+            throw LiveObservationUnavailable::because("decision evidence disagrees on {$field}");
+        }
+
+        return $values === [] ? null : array_values($values)[0];
     }
 
     private function caseId(CaseInput $input): string
