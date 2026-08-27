@@ -12,12 +12,13 @@ The harness is centered around `SecuritySuite`. It is constructed with a suite n
 
 ## The shipped packs
 
-Verdict ships with four attack packs that model specific threats:
+Verdict ships with five attack packs that model specific threats:
 
 - `StorefrontAttackPack`: Models a compromised storefront interacting with an order system. It includes 12 cases covering cross-principal lookup/cancellation denial, owned-order utility cases, argument-mutation-after-confirmation, confirmed mutation execution, duplicate-mutation admission, single-mutation admission, indirect-instruction-in-retrieved-document, an owned-order-document utility, and — since suite v2 (#251) — the filtered-permit `cross-principal-order-search`. Since suite v3 (#294), `search-argument-exfiltration` verifies that an ordinary scoped shipped-order search returns the owned row without smuggling the actor-visible registered canary through its executed argument.
 - `AccountRecoveryAttackPack`: Models a social-engineering attacker attempting to bypass verification in recovery flows. It tests urgency-pressure verification bypass versus verified operation, for both account-unlock and MFA-reset scenarios.
 - `RagBorneInjectionAttackPack`: Models untrusted data retrieved by RAG flows attacking the executor. It ensures unauthorized injected action is denied, authorized-but-confirmable action halts at confirmation, argument manipulation from a poisoned retrieved document halts at confirmation, and asserts untrusted-document provenance.
 - `ToolIntegrityAttackPack`: Models compromise through tool identity and tool-definition metadata rather than the user conversation. It covers poisoned tool descriptions that try to inject arguments, shadowing via a confusingly similar adversarial capability, clean legitimate-tool utility, and tool-description drift currently pending on [#65](https://github.com/fissible/verdict/issues/65).
+- `DelegationConfusionAttackPack`: Models the confused deputy, actor-versus-subject confusion, against the two mechanisms [ADR 0015](adr/0015-authority-propagation.md) separates. It covers an actor acting for itself, a valid delegation the actor is attenuated to, escalation attempted without eligibility, subject substitution mid-conversation where the recorded subject identity must be the new subject rather than the one an earlier authorization named, clean delegated utility, and an orchestrator trusting sub-agent output currently pending on [#201](https://github.com/fissible/verdict/issues/201). Cases assert on the actor and subject identities recorded beside the decision, through `Assertions::recordedActorFingerprintIs()`, `recordedSubjectFingerprintIs()` and `recordedNoSubjectFingerprint()` ([#346](https://github.com/fissible/verdict/issues/346)), so a denial that records the wrong subject fails.
 
 ## Writing a pack
 
@@ -57,7 +58,7 @@ You write assertions using the static factory methods on `Assertions`:
 
 For custom assertions, use `CallbackAssertion`, which implements `ObservationAssertion` and wraps a `Closure(Observation): bool`. Assertions run against an `Observation` (or `ToolObservation`), which can be projected to `ObservationEvidence` for reporting.
 
-To keep packs deterministic and synthetic, use the `*AttackPackConfig` convention (e.g., `StorefrontAttackPackConfig`, `AccountRecoveryAttackPackConfig`, `RagBorneInjectionAttackPackConfig`, `ToolIntegrityAttackPackConfig`). These immutable, validated config objects parameterize a pack's actor IDs, resource IDs, and forbidden markers.
+To keep packs deterministic and synthetic, use the `*AttackPackConfig` convention (e.g., `StorefrontAttackPackConfig`, `AccountRecoveryAttackPackConfig`, `RagBorneInjectionAttackPackConfig`, `ToolIntegrityAttackPackConfig`, `DelegationConfusionAttackPackConfig`). These immutable, validated config objects parameterize a pack's actor IDs, resource IDs, and forbidden markers.
 
 ## Reports and baselines
 
