@@ -10,6 +10,7 @@ use DateTimeZone;
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverAudience;
@@ -42,7 +43,6 @@ use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
-use Fissible\Verdict\Actions\InvocationContext;
 use RuntimeException;
 
 /**

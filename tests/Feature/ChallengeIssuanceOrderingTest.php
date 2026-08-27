@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\ApproverAudience;
@@ -21,7 +22,6 @@ use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Decisions\Decision as VerdictDecision;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
-use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\Database\DatabaseManager;

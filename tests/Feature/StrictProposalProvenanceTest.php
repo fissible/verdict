@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Approvals\ProposalAnchor;
 use Fissible\Verdict\Approvals\StrictProvenanceGuard;
@@ -20,7 +21,6 @@ use Fissible\Verdict\Decisions\Decision as VerdictDecision;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
-use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\VerdictManager;
 use Fissible\Verdict\VerdictServiceProvider;
 
