@@ -29,6 +29,7 @@ use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\LaravelAi\BoundTool;
+use Fissible\Verdict\LaravelAi\LaravelApprovalDecisions;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Access\Gate;
 use Illuminate\Database\DatabaseManager;
@@ -235,16 +236,16 @@ final readonly class StorefrontScenarioRunner
         $decisions = Decisions::from([$toolCallId => LaravelApprovalDecision::approve()]);
         $writesBefore = count($this->actions->all());
         $tampered = $this->approvalContext->within(
-            $decisions,
+            LaravelApprovalDecisions::approvedToolCalls($decisions),
             fn (): array => $this->decode($tool->handle(new Request($tamperedArguments, $toolCallId))),
         );
         $executed = $this->approvalContext->within(
-            $decisions,
+            LaravelApprovalDecisions::approvedToolCalls($decisions),
             fn (): array => $this->decode($tool->handle($originalRequest)),
         );
         $writesAfterExactAction = count($this->actions->all());
         $replayed = $this->approvalContext->within(
-            $decisions,
+            LaravelApprovalDecisions::approvedToolCalls($decisions),
             fn (): array => $this->decode($tool->handle($originalRequest)),
         );
 
@@ -815,7 +816,7 @@ final readonly class StorefrontScenarioRunner
 
         $decisions = Decisions::from([$toolCallId => LaravelApprovalDecision::approve()]);
         $result = $this->approvalContext->within(
-            $decisions,
+            LaravelApprovalDecisions::approvedToolCalls($decisions),
             fn (): array => $this->decode($tool->handle(new Request($presented, $toolCallId))),
         );
         $evidence = array_slice($this->evidence->all(), $evidenceOffset);
@@ -866,7 +867,7 @@ final readonly class StorefrontScenarioRunner
 
         $decisions = Decisions::from([$toolCallId => LaravelApprovalDecision::approve()]);
         $executedResult = $this->approvalContext->within(
-            $decisions,
+            LaravelApprovalDecisions::approvedToolCalls($decisions),
             fn (): array => $this->decode($tool->handle($request)),
         );
         $executedEvidence = array_slice($this->evidence->all(), $evidenceOffset);
@@ -881,7 +882,7 @@ final readonly class StorefrontScenarioRunner
         if ($replay) {
             $replayEvidenceOffset = count($this->evidence->all());
             $replayed = $this->approvalContext->within(
-                $decisions,
+                LaravelApprovalDecisions::approvedToolCalls($decisions),
                 fn (): array => $this->decode($tool->handle($request)),
             );
             $replayEvidence = array_slice($this->evidence->all(), $replayEvidenceOffset);

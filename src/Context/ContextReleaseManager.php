@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Context;
 
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\ContextTransformer;
 use Fissible\Verdict\Contracts\DeclaresFieldPaths;
@@ -13,7 +14,6 @@ use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\Exceptions\UnreachableTransformerFieldPath;
-use Fissible\Verdict\LaravelAi\InvocationContext;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Arr;
 use LogicException;

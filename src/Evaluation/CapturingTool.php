@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Evaluation;
 
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
-use Fissible\Verdict\LaravelAi\InvocationContext;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Approvals\Approval;

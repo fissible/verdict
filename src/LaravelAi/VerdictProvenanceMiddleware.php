@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\LaravelAi;
 
 use Closure;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Source;

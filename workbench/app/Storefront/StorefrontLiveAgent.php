@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Workbench\App\Storefront;
 
 use Fissible\Verdict\Actions\ActionContext;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Trust;
@@ -14,7 +15,6 @@ use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\UnguardedCapturingTool;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
-use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Fissible\Verdict\VerdictManager;
 use Laravel\Ai\Contracts\Agent;
