@@ -195,7 +195,10 @@ it('actually exercises something in every contract test', function (): void {
         // fidelities. Several files per behaviour remain fine — the catalogue is a set.
         expect(substr_count($code, 'it('))->toBe(1, "[{$name}] must declare exactly one test, so its fidelity label is unambiguous.")
             ->and(substr_count($code, 'expect('))->toBeGreaterThan(0, "[{$name}] asserts nothing.")
-            ->and($code)->toContain('Laravel\\Ai', "[{$name}] never references an upstream symbol in code.");
+            // str_contains + toBeTrue, not toContain($needle, $message): Pest's toContain() is
+            // variadic over EXPECTED VALUES, so a message passed as a second argument becomes a
+            // second required needle and the assertion can never pass.
+            ->and(str_contains($code, 'Laravel\\Ai'))->toBeTrue("[{$name}] never references an upstream symbol in code.");
     }
 });
 
@@ -258,8 +261,7 @@ it('requires each behaviour it must prove for real to be labelled real', functio
     }
 
     foreach (MUST_BE_REAL_RUNTIME as $behaviour) {
-        expect($byBehaviour[$behaviour] ?? [])->toContain(
-            'real',
+        expect(in_array('real', $byBehaviour[$behaviour] ?? [], true))->toBeTrue(
             "[{$behaviour}] must have at least one real-runtime test. A constructed test here leaves "
             .'the gap open while appearing to close it.',
         );
@@ -273,7 +275,7 @@ it('replaces the compatibility document\'s caveats rather than deleting them', f
 
     expect($doc)->not->toContain('There is currently no test that exercises this assumption')
         ->and($doc)->not->toContain("that's simulated, not exercised")
-        ->and($doc)->toContain('tests/Contract/', 'The document must name the contract tests that closed its caveats.');
+        ->and(str_contains($doc, 'tests/Contract/'))->toBeTrue('The document must name the contract tests that closed its caveats.');
 });
 
 it('runs the contract suite in the canary against both the supported range and the dev branch', function (): void {
