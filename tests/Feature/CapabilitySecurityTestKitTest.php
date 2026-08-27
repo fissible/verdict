@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
+use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ApprovedToolCalls;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Decisions\Decision;
@@ -258,4 +260,29 @@ it('does not mistake a stale indeterminate claim for a refresh failure', functio
             RuntimeException::class,
             static fn (): bool => true,
         ))->toThrow(CapabilitySecurityAssertionFailed::class, 'executor-failure-indeterminate-claim');
+});
+
+it('drives its approval resumption through Verdict vocabulary, not upstream decisions', function (): void {
+    // ADR 0033 §2 and #339: the kit is kernel-side tooling, so it must build ApprovedToolCalls
+    // rather than assemble Laravel\Ai Decisions. The architecture test proves it no longer NAMES
+    // an upstream type; this proves it calls the kernel API that replaced it — a kit that stopped
+    // naming Decisions by routing through some adapter helper would satisfy the scanner and miss
+    // the point.
+    // The route, not just the vocabulary. Pinning withinApprovedToolCalls()'s parameter type is
+    // what makes this meaningful: with that type declared, the kit CANNOT reach the kernel's
+    // approval frame except by constructing an ApprovedToolCalls, so a dead import or a comment
+    // mentioning the class cannot fake it.
+    $type = (new ReflectionMethod(
+        ApprovalManager::class,
+        'withinApprovedToolCalls',
+    ))->getParameters()[0]->getType();
+
+    expect($type)->toBeInstanceOf(ReflectionNamedType::class)
+        ->and($type->getName())->toBe(ApprovedToolCalls::class)
+        ->and($type->allowsNull())->toBeFalse();
+
+    // Deliberately NOT asserting the kit's source text. `toContain('ApprovedToolCalls')` would
+    // accept a dead import while forbidding an equivalent local factory — over-specified and
+    // under-proving at once. The type pin above is the real constraint: whatever the kit builds,
+    // it cannot open a kernel approval frame with an upstream Decisions.
 });

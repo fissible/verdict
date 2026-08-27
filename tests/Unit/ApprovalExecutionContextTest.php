@@ -3,16 +3,41 @@
 declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
-use Laravel\Ai\Approvals\Decision;
-use Laravel\Ai\Approvals\Decisions;
+use Fissible\Verdict\Approvals\ApprovedToolCalls;
+
+/**
+ * Rewritten for ADR 0033 §2: this kernel type now takes `ApprovedToolCalls` rather than
+ * `Laravel\Ai\Approvals\Decisions`. The frame behaviour it pins is unchanged — only the vocabulary
+ * crossing the boundary is. The wildcard and rejected-decision exclusions that used to be asserted
+ * here now belong to the adapter's translation, and are pinned in
+ * `tests/Feature/ApprovalDecisionTranslationTest.php`.
+ */
+it('types its frame API to the Verdict value object, closing the duck-typing route', function (): void {
+    // Source-level absence of `Laravel\Ai` is not enough: a signature typed `mixed` or `object`
+    // could still accept an upstream Decisions and interpret it, leaving the filtering
+    // semantically in the kernel while naming nothing. Declared parameter types are what make the
+    // translation provably the adapter's job.
+    foreach ([[ApprovalExecutionContext::class, 'push', 0], [ApprovalExecutionContext::class, 'within', 0]] as [$class, $method, $position]) {
+        $type = (new ReflectionMethod($class, $method))->getParameters()[$position]->getType();
+
+        expect($type)->toBeInstanceOf(ReflectionNamedType::class, "{$class}::{$method}() must declare its first parameter type.")
+            ->and($type->getName())->toBe(ApprovedToolCalls::class)
+            ->and($type->allowsNull())->toBeFalse();
+    }
+});
+
+it('does not name an upstream type', function (): void {
+    $source = (string) file_get_contents((new ReflectionClass(ApprovalExecutionContext::class))->getFileName());
+
+    expect($source)->not->toContain('Laravel\\Ai');
+});
 
 it('allows a tool call after push and denies it after pop', function (): void {
     $context = new ApprovalExecutionContext;
-    $decisions = Decisions::from(['call-1' => Decision::approve()]);
 
     expect($context->allows('call-1'))->toBeFalse();
 
-    $context->push($decisions);
+    $context->push(ApprovedToolCalls::of(['call-1']));
 
     expect($context->allows('call-1'))->toBeTrue()
         ->and($context->allows('call-unrelated'))->toBeFalse();
@@ -22,26 +47,11 @@ it('allows a tool call after push and denies it after pop', function (): void {
     expect($context->allows('call-1'))->toBeFalse();
 });
 
-it('does not treat a rejected or wildcard decision as an approval', function (): void {
-    $context = new ApprovalExecutionContext;
-    $decisions = Decisions::from([
-        'call-rejected' => Decision::reject(),
-        '*' => Decision::approve(),
-    ]);
-
-    $context->push($decisions);
-
-    expect($context->allows('call-rejected'))->toBeFalse()
-        ->and($context->allows('*'))->toBeFalse();
-
-    $context->pop();
-});
-
 it('supports nested frames, most recent first', function (): void {
     $context = new ApprovalExecutionContext;
 
-    $context->push(Decisions::from(['call-outer' => Decision::approve()]));
-    $context->push(Decisions::from(['call-inner' => Decision::approve()]));
+    $context->push(ApprovedToolCalls::of(['call-outer']));
+    $context->push(ApprovedToolCalls::of(['call-inner']));
 
     expect($context->allows('call-inner'))->toBeTrue()
         ->and($context->allows('call-outer'))->toBeFalse();
@@ -56,10 +66,9 @@ it('supports nested frames, most recent first', function (): void {
 
 it('still supports within() as a synchronous push-then-pop-in-finally convenience', function (): void {
     $context = new ApprovalExecutionContext;
-    $decisions = Decisions::from(['call-1' => Decision::approve()]);
     $seenInsideCallback = null;
 
-    $result = $context->within($decisions, function () use ($context, &$seenInsideCallback): string {
+    $result = $context->within(ApprovedToolCalls::of(['call-1']), function () use ($context, &$seenInsideCallback): string {
         $seenInsideCallback = $context->allows('call-1');
 
         return 'callback result';
@@ -72,9 +81,8 @@ it('still supports within() as a synchronous push-then-pop-in-finally convenienc
 
 it('pops within()\'s frame even when the callback throws', function (): void {
     $context = new ApprovalExecutionContext;
-    $decisions = Decisions::from(['call-1' => Decision::approve()]);
 
-    expect(fn () => $context->within($decisions, function (): never {
+    expect(fn () => $context->within(ApprovedToolCalls::of(['call-1']), function (): never {
         throw new RuntimeException('boom');
     }))->toThrow(RuntimeException::class, 'boom');
 
