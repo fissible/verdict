@@ -13,6 +13,7 @@ use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\LiveEvidenceReader;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
+use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\CapturingTool;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CaseNotLiveExpressible;
@@ -21,6 +22,7 @@ use Fissible\Verdict\Evaluation\LiveAgentObserver;
 use Fissible\Verdict\Evaluation\LiveObservationUnavailable;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\ModelDeclinedToAct;
+use Fissible\Verdict\Evaluation\NoLiveEvidence;
 use Fissible\Verdict\Evaluation\PredicateDigest;
 use Fissible\Verdict\Evaluation\PredicateObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
@@ -230,7 +232,7 @@ function liveObserverCapability(string $name, callable $executor): Capability
     )->executionTarget(acceptTestSnapshot('live-observer-target'))->executeUsing($executor);
 }
 
-function liveObserverDecisionEvidence(string $capability, string $argumentFingerprint, string $disposition, string $stage = 'execution'): DecisionEvidence
+function liveObserverDecisionEvidence(string $capability, string $argumentFingerprint, string $disposition, string $stage = 'execution', ?string $actorFingerprint = null, ?string $subjectFingerprint = null): DecisionEvidence
 {
     return new DecisionEvidence(
         envelopeId: 'live-observer-envelope',
@@ -259,6 +261,8 @@ function liveObserverDecisionEvidence(string $capability, string $argumentFinger
         executionClaimStatus: null,
         executionClaimAttempt: null,
         recordedAt: new DateTimeImmutable,
+        actorFingerprint: $actorFingerprint,
+        subjectFingerprint: $subjectFingerprint,
     );
 }
 
@@ -700,4 +704,380 @@ it('projects captured predicates into the observation', function (): void {
     expect($observation->predicates)->toHaveCount(1)
         ->and($observation->predicates[0]->digest)
         ->toBe(PredicateDigest::for('select * from "orders" where "customer_id" = ?', [72]));
+});
+
+// #346: the live observer already fetches the invocation's DecisionEvidence (for correlation)
+// and discards it when building the Observation. These tests pin that it now surfaces the
+// recorded actor/subject identity fingerprints on the Observation's assertion-only channel, so a
+// pack can assert on the identities recorded beside the decision — the property #145 requires and
+// the delegation pack (#345) currently fakes on the provenance channel.
+
+it('surfaces the recorded actor and subject fingerprints from the decision evidence', function (): void {
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-identity',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $actorFingerprint = hash('sha256', 'actor-identity-72');
+    $subjectFingerprint = hash('sha256', 'subject-identity-72');
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence(
+            'orders.read-identity',
+            ArgumentFingerprint::make(['order_id' => 1001]),
+            Disposition::Permit->value,
+            actorFingerprint: $actorFingerprint,
+            subjectFingerprint: $subjectFingerprint,
+        ),
+    ]);
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-identity'), $capture, $reader);
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect($observation->recordedActorFingerprint)->toBe($actorFingerprint)
+        ->and($observation->recordedSubjectFingerprint)->toBe($subjectFingerprint);
+});
+
+it('records no subject fingerprint when the decision evidence carries none', function (): void {
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-actor-only',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $actorFingerprint = hash('sha256', 'actor-identity-only-72');
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence(
+            'orders.read-actor-only',
+            ArgumentFingerprint::make(['order_id' => 1001]),
+            Disposition::Permit->value,
+            actorFingerprint: $actorFingerprint,
+            subjectFingerprint: null,
+        ),
+    ]);
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-actor-only'), $capture, $reader);
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect($observation->recordedActorFingerprint)->toBe($actorFingerprint)
+        ->and($observation->recordedSubjectFingerprint)->toBeNull();
+});
+
+it('lets a recorded-subject assertion distinguish the substituted subject from the original', function (): void {
+    // The headline: assert recordedSubjectFingerprintIs() against a LiveAgentObserver-built
+    // Observation. The recorded subject must be the substituted (current-turn) subject, and an
+    // assertion for the prior-authorization subject must fail — a right decision recorded against
+    // the wrong principal is a failure.
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-substitution',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $priorSubjectFingerprint = hash('sha256', 'prior-subject-72');
+    $substitutedSubjectFingerprint = hash('sha256', 'substituted-subject-91');
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence(
+            'orders.read-substitution',
+            ArgumentFingerprint::make(['order_id' => 1001]),
+            Disposition::Permit->value,
+            actorFingerprint: hash('sha256', 'actor-substitution-72'),
+            subjectFingerprint: $substitutedSubjectFingerprint,
+        ),
+    ]);
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-substitution'), $capture, $reader);
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect(Assertions::recordedSubjectFingerprintIs($substitutedSubjectFingerprint)->evaluate($observation)->passed)->toBeTrue()
+        ->and(Assertions::recordedSubjectFingerprintIs($priorSubjectFingerprint)->evaluate($observation)->passed)->toBeFalse();
+});
+
+it('collapses the invocation-scoped identity across multiple decision records', function (): void {
+    // A single bound-tool call emits several Verdict stages, so decisionsFor() returns several
+    // records for one invocation. Identity is invocation-scoped: every record carries the same
+    // actor/subject, and the observation surfaces that single value.
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-multi-stage',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $actorFingerprint = hash('sha256', 'actor-multi-72');
+    $subjectFingerprint = hash('sha256', 'subject-multi-72');
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence('orders.read-multi-stage', $argumentFingerprint, Disposition::Permit->value, 'proposal', $actorFingerprint, $subjectFingerprint),
+        liveObserverDecisionEvidence('orders.read-multi-stage', $argumentFingerprint, Disposition::Permit->value, 'execution', $actorFingerprint, $subjectFingerprint),
+    ]);
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-multi-stage'), $capture, $reader);
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect($observation->recordedActorFingerprint)->toBe($actorFingerprint)
+        ->and($observation->recordedSubjectFingerprint)->toBe($subjectFingerprint);
+});
+
+it('surfaces the recorded identity on a paused run', function (): void {
+    $capture = new LiveToolCapture;
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+
+    $actorFingerprint = hash('sha256', 'actor-paused-72');
+    $subjectFingerprint = hash('sha256', 'subject-paused-72');
+
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence(
+            'orders.read-pause-identity',
+            $argumentFingerprint,
+            Disposition::RequireConfirmation->value,
+            'proposal',
+            $actorFingerprint,
+            $subjectFingerprint,
+        ),
+    ]);
+
+    $observer = new LiveAgentObserver(
+        liveObserverPausingInvoker($capture, 'orders.read-pause-identity', $argumentFingerprint, 'invocation-pause-identity-1'),
+        $capture,
+        $reader,
+    );
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect($observation->recordedActorFingerprint)->toBe($actorFingerprint)
+        ->and($observation->recordedSubjectFingerprint)->toBe($subjectFingerprint);
+});
+
+it('surfaces a uniformly null subject across multiple records as no recorded subject', function (): void {
+    // Every decision record for one invocation derives identity from the same ActionContext, so an
+    // actor-for-itself invocation carries actor set and subject null on ALL its records. Uniform
+    // null is agreement, not a conflict: it surfaces as no recorded subject, and must not fail closed.
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-uniform-null',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $actorFingerprint = hash('sha256', 'actor-uniform-72');
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence('orders.read-uniform-null', $argumentFingerprint, Disposition::Permit->value, 'proposal', $actorFingerprint, null),
+        liveObserverDecisionEvidence('orders.read-uniform-null', $argumentFingerprint, Disposition::Permit->value, 'execution', $actorFingerprint, null),
+    ]);
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-uniform-null'), $capture, $reader);
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect($observation->recordedActorFingerprint)->toBe($actorFingerprint)
+        ->and($observation->recordedSubjectFingerprint)->toBeNull();
+});
+
+it('fails closed when one record names a subject and another for the same invocation leaves it null', function (): void {
+    // decisionsFor() returns only DecisionEvidence, each with identity from the one ActionContext,
+    // so subject is uniformly null or uniformly set. A record with a subject beside one without is
+    // a malformed decision set — null-versus-value is a disagreement and must fail closed, not be
+    // read as the single non-null value.
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-null-vs-value',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+    $actorFingerprint = hash('sha256', 'actor-null-vs-value-72');
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence('orders.read-null-vs-value', $argumentFingerprint, Disposition::Permit->value, 'proposal', $actorFingerprint, hash('sha256', 'subject-present')),
+        liveObserverDecisionEvidence('orders.read-null-vs-value', $argumentFingerprint, Disposition::Permit->value, 'execution', $actorFingerprint, null),
+    ]);
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-null-vs-value'), $capture, $reader);
+
+    expect(fn () => $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    )))->toThrow(LiveObservationUnavailable::class);
+});
+
+it('fails closed when one record names an actor and another for the same invocation leaves it null', function (): void {
+    // The per-field rule is symmetric: null-versus-value on the actor is a malformed decision set
+    // and must fail closed, exactly as it does for the subject.
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-actor-null-vs-value',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+    $subjectFingerprint = hash('sha256', 'subject-actor-null-72');
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence('orders.read-actor-null-vs-value', $argumentFingerprint, Disposition::Permit->value, 'proposal', hash('sha256', 'actor-present'), $subjectFingerprint),
+        liveObserverDecisionEvidence('orders.read-actor-null-vs-value', $argumentFingerprint, Disposition::Permit->value, 'execution', null, $subjectFingerprint),
+    ]);
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-actor-null-vs-value'), $capture, $reader);
+
+    expect(fn () => $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    )))->toThrow(LiveObservationUnavailable::class);
+});
+
+it('fails closed when two records for one invocation disagree on the subject', function (): void {
+    // Two distinct non-null subjects for one invocation is a malformed evidence store, not a
+    // measurable outcome. Selecting either would silently certify one — the exact failure the
+    // delegation pack exists to prevent — so the observer must refuse to produce an observation.
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-conflict-subject',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+    $actorFingerprint = hash('sha256', 'actor-conflict-72');
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence('orders.read-conflict-subject', $argumentFingerprint, Disposition::Permit->value, 'proposal', $actorFingerprint, hash('sha256', 'subject-A')),
+        liveObserverDecisionEvidence('orders.read-conflict-subject', $argumentFingerprint, Disposition::Permit->value, 'execution', $actorFingerprint, hash('sha256', 'subject-B')),
+    ]);
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-conflict-subject'), $capture, $reader);
+
+    expect(fn () => $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    )))->toThrow(LiveObservationUnavailable::class);
+});
+
+it('fails closed when two records for one invocation disagree on the actor', function (): void {
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-conflict-actor',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $argumentFingerprint = ArgumentFingerprint::make(['order_id' => 1001]);
+    $subjectFingerprint = hash('sha256', 'subject-conflict-72');
+
+    $capture = new LiveToolCapture;
+    $reader = new StubLiveEvidenceReader([
+        liveObserverDecisionEvidence('orders.read-conflict-actor', $argumentFingerprint, Disposition::Permit->value, 'proposal', hash('sha256', 'actor-A'), $subjectFingerprint),
+        liveObserverDecisionEvidence('orders.read-conflict-actor', $argumentFingerprint, Disposition::Permit->value, 'execution', hash('sha256', 'actor-B'), $subjectFingerprint),
+    ]);
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-conflict-actor'), $capture, $reader);
+
+    expect(fn () => $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    )))->toThrow(LiveObservationUnavailable::class);
+});
+
+it('surfaces no recorded identity on an unguarded run that has no evidence reader', function (): void {
+    // The unguarded control arm runs without a reader (NoLiveEvidence), so no decision evidence is
+    // consulted. No identity may appear without a reader — fail-closed, no stale carry-over.
+    liveObserverPermitAllAuthorizer();
+
+    app(VerdictManager::class)->capability(liveObserverCapability(
+        'orders.read-unguarded',
+        fn (AuthorizedAction $action): string => 'Order 1001 is out for delivery.',
+    ));
+
+    LiveObserverAgent::fake([
+        new ToolCall('live-observer-lookup', 'LiveObserverOrderLookup', ['order_id' => 1001]),
+        'Order 1001 is out for delivery.',
+    ]);
+
+    $capture = new LiveToolCapture;
+    $observer = new LiveAgentObserver(liveObserverAgentFactory($capture, 'orders.read-unguarded'), $capture, new NoLiveEvidence);
+
+    $observation = $observer(new CaseInput(
+        trustedSetup: ['actor_id' => 72],
+        untrustedInput: ['request' => 'Where is order #1001?'],
+    ));
+
+    expect($observation->recordedActorFingerprint)->toBeNull()
+        ->and($observation->recordedSubjectFingerprint)->toBeNull();
 });
