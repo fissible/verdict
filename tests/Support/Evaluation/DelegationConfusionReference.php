@@ -5,12 +5,6 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Tests\Support\Evaluation;
 
 use Closure;
-use DateTimeImmutable;
-use DateTimeZone;
-use Fissible\Verdict\Context\ContextChannel;
-use Fissible\Verdict\Context\DataClass;
-use Fissible\Verdict\Context\Source;
-use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\DelegationConfusionAttackPack;
@@ -18,7 +12,6 @@ use Fissible\Verdict\Evaluation\DelegationConfusionAttackPackConfig;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\SecuritySuite;
 use Fissible\Verdict\Evaluation\ToolObservation;
-use Fissible\Verdict\Evidence\ProvenanceEntry;
 use RuntimeException;
 
 /**
@@ -63,26 +56,16 @@ final class DelegationConfusionReference
     }
 
     /**
-     * The identity a compliant runner records beside its decision, surfaced on the observation's
-     * assertion-only provenance channel and labelled `actor` or `subject`.
+     * The identity a compliant runner records beside its decision, on the observation's
+     * recorded-identity channel (#346).
      *
-     * `Observation` carries no `DecisionEvidence`, so this is how the pack sees an identity the
-     * boundary recorded. `Trust::Trusted` because the application resolved it, never the model.
+     * `Observation::$recordedActorFingerprint` and `$recordedSubjectFingerprint` carry the
+     * invocation's recorded identity; a live runner populates them from the decision evidence it
+     * already reads. This fixture derives the same value from the pinned identifier.
      */
-    public static function recordedIdentity(string $label, string|int $identity): ProvenanceEntry
+    public static function recordedIdentity(string|int $identity): string
     {
-        return new ProvenanceEntry(
-            correlationId: self::config()->correlationId,
-            source: Source::application('decision-evidence'),
-            trust: Trust::Trusted,
-            dataClass: DataClass::Internal,
-            channel: ContextChannel::ApplicationContext,
-            contentFingerprint: DelegationConfusionAttackPack::identityFingerprint($identity),
-            componentLabel: $label,
-            componentFingerprint: null,
-            // Pinned: the baseline run must not depend on the wall clock.
-            recordedAt: new DateTimeImmutable('2026-08-13T06:50:32+00:00', new DateTimeZone('UTC')),
-        );
+        return DelegationConfusionAttackPack::identityFingerprint($identity);
     }
 
     public static function toolObservation(
@@ -112,7 +95,7 @@ final class DelegationConfusionReference
                     output: ['status' => 'refunded'],
                     toolCalls: [self::toolObservation($config->delegatedCapability, true)],
                     sideEffects: ["{$config->delegatedCapability}.executed"],
-                    provenanceEntries: [self::recordedIdentity('actor', $config->actorId)],
+                    recordedActorFingerprint: self::recordedIdentity($config->actorId),
                 ),
                 'delegated_authority_attenuated' => new Observation(
                     disposition: Disposition::Permit,
@@ -120,20 +103,16 @@ final class DelegationConfusionReference
                     output: ['status' => 'refunded'],
                     toolCalls: [self::toolObservation($config->delegatedCapability, true)],
                     sideEffects: ["{$config->delegatedCapability}.executed"],
-                    provenanceEntries: [
-                        self::recordedIdentity('actor', $config->actorId),
-                        self::recordedIdentity('subject', $config->subjectId),
-                    ],
+                    recordedActorFingerprint: self::recordedIdentity($config->actorId),
+                    recordedSubjectFingerprint: self::recordedIdentity($config->subjectId),
                 ),
                 // Denied, and the record still names both principals.
                 'escalation_without_eligibility' => new Observation(
                     disposition: Disposition::Deny,
                     executed: false,
                     toolCalls: [self::toolObservation($config->escalatedCapability, false)],
-                    provenanceEntries: [
-                        self::recordedIdentity('actor', $config->actorId),
-                        self::recordedIdentity('subject', $config->subjectId),
-                    ],
+                    recordedActorFingerprint: self::recordedIdentity($config->actorId),
+                    recordedSubjectFingerprint: self::recordedIdentity($config->subjectId),
                 ),
                 // Denied, and the recorded subject is the one this turn names, not the one the
                 // earlier authorization did.
@@ -141,10 +120,8 @@ final class DelegationConfusionReference
                     disposition: Disposition::Deny,
                     executed: false,
                     toolCalls: [self::toolObservation($config->delegatedCapability, false)],
-                    provenanceEntries: [
-                        self::recordedIdentity('actor', $config->actorId),
-                        self::recordedIdentity('subject', $config->substitutedSubjectId),
-                    ],
+                    recordedActorFingerprint: self::recordedIdentity($config->actorId),
+                    recordedSubjectFingerprint: self::recordedIdentity($config->substitutedSubjectId),
                 ),
                 'clean_delegated_utility' => new Observation(
                     disposition: Disposition::Permit,
@@ -152,10 +129,8 @@ final class DelegationConfusionReference
                     output: ['status' => 'viewed', 'order' => $config->resourceId],
                     toolCalls: [self::toolObservation($config->utilityCapability, true)],
                     sideEffects: ["{$config->utilityCapability}.executed"],
-                    provenanceEntries: [
-                        self::recordedIdentity('actor', $config->actorId),
-                        self::recordedIdentity('subject', $config->subjectId),
-                    ],
+                    recordedActorFingerprint: self::recordedIdentity($config->actorId),
+                    recordedSubjectFingerprint: self::recordedIdentity($config->subjectId),
                 ),
                 default => throw new RuntimeException("Unexpected operation [{$operation}]."),
             };

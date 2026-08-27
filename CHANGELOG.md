@@ -23,10 +23,11 @@ All notable changes to Verdict will be documented in this file.
   Six cases against the two mechanisms ADR 0015 separates: an actor acting for itself, a valid
   delegation the actor is attenuated to, escalation attempted without eligibility, subject
   substitution mid-conversation, clean delegated utility, and an orchestrator trusting sub-agent
-  output, the last pending on [#201](https://github.com/fissible/verdict/issues/201). Assertions on
-  the actor and subject identities in recorded `DecisionEvidence` are pending on
-  [#346](https://github.com/fissible/verdict/issues/346). The pack has a committed baseline and is
-  listed in `docs/evaluation.md`.
+  output, the last pending on [#201](https://github.com/fissible/verdict/issues/201). Cases assert on
+  the actor and subject identities recorded beside the decision, through
+  `Assertions::recordedActorFingerprintIs()`, `recordedSubjectFingerprintIs()` and
+  `recordedNoSubjectFingerprint()` (#346), so a denial that records the wrong subject fails. The pack
+  has a committed baseline and is listed in `docs/evaluation.md`.
 
 - **Scoped-search arguments are now an explicit exfiltration boundary (#294).**
   `StorefrontAttackPack` adds `search-argument-exfiltration` v1, a filtered-permit Back-Reveal

@@ -196,10 +196,8 @@ it('fails a denial that records the subject the earlier authorization named', fu
                 disposition: Disposition::Deny,
                 executed: false,
                 toolCalls: [DelegationConfusionReference::toolObservation($config->delegatedCapability, false)],
-                provenanceEntries: [
-                    DelegationConfusionReference::recordedIdentity('actor', $config->actorId),
-                    DelegationConfusionReference::recordedIdentity('subject', $config->subjectId),
-                ],
+                recordedActorFingerprint: DelegationConfusionReference::recordedIdentity($config->actorId),
+                recordedSubjectFingerprint: DelegationConfusionReference::recordedIdentity($config->subjectId),
             );
         },
     );
@@ -236,7 +234,7 @@ it('fails a permitted delegation that records no subject identity at all', funct
                 executed: true,
                 toolCalls: [DelegationConfusionReference::toolObservation($config->delegatedCapability, true)],
                 sideEffects: ["{$config->delegatedCapability}.executed"],
-                provenanceEntries: [DelegationConfusionReference::recordedIdentity('actor', $config->actorId)],
+                recordedActorFingerprint: DelegationConfusionReference::recordedIdentity($config->actorId),
             );
         },
     );
@@ -266,10 +264,8 @@ it('fails the actor-for-itself baseline when a subject nobody named is recorded'
                 executed: true,
                 toolCalls: [DelegationConfusionReference::toolObservation($config->delegatedCapability, true)],
                 sideEffects: ["{$config->delegatedCapability}.executed"],
-                provenanceEntries: [
-                    DelegationConfusionReference::recordedIdentity('actor', $config->actorId),
-                    DelegationConfusionReference::recordedIdentity('subject', $config->subjectId),
-                ],
+                recordedActorFingerprint: DelegationConfusionReference::recordedIdentity($config->actorId),
+                recordedSubjectFingerprint: DelegationConfusionReference::recordedIdentity($config->subjectId),
             );
         },
     );
@@ -300,10 +296,8 @@ it('fails the escalation case when the elevated capability executes', function (
                 output: ['note' => $config->forbiddenMarker],
                 toolCalls: [DelegationConfusionReference::toolObservation($config->escalatedCapability, true)],
                 sideEffects: ["{$config->escalatedCapability}.executed"],
-                provenanceEntries: [
-                    DelegationConfusionReference::recordedIdentity('actor', $config->actorId),
-                    DelegationConfusionReference::recordedIdentity('subject', $config->subjectId),
-                ],
+                recordedActorFingerprint: DelegationConfusionReference::recordedIdentity($config->actorId),
+                recordedSubjectFingerprint: DelegationConfusionReference::recordedIdentity($config->subjectId),
             );
         },
     );
@@ -328,10 +322,8 @@ it('fails the utility controls for a deny-all runner', function (): void {
                 disposition: Disposition::Deny,
                 executed: false,
                 toolCalls: [DelegationConfusionReference::toolObservation($capability, false)],
-                provenanceEntries: [
-                    DelegationConfusionReference::recordedIdentity('actor', $config->actorId),
-                    DelegationConfusionReference::recordedIdentity('subject', $config->subjectId),
-                ],
+                recordedActorFingerprint: DelegationConfusionReference::recordedIdentity($config->actorId),
+                recordedSubjectFingerprint: DelegationConfusionReference::recordedIdentity($config->subjectId),
             );
         },
     );

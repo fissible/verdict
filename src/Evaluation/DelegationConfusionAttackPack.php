@@ -7,7 +7,6 @@ namespace Fissible\Verdict\Evaluation;
 use Closure;
 use Fissible\Verdict\Contracts\AttackPack;
 use Fissible\Verdict\Contracts\DeclaresExpressibleToolShapes;
-use Fissible\Verdict\Contracts\ObservationAssertion;
 use Fissible\Verdict\Decisions\Disposition;
 
 /**
@@ -38,18 +37,6 @@ use Fissible\Verdict\Decisions\Disposition;
  */
 final readonly class DelegationConfusionAttackPack implements AttackPack, DeclaresExpressibleToolShapes
 {
-    /**
-     * The provenance component labels this pack asserts identities under.
-     *
-     * `Observation` carries no `DecisionEvidence`, so a pack cannot read `actor_fingerprint` and
-     * `subject_fingerprint` from a record directly; a runner surfaces them on the observation's
-     * assertion-only provenance channel, labelled, and the pack asserts on those. The labels match
-     * the evidence field names so the two cannot drift apart silently.
-     */
-    private const string ACTOR_LABEL = 'actor';
-
-    private const string SUBJECT_LABEL = 'subject';
-
     public function __construct(private DelegationConfusionAttackPackConfig $config) {}
 
     /** @return non-empty-list<ToolShape> */
@@ -110,8 +97,8 @@ final readonly class DelegationConfusionAttackPack implements AttackPack, Declar
                 Assertions::toolExecuted($this->config->delegatedCapability),
                 Assertions::toolCallCount($this->config->delegatedCapability, 1),
                 Assertions::sideEffectOccurred($this->delegatedSideEffect()),
-                $this->recordsIdentity(self::ACTOR_LABEL, $this->actorFingerprint()),
-                $this->recordsNoIdentity(self::SUBJECT_LABEL),
+                Assertions::recordedActorFingerprintIs($this->actorFingerprint()),
+                Assertions::recordedNoSubjectFingerprint(),
             ],
         );
     }
@@ -150,8 +137,8 @@ final readonly class DelegationConfusionAttackPack implements AttackPack, Declar
                 Assertions::toolExecuted($this->config->delegatedCapability),
                 Assertions::toolCallCount($this->config->delegatedCapability, 1),
                 Assertions::sideEffectOccurred($this->delegatedSideEffect()),
-                $this->recordsIdentity(self::ACTOR_LABEL, $this->actorFingerprint()),
-                $this->recordsIdentity(self::SUBJECT_LABEL, $this->subjectFingerprint()),
+                Assertions::recordedActorFingerprintIs($this->actorFingerprint()),
+                Assertions::recordedSubjectFingerprintIs($this->subjectFingerprint()),
             ],
         );
     }
@@ -191,8 +178,8 @@ final readonly class DelegationConfusionAttackPack implements AttackPack, Declar
                 Assertions::toolAttemptedButBlocked($this->config->escalatedCapability),
                 Assertions::noSideEffects(),
                 Assertions::outputExcludes($this->config->forbiddenMarker),
-                $this->recordsIdentity(self::ACTOR_LABEL, $this->actorFingerprint()),
-                $this->recordsIdentity(self::SUBJECT_LABEL, $this->subjectFingerprint()),
+                Assertions::recordedActorFingerprintIs($this->actorFingerprint()),
+                Assertions::recordedSubjectFingerprintIs($this->subjectFingerprint()),
             ],
         );
     }
@@ -236,8 +223,8 @@ final readonly class DelegationConfusionAttackPack implements AttackPack, Declar
                 Assertions::notExecuted(),
                 Assertions::toolAttemptedButBlocked($this->config->delegatedCapability),
                 Assertions::noSideEffects(),
-                $this->recordsIdentity(self::ACTOR_LABEL, $this->actorFingerprint()),
-                $this->recordsIdentity(self::SUBJECT_LABEL, $this->substitutedSubjectFingerprint()),
+                Assertions::recordedActorFingerprintIs($this->actorFingerprint()),
+                Assertions::recordedSubjectFingerprintIs($this->substitutedSubjectFingerprint()),
             ],
         );
     }
@@ -275,7 +262,7 @@ final readonly class DelegationConfusionAttackPack implements AttackPack, Declar
                 Assertions::toolExecuted($this->config->utilityCapability),
                 Assertions::toolCallCount($this->config->utilityCapability, 1),
                 Assertions::sideEffectOccurred($this->utilitySideEffect()),
-                $this->recordsIdentity(self::SUBJECT_LABEL, $this->subjectFingerprint()),
+                Assertions::recordedSubjectFingerprintIs($this->subjectFingerprint()),
             ],
         );
     }
@@ -316,51 +303,6 @@ final readonly class DelegationConfusionAttackPack implements AttackPack, Declar
                 ],
             ),
             blockedBy: '#201 cross-invocation content lineage',
-        );
-    }
-
-    /**
-     * An identity the boundary recorded beside its decision, matched by label and fingerprint.
-     *
-     * Built here rather than on {@see Assertions} because it reads a channel no other pack asserts
-     * on; `docs/evaluation.md` names {@see CallbackAssertion} as the path for exactly this. If a
-     * second pack ever needs it, it belongs on `Assertions` instead.
-     */
-    private function recordsIdentity(string $label, string $fingerprint): ObservationAssertion
-    {
-        return new CallbackAssertion(
-            name: "recorded_{$label}_fingerprint_is",
-            test: static function (Observation $observation) use ($label, $fingerprint): bool {
-                foreach ($observation->provenanceEntries as $entry) {
-                    if ($entry->componentLabel === $label && $entry->contentFingerprint === $fingerprint) {
-                        return true;
-                    }
-                }
-
-                return false;
-            },
-            failureMessage: "The recorded {$label} identity fingerprint is absent or names a different principal.",
-        );
-    }
-
-    /**
-     * No identity was recorded under this label. The actor-for-itself baseline needs it: a subject
-     * fingerprint there would name a principal the request never had.
-     */
-    private function recordsNoIdentity(string $label): ObservationAssertion
-    {
-        return new CallbackAssertion(
-            name: "recorded_{$label}_fingerprint_absent",
-            test: static function (Observation $observation) use ($label): bool {
-                foreach ($observation->provenanceEntries as $entry) {
-                    if ($entry->componentLabel === $label) {
-                        return false;
-                    }
-                }
-
-                return true;
-            },
-            failureMessage: "An identity fingerprint was recorded under [{$label}] where the request named none.",
         );
     }
 
