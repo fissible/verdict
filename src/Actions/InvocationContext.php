@@ -2,10 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Fissible\Verdict\LaravelAi;
+namespace Fissible\Verdict\Actions;
 
 use Closure;
-use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 
 /**

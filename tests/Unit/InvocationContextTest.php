@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
-use Fissible\Verdict\LaravelAi\InvocationContext;
+use Fissible\Verdict\Actions\InvocationContext;
 
 /** @param array<string, mixed> $arguments */
 function preparedEnvelope(array $arguments): ActionEnvelope

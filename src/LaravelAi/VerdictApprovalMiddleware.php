@@ -23,7 +23,8 @@ final readonly class VerdictApprovalMiddleware
             return $next($prompt);
         }
 
-        $this->context->push($decisions);
+        $approvedToolCalls = LaravelApprovalDecisions::approvedToolCalls($decisions);
+        $this->context->push($approvedToolCalls);
 
         try {
             $response = $next($prompt);
@@ -48,9 +49,9 @@ final readonly class VerdictApprovalMiddleware
         // checks. Undo it here, then re-push only when — and if — real iteration begins.
         $this->context->pop();
 
-        StreamableAgentResponseGenerator::wrap($response, function (Closure $originalGenerator) use ($decisions): Closure {
-            return function () use ($originalGenerator, $decisions): Generator {
-                $this->context->push($decisions);
+        StreamableAgentResponseGenerator::wrap($response, function (Closure $originalGenerator) use ($approvedToolCalls): Closure {
+            return function () use ($originalGenerator, $approvedToolCalls): Generator {
+                $this->context->push($approvedToolCalls);
 
                 try {
                     yield from call_user_func($originalGenerator);

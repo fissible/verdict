@@ -6,14 +6,13 @@ namespace Fissible\Verdict\Testing;
 
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
+use Fissible\Verdict\Approvals\ApprovedToolCalls;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimStatus;
 use Fissible\Verdict\Targets\ExecutionTargetStrategy;
 use Fissible\Verdict\VerdictManager;
-use Laravel\Ai\Approvals\Decision as ApprovalDecision;
-use Laravel\Ai\Approvals\Decisions;
 use Throwable;
 
 /**
@@ -107,7 +106,7 @@ final readonly class CapabilitySecurityTestKit
         $invalidateBinding();
 
         $result = $this->verdict->approvals()->withinApprovedToolCalls(
-            Decisions::from([$challenge->toolCallId => ApprovalDecision::approve()]),
+            ApprovedToolCalls::of([$challenge->toolCallId]),
             fn () => $this->verdict->runBound($envelope),
         );
 

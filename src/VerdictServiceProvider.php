@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict;
 
 use Fissible\AttestLaravel\Support\AttestRegistry;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
@@ -56,7 +57,6 @@ use Fissible\Verdict\ExecutionClaims\DatabaseExecutionClaimStore;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
 use Fissible\Verdict\Intents\ActionIntentManager;
 use Fissible\Verdict\Intents\DatabaseActionIntentStore;
-use Fissible\Verdict\LaravelAi\InvocationContext;
 use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
 use Fissible\Verdict\LaravelAi\RecordAgentPromptProvenance;
 use Fissible\Verdict\LaravelAi\RecordToolResultProvenance;

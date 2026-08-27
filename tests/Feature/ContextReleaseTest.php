@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Context\ContextTransformationResult;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Destination;
@@ -12,7 +13,6 @@ use Fissible\Verdict\Contracts\ContextTransformer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Facades\Verdict;
-use Fissible\Verdict\LaravelAi\InvocationContext;
 
 /** @verdict-claim security.context-release */
 it('releases only allowlisted fields over an explicitly permitted route', function (): void {

@@ -5,23 +5,22 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Approvals;
 
 use Closure;
-use Laravel\Ai\Approvals\Decisions;
 
 final class ApprovalExecutionContext
 {
-    /** @var list<array<string, true>> */
+    /** @var list<ApprovedToolCalls> */
     private array $frames = [];
 
     public function allows(string $toolCallId): bool
     {
         $frame = end($this->frames);
 
-        return is_array($frame) && isset($frame[$toolCallId]);
+        return $frame instanceof ApprovedToolCalls && $frame->allows($toolCallId);
     }
 
-    public function within(Decisions $decisions, Closure $callback): mixed
+    public function within(ApprovedToolCalls $toolCallIds, Closure $callback): mixed
     {
-        $this->push($decisions);
+        $this->push($toolCallIds);
 
         try {
             return $callback();
@@ -30,17 +29,9 @@ final class ApprovalExecutionContext
         }
     }
 
-    public function push(Decisions $decisions): void
+    public function push(ApprovedToolCalls $toolCallIds): void
     {
-        $approved = [];
-
-        foreach ($decisions->all() as $toolCallId => $decision) {
-            if ($toolCallId !== '*' && $decision->isApproved()) {
-                $approved[$toolCallId] = true;
-            }
-        }
-
-        $this->frames[] = $approved;
+        $this->frames[] = $toolCallIds;
     }
 
     public function pop(): void
