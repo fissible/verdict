@@ -256,7 +256,7 @@ function compatibilityMatrixTableOrFail(): array
 function compatibilityColumn(array $header, string $subject): ?int
 {
     foreach ($header as $position => $heading) {
-        $heading = strtolower(trim($heading, " `*"));
+        $heading = strtolower(trim($heading, ' `*'));
 
         if ($heading === $subject || $heading === 'fissible/'.$subject) {
             return $position;
@@ -339,7 +339,7 @@ function compatibilityInventoryRow(string $symbol): ?array
 
         // The symbol must BE the row's subject, not a substring of a longer symbol and not a
         // passing mention in a Notes cell.
-        if ($cells !== [] && trim($cells[0], " `*") === $symbol) {
+        if ($cells !== [] && trim($cells[0], ' `*') === $symbol) {
             return $cells;
         }
     }
@@ -373,7 +373,7 @@ it('publishes exactly one generated matrix on the declared schema', function ():
 
     // The exact schema, in order. Free-form columns let a prose sentence stand in for evidence and
     // let a duplicate heading be counted as an observation column.
-    expect(array_map(static fn (string $h): string => strtolower(trim($h, " `*")), $table['header']))->toBe(
+    expect(array_map(static fn (string $h): string => strtolower(trim($h, ' `*')), $table['header']))->toBe(
         COMPATIBILITY_SCHEMA,
         'The matrix header does not match the declared schema.'
     );
@@ -385,7 +385,7 @@ it('publishes exactly one generated matrix on the declared schema', function ():
         );
 
         foreach (compatibilityRowFields($row) as $column => $value) {
-            expect(trim($value, " `*"))->not->toBeEmpty(
+            expect(trim($value, ' `*'))->not->toBeEmpty(
                 'Matrix row '.($index + 1).' leaves "'.$column.'" empty.'
             );
         }
@@ -399,7 +399,7 @@ it('names a released verdict tag in every row', function (): void {
     expect($released)->not->toBeEmpty('No Verdict tags found, so no row can be checked against a real release.');
 
     foreach ($table['rows'] as $index => $row) {
-        $named = ltrim(trim(compatibilityRowFields($row)['verdict'], " `*"), 'v');
+        $named = ltrim(trim(compatibilityRowFields($row)['verdict'], ' `*'), 'v');
 
         expect(in_array($named, $released, true))->toBeTrue(
             'Matrix row '.($index + 1).' names Verdict '.$named.', which is not a released tag. A matrix records what was observed against a real release.'
@@ -415,7 +415,7 @@ it('keeps every row inside the laravel/ai constraint this package declares', fun
     $constraint = compatibilityComposerManifest()['require']['laravel/ai'];
 
     foreach ($table['rows'] as $index => $row) {
-        $cell = trim(compatibilityRowFields($row)['laravel/ai'], " `*");
+        $cell = trim(compatibilityRowFields($row)['laravel/ai'], ' `*');
 
         preg_match_all('/\bv?(\d+\.\d+\.\d+)\b/', $cell, $matches);
 
@@ -436,7 +436,7 @@ it('carries a verification kind, a real date, and a reference that outlives its 
 
     foreach ($table['rows'] as $index => $row) {
         $fields = compatibilityRowFields($row);
-        $kind = strtolower(trim($fields['verified'], " `*"));
+        $kind = strtolower(trim($fields['verified'], ' `*'));
 
         // The WHOLE cell, not a word found somewhere: a free-text search matched "local" inside
         // local.example and inside URLs.
@@ -444,7 +444,7 @@ it('carries a verification kind, a real date, and a reference that outlives its 
             'Matrix row '.($index + 1).' states verification "'.$kind.'", not one of '.implode(', ', COMPATIBILITY_VERIFICATION_KINDS).'. A swept CI matrix and one local run are different claims.'
         );
 
-        $date = trim($fields['date'], " `*");
+        $date = trim($fields['date'], ' `*');
 
         expect(preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $parts))->toBe(
             1,
@@ -455,7 +455,7 @@ it('carries a verification kind, a real date, and a reference that outlives its 
         );
 
         // Both kinds need a durable reference; only CI can be held to a run URL.
-        $evidence = trim($fields['evidence'], " `*");
+        $evidence = trim($fields['evidence'], ' `*');
 
         if ($kind === 'ci') {
             expect(preg_match(COMPATIBILITY_CI_REFERENCE, $evidence))->toBe(
@@ -480,7 +480,7 @@ it('carries a verification kind, a real date, and a reference that outlives its 
         $require = compatibilityComposerManifest()['require'];
 
         foreach (['php' => $require['php'], 'laravel' => $require['illuminate/contracts']] as $environment => $constraint) {
-            preg_match_all('/\b(\d+\.\d+(?:\.\d+)?)\b/', trim($fields[$environment], " `*"), $found);
+            preg_match_all('/\b(\d+\.\d+(?:\.\d+)?)\b/', trim($fields[$environment], ' `*'), $found);
 
             expect($found[1])->not->toBeEmpty(
                 'Matrix row '.($index + 1).' names no '.$environment.' version, so the environment it was tested on is unknowable.'
@@ -602,7 +602,7 @@ it('binds console provenance to the rows that carry console facts', function ():
     $published = false;
 
     foreach ($table['rows'] as $index => $row) {
-        $cell = trim(compatibilityRowFields($row)['verdict-console'], " `*");
+        $cell = trim(compatibilityRowFields($row)['verdict-console'], ' `*');
 
         if (preg_match(COMPATIBILITY_DEFERRAL_MARKERS, $cell) === 1) {
             continue;
