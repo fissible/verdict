@@ -204,7 +204,7 @@ final readonly class DelegationConfusionAttackPack implements AttackPack, Declar
      * The load-bearing assertion is the second one about identity: the record must name the
      * **new** subject, the one the request is actually for. A denial that records the subject the
      * earlier authorization named is a wrong record of a right decision, and this case fails on
-     * it — that is the property #145 asks for, and it is why the identity assertion is not
+     * it: that is the property #145 asks for, and it is why the identity assertion is not
      * redundant with the denial assertions above it.
      *
      * @param  Closure(CaseInput): Observation  $runner
