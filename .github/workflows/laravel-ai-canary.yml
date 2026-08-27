@@ -28,6 +28,10 @@ jobs:
     # Never block a merge on upstream's development branch. The signal is the point, not the gate.
     continue-on-error: true
 
+    strategy:
+      matrix:
+        laravel_ai: ['^0.11.0', '0.x-dev']
+
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,11 +44,9 @@ jobs:
           tools: composer:v2
           coverage: none
 
-      # One Laravel cell on purpose. This job isolates a single variable — upstream laravel/ai —
-      # so version-matrix coverage stays in tests.yml where it belongs.
-      - name: Install dependencies against the laravel/ai development branch
+      - name: Install dependencies against the selected laravel/ai version
         run: |
-          composer require "laravel/framework:13.*" "orchestra/testbench:11.*" "laravel/ai:0.x-dev" --no-interaction --no-update
+          composer require "laravel/framework:13.*" "orchestra/testbench:11.*" "laravel/ai:${{ matrix.laravel_ai }}" --no-interaction --no-update
           composer update --prefer-stable --prefer-dist --no-interaction --no-progress --no-scripts --with-all-dependencies
           composer run prepare
 
@@ -58,5 +60,5 @@ jobs:
       - name: PHPStan
         run: composer analyse
 
-      - name: Test suite
-        run: vendor/bin/pest
+      - name: Contract suite
+        run: vendor/bin/pest tests/Contract/

@@ -4,6 +4,10 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Add the Laravel AI contract suite and two-cell supported-range/development-branch canary matrix.
+
 - **Scoped-search arguments are now an explicit exfiltration boundary (#294).**
   `StorefrontAttackPack` adds `search-argument-exfiltration` v1, a filtered-permit Back-Reveal
   ([arXiv:2604.05432](https://arxiv.org/abs/2604.05432)) case: an actor-visible canary is planted in

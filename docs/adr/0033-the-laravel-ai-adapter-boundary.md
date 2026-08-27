@@ -196,6 +196,14 @@ as a matrix is part of this work, not an existing property. The canary keeps
 `continue-on-error: true`: its value is signal, not a gate, which is already that workflow's stated
 design.
 
+#### Update — #340 contract catalogue
+
+The initial table omitted three documented dependencies now covered by the contract suite:
+`Contracts\Gateway\StepTextGateway`, which provides the controlled real-stream test seam;
+`StreamableAgentResponse`'s protected Closure generator, which Verdict wraps by reflection; and the
+`AgentResponse`/`StructuredAgentResponse`/`StreamableAgentResponse` taxonomy used by
+`LiveAgentObserver`. The enforced catalogue is therefore thirteen behaviors, not ten.
+
 ### 7. What this buys, stated so it is not overread
 
 While laravel/ai remains 0.x, this buys:
