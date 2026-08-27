@@ -16,7 +16,7 @@ use Fissible\Verdict\Evaluation\LiveAgentObserver;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
-use Fissible\Verdict\LaravelAi\InvocationContext;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;

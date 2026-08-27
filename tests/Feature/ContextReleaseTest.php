@@ -12,7 +12,7 @@ use Fissible\Verdict\Contracts\ContextTransformer;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Facades\Verdict;
-use Fissible\Verdict\LaravelAi\InvocationContext;
+use Fissible\Verdict\Actions\InvocationContext;
 
 /** @verdict-claim security.context-release */
 it('releases only allowlisted fields over an explicitly permitted route', function (): void {

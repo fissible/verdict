@@ -14,7 +14,7 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\Exceptions\UnknownCapability;
 use Fissible\Verdict\LaravelAi\BoundTool;
-use Fissible\Verdict\LaravelAi\InvocationContext;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Auth\Access\Response;

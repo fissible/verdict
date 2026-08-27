@@ -25,7 +25,7 @@ use Fissible\Verdict\Evaluation\RegisteredSecretScanner;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
-use Fissible\Verdict\LaravelAi\InvocationContext;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;

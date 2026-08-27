@@ -24,7 +24,7 @@ use Fissible\Verdict\Evaluation\PredicateDigest;
 use Fissible\Verdict\Evaluation\PredicateObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
-use Fissible\Verdict\LaravelAi\InvocationContext;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
