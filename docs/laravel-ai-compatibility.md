@@ -12,6 +12,31 @@ This is a grep-and-read audit of `src/`, not a promise from upstream. `laravel/a
 - **(b) Concrete class, no contract** — a class Verdict calls directly that isn't behind an interface. Laravel AI can change its constructor, methods, or properties in any pre-1.0 release without a major-version signal.
 - **(c) Pipeline/event behavior** — Verdict depends on *when* and *with what* Laravel AI invokes a listener or middleware, not on a class or interface at all. The riskiest category, because there's no single symbol to grep for when it changes.
 
+## Compatibility matrix
+
+This is a generated record of observations, rather than a hand-maintained support promise. `ci`
+means the named GitHub Actions run tested the row; `local` records one local suite run, and its
+locator is the record of that run — what was checked out, what resolved, and what the suite
+reported — not the manifest of the release it names. The distinction is the point: a `ci` row is a
+swept matrix, a `local` row is one resolution on one machine on one date, and neither word turns a
+Composer constraint into evidence.
+
+The block comes from `scripts/generate-compatibility-matrix.php` and its JSON facts input. Regenerate
+it whenever the `laravel/ai` constraint changes or when adding a newly observed row. Rows are retired
+or pruned when their concrete Laravel AI version no longer satisfies the composer.json constraint;
+this keeps Verdict, rather than another repository's release cadence, responsible for the boundary.
+
+The verdict-console facts below are reported by its manifest and VERSION at the linked revision, not
+verified here: Verdict's CI does not run the console suite. That manifest declares
+`fissible/verdict: ^0.12` and `laravel/ai: ^0.11.0`; the console's own 24-cell workflow resolves
+both packages per cell rather than pinning either one.
+
+<!-- generated:compatibility-matrix -->
+| verdict | verdict-console | laravel/ai | php | laravel | verified | date | evidence |
+|---|---|---|---|---|---|---|---|
+| v0.12.0 | v0.2.0 (https://github.com/fissible/verdict-console/commit/f9e0848f1ca9118b6e0b194a67ee026b27db70d3) | v0.11.0 | 8.4.24 | 13.29.0 | local | 2026-08-27 | https://github.com/fissible/verdict/blob/9469d46046b6b722446810f1d2970e4dba3900af/compatibility/evidence/v0.12.0.md |
+<!-- /generated:compatibility-matrix -->
+
 ## Symbol inventory
 
 Every `Laravel\Ai\*` symbol referenced anywhere in `src/` (verified via `grep -rn "Laravel\\Ai\\" src/ --include="*.php"`; two additional inline fully-qualified references in `src/Facades/Verdict.php`'s docblocks are folded into the `Tool` row since they're the same contract, referenced for IDE hinting only, with no runtime effect):
@@ -27,7 +52,7 @@ Every `Laravel\Ai\*` symbol referenced anywhere in `src/` (verified via `grep -r
 | `Prompts\AgentPrompt` | (b) | `VerdictApprovalMiddleware::handle()`, `VerdictProvenanceMiddleware::handle()`, `RecordAgentPromptProvenance::handle()` (via `$event->prompt`) | Concrete class (`class AgentPrompt extends Prompt`), no interface at all. Verdict reads `$prompt->invocationId`, `$prompt->prompt`, `$prompt->agent`, `$prompt->approvalDecisions`, and calls `$prompt->hasApprovalDecisions()`. Every one of these is a public/readonly property or method on a concrete class Laravel AI is free to restructure pre-1.0. |
 | `Events\PromptingAgent` | (c) | `VerdictServiceProvider` (`$events->listen(PromptingAgent::class, RecordAgentPromptProvenance::class)`), `RecordAgentPromptProvenance::handle()` | A plain event class (`invocationId`, `prompt`) — the risk isn't the class shape, it's *when* Laravel AI fires it relative to prompt middleware and tool invocation. See the deep dive below. |
 | `Events\ToolInvoked` | (c) | `VerdictServiceProvider`, `RecordToolResultProvenance::handle()` | `invocationId`, `agent`, `tool`, `result`. Gained a required `float $time` in `0.11.0` ([#874](https://github.com/laravel/ai/pull/874)) — the change that set this package's floor. Verdict's listener reads neither `time` nor `toolInvocationId`, so it was unaffected; the two hand-constructed events in `LaravelAiProvenanceTest` were not, which is why a breaking change here is loud. The `toolInvocationId` nesting defect this event was previously at the centre of is **fixed** in `0.11.0` — see [What 0.11.0 changed](#what-0110-changed-and-what-it-did-not). |
-| `Approvals\Decisions` | (b) | `ApprovalExecutionContext::within()`, `VerdictApprovalMiddleware`, `AbstractVerdictTool` (docblock) | Concrete class. `->all()` is iterated and each value's `->isApproved()` is called (duck-typed against `Approvals\Decision`, which is never imported in `src/` — see [Corrections](#corrections-to-the-issue-draft) below). |
+| `Approvals\Decisions` | (b) | `LaravelApprovalDecisions` | Concrete class. The adapter iterates `->all()` and calls each value's `->isApproved()` (duck-typed against `Approvals\Decision`, which is never imported in `src/` — see [Corrections](#corrections-to-the-issue-draft) below). |
 
 **`handle(AgentPrompt $prompt, Closure $next): mixed`** — `VerdictApprovalMiddleware` and `VerdictProvenanceMiddleware` both implement this signature as Laravel AI prompt middleware. This is category (c) in its purest form: there is no `Contracts\Middleware` interface to implement or grep for. The signature convention (`handle($passable, Closure $next)`) mirrors Laravel's own HTTP/job middleware idiom, which is a reasonable inference, not a documented Laravel AI promise.
 
@@ -80,7 +105,7 @@ nested and unwound-frame isolation.
 
 ### Wildcard approval decisions
 
-`ApprovalExecutionContext::within()` special-cases a Laravel AI decision keyed `'*'` (`if ($toolCallId !== '*' && $decision->isApproved())`), which corresponds to `Laravel\Ai\Approvals\Decision::approveAll()`. This is genuinely well-covered, not a gap: `tests/Feature/ApprovalFlowTest.php`, `'does not accept wildcard or edited Laravel approval decisions'`, explicitly constructs a wildcard `Decisions` object via `Decision::approveAll()` and asserts Verdict rejects it rather than silently approving every tool call. Listed here because it's exactly the kind of magic-string convention issue #18 asks to surface, and because it's the one place `Laravel\Ai\Approvals\Decision` (singular) is actually used — see the correction below.
+`LaravelApprovalDecisions` special-cases a Laravel AI decision keyed `'*'` (`if ($toolCallId !== '*' && $decision->isApproved())`), which corresponds to `Laravel\Ai\Approvals\Decision::approveAll()`. This is genuinely well-covered, not a gap: `tests/Feature/ApprovalFlowTest.php`, `'does not accept wildcard or edited Laravel approval decisions'`, explicitly constructs a wildcard `Decisions` object via `Decision::approveAll()` and asserts Verdict rejects it rather than silently approving every tool call. Listed here because it's exactly the kind of magic-string convention issue #18 asks to surface, and because it's the one place `Laravel\Ai\Approvals\Decision` (singular) is actually used — see the correction below.
 
 ## Corrections to the issue draft
 

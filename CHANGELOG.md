@@ -6,6 +6,12 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **Published a generated Verdict × Verdict Console × Laravel AI compatibility matrix (#341).**
+  Its JSON facts retain the observed environment, date, verification kind, and durable locator;
+  generated output is checked against the committed documentation block. Rows retire when a concrete
+  Laravel AI version falls outside Verdict's composer constraint, and console facts are explicitly
+  reported from that repository rather than represented as verified by Verdict.
+
 - **Attack packs can assert on the actor/subject identity recorded beside a decision (#346).**
   `Observation` now carries the invocation's recorded `recordedActorFingerprint` /
   `recordedSubjectFingerprint`, populated by `LiveAgentObserver` from the decision evidence it
