@@ -24,6 +24,10 @@ final readonly class Observation
      * are likewise assertion-only — they exist for the filtered-permit comparison (#251), not for
      * reporting.
      *
+     * Recorded actor and subject fingerprints are likewise assertion-only. They retain the
+     * invocation's decision-evidence identity for assertions, and must not be projected into
+     * ObservationEvidence, reports, or baselines.
+     *
      * @param  list<ToolObservation>  $toolCalls
      * @param  list<string>  $sideEffects
      * @param  list<ProvenanceEntry>  $provenanceEntries
@@ -39,6 +43,8 @@ final readonly class Observation
         public array $provenanceEntries = [],
         public array $challenges = [],
         public array $predicates = [],
+        public ?string $recordedActorFingerprint = null,
+        public ?string $recordedSubjectFingerprint = null,
     ) {
         $this->assertToolCalls($this->toolCalls);
         $this->assertSideEffects($this->sideEffects);
