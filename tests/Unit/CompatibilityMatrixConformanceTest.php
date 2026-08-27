@@ -307,7 +307,14 @@ function compatibilityDecisionsCallSites(): array
         }
 
         if (str_contains((string) file_get_contents($file->getPathname()), 'Laravel\\Ai\\Approvals\\Decision')) {
-            $found[] = 'src/'.ltrim(str_replace(realpath($root), '', $file->getPathname()), '/');
+            // Normalise separators on BOTH sides before stripping the prefix. On Windows realpath()
+            // returns backslashes while the iterator yields a mixed path, so a raw str_replace finds
+            // no prefix to remove and leaves an absolute path in what must be a repository-relative
+            // one — which fails this rule for a reason that has nothing to do with the code it guards.
+            $path = str_replace('\\', '/', (string) $file->getRealPath());
+            $prefix = str_replace('\\', '/', (string) realpath($root));
+
+            $found[] = 'src/'.ltrim(substr($path, strlen($prefix)), '/');
         }
     }
 
