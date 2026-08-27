@@ -1843,6 +1843,114 @@ case study and its prototype LTL monitoring library, and the related work on mon
 under silent actions and unknown event interleaving — the latter is a different uncertainty
 model (ordering unknown, content known) from Verdict's (content unobservable).
 
+### An In-Depth Study of Runtime Verification Overheads during Software Testing — paper
+
+Guan and Legunsen. ISSTA '24, Vienna, September 2024. `doi.org/10.1145/3650212.3680400`.
+
+- An empirical study, not a technique. The authors monitored 182,547 developer-written unit
+  tests in 1,544 open-source Java projects (10,897,631 SLOC) with JavaMOP against 160 specs
+  of correct JDK API usage, and profiled where the time went.
+- Overhead is bimodal. Mean 23.6x (249.1 seconds); 40.9% of projects fall under the 12.48
+  second absolute threshold prior work called acceptable, while the worst project pays
+  5,002.9x and another pays 28.7 hours.
+- The headline finding: **only 0.13% of 3,432,878,467 collected traces are unique.** A trace
+  maps one-to-one to a monitor and to a (program path, spec) pair, so 99.87% of the monitors
+  RV generates "can only find bugs that the other 0.13% find."
+- The same section bounds how much that could ever buy: a hypothetically perfect technique
+  generating only the necessary 0.13% of monitors "would still process 38.84% of
+  51,203,201,000 events." The waste is in monitor creation, not in event traffic.
+- Against conventional wisdom in the field, **instrumentation dominates monitoring** — 60.5%
+  of RV time across all projects, and 73–77% within the first three quartiles. The authors
+  note this has been invisible because "RV research ... often targets RV in deployment where
+  instrumentation cost is incurred once during startup."
+- 36.74% of monitoring time (excluding instrumentation) is spent in test code (21.87%) or
+  third-party libraries (14.87%). The paper declines to call this waste, because excluding
+  them "can lead to false positives or negatives."
+- The proofs of concept — offline compile-time instrumentation (8x average reduction, but
+  failed outright in 253 projects) and incremental re-instrumentation per commit (up to 4.53x
+  faster than evolution-aware RV) — are AspectJ bytecode-weaving engineering.
+- One sentence carries the study's scope, and it is the sentence that matters here:
+  "Repeated checking in RV of deployed systems is useful to recover from violations or
+  mitigate attacks."
+
+**Primitive — redundant monitoring is waste only when the monitor's purpose is discovery.
+Under enforcement, the repetition is the mechanism.**
+**Verdict:** `already implements`. This entry exists chiefly to record the boundary before
+someone cites the 99.87% figure at Verdict, because Verdict's design is, by that metric,
+almost entirely wasteful — deliberately.
+
+ADR 0002 re-runs the whole gate chain on every duplicate: execution-stage authorization,
+confirmation consumption, and semantic rate-limit consumption all happen before the atomic
+claim, and "concurrent or later duplicates are denied whether the original claim is active,
+completed, or indeterminate." Under the paper's accounting, the second presentation of a
+logical operation observes a trace already seen and produces a monitor that can find nothing
+new. Under enforcement it is the only thing standing between a retried webhook and a second
+refund. ADR 0002 also refuses the optimization outright — "no lease, timeout, automatic
+retry, or cached raw result is provided" — and the only memoization anywhere in `src/` is of
+monotonic schema facts, never of a decision (`Capabilities/CapabilityRegistry.php:34`,
+`Capabilities/DatabaseCapabilityConfigurationStore.php:89`,
+`Approvals/DatabaseApprovalStatusReader.php:21`; a table cannot un-migrate, so those answers
+cannot go stale in the unsafe direction).
+
+**Primitive — deduplication that denies is safe; deduplication that skips is not.**
+**Verdict:** `already implements`, and this is the rule the previous primitive reduces to.
+Verdict does fingerprint and deduplicate: the claim identity is a hash of capability name,
+claim-policy name, and the application's canonical logical-operation binding. What it never
+does is treat a repeat as a reason to *skip* work. The paper's own safety argument for
+skipping is stated conditionally — incremental instrumentation "cannot miss new violations if
+tests pass and tests are deterministic" — and neither condition is available to a monitor
+whose subject is an adversary. A future contributor proposing a decision cache is proposing
+the unsafe direction of a distinction this paper draws in one line; worth naming in
+`docs/security-model.md` next to the gate ordering.
+
+**Primitive — a redundancy metric presumes a deterministic subject.**
+**Verdict:** `already implements`, one level away. Verdict's evaluation suite repeats each
+case across trials, which the paper's metric would count as near-total waste. It is not: the
+subject is a nondeterministic model, so each trial is a fresh sample rather than a repeat of
+the same trace, and ADR 0021 / ADR 0022 exist to *require* enough repetition per case before
+a live verdict is trusted. The paper's framing is a clean way to say why the two disciplines
+point opposite directions — trace dedup is sound exactly when the coverage-adequacy gate is
+unnecessary.
+
+**Primitive — measure the plumbing separately from the check, because the plumbing usually
+wins.**
+**Verdict:** `already implements` in method. `docs/benchmarks.md` profiles the durable-store
+paths — `DatabaseExecutionClaimStore::claim()`, `DatabaseRateLimitStore::consume()`,
+`DatabaseApprovalReceiptStore::issue()` — and not the in-process policy evaluation, which is
+the same allocation of attention the paper arrived at empirically. The paper's finding that
+60.5% of RV time is instrumentation is the general form of that choice, and it is a reason
+not to spend effort optimizing a decision engine.
+
+The paper's own scoping also explains why its instrumentation result does not transfer:
+Verdict is the deployment case, where the wiring is paid once at service-provider boot and
+amortized across a long-lived worker, rather than re-paid from scratch every CI run.
+
+**Primitive — report overhead as both an absolute and a relative figure, with outliers
+separated.**
+**Verdict:** `should investigate`, deliberately unfiled. Verdict has no end-to-end
+guarded-versus-unguarded overhead figure; `docs/benchmarks.md` measures store-call latency
+under contention and explicitly disclaims being a capacity guarantee. The paper's shape —
+`t` against `t_rv`, both ratio and seconds, correlations reported with and without outliers
+because a ratio against a fast baseline misleads — is the template if such a figure is ever
+published. It is not proposed as work: the honest denominator for a guarded tool call is a
+model round trip, which would make the resulting number a favourable comparison rather than
+an engineering result, and this repository's benchmark discipline exists to avoid publishing
+exactly that.
+
+---
+
+**Surveyed, no hook.** **Offline and incremental compile-time instrumentation**, and the
+proposed public repository of pre-instrumented library jars: AspectJ bytecode-weaving
+engineering with no analogue in a library that guards at a declared capability boundary.
+**Evolution-aware RV** — re-monitoring only the specs a commit affects — for the same reason.
+**The 36.74% spent monitoring test code and libraries**: the question does not arise for
+Verdict, whose monitored surface is closed and declarative (ADR 0027) rather than derived by
+matching specs against whatever bytecode happens to load; an undeclared path is simply
+unguarded, which `docs/limitations.md` already owns. Also surveyed: the weak correlations
+between overhead and program characteristics (Table 3), the per-quartile component
+breakdowns, and the method-based analysis proposed for locating repetitive traces inside
+loop-heavy programs.
+
 ## 10. Lamport
 
 A scoped cut, chosen for bearing on questions this survey already raised rather than for
@@ -2148,6 +2256,13 @@ opaque composite.
 This is a small schema addition with a large investigative payoff, and it is the natural place
 to also carry an optional acting identity if the delegation question above is ever taken up.
 **Candidate:** `actor-identity-in-evidence`
+
+**Closed 2026-08-11.** `DecisionEvidence` now carries `actorFingerprint` and
+`subjectFingerprint` (`src/Evidence/DecisionEvidence.php`), derived through the same SHA-256
+fingerprint path as every other identity value in the schema, persisted by both the database
+and attest recorders, and indexed on `actor_fingerprint`. The finding above is retained as
+written because the reasoning is what the log exists to keep; the gap it names is no longer
+open.
 
 ---
 
@@ -2482,3 +2597,399 @@ machinery of the CVA prototype, irrelevant to an in-process library that does no
 convince a remote verifier of anything. **LangSmith, Prov-Agent, Agent-Sentry** — agent
 observability and execution-provenance tooling; adjacent to Verdict's ledger but positioned as
 external monitors rather than enforcement points.
+
+## 13. Prompt injection prevention guidance — the practitioner corpus
+
+Seven published prevention guides, surveyed together because the finding is their
+convergence. One is community-maintained; six are vendor content that terminates in a
+product. Read as a set, they establish what the practitioner consensus recommends, which
+matters to Verdict less as a source of ideas than as the vocabulary an adopter will arrive
+carrying.
+
+### OWASP LLM Prompt Injection Prevention Cheat Sheet — cheat sheet
+
+OWASP Cheat Sheet Series. `cheatsheetseries.owasp.org/cheatsheets/LLM_Prompt_Injection_Prevention_Cheat_Sheet.html`.
+
+- Taxonomy well beyond direct/indirect: encoding and Unicode smuggling, typoglycemia
+  ("ignroe"), HTML and Markdown injection, multi-turn session poisoning with delayed
+  triggers, RAG poisoning, multimodal injection, and agent-specific thought/observation
+  injection and tool manipulation.
+- Primary defences, in the order given: input validation and sanitization; structured
+  prompts separating instructions from data (citing StruQ, arXiv:2402.06363); output
+  monitoring; human-in-the-loop; Best-of-N mitigation.
+- Guardrails are placed at three distinct positions: **input screening**, **output
+  screening**, and **action screening** — the last defined as "evaluate proposed tool calls
+  against original user intent."
+- The **dual-LLM pattern**: "A privileged LLM holds the tools but never reads untrusted
+  content directly. A quarantined LLM reads untrusted content but cannot take action." With
+  the caveat that "a guardrail LLM is itself an LLM and is itself susceptible to prompt
+  injection."
+- Its most valuable section is a candid inventory of what does not work. Best-of-N
+  jailbreaking reaches "89% success on GPT-4o and 78% on Claude 3.5 Sonnet with sufficient
+  attempts," and against it: "Rate limiting: only increases computational cost"; "Content
+  filters: can be systematically defeated through sufficient variation attempts"; "Safety
+  training: proven bypassable with enough tries"; "Circuit breakers: demonstrated to be
+  defeatable even in state-of-the-art implementations"; "Temperature reduction: provides
+  minimal protection even at temperature 0."
+- Its conclusion from that: "Robust defense against persistent attacks may require
+  fundamental architectural innovations rather than incremental improvements."
+
+### Six vendor prevention guides — IBM, Teleport, Sweet Security, Imperva, Protecto, OffSec
+
+IBM Think (`prevent-prompt-injection`), Teleport (`prevent-prompt-injection`), Sweet
+Security (`ai-prompt-injection`), Imperva (`prompt-injection`), Protecto
+(`how-to-prevent-prompt-injection`), OffSec (`how-to-prevent-prompt-injection`).
+
+- The convergent list, recommended by five or six of the six: least privilege over tools and
+  data; separation of instructions from data by delimiter or role; input filtering; output
+  filtering or monitoring; human approval before irreversible actions; audit logging.
+- Each piece then steers to its own product — governance platform, agent identity framework,
+  runtime CNAPP, WAF/RASP, data masking, training. The convergence is real; the terminus is
+  commercial, and no entry below rests on a vendor's claim about its own efficacy.
+- IBM is the most useful of the six and the most candid: prompt injection is "a significant
+  security flaw with no apparent fix"; "the only way to prevent prompt injections is to avoid
+  LLMs entirely"; LLMs "cannot distinguish between commands and inputs based on data type."
+  It works through parameterization, delimiters, self-reminders, input filters and classifier
+  guardrails, and names the defeat for each — prompt-leakage attacks that recover the system
+  prompt's syntax, completion attacks that circumvent delimiters, tree-of-attacks against
+  structured queries, and classifier guardrails that are "themselves susceptible to
+  injections because they are also powered by LLMs."
+- Teleport contributes the only concrete incidents in the corpus: **EchoLeak
+  (CVE-2025-32711)**, a zero-click indirect injection reaching Microsoft 365 Copilot through
+  an external email and causing exfiltration, and hidden instructions in Google Calendar
+  invites reaching Gemini. Its framing of the class is exact: "the attack does not bypass
+  infrastructure controls. Instead, it steers autonomous systems operating with legitimate
+  access towards committing the attack themselves."
+- Sweet Security states Verdict's own thesis in the corpus's plainest terms: the
+  **"instruction-to-action gap"** is the seam that matters, and "inspection that doesn't
+  observe runtime behavior will always arrive one step too late."
+- Protecto's "Context-Based Access Control," which "evaluates access at the moment the agent
+  makes a request" rather than statically, is a renaming of a control Verdict already has.
+
+**Primitive — a defence whose outcome depends on phrasing can be defeated by search; one
+whose outcome does not, cannot.**
+**Verdict:** `already implements` the structural answer; `should adopt` one scoping sentence.
+
+Every control OWASP lists as defeated by Best-of-N — attempt rate limiting, content filters,
+safety training, circuit breakers, temperature reduction — sits at the model layer or the
+attempt layer, where the outcome is a function of how the request was phrased. Search over
+phrasings therefore wins, and the power-law scaling says only that patience is the price.
+Verdict's authorization decisions are not in that class: the policy never reads the prompt,
+which `docs/evaluation.md` already states from the other direction — the guarded denials are
+"authorization denials — a property of Verdict's policy, deterministic regardless of
+decoding." That is why greedy replays suffice to demonstrate them, and it is the strongest
+external argument yet found for placing the enforceable boundary at the tool call.
+
+The scoping sentence is owed because not every Verdict surface is phrasing-independent, and
+the corpus makes the distinction citable. `requiresConfirmation()` resolves to a human who
+can be socially engineered; the intent lever guarantees "a pre-mutation record, not an
+outcome record" (`docs/limitations.md`); and the suite v2 filtered-permit run recorded nine
+trials over-restricted *on phrasing*. `docs/evaluation.md` carries its adaptive-adversary
+caveat against attack packs ("not a guarantee against an adaptive adversary"), and carries
+the i.i.d. caveat against the rule-of-three bound — but the i.i.d. caveat is about
+correlation among draws, not about an adversary who *optimizes* the draw. One sentence in
+that paragraph, naming which guarded denials a phrasing search cannot move and which it can,
+would close the gap between the two caveats.
+
+**Primitive — rate-limiting attempts is defeated by patience; rate-limiting effects is not.**
+**Verdict:** `already implements`, with a wording risk worth removing. OWASP's "rate
+limiting: only increases computational cost" is a true statement about bounding *attempts*,
+and a reader arriving from the cheat sheet may map it onto `rateLimit()`. ADR 0001's semantic
+limit is the other kind — it counts "an application-defined action, such as refunds per actor
+per day, rather than a provider-specific proxy" — and `docs/security-model.md` already gives
+the adversarial sizing rule ("size that bucket for what an attacker can accomplish during its
+window, not expected legitimate traffic"). A bound on effects is indifferent to how many
+attempts the attacker spends reaching it. One contrastive clause makes that legible.
+
+**Primitive — you cannot parameterize the prompt; you can parameterize the tool call.**
+**Verdict:** `already implements`, and this is the corpus's best single sentence about why
+the library exists. IBM works through why parameterization — the fix that closed SQL
+injection and XSS — is "difficult if not impossible" for LLM inputs, then concedes the
+opening: "while it is hard to parameterize inputs to an LLM, developers can at least
+parameterize anything the LLM sends to APIs or plugins." Verdict is that parameterization,
+and ADR 0025 is its literal form: a context-resolved target does not come from the model, so
+an injected argument cannot move it, which the storefront differential demonstrates
+(`contextResolvedTargetDifferential()`). Worth borrowing in `docs/security-model.md`, which
+currently opens on mechanism rather than on the premise.
+
+**Primitive — action screening is a distinct guardrail position, not a variant of input
+screening.**
+**Verdict:** `already implements`. OWASP's three placements — input, output, action — name
+the third as evaluating "proposed tool calls against original user intent," which is #160's
+intent lever. External corroboration that the placement is its own layer is worth recording,
+as is the accompanying caveat: OWASP's action screener is an LLM judge and so "is itself
+susceptible to prompt injection," where Verdict's is a policy decision. That difference is
+exactly the one `docs/limitations.md` already draws in bounding the lever to a pre-mutation
+record rather than an outcome — the lever's honesty about what it cannot conclude is what
+distinguishes it from a judge that will always return an answer.
+
+**Primitive — human review triggered by prompt keywords binds to the wrong thing.**
+**Verdict:** `intentionally rejects`. OWASP's human-in-the-loop layer flags requests
+"containing keywords like 'password,' 'api_key,' 'admin,' 'bypass'." That is a prompt-layer
+filter wearing a human's clothes: it fails to the same search that defeats every other
+prompt-layer filter, and it fires on benign text. `requiresConfirmation()` binds to the
+capability and the server-resolved target — to what the action does, not to how it was asked
+for — which is why a rephrasing cannot route around it. Recorded because a reader arriving
+from the cheat sheet may expect the keyword shape and read its absence as a gap.
+
+**Primitive — human approval is itself an attack surface.**
+**Verdict:** `already implements`; a **fifth** independent source on
+`confirmation-fatigue-guidance`. IBM is alone in the corpus in stating the defeat: "attackers
+can use social engineering techniques to trick users into approving malicious activities,"
+and that human-in-the-loop "makes using LLMs more labor-intensive and less convenient." The
+other five recommend human approval with no such caveat. Verdict's answer is ADR 0026 and the
+three `docs/security-model.md` sections it produced — what an approver is shown about a
+proposal's origin, declaring where a proposal came from, and denying unattributable
+proposals — which treat the approver as a party that can be deceived rather than as an oracle.
+
+**Primitive — an agent needs a distinct identity, and the audit record must carry it.**
+**Verdict:** `already implements` the evidence half. Teleport's list — per-agent identities
+rather than shared service accounts, ephemeral least-privileged credentials, authorization
+enforced at execution time, and audit carrying identity, role, and target — reaches from a
+fourth direction the conclusion section 11's `DecisionEvidence records no actor` finding
+reached, and which `actorFingerprint` and `subjectFingerprint` have since satisfied. The
+credential half is the application's: Verdict authorizes an actor it is handed and does not
+issue, scope, or expire credentials.
+
+---
+
+**Surveyed, no hook.** **Input sanitization, delimiters, structured prompts (StruQ),
+typoglycemia and encoding detection, and classifier guardrails**: prompt-layer controls in a
+library that deliberately holds no prompt-layer surface, and each is conceded bypassable by
+the source recommending it. **Output filtering and DLP-style masking** (Protecto's tokenized
+vault, Imperva's WAF/RASP, IBM's EDR/SIEM/IDPS): adjacent product categories, not
+capability-boundary controls. **The dual-LLM pattern**: an application's model topology,
+which Verdict does not own — though it is worth noting that the pattern is a convention until
+something enforces the privileged half's tool boundary, which is the role Verdict plays.
+**Protecto's Context-Based Access Control**: ADR 0003 and ADR 0013 under a vendor name.
+**OffSec's curriculum and CI/CD red-team integration**: training, not design. Also surveyed:
+the corpus's shared least-privilege and audit-logging recommendations, which Verdict
+implements throughout and which no entry above needed to restate.
+
+**Citation hygiene.** EchoLeak's identifier (CVE-2025-32711) and the Gemini calendar-invite
+case reached this log through a vendor blog and have not been checked against a primary
+advisory. Neither should appear in a published Verdict document until it has been —
+section 8's finding that the stale-citation problem is a chain-of-custody problem applies to
+this entry's own sources.
+
+## 14. The Agent Passport System corpus
+
+Nine Zenodo deposits and one IETF individual submission, all by Tymofii Pidlisnyi
+(AEOESS), published February–July 2026. They are one research programme rather than ten
+independent results: the Agent Passport System (APS), a cryptographic delegation protocol
+whose organising invariant is *monotonic narrowing* — delegated capability may be
+attenuated, never amplified. APS is the nearest neighbour to Verdict that this survey has
+found, and it reaches several of Verdict's conclusions from a different starting point,
+which is what makes it worth reading closely.
+
+### Monotonic Narrowing for Agent Authority — preprint, and draft-pidlisnyi-aps-00
+
+Zenodo `10.5281/zenodo.18932404` (2026-03-10); IETF `draft-pidlisnyi-aps-00` (2026-03-27).
+
+- Eight invariants over an abstract state model. INV-2 (scope narrowing) and INV-3 (spend
+  narrowing) are the delegation-attenuation property; INV-4/INV-5 give cascade revocation
+  and revocation irreversibility; INV-8 requires that "every active delegation chain traces
+  to a human principal."
+- INV-6, *three-signature completeness*: "no execution receipt exists without a
+  corresponding intent and policy decision" — an agent-signed `ActionIntent`, an
+  engine-signed `PolicyDecision`, and an agent-signed `PolicyReceipt`.
+- The architectural claim is stated in Verdict's own terms: "the LLM sits in the advisory
+  path, not the deterministic gate. The deterministic gate's verdict is final." The authors
+  name the failure they designed away from as the "LLM-in-the-middle" problem — "a
+  non-deterministic component producing cryptographic attestations."
+- The paper is unusually candid about its own limits: it maps itself against the OWASP AIVSS
+  taxonomy as "5 strong, 3 partial, 2 weak," presents ten adversarial scenarios "including 2
+  expected failures," lists fifteen known limitations, says plainly "we do not claim
+  machine-checked proof of implementation correctness," and grades its own enforcement as
+  "weak under voluntary SDK."
+
+### Faceted Authority Attenuation: A Product Lattice Model — preprint
+
+Zenodo `10.5281/zenodo.19260073` (2026-03-27).
+
+- Generalises the scalar invariant: authority is an element of a **product lattice** over
+  seven constraint dimensions (scope, spend, depth, time, reputation, values,
+  reversibility), and delegation is a monotone function on it. Corollary 1 gives independent
+  per-facet narrowing; the earlier three-condition formulation is the n = 3 case.
+- Three claimed benefits unavailable to a scalar model: structured denial diagnostics naming
+  which dimension bound; a signed `AuthorizationWitness` capturing lattice position at
+  execution time, recording "which constraints were checked, what headroom existed, and
+  which dimension was the binding constraint"; and **near-miss detection** on
+  operator-configured proximity thresholds.
+- The witness "is generated by the enforcement gateway (not self-reported by the agent)."
+- The motivating example is a facet interaction a scalar system cannot express: within
+  budget, but temporally fragile.
+
+### The Evidence-Safety Gap in Cryptographic Agent Governance — preprint
+
+Zenodo `10.5281/zenodo.19914628` (2026-04-30).
+
+- Characterises an action as ⟨I, D, P, A, R, W, E⟩ and observes that a governance system
+  implements a procedural validity predicate `Valid(I, D, P, A, R)` while the property
+  anyone actually cares about is `Safe(E(A, W))` over world-state W. The Evidence-Safety Gap
+  is the omitted-variable distance: **Valid ⇏ Safe**.
+- A **compliance-complete failure** is the simultaneous condition of procedural validity and
+  unsafe effect. Presented as "a definitional observation rather than a theorem" — if Valid
+  does not depend on W and Safe does, the failure class is immediate.
+- W decomposes into five candidate classes: semantic, population, trust, pipeline, temporal.
+  Pipeline is the composition case — "a pipeline of agents, each acting compliantly,
+  composes to produce an action that would have been refused directly. No deputy is
+  confused; the violation exists only in composition."
+- Two design implications, neither of which closes the gap: **claim-scoped receipts** ("every
+  cryptographic artifact should explicitly state what it proves and what it does not prove")
+  and **authorization-effect separation** ("treating an authorization receipt as effect
+  evidence is the structural source of several failure patterns").
+- The institutional caution is the paper's sharpest sentence: "the danger comes from
+  strength, not weakness: receipts verify cleanly, so institutions may overuse them."
+
+### Plausibly wrong: peer-voted retention can fall below random — preprint
+
+Zenodo `10.5281/zenodo.21208555` (2026-07-05).
+
+- A controlled isolation of the retention rule in populations of short-lived LLM agents:
+  identical deposit streams through six retention rules under a hard eight-slot cap, five
+  independently generated pools, with kill conditions, priors, and budgets pre-registered
+  and hashed before any run.
+- Peer voting kept a worse shared memory than random selection in four of five replicates
+  (mean truth 0.475 against 0.700). The mechanism is the finding: "voting selects for
+  plausibility, and plausibility is the one property correct and incorrect entries share, so
+  the junk it keeps is fluent by selection."
+- All three rules with access to a deterministic verifier held truth at 1.000 in every
+  replicate; all three without one degraded in every replicate.
+- A second pre-registered sweep corrupted the verifier itself, showing the property degrades
+  smoothly with no cliff: anchored retention still beats random with a coin-flip verifier
+  (truth 0.742 at p = 0.50) and crosses below random only near p ≈ 0.40.
+
+**Primitive — procedural validity is not effect safety, and an artifact must say which one
+it proves.**
+**Verdict:** `already implements`, and this is the closest match to an existing Verdict
+design that any survey in this log has produced. [ADR 0028](adr/0028-claim-type-is-a-curated-public-vocabulary.md)
+§3 states the rule the paper derives from its formalism: "a label never implies execution, a
+downstream receipt, or a resulting state," and it names the strongest execution-adjacent
+label as "Verdict marking its own claim complete around a successful return — an
+admission-side belief, never a receipt from the executor, carrying no result."
+`docs/security-model.md`'s "What a decision record asserts, and how to cite one" exists to
+prevent exactly the inferential drift the paper describes. Two systems reached the same rule
+from different directions — APS from a formal decomposition of the validity predicate,
+Verdict from asking what a record is entitled to assert — which is the strongest kind of
+corroboration a design choice can get.
+
+What the paper adds is vocabulary — *compliance-complete failure*, Valid ⇏ Safe, the
+omitted-variable decomposition — and one caution Verdict's documentation does not make:
+**amplification**. `docs/limitations.md`'s "Verification is the control, not the chain alone"
+is adjacent, but it is about verification mechanics, not about an institution treating a
+cleanly verifying receipt as evidence of a safe outcome and shifting the burden onto the
+harmed party. One sentence, in that section or beside the claim-type vocabulary.
+
+**Primitive — the five omitted-variable classes are a checklist to audit a limitations
+document against.**
+**Verdict:** `already implements` three; `should adopt` the other two as stated boundaries.
+W-temporal is [ADR 0003](adr/0003-execution-target-freshness.md) and the receipt
+revalidation that ADR 0031 scopes. W-semantic is "Authority is not intent," in both
+`docs/security-model.md` and `docs/limitations.md`. W-pipeline is "Shared buckets are
+composition bounds," where Verdict already concedes it "has no native model of an attack
+composed from individually permitted actions" and offers a volume bound that "caps blast
+radius, not intent or selection" — the paper's mitigation list (intent binding, composite
+audit, taint tracking, pipeline-level authorization envelopes) is a candidate set for
+[ADR 0010](adr/0010-future-semantic-limit-meters.md)'s future meters.
+
+**W-population and W-trust have no Verdict analogue at all.** Verdict authorizes one action
+for one actor against one target, and holds no model of a population of agents or of a
+counterparty's reputation. That is not a gap to close — it is a boundary to state, and
+`docs/limitations.md` currently states neither.
+
+**Primitive — authority as a product lattice, with narrowing monotone in each facet
+independently.**
+**Verdict:** `should investigate`, gated on a decision already deferred.
+[ADR 0015](adr/0015-authority-propagation.md)'s Invariant D1 — "the effective authority at
+hop n must be a subset of the effective authority at hop n−1" — is the scalar form of INV-2
+and INV-3, and it is deliberately stated "as a constraint on future work" because Verdict
+does not model multi-hop identity today. The lattice formalism is the shape D1 should take
+*if* that changes: it is what lets a denial say which dimension bound, and it expresses facet
+interactions ("within budget but temporally fragile") that independent per-gate checks
+cannot. Worth citing in ADR 0015 as the known generalisation rather than adopted now.
+
+**Primitive — warn on proximity to a constraint boundary, before the violation.**
+**Verdict:** `should investigate`. **Candidate:** `near-miss-signal`.
+
+This is the one concrete unimplemented idea in the corpus, and Verdict is most of the way to
+it already: `rate_limit_limit`, `rate_limit_remaining`, and `rate_limit_reset_at` are
+recorded fields on `DecisionEvidence` (`src/Evidence/DecisionEvidence.php`), populated from
+`RateLimitManager`'s decision metadata. The headroom the paper's witness records is already
+in Verdict's evidence. What is absent is an operator-configured threshold and a signal.
+
+Verdict has faced this precise question once and deferred it on the record: the
+tool-description divergence is "a forensic signal, not an authorization control ... Recording
+a divergence does not deny, warn, or dispatch an event — whether it should is a separate
+decision, deliberately not made here." Near-miss alerting is the same question about a
+different facet, and the same answer may well be right. The data, the precedent, and the home
+(ADR 0010) all exist; only the decision is missing.
+
+**Primitive — the authorization record is written by the boundary, not self-reported by the
+agent.**
+**Verdict:** `already implements`. The faceted paper states the property directly — the
+witness "is generated by the enforcement gateway (not self-reported by the agent)" — and
+supplies the reason to hold it: a record's value in a dispute comes from its independence
+from the party whose action it describes. Verdict's evidence is boundary-written throughout,
+and this is a clear external statement of why that matters.
+
+**Primitive — the deterministic gate is final; the model is advisory.**
+**Verdict:** `already implements`. "The LLM sits in the advisory path, not the deterministic
+gate" is Verdict's thesis, reached independently, and the "LLM-in-the-middle" naming — a
+non-deterministic component producing cryptographic attestations — is a useful handle for
+why `docs/evaluation.md` scores against the boundary rather than a model judge, and why the
+intent lever is bounded to a pre-mutation record rather than an outcome judgement.
+
+**Primitive — a selection rule that optimises for plausibility keeps fluent junk; only a
+verifier holds truth.**
+**Verdict:** `should adopt` as a citation. Verdict's evaluation harness already refuses the
+model-judge design, but asserts that choice on reasoning alone. "Plausibly wrong" is an
+experimental result behind it, and a stronger one than the bare claim: the three
+verifier-backed rules held truth at 1.000 in every replicate while all three judged rules
+degraded, and the corruption sweep shows the property degrades gracefully rather than
+cliff-edged — a coin-flip verifier still beats random selection. The mechanism transfers
+directly: plausibility is the property correct and incorrect entries share, which is why a
+judge cannot separate them and a verifier can. Worth citing beside `docs/evaluation.md`'s
+no-judge choice.
+
+**Primitive — publish an honestly graded coverage map against an external taxonomy.**
+**Verdict:** `should investigate`. APS grades itself against OWASP AIVSS as "5 strong, 3
+partial, 2 weak," names two of its ten adversarial scenarios as expected failures, and marks
+its own enforcement "weak under voluntary SDK" — the same limitation Verdict states as "no
+protection for bypassed paths." Verdict maps to no external taxonomy today. A graded
+crosswalk would be legible to adopters arriving from OWASP vocabulary, and the honest-grade
+form is one this repository could execute better than most. The caution is the one the
+compatibility matrix already taught: a coverage map written as a standing claim acquires a
+maintenance obligation, so it should be written as a dated snapshot against a named taxonomy
+version.
+
+---
+
+**Surveyed, no hook.** **The Agent Social Contract** (`10.5281/zenodo.18749779`): the LOKA
+ranked value system, the Agora communication protocol, and beneficiary economics —
+value distribution and ethical ranking are outside a library that authorizes one action at a
+time. **Physics-Enforced Delegation** (`10.5281/zenodo.19478584`): quantum backend fidelity
+as delegation facets, denying a backend whose T1 falls below threshold; the transferable
+shape — a measured environmental fact at decision time entering authorization and being bound
+into the record — is ADR 0003 plus ADR 0017 already. Its incidental figure is worth keeping:
+4.2 ms for policy evaluation and receipt signing, a comparable-system overhead datum for the
+kind of measurement `docs/benchmarks.md` does not currently take. **From Access to
+Derivation** (`10.5281/zenodo.19476002`): behavioral derivation rights, governing what an
+agent may *learn* from authorized access. Recorded here mainly to prevent a term collision —
+Verdict's declared derivations are provenance lineage over records, while the paper's are
+rights over what may be learned — two distinct primitives that happen to share a word.
+**Governance in the Medium**
+(`10.5281/zenodo.19582550`): a working paper arguing that the unit of governance is the
+population of sessions rather than the agent, and naming its own central open problem —
+that cryptography formalizes authorship, not meaning. Its most concrete transfer, that
+"artifact-based state with signed authorization" makes authority survive session death, is
+what Verdict's durable receipts and execution claims already do in a different vocabulary.
+**Cognitive Attestation** (`10.5281/zenodo.19646276`): signing sparse-autoencoder feature
+activations alongside an action record. It addresses a layer Verdict deliberately does not
+reach — `docs/limitations.md` states "no provider-internal inspection" as a scope boundary —
+and the composition target the paper names (SCITT) is covered in section 7.
+
+**Citation scope.** The entries above draw on the corpus's definitions and formalisms, which
+stand on their own terms. Its experimental results are cited as reported, and should be
+attributed that way in any Verdict document rather than restated as settled findings — the
+same standard section 8's chain-of-custody finding sets for every source in this log.
