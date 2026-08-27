@@ -25,6 +25,16 @@ All notable changes to Verdict will be documented in this file.
 
 - Add the Laravel AI contract suite and two-cell supported-range/development-branch canary matrix.
 
+- **A deterministic `DelegationConfusionAttackPack` for actor-versus-subject confusion (#145).**
+  Six cases against the two mechanisms ADR 0015 separates: an actor acting for itself, a valid
+  delegation the actor is attenuated to, escalation attempted without eligibility, subject
+  substitution mid-conversation, clean delegated utility, and an orchestrator trusting sub-agent
+  output, the last pending on [#201](https://github.com/fissible/verdict/issues/201). Cases assert on
+  the actor and subject identities recorded beside the decision, through
+  `Assertions::recordedActorFingerprintIs()`, `recordedSubjectFingerprintIs()` and
+  `recordedNoSubjectFingerprint()` (#346), so a denial that records the wrong subject fails. The pack
+  has a committed baseline and is listed in `docs/evaluation.md`.
+
 - **Scoped-search arguments are now an explicit exfiltration boundary (#294).**
   `StorefrontAttackPack` adds `search-argument-exfiltration` v1, a filtered-permit Back-Reveal
   ([arXiv:2604.05432](https://arxiv.org/abs/2604.05432)) case: an actor-visible canary is planted in

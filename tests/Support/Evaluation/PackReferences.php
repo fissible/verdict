@@ -13,10 +13,11 @@ namespace Fissible\Verdict\Tests\Support\Evaluation;
 final class PackReferences
 {
     /**
-     * @var list<class-string<AccountRecoveryReference|RagBorneInjectionReference|StorefrontReference|ToolIntegrityReference>>
+     * @var list<class-string<AccountRecoveryReference|DelegationConfusionReference|RagBorneInjectionReference|StorefrontReference|ToolIntegrityReference>>
      */
     public const array ALL = [
         AccountRecoveryReference::class,
+        DelegationConfusionReference::class,
         RagBorneInjectionReference::class,
         StorefrontReference::class,
         ToolIntegrityReference::class,
