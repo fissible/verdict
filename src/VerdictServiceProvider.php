@@ -121,7 +121,7 @@ final class VerdictServiceProvider extends ServiceProvider
             return $instance;
         });
         $this->app->singleton(CapabilityRegistry::class, fn (Container $app): CapabilityRegistry => new CapabilityRegistry(
-            $app->make(CapabilityConfigurationStore::class),
+            fn (): CapabilityConfigurationStore => $app->make(CapabilityConfigurationStore::class),
         ));
         $this->app->singleton(CapabilityDiscovery::class, function (Container $app): CapabilityDiscovery {
             $paths = config('verdict.capabilities.discovery.paths', []);
