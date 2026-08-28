@@ -23,6 +23,7 @@ use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
@@ -33,6 +34,7 @@ use Fissible\Verdict\Targets\ExecutionTargetStrategy;
 use Fissible\Verdict\Testing\AllowAllApprovalAuthorizer;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Database\DatabaseManager;
 use Throwable;
 
 final class ValidateVerdictCommand extends Command
@@ -244,6 +246,10 @@ final class ValidateVerdictCommand extends Command
                 .'Configure a durable recorder via verdict.evidence.recorder to retain an audit trail.';
         }
 
+        if ($recorder === DatabaseEvidenceRecorder::class) {
+            $this->auditEvidenceRecorder($errors, $container);
+        }
+
         // Advisory: the silent-mismatch case of #310. With the store key unset, Verdict selects the
         // capability-configuration store by the recorder's declared capability (the
         // DurableEvidenceRecorder marker) — a recorder that declares nothing gets the no-op store,
@@ -421,6 +427,44 @@ final class ValidateVerdictCommand extends Command
             }
         } catch (Throwable) {
             $errors[] = "Configured {$label} store could not inspect its table.";
+        }
+    }
+
+    /** @param list<string> $errors */
+    private function auditEvidenceRecorder(array &$errors, Container $container): void
+    {
+        try {
+            // Deliberately reconstruct the configured recorder rather than resolving the
+            // EvidenceRecorder binding: this command audits declared deployment wiring, and a
+            // previously-resolved singleton can describe an earlier configuration.
+            $connection = config('verdict.evidence.connection');
+            $table = config('verdict.evidence.table', 'verdict_evidence');
+
+            $recorder = new DatabaseEvidenceRecorder(
+                connection: $container->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                table: is_string($table) ? $table : 'verdict_evidence',
+            );
+        } catch (Throwable) {
+            $errors[] = 'Configured database evidence recorder could not be constructed.';
+
+            return;
+        }
+
+        try {
+            if (! $recorder->hasTable()) {
+                $errors[] = "Configured evidence recorder requires missing table [{$recorder->table()}]. Publish and run Verdict's migrations.";
+
+                return;
+            }
+
+            $missing = $recorder->missingColumns();
+
+            if ($missing !== []) {
+                $errors[] = "The [{$recorder->table()}] evidence table is missing columns: ".implode(', ', $missing)
+                    .". Publish and run Verdict's evidence migrations.";
+            }
+        } catch (Throwable) {
+            $errors[] = 'Configured evidence recorder could not inspect its table.';
         }
     }
 

@@ -6,6 +6,16 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **Database evidence recording now degrades safely during additive-schema rollout (#356).**
+  `DatabaseEvidenceRecorder` writes every evidence column that exists and omits only columns from
+  unpublished or unapplied additive migrations, so a lagging table no longer fails every guarded
+  decision with an unknown-column error. `verdict:validate` now errors for a missing evidence table
+  or any missing evidence columns, because a short audit record is otherwise silent. A provenance
+  entry without `content_fingerprint` is not recorded rather than being retained as an unreadable
+  partial row. Note for long-lived workers: the evidence-table inspection is memoized per recorder
+  instance — restart workers after running the published migration, as with any deploy-time schema
+  change.
+
 - **Approval-binding kit scenarios now establish receipt continuity (#343).**
   `assertApprovalBindingInvalidation()` reads the exact approved receipt after an application's
   binding-mutation callback and requires it to remain approved before the re-run. A re-run
