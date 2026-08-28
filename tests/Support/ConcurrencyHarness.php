@@ -43,11 +43,24 @@ final class ConcurrencyHarness
     private const READY_TIMEOUT_SECONDS = 10.0;
 
     /**
+     * Safety deadline for the mutation phase, after the batch is released (#359). Generous, because
+     * this phase is real contended database work whose duration is the thing under test — but not
+     * unbounded: a child that wedges after release (a lock it never acquires, a query that never
+     * returns) previously held the drain loop until the CI job-level kill, which surfaces as an
+     * opaque lane timeout instead of the hung child it is. Overridable per call so the harness's
+     * own tests can prove the deadline without waiting on it.
+     */
+    private const MUTATION_TIMEOUT_SECONDS = 30.0;
+
+    /**
      * @param  array<int, array<string, mixed>>  $argvPerProcess  one JSON-encodable payload per child
      * @return array<int, array{exit_code: int, stdout: string, stderr: string}>
      */
-    public static function run(string $childScriptPath, array $argvPerProcess): array
-    {
+    public static function run(
+        string $childScriptPath,
+        array $argvPerProcess,
+        ?float $mutationTimeoutSeconds = null,
+    ): array {
         $processes = [];
 
         try {
@@ -77,6 +90,8 @@ final class ConcurrencyHarness
             self::releaseWhenAllReady($processes);
 
             $remaining = array_keys($processes);
+            $timeout = $mutationTimeoutSeconds ?? self::MUTATION_TIMEOUT_SECONDS;
+            $deadline = microtime(true) + $timeout;
 
             while ($remaining !== []) {
                 self::drainOutput($processes);
@@ -86,9 +101,29 @@ final class ConcurrencyHarness
                     fn (int $index): bool => proc_get_status($processes[$index]['process'])['running'],
                 );
 
-                if ($remaining !== []) {
-                    usleep(5_000);
+                if ($remaining === []) {
+                    break;
                 }
+
+                if (microtime(true) > $deadline) {
+                    // Thrown, not returned, so run()'s existing catch routes it through
+                    // terminateAndReap() — a child hung here is still holding its connection and
+                    // its locks against tables the test is about to drop.
+                    $stderr = array_filter(array_map(
+                        fn (array $entry): string => trim($entry['stderr']),
+                        $processes,
+                    ));
+
+                    throw new RuntimeException(sprintf(
+                        'Timed out after %.1fs in the mutation phase waiting for %d child process(es) to exit — '
+                        .'a child hung after release.%s',
+                        $timeout,
+                        count($remaining),
+                        $stderr === [] ? '' : ' Child stderr: '.json_encode($stderr, JSON_THROW_ON_ERROR),
+                    ));
+                }
+
+                usleep(5_000);
             }
 
             $results = [];
