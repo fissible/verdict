@@ -2,7 +2,7 @@
 
 **Inclusion rule:** an entry goes in only if the term is established outside this
 repository and is actually used in `src/`, `docs/`, or an ADR. No aspirational
-entries, and no entries for terms Verdict invented and uses once.
+entries, and none for terms Verdict invented and uses once.
 
 Each entry gives Verdict's meaning, where the term is used, and the competing
 meaning that must not be assumed.
@@ -91,8 +91,7 @@ Conditional exercise of a *different* principal's authority — typically the
 application's own — with an approval as an input to the policy rather than a
 source of authority. Verdict already expresses this: `requiresConfirmation()`
 binds the approval to one concrete request and `atMostOnce()` bounds it to a
-single execution. The Laravel gate decides against the business's rules, not the
-approver's.
+single execution. The Laravel gate decides against the business's rules, not the approver's.
 
 Nothing is attenuated here, so Invariant D1 does not apply. The approver is not
 lending their permissions.

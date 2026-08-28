@@ -1,9 +1,9 @@
 # Security-state concurrency benchmarks
 
 This document records a point-in-time contention benchmark for Verdict's durable security-state
-stores. It is not a capacity guarantee and does not recommend an optimization. Its purpose is to
-make the cost of the locking and unique-key paths in the at-most-once, semantic-rate-limit, and
-approval flows visible.
+stores. It is not a capacity guarantee and recommends no optimization. Its purpose is to make the
+cost of the locking and unique-key paths in the at-most-once, semantic-rate-limit, and approval
+flows visible.
 
 ## Scope and method
 
@@ -31,7 +31,7 @@ admissions; the result is a lock/insert benchmark, not a denial-path benchmark.
 
 Shared-key rate-limit batches exercise contention on the bucket. Shared-key execution-claim and
 approval-receipt batches instead primarily measure their duplicate-result paths after one writer
-creates the row; they must not be interpreted as a pure lock-contention throughput result.
+creates the row; do not interpret them as pure lock-contention throughput.
 
 ## Environment
 
@@ -115,9 +115,9 @@ median latency than its distinct-key counterpart, as expected from row locking a
 races. The shared execution-claim and approval-receipt rows are duplicate-path measurements, not
 the same comparison. File-backed SQLite also serializes writers at database scope, so none of its
 figures are evidence of row-level concurrency. At one writer, both engines' `ops/s` figures are
-dominated by PHP process launch and are not a meaningful cross-engine throughput comparison. The
-numbers include a local Docker database and process-launch overhead; network distance, server
-sizing, connection pooling, schema size, and surrounding application work will change them.
+dominated by PHP process launch and are not a meaningful cross-engine comparison. The numbers
+include a local Docker database and process-launch overhead; network distance, server sizing,
+connection pooling, schema size, and surrounding application work will change them.
 
 If a deployment needs a throughput or tail-latency commitment, repeat this method with a larger
 sample in that deployment-like environment and record the exact hardware, database

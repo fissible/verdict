@@ -5,14 +5,14 @@ depending on Pest, PHPUnit, or a test-double version of Verdict. It raises
 `CapabilitySecurityAssertionFailed`, so use it from any PHP test runner.
 
 Create a fresh kit in each test for the capability your application has already registered. This
-matches the normal provider-based registration used by an application and prevents a test helper
-from silently replacing production wiring.
+matches the normal provider-based registration and prevents a test helper from silently replacing
+production wiring.
 
 Approval decisions are fail-closed, and `assertApprovalBindingInvalidation()` decides a receipt —
-so the test environment must configure an authorizer or that assertion throws
+so the test environment must configure an authorizer, or that assertion throws
 `ApprovalAuthorizerMissing`. Verdict ships `Fissible\Verdict\Testing\AllowAllApprovalAuthorizer`
 for exactly this: set `verdict.approvals.authorizer` to it in the test environment. It authorizes
-everything, which exercises receipt state machinery while deliberately not testing per-receipt
+everything, exercising receipt state machinery while deliberately not testing per-receipt
 authorization — cover your own authorizer's deny paths in its own tests, and never configure the
 allow-all class outside local/testing (`verdict:validate` warns if you do).
 
@@ -101,7 +101,7 @@ generates permissive fixtures or replaces an application's provider registration
 
 ## Testing approval flows
 
-A consumer test that drives a confirmation-gated capability the obvious way — Laravel's
+A consumer test driving a confirmation-gated capability the obvious way — Laravel's
 `RefreshDatabase` trait plus `ApprovalManager::issue()`/`approve()` — fails with:
 
 > Verdict cannot issue an approval receipt while the store connection is already inside
@@ -109,7 +109,7 @@ A consumer test that drives a confirmation-gated capability the obvious way — 
 > separately committed database connection.
 
 That is the deliberate `UnsafeOuterTransaction` guard, not a bug. An approval receipt is security
-state: it must survive whatever transaction the application is in the middle of, because a receipt
+state: it must survive whatever transaction the application is mid-way through, because a receipt
 that silently vanishes with a rollback would let the same approval be issued twice.
 `RefreshDatabase` wraps every test in exactly the kind of uncommitted outer transaction the guard
 refuses to mutate inside.

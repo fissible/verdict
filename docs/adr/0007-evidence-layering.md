@@ -15,18 +15,18 @@ Status: Accepted
 
 ## Context
 
-Verdict currently persists data across three conceptually different stores, and nothing states the
-boundary between them as a single design decision:
+Verdict persists data across three conceptually different stores, and nothing states the boundary
+between them as a single design decision:
 
-- **Operational state** — `approval_receipts`, `rate_limits`, `execution_claims`. These are
-  authoritative security-state stores that gate execution itself. ADR 0004 requires their mutating
-  operations to fail closed on an unsafe outer transaction, because a rollback erasing this state
-  would let a duplicate or unapproved operation execute.
+- **Operational state** — `approval_receipts`, `rate_limits`, `execution_claims`. Authoritative
+  security-state stores that gate execution itself. ADR 0004 requires their mutating operations to fail
+  closed on an unsafe outer transaction, because a rollback erasing this state would let a duplicate or
+  unapproved operation execute.
 - **Evidence** — `DecisionEvidence`, `ContextReleaseEvidence`, `ProvenanceEntry`, written through the
-  `EvidenceRecorder` contract (`src/Contracts/EvidenceRecorder.php`). This is a record *about* a
-  decision, not the decision's authority. ADR 0004 explicitly excludes `DatabaseEvidenceRecorder`
-  from its transaction guard: "evidence persistence and transaction ownership are application
-  policy, and evidence is not itself an authorization gate."
+  `EvidenceRecorder` contract (`src/Contracts/EvidenceRecorder.php`). A record *about* a decision, not
+  the decision's authority. ADR 0004 explicitly excludes `DatabaseEvidenceRecorder` from its transaction
+  guard: "evidence persistence and transaction ownership are application policy, and evidence is not
+  itself an authorization gate."
 - **Attestation** — implemented as `AttestEvidenceRecorder`, an opt-in recorder delivered by issue #11
   and backed by `fissible/attest`.
   [Limitations: tamper-evident evidence is opt-in, partial, and bounded by key custody](../limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody)
@@ -69,19 +69,16 @@ own.
 
 ## Update (#149): the propagation rule is scoped, because after a successful executor it contradicts the layer it belongs to
 
-Decision point 2 states two rules. Both are correct in isolation, and they collide on exactly one path.
+Decision point 2 states two rules, both correct in isolation, that collide on exactly one path:
 
 - *"Losing evidence does not change what already executed."*
 - *"Evidence persistence failures propagate as application faults (the recorder throws)."*
 
 The collision is in `VerdictManager::executeAfterRateLimit()`. After the executor has returned
-successfully, Verdict finalizes the execution claim and records that finalization as evidence. At that
-point the only channel back to the caller is an exception — and an exception raised by an evidence write
-is indistinguishable from one raised by the executor. A caller who receives it concludes the side effect
-did not happen. It did.
-
-So on that path, applying the second rule produces precisely the outcome the first rule forbids: the loss
-of an evidence write changes what the caller believes about an execution that already completed.
+successfully, Verdict finalizes the execution claim and records that finalization as evidence. The
+only channel back to the caller is then an exception — and an exception from an evidence write is
+indistinguishable from one raised by the executor. A caller who receives it concludes the side effect
+did not happen. It did. So the second rule here produces exactly what the first forbids.
 
 **Resolution.** The propagation rule is scoped rather than abandoned. It holds wherever the evidence write
 precedes or accompanies the decision it records, which is every call site except one: an evidence-write
@@ -89,20 +86,17 @@ failure occurring **after a successful executor** must not propagate to the call
 failure event instead, in the shape `Fissible\Verdict\Evidence\Events\ChainWriteFailed` already
 establishes.
 
-**Why the principle wins and the mechanism yields.** "Failures propagate" was a statement about how
-evidence failures surface — that they are not silently swallowed — not a claim that they may misrepresent
-execution. Layer 2 exists to say that evidence is a record *about* a decision and not the decision itself.
-A record's failure cannot be permitted to rewrite the caller's understanding of the thing being recorded;
-that would make evidence authoritative over execution, which is layer 1's role and explicitly not
-evidence's. Scoping the mechanism preserves both sentences. Preserving the mechanism unscoped would
-require deleting the first sentence, and with it the reason this layer is separate at all.
+**Why the principle wins and the mechanism yields.** "Failures propagate" describes how evidence failures
+surface — not silently swallowed — not a licence to misrepresent execution. Letting a record's failure
+rewrite the caller's understanding of the thing recorded would make evidence authoritative over execution,
+which is layer 1's role. Scoping preserves both sentences; leaving it unscoped would delete the first, and
+the reason this layer is separate.
 
 **What does not change.**
 
-- Operational-state failures on the same path still propagate, and must. A claim transition that fails
-  means security state and reality have diverged, which is layer 1 behaving exactly as decision point 1
-  requires. #149 introduces a dedicated exception for that case carrying the executor's output, so the
-  caller can reconcile.
+- Operational-state failures on the same path still propagate, and must. A failed claim transition means
+  security state and reality have diverged, which is layer 1 behaving as decision point 1 requires. #149
+  introduces a dedicated exception for that case carrying the executor's output, so the caller can reconcile.
 - Every evidence call site other than post-execution finalization keeps the original propagation
   behavior. *(Superseded by the Update (#153) below, which extends the same scoping to the three
   mutating gates. Left here as the historical record of what this Update decided.)*
@@ -110,29 +104,24 @@ require deleting the first sentence, and with it the reason this layer is separa
   "Alternatives rejected" below stands unchanged.
 
 **Where the hazard does not apply, and why that is now enforced.** `ContextReleaseManager::release()` also
-writes evidence next to a completed transformation, and looks like the same shape. It is not, for a reason
-worth stating because it is contingent: the projected and redacted payload leaves that method only through
-the `ContextReleaseResult` it returns, which is an inert value object, and the method has no dispatch,
-callback, or other emission. So a throw from `recordRelease()` genuinely *prevents* the release rather than
-misreporting one that already happened — the caller never receives the payload. `permitted: true` likewise
-stays accurate, because it records that policy permitted the release, not that a caller received it.
+writes evidence next to a completed transformation and looks like the same shape, but is not: the projected
+and redacted payload leaves that method only through the `ContextReleaseResult` it returns, an inert value
+object, with no dispatch, callback, or other emission. So a throw from `recordRelease()` genuinely
+*prevents* the release rather than misreporting one — the caller never receives the payload — and
+`permitted: true` stays accurate because it records that policy permitted the release, not that a caller
+received it. Nothing in the code declared this; a future change adding a notification or callback to
+`release()` would silently make it an instance of the hazard.
+`tests/Unit/ContextReleaseSideChannelArchitectureTest.php` now asserts both directions: that the release
+path emits nothing, and that `ContextReleaseResult` stays inert.
 
-That property is what clears this path, and nothing in the code declared it. A future change adding a
-notification or callback to `release()` would silently convert it into an instance of the hazard, and the
-reasoning that cleared it would not be anywhere a reviewer would look.
-`tests/Unit/ContextReleaseSideChannelArchitectureTest.php` now asserts it in both directions: that the
-release path emits nothing, and that `ContextReleaseResult` stays inert.
-
-**How this went unnoticed.** The asymmetry was visible in the code before it was visible in the ADR: the
-executor-failure path already wrapped finalization failures in `ExecutionClaimFinalizationFailed` so a
-caller could distinguish them, while the success path — the more dangerous of the two to get wrong — had
-no equivalent. The ADR's two sentences were read separately for long enough that the one path where they
-disagree was never tested against either.
+The asymmetry predated the ADR: the executor-failure path already wrapped finalization failures in
+`ExecutionClaimFinalizationFailed` so a caller could distinguish them, while the more dangerous success
+path had no equivalent, and the one path where the two sentences disagree was never tested against either.
 
 ## Update (#153): the same scoping applies after any committed security-state mutation, not only after a successful executor
 
-The Update above scoped the propagation rule to exclude the post-execution path. That scoping was drawn
-too narrowly: the same collision occurs at every mutating gate, and there it does more damage.
+The Update above was scoped too narrowly: the same collision occurs at every mutating gate, and there it
+does more damage.
 
 Steps 10, 11, and 12 of the [gate ordering](../architecture.md#security-state-gate-ordering) — consume a
 rate-limit unit, consume an approval receipt, admit an execution claim — each commit operational state and
@@ -149,16 +138,15 @@ action is abandoned. Two things are wrong with that:
 
 **Resolution.** An evidence-write failure that follows a committed security-state mutation must not
 propagate and must not stop execution. It emits `EvidenceWriteFailed`, the operational outcome stands, and
-the flow continues to the next gate.
+the flow continues to the next gate. Stated positively, decision point 2's propagation rule now holds
+exactly where an evidence write neither follows a committed security-state mutation nor follows a
+successful executor.
 
-Stated positively, decision point 2's propagation rule now holds exactly where an evidence write neither
-follows a committed security-state mutation nor follows a successful executor.
-
-**Why the line falls at "committed mutation" rather than at "any evidence write".** Before anything has been
-mutated, propagating an evidence failure is safe: the action is abandoned having changed nothing, which is
-fail-closed and costs the caller only a retry. Steps 1 through 9 are reads and non-mutating validations, so
-they keep the original behavior. After a mutation, abandoning is no longer neutral — state has moved, and
-the caller is told it has not. The asymmetry is the point, not an inconsistency.
+**Why the line falls at "committed mutation" rather than "any evidence write".** Before anything is
+mutated, propagating an evidence failure is safe: the action is abandoned having changed nothing —
+fail-closed, costing only a retry. Steps 1 through 9 are reads and non-mutating validations, so they keep
+the original behavior. After a mutation, abandoning is no longer neutral: state has moved and the caller is
+told it has not. The asymmetry is the point.
 
 **What does not change.**
 
@@ -170,19 +158,17 @@ the caller is told it has not. The asymmetry is the point, not an inconsistency.
 - Nothing here brings evidence writes inside ADR 0004's transaction guard.
 
 **A deliberate consequence worth naming.** After this change, an evidence-store outage no longer halts
-protected actions: they execute with no durable record. That is what decision point 2 requires, and it is a
-real change in posture for a deployment that would rather fail closed than act unrecorded. Verdict already
-has a precedent for that preference in the attest recorder's `on_failure: 'alert' | 'throw'`. A general
+protected actions: they execute with no durable record. That is what decision point 2 requires, and a real
+change in posture for a deployment that would rather fail closed than act unrecorded. Verdict already has a
+precedent for that preference in the attest recorder's `on_failure: 'alert' | 'throw'`. A general
 fail-closed lever is deliberately **not** introduced here — inventing a configuration surface alongside a
 behavioral fix is how a reasoned change acquires an unexamined one — and is tracked separately.
 
 ## Update (#160): the fail-closed departure exists, as a pre-mutation admission control in the operational layer
 
-The Update above ends by naming the deliberate consequence: an evidence-store outage no longer halts
-protected actions, and a deployment that would rather fail closed than act unrecorded had no lever. #160
-adds that lever — and the shape matters more than the switch. It is **not** a throw posture on the
-evidence writes this ADR made non-propagating. It is a **write-ahead intent record**, and it lives in the
-operational layer, not the evidence layer.
+#160 adds the lever the Update above named as missing — and the shape matters more than the switch. It is
+**not** a throw posture on the evidence writes this ADR made non-propagating. It is a **write-ahead intent
+record**, living in the operational layer, not the evidence layer.
 
 **The lever.** `verdict.intents.required` (global, default off) with `->requiresIntentRecord()` /
 `->requiresIntentRecord(false)` as a per-capability override in either direction. For a capability whose

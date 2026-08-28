@@ -4,7 +4,7 @@ Verdict pins `laravel/ai: ^0.11.0` — pre-1.0, Composer-caret-pinned to `>=0.11
 
 ## Methodology and its limit
 
-This is a grep-and-read audit of `src/`, not a promise from upstream. `laravel/ai` carries no `@api`, `@internal`, or `@experimental` annotations anywhere in its contracts, events, or prompt classes (checked directly against the installed `v0.11.0`) — it does not itself declare which parts of its surface are meant to be extended versus which are implementation detail. The classification below is Verdict's own judgment, inferred from shape (formal interface vs. concrete class vs. framework pipeline convention), not an upstream commitment. Treat "stable" below as "the part of the surface a Tool/Agent SDK integration would reasonably have to depend on," not "guaranteed unchanged."
+This is a grep-and-read audit of `src/`, not a promise from upstream. `laravel/ai` carries no `@api`, `@internal`, or `@experimental` annotations anywhere in its contracts, events, or prompt classes (checked directly against the installed `v0.11.0`) — it does not itself declare which parts of its surface are meant to be extended versus which are implementation detail. The classification below is Verdict's own judgment, inferred from shape (formal interface vs. concrete class vs. framework pipeline convention), not an upstream commitment. Treat "stable" as "the part of the surface a Tool/Agent SDK integration would reasonably have to depend on," not "guaranteed unchanged."
 
 ## Classification legend
 
@@ -14,7 +14,7 @@ This is a grep-and-read audit of `src/`, not a promise from upstream. `laravel/a
 
 ## Compatibility matrix
 
-This is a generated record of observations, rather than a hand-maintained support promise. `ci`
+This is a generated record of observations, not a hand-maintained support promise. `ci`
 means the named GitHub Actions run tested the row; `local` records one local suite run, and its
 locator is the record of that run — what was checked out, what resolved, and what the suite
 reported — not the manifest of the release it names. The distinction is the point: a `ci` row is a
@@ -24,7 +24,7 @@ Composer constraint into evidence.
 The block comes from `scripts/generate-compatibility-matrix.php` and its JSON facts input. Regenerate
 it whenever the `laravel/ai` constraint changes or when adding a newly observed row. Rows are retired
 or pruned when their concrete Laravel AI version no longer satisfies the composer.json constraint;
-this keeps Verdict, rather than another repository's release cadence, responsible for the boundary.
+this keeps Verdict, not another repository's release cadence, responsible for the boundary.
 
 The verdict-console facts below are reported by its manifest and VERSION at the linked revision, not
 verified here: Verdict's CI does not run the console suite. That manifest declares
@@ -70,7 +70,7 @@ Laravel AI invokes an `Approvable` tool's `shouldRequestApproval(Request)` befor
 `handle(Request)` call, with distinct `Request` instances for the same provider tool call. For a
 `BoundTool` with a callable Verdict `ActionContext`, Verdict prepares one envelope during a
 non-approval preflight and consumes it at immediate execution. This prevents the two hooks from
-resolving different actors or subjects for one tool call while retaining proposal- and
+resolving different actors or subjects for one tool call, while retaining proposal- and
 execution-stage authorization.
 
 The prepared envelope is held only in Verdict's scoped `InvocationContext`, keyed by its
@@ -171,4 +171,4 @@ Nothing found in this audit is used in `src/` but absent from that existing watc
 
 ## Summary
 
-No source changes are required by this audit — every category (c) assumption found either already has real test coverage exercising Verdict's own logic (agent identity, wildcard rejection) or a deliberately-red compatibility alarm for a known upstream defect (invocation-id nesting). The two gaps are in test *reach*, not correctness: neither the agent-identity assumption nor the middleware pipeline-invocation convention is currently verified against Laravel AI's real runtime behavior, only against hand-constructed inputs. Both are named above as proposed extensions to existing tests, not new source-level fixes, consistent with this issue's acceptance criteria.
+This audit requires no source changes — every category (c) assumption found either already has real test coverage exercising Verdict's own logic (agent identity, wildcard rejection) or a deliberately-red compatibility alarm for a known upstream defect (invocation-id nesting). The two gaps are in test *reach*, not correctness: neither the agent-identity assumption nor the middleware pipeline-invocation convention is currently verified against Laravel AI's real runtime behavior, only against hand-constructed inputs. Both are named above as proposed extensions to existing tests, not new source-level fixes, consistent with this issue's acceptance criteria.

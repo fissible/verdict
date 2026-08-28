@@ -1,8 +1,8 @@
 # Extension-contract stability
 
-This inventory identifies the interfaces that Verdict intentionally exposes for
-application adapters. It records the package-provided implementations and the
-kind of extension each contract supports.
+This inventory identifies the interfaces Verdict intentionally exposes for
+application adapters, the package-provided implementations, and the kind of
+extension each contract supports.
 
 `Stable` contracts are intended to remain compatible through Verdict 1.0.
 `Experimental` contracts are public for feedback and extension, but may change
