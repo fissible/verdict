@@ -9,6 +9,8 @@ Verdict deliberately secures a narrow boundary: application actions that are reg
 
 Rows written while a non-UTC application timezone was active are already shifted, are not migrated, and carry no source-timezone marker, so a mixed table cannot identify which rows are which. New evidence write timestamps are minted in UTC before Laravel formats timezone-naive database columns.
 
+A non-UTC **connection** timezone is a separate case. Laravel's per-connection `timezone` option sets the database session zone; on MySQL, `TIMESTAMP` columns are converted against it on both read and write. Verdict's own read and write share that session, so the conversions cancel and every timestamp round-trips to the correct UTC instant — verified for MySQL by `tests/Feature/ConnectionTimezoneEvidenceTest.php`. The value *physically stored* is nonetheless shifted from the intended UTC instant by the connection's offset (the zone-less wall-clock string is interpreted as connection-local on write). A consumer that reads the column under a *different* session zone, or reconstructs the instant from the raw stored value without compensating for the connection zone — raw SQL under a UTC session, a differently-configured reader, offline digest reconstruction — can observe that shift. Run Verdict's connection (or its dedicated `verdict.*.connection`) at UTC so the stored value is UTC-correct for those consumers too. See [#362](https://github.com/fissible/verdict/issues/362).
+
 <!-- @verdict-claim limitation.toctou untestable reason="A package cannot exhaustively prove the absence of concurrent external changes." -->
 ### No complete TOCTOU protection
 
