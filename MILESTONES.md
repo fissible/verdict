@@ -686,6 +686,16 @@ These are one question at two layers — whether the boundary is enforced by str
 should settle in one ADR. #230's thread already proposes the sequencing: the v0.8.0 advisory (#231) *is*
 the deprecation period, and registration-time rejection lands at the 1.0 boundary.
 
+**A third decision, from the survey rather than the backlog.**
+[#352](https://github.com/fissible/verdict/issues/352) asks whether Verdict signals proximity to a
+semantic rate limit before it denies. The values are already recorded — `rateLimitLimit`,
+`rateLimitRemaining`, and `rateLimitResetAt` sit on `DecisionEvidence` — so the open question is a
+boundary one, not a capability one: is a near-miss something Verdict emits, or something an operator
+reads out of evidence afterwards. It belongs here because the same question was already answered once,
+for tool-description divergence, with "whether it should is a separate decision, deliberately not made
+here." Leaving it answered in one place and open in the other is what 1.0's bar rules out. Closing it
+as a recorded refusal is a valid outcome; building a signal is not required.
+
 **Upstream compatibility — satisfied, and moved out.** [#130](https://github.com/fissible/verdict/issues/130)
 lived here because the compatibility-strategy criterion could not be called satisfied while the dependency
 sat behind a known unreleased breaking change. Upstream published `0.11.0` on 2026-08-19 and #130 shipped
