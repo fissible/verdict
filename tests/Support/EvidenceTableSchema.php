@@ -122,6 +122,12 @@ final class EvidenceTableSchema
     /** The table as it stands on an install that never ran one named migration. */
     public static function createWithoutMigration(string $migration): void
     {
+        // Prime the schema measurement BEFORE building, never after. probe() drops and rebuilds
+        // the table to measure it, so a later first call — from absentColumns() in a test that has
+        // already written a row — would silently wipe that row. createWithout() gets this for free
+        // through columnsByMigration(); this builder has to ask.
+        self::probe();
+
         self::drop();
         self::run('create_verdict_evidence_table');
 
