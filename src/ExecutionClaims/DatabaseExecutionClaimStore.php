@@ -149,6 +149,12 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
                     'claimed_at' => $at,
                     'completed_at' => null,
                     'indeterminate_at' => null,
+                    // Clear the prior resolution's audit fields — the row is actively Claimed again,
+                    // so leaving released_at/resolved_by/resolution_reason set would make it read as
+                    // "released at T by X" while claimed (#355).
+                    'released_at' => null,
+                    'resolved_by' => null,
+                    'resolution_reason' => null,
                     'updated_at' => $at,
                 ]);
 
