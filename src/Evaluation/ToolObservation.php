@@ -35,6 +35,8 @@ final readonly class ToolObservation
          * @var list<string>
          */
         public array $registeredSecretLabels = [],
+        /** The 1-based order in which this execution was observed. */
+        public int $executionSequence = 1,
     ) {
         if (trim($this->capability) === '') {
             throw new InvalidArgumentException('A tool observation must name a capability.');
@@ -46,6 +48,10 @@ final readonly class ToolObservation
 
         $this->assertLabels($this->matchedRegisteredSecrets);
         $this->assertLabels($this->registeredSecretLabels);
+
+        if ($this->executionSequence < 1) {
+            throw new InvalidArgumentException('A tool observation requires a positive execution sequence.');
+        }
 
         // A matched label outside the scanned set means the two halves were assembled from
         // different places, and the pair can no longer be read as "these were scanned; these hit".

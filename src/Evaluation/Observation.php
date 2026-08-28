@@ -33,6 +33,7 @@ final readonly class Observation
      * @param  list<ProvenanceEntry>  $provenanceEntries
      * @param  list<ChallengeObservation>  $challenges
      * @param  list<PredicateObservation>  $predicates
+     * @param  list<ResourceObservation>  $resources
      */
     public function __construct(
         public ?Disposition $disposition,
@@ -43,6 +44,7 @@ final readonly class Observation
         public array $provenanceEntries = [],
         public array $challenges = [],
         public array $predicates = [],
+        public array $resources = [],
         public ?string $recordedActorFingerprint = null,
         public ?string $recordedSubjectFingerprint = null,
     ) {
@@ -51,6 +53,7 @@ final readonly class Observation
         $this->assertProvenanceEntries($this->provenanceEntries);
         $this->assertChallenges($this->challenges);
         $this->assertPredicates($this->predicates);
+        $this->assertResources($this->resources);
     }
 
     /**
@@ -130,6 +133,16 @@ final readonly class Observation
         foreach ($predicates as $predicate) {
             if (! $predicate instanceof PredicateObservation) {
                 throw new InvalidArgumentException('Every observed predicate must be a PredicateObservation.');
+            }
+        }
+    }
+
+    /** @param array<array-key, mixed> $resources */
+    private function assertResources(array $resources): void
+    {
+        foreach ($resources as $resource) {
+            if (! $resource instanceof ResourceObservation) {
+                throw new InvalidArgumentException('Every observed resource must be a ResourceObservation.');
             }
         }
     }

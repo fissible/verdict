@@ -29,6 +29,7 @@ use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Decisions\ExecutionResult;
+use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
@@ -84,6 +85,8 @@ final readonly class VerdictManager
          * @var (Closure(): ?ExecutionWindow)|null
          */
         private ?Closure $executionWindow = null,
+        /** @var (Closure(): ?ResourceCheckpointCapture)|null */
+        private ?Closure $resourceCheckpointCapture = null,
     ) {}
 
     public function capability(Capability $capability): self
@@ -519,12 +522,22 @@ final readonly class VerdictManager
             // traffic before this line (claims, rate limits, evidence) and after it (finalization)
             // stays outside, which is what lets the evaluation harness treat a captured statement
             // as the executor's. See Contracts\ExecutionWindow.
+            $run = function () use ($evaluation, $executor, $admission): mixed {
+                $policy = $evaluation->capability?->executionTargetPolicy();
+                $capture = $this->resourceCheckpointCapture === null ? null : ($this->resourceCheckpointCapture)();
+
+                if ($capture !== null && $policy !== null) {
+                    $capture->capture($evaluation->envelope, $policy, $evaluation->target);
+                }
+
+                return $executor($admission);
+            };
             $window = $this->executionWindow === null ? null : ($this->executionWindow)();
             $output = $window === null
-                ? $executor($admission)
+                ? $run()
                 : $window->around(
                     $evaluation->envelope,
-                    static fn (): mixed => $executor($admission),
+                    $run,
                 );
         } catch (Throwable $executionFailure) {
             if ($admission !== null) {

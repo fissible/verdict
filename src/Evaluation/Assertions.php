@@ -533,6 +533,59 @@ final class Assertions
     }
 
     /**
+     * Whether two declared occurrences observed equal declared projections for one logical
+     * resource. This is a detector, never enforcement: it proves only equal endpoint projections.
+     * It is silent about the interval (and therefore ABA-blind by construction), row-level
+     * security, views, triggers, concurrent writers, and bytes below the capture boundary.
+     *
+     * As with the wire-SQL predicate rung, missing endpoints or a capture that cannot be tied to
+     * executed calls are unmeasured, not a clean comparison.
+     *
+     * @experimental Part of the evaluation surface; may change before Verdict 1.0.
+     */
+    public static function resourceDigestMatchesPriorObservation(
+        string $checkpoint,
+        string $resourceIdentity,
+        int $checkOccurrence,
+        int $useOccurrence,
+    ): ObservationAssertion {
+        self::requireNonEmpty($checkpoint, 'A resource comparison must name a checkpoint.');
+
+        if (! ResourceIdentity::isIdentity($resourceIdentity)) {
+            throw new InvalidArgumentException('A resource comparison requires a '.ResourceIdentity::SCHEME.'-tagged identity.');
+        }
+
+        if ($checkOccurrence < 1 || $useOccurrence < 1 || $checkOccurrence >= $useOccurrence) {
+            throw new InvalidArgumentException('A resource comparison requires positive check and use occurrences with check before use.');
+        }
+
+        return new CallbackAssertion(
+            name: 'resource_digest_matches_prior_observation',
+            test: function (Observation $observation) use ($checkpoint, $resourceIdentity, $checkOccurrence, $useOccurrence): bool {
+                $selected = [];
+
+                foreach ($observation->resources as $resource) {
+                    if ($resource->checkpoint !== $checkpoint || $resource->resourceIdentity !== $resourceIdentity) {
+                        continue;
+                    }
+
+                    if ($resource->occurrence === $checkOccurrence || $resource->occurrence === $useOccurrence) {
+                        $selected[$resource->occurrence] = $resource;
+                    }
+                }
+
+                if (! isset($selected[$checkOccurrence], $selected[$useOccurrence])
+                    || ! self::resourceExecutionsObserved($observation, $selected)) {
+                    throw new CapabilityNotAttempted('The resource comparison has fewer than two comparable observations.');
+                }
+
+                return $selected[$checkOccurrence]->digest === $selected[$useOccurrence]->digest;
+            },
+            failureMessage: 'The declared resource projection did not match its prior observation.',
+        );
+    }
+
+    /**
      * The live-winnable structural half of the filtered-permit oracle (#251 round 6): EVERY
      * predicate attributed to the capability must normalize to one of the declared admissible
      * shapes. The declaration is hand-written by the harness — the scope clause is present in
@@ -626,6 +679,22 @@ final class Assertions
                 'A predicate digest assertion requires a '.PredicateDigest::SCHEME.'-tagged digest.',
             );
         }
+    }
+
+    /** @param array<int, ResourceObservation> $resources */
+    private static function resourceExecutionsObserved(Observation $observation, array $resources): bool
+    {
+        foreach ($resources as $resource) {
+            foreach ($observation->toolCalls as $toolCall) {
+                if ($toolCall->executed && $toolCall->executionSequence === $resource->executionSequence) {
+                    continue 2;
+                }
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     public static function provenanceEntryIs(

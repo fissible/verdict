@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Evaluation;
 
 use Fissible\Verdict\Decisions\Disposition;
+use Fissible\Verdict\Evidence\ArgumentFingerprint;
 
 final class LiveToolCapture
 {
@@ -22,6 +23,11 @@ final class LiveToolCapture
 
     /** @var list<PredicateObservation> */
     private array $predicates = [];
+
+    /** @var list<ResourceObservation> */
+    private array $resources = [];
+
+    private int $executionSequence = 0;
 
     private ?string $invocationId = null;
 
@@ -47,6 +53,7 @@ final class LiveToolCapture
             $executed,
             $matchedRegisteredSecrets,
             $registeredSecretLabels,
+            ++$this->executionSequence,
         );
     }
 
@@ -81,6 +88,7 @@ final class LiveToolCapture
             $executed,
             $matchedRegisteredSecrets,
             $registeredSecretLabels,
+            ++$this->executionSequence,
         );
     }
 
@@ -96,6 +104,8 @@ final class LiveToolCapture
         $this->sideEffects = [];
         $this->challenges = [];
         $this->predicates = [];
+        $this->resources = [];
+        $this->executionSequence = 0;
         $this->invocationId = null;
     }
 
@@ -152,6 +162,36 @@ final class LiveToolCapture
     public function predicates(): array
     {
         return $this->predicates;
+    }
+
+    /**
+     * Record the execution that a resource checkpoint belongs to and return its sequence.
+     *
+     * @param  array<string, mixed>  $arguments
+     */
+    public function recordExecution(string $capability, array $arguments): int
+    {
+        $sequence = ++$this->executionSequence;
+        $this->calls[] = new ToolObservation(
+            capability: $capability,
+            argumentFingerprint: ArgumentFingerprint::make($arguments),
+            disposition: Disposition::Permit,
+            executed: true,
+            executionSequence: $sequence,
+        );
+
+        return $sequence;
+    }
+
+    public function recordResource(ResourceObservation $resource): void
+    {
+        $this->resources[] = $resource;
+    }
+
+    /** @return list<ResourceObservation> */
+    public function resources(): array
+    {
+        return $this->resources;
     }
 
     public function recordInvocationId(string $invocationId): void

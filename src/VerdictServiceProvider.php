@@ -48,6 +48,7 @@ use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
+use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
@@ -533,6 +534,9 @@ final class VerdictServiceProvider extends ServiceProvider
                 // deployments, which never bind one, pay a single bound() check per execution.
                 executionWindow: static fn (): ?ExecutionWindow => $app->bound(ExecutionWindow::class)
                     ? $app->make(ExecutionWindow::class)
+                    : null,
+                resourceCheckpointCapture: static fn (): ?ResourceCheckpointCapture => $app->bound(ResourceCheckpointCapture::class)
+                    ? $app->make(ResourceCheckpointCapture::class)
                     : null,
             );
         });

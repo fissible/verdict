@@ -164,6 +164,7 @@ final readonly class LiveAgentObserver
             sideEffects: $this->capture->sideEffects(),
             challenges: $this->capture->challenges(),
             predicates: $this->capture->predicates(),
+            resources: $this->capture->resources(),
             recordedActorFingerprint: $this->recordedFingerprint($decisions, 'actorFingerprint'),
             recordedSubjectFingerprint: $this->recordedFingerprint($decisions, 'subjectFingerprint'),
         );
