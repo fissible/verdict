@@ -239,28 +239,6 @@ it('observes nothing for a capability that declares no projection', function ():
         ->and($sink->toolObservations())->toBe([]);
 });
 
-it('observes nothing for a capability that declares a projection but no execution target', function (): void {
-    // A projection with no policy has no identity to pair on, so there is nothing to record. It must
-    // land as unmeasured rather than as an exception the capture swallows on the way to the
-    // executor — the outcome is the same for the run, and only one of them is deliberate.
-    permitDeclaredProjection($this->app);
-
-    $target = (object) ['ref' => 'REC-55', 'body' => 'no-policy'];
-    $projection = ResourceProjection::declared(
-        'record-body/v1',
-        fn (ActionEnvelope $envelope, object $target): array => ['body' => $target->body],
-    );
-
-    registerDeclaredProjectionCapability('records.policyless', $target, null, $projection);
-
-    $sink = declaredProjectionSink();
-    $result = app(VerdictManager::class)->runBound(declaredProjectionEnvelope('records.policyless'));
-
-    expect($result->executed)->toBeTrue()
-        ->and($sink->resources())->toBe([])
-        ->and($sink->toolObservations())->toBe([]);
-});
-
 it('leaves the execution unharmed when the declaration itself fails', function (): void {
     // An evaluation instrument must never break the thing it measures. A declaration that throws, or
     // returns a shape the digest cannot accept, makes the run unmeasured — never failed.

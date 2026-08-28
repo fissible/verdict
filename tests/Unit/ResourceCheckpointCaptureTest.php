@@ -60,6 +60,11 @@ it('records nothing for a capability that declares no projection', function (): 
 it('records nothing for a capability with no execution-target policy', function (): void {
     // There is no identity to pair on, so there is no measurement to make. It must be a deliberate
     // silence rather than a null reaching the identity call and being swallowed on the way out.
+    //
+    // This is the ONLY place the case can be stated. `runBound()` denies a capability with no
+    // execution-target policy before anything executes, so no run can reach the capture in this
+    // shape — which is exactly why the guard has to be specified against the capture itself. Any
+    // other caller reaching it directly gets the silence rather than an exception.
     $sink = new LiveToolCapture;
     $capture = new ResourceCheckpointCapture($sink, 'record-body');
 
