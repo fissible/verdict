@@ -416,10 +416,11 @@ it('does not warn about durable adapters configured in production', function ():
     config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
     config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
 
-    // A declared database evidence recorder needs its table to be a valid deployment (#356); the
-    // audit errors without it. That is unrelated to what this test asserts, so the fixture
-    // provides it rather than passing by dodging the check.
+    // A declared database evidence recorder needs its tables to be a valid deployment (#356, and
+    // the derivations table since #363); the audit errors without them. That is unrelated to what
+    // this test asserts, so the fixture provides them rather than passing by dodging the check.
     EvidenceTableSchema::createComplete();
+    EvidenceTableSchema::createDerivations();
 
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('non-durable')
@@ -457,9 +458,10 @@ it('reads configuration rather than resolved container bindings, and says so', f
     // Declared durable, resolved non-durable. The audit reads the declaration.
     $this->app->instance(RateLimitStore::class, new InMemoryRateLimitStore);
 
-    // See #356 above: the declared evidence recorder needs its table for this to be a valid
+    // See #356 above: the declared evidence recorder needs its tables for this to be a valid
     // deployment, which is not what this test is about.
     EvidenceTableSchema::createComplete();
+    EvidenceTableSchema::createDerivations();
 
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('non-durable')
@@ -726,6 +728,7 @@ it('names every missing evidence column and fails', function (string $migration)
 it('does not report evidence columns when the table is current', function (): void {
     config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
     EvidenceTableSchema::createComplete();
+    EvidenceTableSchema::createDerivations();
 
     $exitCode = Artisan::call('verdict:validate');
     $output = Artisan::output();
@@ -758,4 +761,68 @@ it('does not audit the evidence table when evidence is not going to the database
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('missing_verdict_evidence')
         ->assertExitCode(0);
+});
+
+/**
+ * #363: the evidence audit added in #356 never looked at the derivations table, so the asymmetry
+ * that issue opened with survived in miniature — a table the recorder writes on every provenance
+ * edge, checked by nothing. Same terms as evidence: a missing table or missing columns are errors,
+ * because a short derivation row is written silently while the action proceeds.
+ */
+it('errors when the derivations table is missing', function (): void {
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    EvidenceTableSchema::createComplete();
+    EvidenceTableSchema::dropDerivations();
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    expect($output)->toContain(verdictTable('derivations'))
+        ->and($exitCode)->toBe(1);
+
+    EvidenceTableSchema::drop();
+});
+
+it('errors naming a missing derivations column', function (): void {
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    EvidenceTableSchema::createComplete();
+    EvidenceTableSchema::createDerivationsWithout(['recorded_at']);
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    // Named, and only it: an audit that listed columns the table still has would send an operator
+    // migrating in circles, exactly as for evidence.
+    expect($output)->toContain('recorded_at')
+        ->and($output)->not->toContain('child_content_fingerprint')
+        ->and($exitCode)->toBe(1);
+
+    EvidenceTableSchema::dropDerivations();
+    EvidenceTableSchema::drop();
+});
+
+it('does not report the derivations table when it is current', function (): void {
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    EvidenceTableSchema::createComplete();
+    EvidenceTableSchema::createDerivations();
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    expect($output)->not->toContain(verdictTable('derivations'))
+        ->and($exitCode)->toBe(0);
+
+    EvidenceTableSchema::dropDerivations();
+    EvidenceTableSchema::drop();
+});
+
+it('does not audit the derivations table when evidence is not going to the database recorder', function (): void {
+    config()->set('verdict.evidence.recorder', NullEvidenceRecorder::class);
+    EvidenceTableSchema::dropDerivations();
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    expect($output)->not->toContain(verdictTable('derivations'))
+        ->and($exitCode)->toBe(0);
 });
