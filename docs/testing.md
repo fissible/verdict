@@ -77,8 +77,9 @@ The kit provides these independent assertions:
   Verdict reached execution, and leaves the application to assert its executor observed the
   refreshed target fixture.
 - `assertApprovalBindingInvalidation()` issues and approves a receipt, applies an application-owned
-  binding mutation, then runs in Verdict's approval execution context and requires the execution to
-  be denied.
+  binding mutation, confirms the exact receipt remains approved, then runs in Verdict's approval
+  execution context and requires the execution to be denied. `not_found` alone is insufficient:
+  a lost receipt produces the same outcome without demonstrating binding invalidation.
 - `assertExecutionClaimDuplicateAdmission()` verifies the first action reaches execution and its
   duplicate is denied at the execution-claim gate.
 - `assertRateLimitEnforcement()` requires one permitted action (and accepts additional permitted

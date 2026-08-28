@@ -6,8 +6,10 @@ namespace Fissible\Verdict\Testing;
 
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
+use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\ApprovedToolCalls;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimStatus;
@@ -28,11 +30,17 @@ final readonly class CapabilitySecurityTestKit
         private VerdictManager $verdict,
         private Capability $registeredCapability,
         private string $capability,
+        private ApprovalStatusReader $approvalStatus,
     ) {}
 
     public static function for(VerdictManager $verdict, string $capability): self
     {
-        return new self($verdict, $verdict->registeredCapability($capability), $capability);
+        return new self(
+            $verdict,
+            $verdict->registeredCapability($capability),
+            $capability,
+            app(ApprovalStatusReader::class),
+        );
     }
 
     /**
@@ -104,6 +112,11 @@ final readonly class CapabilitySecurityTestKit
         $this->assert($transition->outcome === ApprovalOutcome::Approved, 'approval-binding-approved');
 
         $invalidateBinding();
+
+        // `not_found` after the binding changes also results when an application callback loses
+        // the receipt, so establish that this exact approved receipt survived before re-running.
+        $status = $this->approvalStatus->statusFor($challenge->receiptId);
+        $this->assert($status?->status === ApprovalReceiptStatus::Approved, 'approval-binding-receipt-retained');
 
         $result = $this->verdict->approvals()->withinApprovedToolCalls(
             ApprovedToolCalls::of([$challenge->toolCallId]),
