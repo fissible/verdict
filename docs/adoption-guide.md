@@ -1,6 +1,6 @@
 # Verdict adoption guide
 
-This guide turns Verdict's documented security boundary into an application-owned adoption plan. It is for a limited, non-production pilot first, followed by a separately reviewed high-consequence deployment. It is not a production certification, a vendor assessment, or a substitute for the [security model](security-model.md) and [limitations](limitations.md).
+This guide turns Verdict's documented security boundary into an application-owned adoption plan: a limited, non-production pilot first, then a separately reviewed high-consequence deployment. It is not a production certification, a vendor assessment, or a substitute for the [security model](security-model.md) and [limitations](limitations.md).
 
 Verdict protects only the capability path configured and invoked through it. Start with one bounded, reversible capability; do not use a pilot to establish whether an irreversible or high-value operation is safe.
 
@@ -11,7 +11,7 @@ Complete and record each item before exposing a protected capability to pilot us
 - [ ] **Choose one capability and its target.** Use `BoundTool`, a trusted target resolver, and an explicit execution-target policy. Write and test the Laravel policy against the authenticated actor and tenant-scoped target. The model's arguments must not select an object that the resolver or policy has not accepted. See the [security model](security-model.md#authorization) and [target-freshness guidance](security-model.md#target-freshness-and-toctou).
 - [ ] **Choose the execution mode from the compatibility matrix.** Start with a cell marked verified in [execution-mode compatibility](architecture.md#execution-mode-compatibility). Its notes state what the tests do and do not establish; a green cell is not a live-provider or application-policy certification.
 - [ ] **Select the admission controls deliberately.** For each capability, decide whether it needs a canonical, material-fact approval binding, `atMostOnce()` claim identity and retention, and/or a semantic `rateLimit()` scope, window, and limit. An execution claim controls Verdict admission, not an external side effect. See [approval](security-model.md#human-approval), [claims](security-model.md#preventing-duplicate-actions), and [limits](security-model.md#limiting-what-ai-can-do).
-- [ ] **Own the approval flow.** Build the authenticated reviewer queue, endpoint, display, decision audit, and resume/conversation handling in the application. Present every material binding fact, authenticate the reviewer, and store only an opaque application identifier in `approvedBy`. Verdict ships no reviewer UI, route, queue, or durable conversation-resumption protocol. `php artisan verdict:make-approval-flow` publishes route-free application skeletons as an optional starting point — including a working `VerdictApprovalAuthorizer` — and registers none of those things. Configure `verdict.approvals.authorizer` and run the `approval_context` migration before the first decision: approval decisions are fail-closed, so `approve()`/`reject()` refuse until an authorizer is configured, and supply the binding identifiers the authorizer checks via `ActionContext(approvalContext: [...])`. See [who may decide a receipt](security-model.md#who-may-decide-a-receipt). **Two requirements are easy to miss and fail silently.** Approving the agent framework's pending call is not approving Verdict's receipt: call `ApprovalManager::approve()` from your authenticated reviewer flow, *and* resume with a specific tool-call decision (`Decisions::from([$toolCallId => Decision::approve()])`). `Decision::approveAll()` is a wildcard that Verdict deliberately refuses, so a blanket approval from the model loop cannot authorize a specific consequential action — a resume that skips either step executes nothing and looks like a broken feature. See [approval resolution and scope](architecture.md#resolving-an-approval) and [confirmation-fatigue guidance](security-model.md#avoiding-confirmation-fatigue). For the queue's *reads*, use the `ApprovalStatusReader` contract
+- [ ] **Own the approval flow.** Build the authenticated reviewer queue, endpoint, display, decision audit, and resume/conversation handling in the application. Present every material binding fact, authenticate the reviewer, and store only an opaque application identifier in `approvedBy`. Verdict ships no reviewer UI, route, queue, or durable conversation-resumption protocol. `php artisan verdict:make-approval-flow` publishes route-free application skeletons as an optional starting point — including a working `VerdictApprovalAuthorizer` — and registers none of them. Configure `verdict.approvals.authorizer` and run the `approval_context` migration before the first decision: approval decisions are fail-closed, so `approve()`/`reject()` refuse until an authorizer is configured, and supply the binding identifiers the authorizer checks via `ActionContext(approvalContext: [...])`. See [who may decide a receipt](security-model.md#who-may-decide-a-receipt). **Two requirements are easy to miss and fail silently.** Approving the agent framework's pending call is not approving Verdict's receipt: call `ApprovalManager::approve()` from your authenticated reviewer flow, *and* resume with a specific tool-call decision (`Decisions::from([$toolCallId => Decision::approve()])`). `Decision::approveAll()` is a wildcard Verdict deliberately refuses, so a blanket approval from the model loop cannot authorize a specific consequential action — a resume that skips either step executes nothing and looks like a broken feature. See [approval resolution and scope](architecture.md#resolving-an-approval) and [confirmation-fatigue guidance](security-model.md#avoiding-confirmation-fatigue). For the queue's *reads*, use the `ApprovalStatusReader` contract
   ([ADR 0031](adr/0031-approval-reads-are-observational-and-scoped.md)) rather than querying the
   receipt table: `pendingWithin()` lists pending receipts scoped by the same `approvalContext`
   identifiers you capture at issuance, and `statusFor()` reads one receipt back — including after it
@@ -38,9 +38,8 @@ That is the registration. Verdict discovers definition classes implementing `Def
 everywhere downstream. Provider wiring still works and is still supported; it is no longer necessary.
 
 **Implementing the contract is an affirmation, not a proof.** Verdict cannot see inside your closures, so it
-cannot check that you replaced the TODOs. It says so plainly rather than implying a guarantee: a definition
-that affirms while still unfinished fails at boot if its TODO throws while building, and at first invocation
-otherwise. Both are fail-closed.
+cannot check that you replaced the TODOs. A definition that affirms while still unfinished fails at boot if
+its TODO throws while building, and at first invocation otherwise. Both are fail-closed.
 
 **To ship a deploy with a capability mid-work, remove the interface.** An unaffirmed class is inert —
 nothing registers it, nothing fails — and `verdict:validate` names it on every run so it cannot be
@@ -49,8 +48,7 @@ TODO are not.
 
 ### What `verdict:validate` tells you, and what boot tells you
 
-Run `php artisan verdict:validate` in your deploy pipeline. Two different things can happen, and the
-difference is worth understanding before you meet it:
+Run `php artisan verdict:validate` in your deploy pipeline. Two different things can happen:
 
 - **Unaffirmed classes are reported by the command.** Advisory, printed on every run, never blocking. Add
   `--strict` to make CI fail on them; that changes the exit code only, never what is printed.
@@ -61,12 +59,12 @@ difference is worth understanding before you meet it:
 
 **That second case is the pipeline working, not the tooling breaking.** The guarantee you want from
 `verdict:validate` in CI — *this deploy fails with the full list before production ever boots this code* —
-holds either way. What differs is only which layer prints it. Fix the listed definitions, or remove
+holds either way; only which layer prints it differs. Fix the listed definitions, or remove
 `implements DefinesCapability` from the ones that are not ready, and re-run.
 
 ## Independent security-state connection
 
-The database approval, rate-limit, and execution-claim stores must commit independently of an application transaction. If an application wraps a Verdict invocation in a transaction, configure those stores with a different **named Laravel connection**, even when it points to the same physical MySQL or PostgreSQL database. A different connection name gives Laravel a separate PDO and transaction scope; merely reusing the default connection does not. This does not create an atomic transaction with the executor or an external provider: the application still needs an outbox and reconciliation. See [ADR 0004](adr/0004-independent-security-state-transactions.md).
+The database approval, rate-limit, and execution-claim stores must commit independently of an application transaction. If an application wraps a Verdict invocation in a transaction, configure those stores with a different **named Laravel connection**, even when it points to the same physical MySQL or PostgreSQL database. A different connection name gives Laravel a separate PDO and transaction scope; reusing the default connection does not. This does not create an atomic transaction with the executor or an external provider: the application still needs an outbox and reconciliation. See [ADR 0004](adr/0004-independent-security-state-transactions.md).
 
 In `config/database.php`, duplicate the application's MySQL or PostgreSQL connection under a distinct name. This MySQL example intentionally uses the same database while allowing separate credentials and connection lifecycle:
 
@@ -108,7 +106,7 @@ Run the package migrations against that database (`php artisan migrate --databas
 
 ## Evidence profile for a high-consequence deployment
 
-This is an opt-in profile, not a default. It keeps the package's default no-op recorder unchanged and requires a deployment-specific decision about availability, integrity, retention, topology, and alert handling.
+An opt-in profile, not a default. It keeps the package's default no-op recorder unchanged and requires a deployment-specific decision about availability, integrity, retention, topology, and alert handling.
 
 1. Install and configure `fissible/attest-laravel`, including its signing-key custody and storage configuration. Select exactly one Verdict chain topology: a fixed `chain` only for a genuinely single-tenant deployment, or an application `AttestChainResolver` for per-tenant chains. A chain cannot be safely split after evidence is written.
 2. Configure the recorder and its ordinary fallback explicitly. The `fallback_connection` stores provenance and derivations and receives `chain_gap` records after a failed chained write; use a dedicated named connection when that isolation is part of the deployment's threat model.
@@ -156,7 +154,7 @@ Schedule::command('verdict:evidence:verify --min-anchor=remote_header_confirmed'
 `verdict:evidence:verify` is Verdict's configuration-aware delegate to `attest:verify`: it resolves the
 configured fixed Verdict chain and uses Attest's configured connection and trusted keys. It does not
 reimplement signature or chain verification. A deployment using `chain_resolver` has more than one possible
-chain, so schedule one invocation per concrete chain, for example
+chain, so schedule one invocation per concrete chain, e.g.
 `verdict:evidence:verify --chain=tenant:42 --min-anchor=remote_header_confirmed`. The command reports whether
 provenance is covered by the configured `chain_provenance` setting; it never verifies approval receipts.
 For an exceptional verification run, it forwards Attest's `--trusted-key`, `--trusted-key-file`,
@@ -202,7 +200,7 @@ a database-backed recorder must run that migration on upgrade regardless of the 
 `ActionIntentWriteFailed` to paging and schedule the
 [intents-with-no-outcome query](incident-response.md#scheduled-verification-intents-with-no-outcome).
 
-Budget for the write: every attempt that reaches the intent gate commits one durable row plus a
+Budget for the write: every attempt reaching the intent gate commits one durable row plus a
 fail-open evidence mirror — including attempts a later gate then denies, which is the point (a
 throttled attempt is still an attempt somebody made). Storage grows with *attempts*, not successes,
 and Verdict ships no pruning command for the table; decide the archive window with your compliance
@@ -220,7 +218,7 @@ Measure a representative load before changing TTLs or rate-limit windows. The da
 
 ## High-consequence production gate
 
-Do not treat pilot success as this gate. Require a separate security and operations sign-off that records the evidence for each item:
+Do not treat pilot success as this gate. Require a separate security and operations sign-off recording the evidence for each item:
 
 - [ ] Every in-scope capability has a tested target resolver, tenant/authentication boundary, Laravel policy, domain invariant checks, and protected non-AI entry points.
 - [ ] Approval review and resumption are application-owned, authenticated, consequence-weighted, and tested for expiry, denial, replay, and reviewer audit. Do not claim a built-in Verdict approval UI or worker.

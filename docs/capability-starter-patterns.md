@@ -53,8 +53,8 @@ indeterminate operations, and any downstream idempotency protocol.
 
 ## Testing starter patterns
 
-Use the same generated and hand-written test shape as other capabilities. These patterns do not add
-a test framework or registry; test the registered capability through `CapabilitySecurityTestKit`.
+Use the same generated and hand-written test shape as other capabilities. These patterns add no
+test framework or registry; test the registered capability through `CapabilitySecurityTestKit`.
 
 ```php
 CapabilitySecurityTestKit::for(app(VerdictManager::class), 'orders.refund')

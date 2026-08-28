@@ -4,7 +4,7 @@ A decision-evidence record carries two derived fields that give it an identity o
 `claimType` (what it asserts) and `recordDigest` (which exact record it is). Both are computed by
 Verdict, with no dependency on `fissible/attest`.
 
-Before these existed, a record's only cryptographic identity was Attest's hash chain. That coupled
+Before these existed, a record's only cryptographic identity was Attest's hash chain, coupling
 *"can another system reference this specific decision"* to *"did this deployment adopt Attest."*
 Identity (semantic, Verdict's) and integrity (cryptographic, Attest's) are now separate concerns:
 Verdict mints the identity, and Attest — when enabled — protects it.
@@ -39,14 +39,14 @@ digest over the raw value could not be re-derived from a stored record.
 **`recordedAt` enters as UTC at second precision.** The evidence table stores it as a `timestamp`,
 whose sub-second precision differs across supported databases; a digest over microseconds could not
 be re-derived from the row Verdict itself wrote. The consequence is deliberate: two records
-identical in every stable field, written within the same second, share a digest. They are the same
-claim. The digest is a *content* identity — the table's UUID primary key remains what distinguishes
+identical in every stable field, written within the same second, share a digest — they are the same
+claim. The digest is a *content* identity; the table's UUID primary key remains what distinguishes
 rows.
 
 **Why the scheme tag.** A consumer re-deriving a digest cannot silently apply the wrong rule, and a
 future canonicalization would be additive (`jcs-sha256:…`) rather than a breaking re-identity of
-every record already published. A change to the canonicalization *or* to the stable field set
-requires a new scheme.
+every record already published. A change to the canonicalization *or* the stable field set requires
+a new scheme.
 
 ### What Attest does, and does not, do
 
@@ -59,8 +59,8 @@ encoder. Verdict never computes those bytes, so no Verdict-side digest can equal
 canonicalization. Attest protects the identity; it does not define it.
 
 This is also why Verdict does not adopt JCS for the digest. `fissible/attest` is `require-dev` and
-is never called from core, so JCS would mean a second canonicalization scheme in Verdict core
-permanently, with its own tests and a standing question about which boundary uses which — for a
+never called from core, so JCS would mean a second canonicalization scheme in Verdict core
+permanently — its own tests, and a standing question about which boundary uses which — for a
 byte-equality that is unreachable anyway.
 
 ## `claimType`
@@ -166,5 +166,4 @@ succeeded — **not a receipt from the executor, and not a resulting state**. Re
 reference than the label states overclaims Verdict's boundary, which no field here supports.
 
 None of this asks anything of Verdict beyond the two fields already on every record: the reference
-lives on the *citing* system. Verdict's obligation ends at exposing a stable, honestly scoped
-identity.
+lives on the *citing* system. Verdict's obligation ends at exposing a stable, honestly scoped identity.
