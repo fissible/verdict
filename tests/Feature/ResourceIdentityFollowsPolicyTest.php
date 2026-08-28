@@ -13,6 +13,7 @@ use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
 use Fissible\Verdict\Evaluation\ResourceIdentity;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
+use Fissible\Verdict\Targets\ResourceProjection;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Container\Container;
 
@@ -27,7 +28,19 @@ use Illuminate\Contracts\Container\Container;
  * So this file declares a policy with deliberately DIFFERENT identity keys and asserts the captured
  * identity follows those instead. It is a focused differential rather than a second workbench
  * capability: the point is one contradiction, not another fixture for everything else to maintain.
+ *
+ * The projection is declared here for the same reason it is declared everywhere else since #366: a
+ * capability that declares none is not captured at all. Its content is what the second half of this
+ * test moves, so the declaration has to name the field that moves.
  */
+function differentialProjection(): ResourceProjection
+{
+    return ResourceProjection::declared(
+        'record-body/v1',
+        fn (ActionEnvelope $envelope, object $target): array => ['ref' => $target->ref, 'body' => $target->body],
+    );
+}
+
 function differentialEnvelope(): ActionEnvelope
 {
     return ActionEnvelope::wrap(
@@ -75,6 +88,7 @@ it('derives the captured identity from the policy declaration, whatever its keys
     $verdict->capability(
         Capability::usingPolicy('records.differential', 'view', fn (): object => $proposalTarget)
             ->executionTarget($policy)
+            ->resourceProjection(differentialProjection())
             ->executeUsing(fn (AuthorizedAction $action): string => 'read'),
     );
 
@@ -124,6 +138,7 @@ it('derives the captured identity from the policy declaration, whatever its keys
                 ],
                 refreshUsing: fn (ActionEnvelope $envelope, object $target): object => $alternate,
             ))
+            ->resourceProjection(differentialProjection())
             ->executeUsing(fn (AuthorizedAction $action): string => 'read'),
     );
 

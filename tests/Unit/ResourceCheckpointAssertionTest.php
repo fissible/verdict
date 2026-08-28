@@ -6,6 +6,7 @@ use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\CapabilityNotAttempted;
 use Fissible\Verdict\Evaluation\Observation;
+use Fissible\Verdict\Evaluation\ObservationEvidence;
 use Fissible\Verdict\Evaluation\ResourceDigest;
 use Fissible\Verdict\Evaluation\ResourceIdentity;
 use Fissible\Verdict\Evaluation\ResourceObservation;
@@ -33,10 +34,15 @@ use Fissible\Verdict\Evaluation\ToolObservation;
  *
  * WHY PAIRING IS THE HARD PART. An assertion keyed on capability names is trivially satisfiable —
  * two calls of either capability make an existential equality true, and "same capability" is not
- * "same resource". Pairing is by RESOURCE IDENTITY, a NAMED CHECKPOINT, and DECLARED OCCURRENCES.
+ * "same resource". Pairing is by RESOURCE IDENTITY, a NAMED CHECKPOINT, the DECLARED PROJECTION
+ * CONTRACT, and DECLARED OCCURRENCES.
  * The occurrences are declared rather than inferred because the authorizing read is not always the
  * first: a list, then read, then act trajectory authorizes on its second observation, and an
  * assertion that assumed the first could not express that case at all.
+ *
+ * The contract is there because two capabilities over one resource declare the bytes THEY depend on,
+ * and those are legitimately different (#366). Comparing a reader's projection against an actor's
+ * would report a swap whenever the two declarations disagree, which is every time they are honest.
  *
  * UNMEASURED IS NOT A PASS. Where a comparison cannot be made — no capture, one endpoint, a
  * different resource, a different checkpoint, an occurrence that never happened — the assertion
@@ -85,10 +91,12 @@ function checkpointObservation(
     string $digest,
     int $occurrence,
     int $executionSequence = 1,
+    string $projection = 'order-disclosure/v1',
 ): ResourceObservation {
     return new ResourceObservation(
         checkpoint: $checkpoint,
         resourceIdentity: $identity,
+        projection: $projection,
         digest: $digest,
         occurrence: $occurrence,
         executionSequence: $executionSequence,
@@ -115,7 +123,7 @@ it('holds when the declared occurrences carry the same projection for the same r
         checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('before'), 2, 2),
     ]);
 
-    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 1, 2)
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
         ->evaluate($observation)->passed)->toBeTrue();
 });
 
@@ -126,7 +134,7 @@ it('fails when the projection moved between the declared occurrences', function 
         checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('after'), 2, 2),
     ]);
 
-    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 1, 2)
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
         ->evaluate($observation)->passed)->toBeFalse();
 });
 
@@ -140,7 +148,7 @@ it('compares the occurrences the case declared, not whichever are adjacent', fun
         checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('after'), 3, 3),
     ]);
 
-    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 2, 3)
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 2, 3)
         ->evaluate($observation)->passed)->toBeFalse();
 
     // Two DISTINCT occurrences that agree still hold. Selecting one observation twice would not:
@@ -151,7 +159,7 @@ it('compares the occurrences the case declared, not whichever are adjacent', fun
         checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('before'), 2, 2),
     ]);
 
-    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 1, 2)
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
         ->evaluate($unmoved)->passed)->toBeTrue();
 });
 
@@ -159,7 +167,7 @@ it('reports an unwired capture as unmeasured, naming the resource comparison', f
     // #251 paid for this already: a harness that omits its wiring lands unmeasured rather than
     // silently passing. And the message has to be honest — for a two-call run with no capture,
     // "the capability was never attempted" is false and sends the reader to the wrong problem.
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 1, 2)
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
         ->evaluate(observationWithResources([])))
         ->toThrow(CapabilityNotAttempted::class, 'fewer than two comparable');
 });
@@ -168,7 +176,7 @@ it('is unmeasured when a declared occurrence never happened', function (): void 
     // One endpoint is not a comparison. This is the shape of a run whose use never executed — a
     // self-declining model, or an unrelated denial — and calling it a pass would let a case claim a
     // detection it never performed.
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 1, 2)
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
         ->evaluate(observationWithResources([
             checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('before'), 1),
         ])))->toThrow(CapabilityNotAttempted::class);
@@ -177,7 +185,7 @@ it('is unmeasured when a declared occurrence never happened', function (): void 
 it('does not pair observations of different resources', function (): void {
     // Two records, equal bytes by coincidence. Pairing on checkpoint alone would read this as a
     // clean check-to-use flow for 1001, which was never used at all.
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 1, 2)
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
         ->evaluate(observationWithResources([
             checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('same'), 1),
             checkpointObservation('order-disclosure', checkpointIdentity(2002), checkpointDigest('same'), 2, 2),
@@ -187,7 +195,7 @@ it('does not pair observations of different resources', function (): void {
 it('does not pair observations from different checkpoints', function (): void {
     // Two checkpoints select different bytes, so equality between them is meaningless and inequality
     // is not a swap.
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 1, 2)
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
         ->evaluate(observationWithResources([
             checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('before'), 1),
             checkpointObservation('shipment-disclosure', checkpointIdentity(1001), checkpointDigest('after'), 2, 2),
@@ -196,23 +204,28 @@ it('does not pair observations from different checkpoints', function (): void {
 
 it('refuses selectors that name nothing, and occurrences that cannot exist', function (): void {
     // A blank selector matches everything or nothing depending on the flow rather than on intent.
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('', checkpointIdentity(1001), 1, 2))
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2))
         ->toThrow(InvalidArgumentException::class);
 
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', ' ', 1, 2))
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', ' ', 'order-disclosure/v1', 1, 2))
+        ->toThrow(InvalidArgumentException::class);
+
+    // The contract selector is what makes two endpoints comparable. A blank one would pair whatever
+    // the run happened to produce, which is the inference defect wearing a parameter.
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), '  ', 1, 2))
         ->toThrow(InvalidArgumentException::class);
 
     // Occurrences are 1-based positions in the observed order.
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 0, 2))
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 0, 2))
         ->toThrow(InvalidArgumentException::class);
 
     // The check cannot follow the use; that is not a check-to-use comparison.
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 3, 2))
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 3, 2))
         ->toThrow(InvalidArgumentException::class);
 
     // Nor can it BE the use. One observation compared with itself passes for any value, and proves
     // no second endpoint was ever captured.
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 2, 2))
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 2, 2))
         ->toThrow(InvalidArgumentException::class);
 });
 
@@ -233,8 +246,14 @@ it('carries no resource content, only its digest and what pairs it', function ()
     // plus the identity, checkpoint, and occurrence needed to pair it.
     $observation = checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('before'), 1);
 
-    expect(array_keys(get_object_vars($observation)))
-        ->toBe(['checkpoint', 'resourceIdentity', 'digest', 'occurrence', 'executionSequence']);
+    // Exhaustive on purpose, and order-independent: the claim is "only these", so a field added
+    // later must come with a deliberate change here rather than riding along. Sorting keeps that
+    // from also pinning the constructor's parameter order, which carries no meaning.
+    $fields = array_keys(get_object_vars($observation));
+    sort($fields);
+
+    expect($fields)
+        ->toBe(['checkpoint', 'digest', 'executionSequence', 'occurrence', 'projection', 'resourceIdentity']);
 });
 
 it('is unmeasured when an endpoint belongs to no executed tool call', function (): void {
@@ -242,7 +261,7 @@ it('is unmeasured when an endpoint belongs to no executed tool call', function (
     // claims. Without this, a capture emitting observations outside any execution — or a fixture
     // hand-building them — reads as a clean check-to-use flow that no call ever performed.
     // Sequence 99 is no execution the observation recorded.
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 1, 2)
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
         ->evaluate(observationWithResources([
             checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('before'), 1),
             checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('after'), 2, 99),
@@ -259,6 +278,63 @@ it('distinguishes two executions of the same capability with identical arguments
         checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('after'), 2, 3),
     ]);
 
-    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 1, 2)
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
         ->evaluate($observation)->passed)->toBeFalse();
+});
+
+it('does not pair endpoints projected under different declared contracts', function (): void {
+    // The false positive that DECLARED projections introduce, and that inference did not have. A
+    // real check-to-use pair is two capabilities — read the record, then act on it — and once each
+    // declares its own projection they legitimately select different bytes of the same resource.
+    // Their digests then differ for a reason that is not a swap. Pairing on checkpoint and identity
+    // alone would report an attack; naming the contract finds one endpoint under it and reports
+    // unmeasured, which is the honest answer for a comparison nobody can make.
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
+        ->evaluate(observationWithResources([
+            checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('body'), 1),
+            checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('status'), 2, 2, 'order-status/v1'),
+        ])))->toThrow(CapabilityNotAttempted::class, 'fewer than two comparable');
+});
+
+it('pairs endpoints under the contract the case named, ignoring others at the same occurrences', function (): void {
+    // The other half of the same rule: a second contract observed over the same resource must not
+    // displace, mask, or be mistaken for the pair under test. Both contracts here carry occurrences
+    // 1 and 2, so an implementation that filtered on checkpoint and identity and then indexed by
+    // occurrence would overwrite one endpoint with the other and compare the wrong bytes.
+    $observation = observationWithResources([
+        checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('before'), 1),
+        checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('unrelated'), 1, 1, 'order-status/v1'),
+        checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('after'), 2, 2),
+        checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('unrelated'), 2, 2, 'order-status/v1'),
+    ]);
+
+    // Under order-disclosure/v1 the bytes moved.
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-disclosure/v1', 1, 2)
+        ->evaluate($observation)->passed)->toBeFalse();
+
+    // Under order-status/v1, over the same resource and the same occurrences, they did not.
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', checkpointIdentity(1001), 'order-status/v1', 1, 2)
+        ->evaluate($observation)->passed)->toBeTrue();
+});
+
+it('refuses an observation whose contract names nothing', function (): void {
+    // `ResourceObservation` is publicly constructible, so the invariant cannot live only in the
+    // declaration. An untagged observation would pair with anything that also failed to name a
+    // contract.
+    expect(fn () => checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('x'), 1, 1, ' '))
+        ->toThrow(InvalidArgumentException::class);
+});
+
+it('keeps resource observations out of the evidence a report can carry', function (): void {
+    // Where the digest's meaning expires. #366 was filed saying a projection change invalidates
+    // digests already recorded in baselines; there are none. Resource observations reach
+    // `Observation` and stop there — `ObservationEvidence` does not carry them, so no report and no
+    // baseline can, and a comparison is only ever made between two endpoints of one run. This pins
+    // that boundary so a later change has to argue with a test rather than move it quietly.
+    $evidence = ObservationEvidence::fromObservation(observationWithResources([
+        checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('before'), 1),
+        checkpointObservation('order-disclosure', checkpointIdentity(1001), checkpointDigest('after'), 2, 2),
+    ]));
+
+    expect(array_keys(get_object_vars($evidence)))->not->toContain('resources');
 });
