@@ -149,6 +149,24 @@ final class EvidenceTableSchema
         return self::additiveMigrations();
     }
 
+    /**
+     * The provenance-derivations table from its published migration — the evidence recorders write
+     * both, and a hand-rolled copy of this one drifts exactly like the evidence copy did.
+     */
+    public static function createDerivations(): void
+    {
+        app(DatabaseManager::class)->connection()->getSchemaBuilder()
+            ->dropIfExists(verdictTable('derivations'));
+
+        self::run('create_verdict_provenance_derivations_table');
+    }
+
+    public static function dropDerivations(): void
+    {
+        app(DatabaseManager::class)->connection()->getSchemaBuilder()
+            ->dropIfExists(verdictTable('derivations'));
+    }
+
     public static function drop(?string $table = null): void
     {
         app(DatabaseManager::class)->connection()->getSchemaBuilder()
