@@ -6,6 +6,11 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **Approval-binding kit scenarios now establish receipt continuity (#343).**
+  `assertApprovalBindingInvalidation()` reads the exact approved receipt after an application's
+  binding-mutation callback and requires it to remain approved before the re-run. A re-run
+  `not_found` can otherwise be caused by a vanished receipt rather than an invalidated binding.
+
 - **Published a generated Verdict × Verdict Console × Laravel AI compatibility matrix (#341).**
   Its JSON facts retain the observed environment, date, verification kind, and durable locator;
   generated output is checked against the committed documentation block. Rows retire when a concrete
