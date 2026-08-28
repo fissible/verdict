@@ -416,9 +416,16 @@ it('does not warn about durable adapters configured in production', function ():
     config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
     config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
 
+    // A declared database evidence recorder needs its table to be a valid deployment (#356); the
+    // audit errors without it. That is unrelated to what this test asserts, so the fixture
+    // provides it rather than passing by dodging the check.
+    EvidenceTableSchema::createComplete();
+
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('non-durable')
         ->assertExitCode(0);
+
+    EvidenceTableSchema::drop();
 });
 
 it('lets --strict fail on a non-durable adapter without changing what is printed', function (): void {
@@ -449,6 +456,10 @@ it('reads configuration rather than resolved container bindings, and says so', f
 
     // Declared durable, resolved non-durable. The audit reads the declaration.
     $this->app->instance(RateLimitStore::class, new InMemoryRateLimitStore);
+
+    // See #356 above: the declared evidence recorder needs its table for this to be a valid
+    // deployment, which is not what this test is about.
+    EvidenceTableSchema::createComplete();
 
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('non-durable')
