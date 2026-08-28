@@ -36,9 +36,11 @@ use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\Tests\Support\CustomStatusReaderTestStore;
 use Fissible\Verdict\Tests\Support\DurableCustomEvidenceRecorder;
+use Fissible\Verdict\Tests\Support\EvidenceTableSchema;
 use Fissible\Verdict\Tests\Support\VolatileCustomEvidenceRecorder;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Artisan;
 
 it('reports static wiring warnings without failing CI', function (): void {
     $targetResolutions = 0;
@@ -414,9 +416,16 @@ it('does not warn about durable adapters configured in production', function ():
     config()->set('verdict.capability_configurations.store', DatabaseCapabilityConfigurationStore::class);
     config()->set('verdict.intents.store', DatabaseActionIntentStore::class);
 
+    // A declared database evidence recorder needs its table to be a valid deployment (#356); the
+    // audit errors without it. That is unrelated to what this test asserts, so the fixture
+    // provides it rather than passing by dodging the check.
+    EvidenceTableSchema::createComplete();
+
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('non-durable')
         ->assertExitCode(0);
+
+    EvidenceTableSchema::drop();
 });
 
 it('lets --strict fail on a non-durable adapter without changing what is printed', function (): void {
@@ -447,6 +456,10 @@ it('reads configuration rather than resolved container bindings, and says so', f
 
     // Declared durable, resolved non-durable. The audit reads the declaration.
     $this->app->instance(RateLimitStore::class, new InMemoryRateLimitStore);
+
+    // See #356 above: the declared evidence recorder needs its table for this to be a valid
+    // deployment, which is not what this test is about.
+    EvidenceTableSchema::createComplete();
 
     $this->artisan('verdict:validate')
         ->doesntExpectOutputToContain('non-durable')
@@ -657,5 +670,92 @@ it('warns that an in-memory intent store cannot make the durability promise', fu
 
     $this->artisan('verdict:validate')
         ->expectsOutputToContain('verdict.intents.store')
+        ->assertExitCode(0);
+});
+
+/**
+ * #356: verdict:validate audited every DatabaseTableStore and the approvals approval_context
+ * column, but never looked at the evidence table — so the tool meant to catch a lagging schema
+ * stayed green while the recorder wrote a truncated row on every decision.
+ *
+ * These are errors, not warnings, and that is a deliberate departure from the approval_context
+ * precedent. A missing approval_context is self-announcing: a fail-closed authorizer refuses the
+ * action, so an operator finds out. A missing evidence column is the opposite — the action
+ * proceeds and the record is silently short. For a compliance record, "your evidence is
+ * incomplete and nothing will tell you" is a failed audit, not an advisory.
+ *
+ * These assert against captured output rather than expectsOutputToContain(), which consumes one
+ * expectation per output line and so cannot assert two column names printed on the same line.
+ */
+it('names every missing evidence column and fails', function (string $migration): void {
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    EvidenceTableSchema::createWithoutMigration($migration);
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    // The expected set is measured off the built table, not taken from the same map that decided
+    // which migration to skip — otherwise a wrong migration-to-column map would agree with itself.
+    $absent = EvidenceTableSchema::absentColumns();
+
+    expect($absent)->not->toBe([]);
+
+    // Every absent column, not just the first: an audit that named one and stopped would leave an
+    // operator migrating in circles. Datasets cover every additive migration, so a validator that
+    // knows about intent_id and ignores the tool-description or provenance columns fails here.
+    foreach ($absent as $column) {
+        expect($output)->toContain($column);
+    }
+
+    // And only those. An audit that noticed a lag and then listed every additive column would
+    // pass the loop above while telling operators that evidence they still have is missing.
+    // Word-boundary matched, so naming invocation_tool_description_fingerprint does not read as
+    // naming tool_description_fingerprint.
+    foreach (array_diff(EvidenceTableSchema::additiveColumns(), $absent) as $column) {
+        expect(preg_match('/\\b'.preg_quote($column, '/').'\\b/', $output))
+            ->toBe(0, "present column [{$column}] was reported missing");
+    }
+
+    // The exit code from the same invocation that produced the output, so a stateful
+    // implementation cannot print the right audit on one call and fail only on the next.
+    expect($exitCode)->toBe(1);
+
+    EvidenceTableSchema::drop();
+})->with(EvidenceTableSchema::additiveMigrationNames());
+
+it('does not report evidence columns when the table is current', function (): void {
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    EvidenceTableSchema::createComplete();
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    foreach (EvidenceTableSchema::additiveColumns() as $column) {
+        expect($output)->not->toContain($column);
+    }
+
+    // A current table must also leave the audit green, from the same invocation: silence is not
+    // enough if something else in the evidence check is failing the command.
+    expect($exitCode)->toBe(0);
+
+    EvidenceTableSchema::drop();
+});
+
+it('errors when the evidence table is missing entirely', function (): void {
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    config()->set('verdict.evidence.table', 'missing_verdict_evidence');
+    EvidenceTableSchema::drop('missing_verdict_evidence');
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('missing_verdict_evidence')
+        ->assertExitCode(1);
+});
+
+it('does not audit the evidence table when evidence is not going to the database recorder', function (): void {
+    config()->set('verdict.evidence.recorder', NullEvidenceRecorder::class);
+    config()->set('verdict.evidence.table', 'missing_verdict_evidence');
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('missing_verdict_evidence')
         ->assertExitCode(0);
 });
