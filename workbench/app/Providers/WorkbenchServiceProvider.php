@@ -22,6 +22,7 @@ use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
@@ -186,6 +187,49 @@ final class WorkbenchServiceProvider extends ServiceProvider
             )
                 ->allow(DataClass::PII)
                 ->whenTrustIs(Trust::Trusted),
+        );
+
+        // A DB-BACKED RECORD CAPABILITY, ADDED FOR #295 AND USED ONLY BY THE CHECK-TO-USE SPEC.
+        //
+        // Every other record-keyed capability here resolves from the in-memory `Catalog`, whose
+        // `Order` is `final readonly` — deliberately, so a fixture cannot drift under a test. That
+        // immutability is exactly what makes it unusable for a time-of-check-to-time-of-use case:
+        // the attack IS the resource changing between two resolutions, and there is nothing to
+        // change.
+        //
+        // So this one reads the row from `storefront_orders` by primary key, in BOTH its resolver
+        // and its `refreshUsing`, and rebuilds an `Order` from what it found. The record stays
+        // immutable — each resolution produces a fresh snapshot — while the source of truth behind
+        // it is an external store a test can update between calls with a plain UPDATE, which is the
+        // realistic shape of the threat rather than an object mutated in place.
+        //
+        // Narrow on purpose: no confirmation gate, no rate limit, and no change to any existing
+        // capability's behaviour.
+        $verdict->capability(
+            Capability::usingPolicy(
+                name: 'orders.ledger-read',
+                ability: 'view',
+                resolveTarget: fn (ActionEnvelope $envelope): Order => $this->ledgerOrder(
+                    (int) $envelope->proposal->arguments['order_id'],
+                ),
+            )->executionTarget(ExecutionTargetPolicy::refresh(
+                name: 'storefront-order-ledger-primary-key',
+                identityUsing: fn (ActionEnvelope $envelope, Order $order): array => [
+                    'tenant_id' => $envelope->context->metadata['tenant_id'] ?? null,
+                    'resource_type' => 'order',
+                    'resource_id' => $order->id,
+                ],
+                // The same read as the resolver, by primary key, against the same external store.
+                refreshUsing: fn (ActionEnvelope $envelope, Order $proposalTarget): Order => $this->ledgerOrder(
+                    $proposalTarget->id,
+                ),
+            ))->executeUsing(function (AuthorizedAction $action): string {
+                if (! $action->target instanceof Order) {
+                    throw new LogicException('The ledger read capability expected an order.');
+                }
+
+                return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
+            }),
         );
 
         $verdict->capability(
@@ -403,6 +447,25 @@ final class WorkbenchServiceProvider extends ServiceProvider
         );
 
         $this->loadViewsFrom(__DIR__.'/../../resources/views', 'verdict-workbench');
+    }
+
+    /**
+     * Reads one order from the external store by primary key, rebuilding an immutable `Order` from
+     * whatever the row holds now. Used only by `orders.ledger-read` (#295): two resolutions across a
+     * row update produce two different snapshots, which is the gap that capability exists to expose.
+     */
+    private function ledgerOrder(int $orderId): Order
+    {
+        $row = app(DatabaseManager::class)->connection()
+            ->table(StorefrontOrders::TABLE)
+            ->where('id', $orderId)
+            ->first();
+
+        if ($row === null) {
+            throw TargetNotResolvable::make();
+        }
+
+        return new Order((int) $row->id, (int) $row->customer_id, (string) $row->item, (string) $row->status, 0);
     }
 
     private function orderTargetPolicy(Catalog $catalog): ExecutionTargetPolicy
