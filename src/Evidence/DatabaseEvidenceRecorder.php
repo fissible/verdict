@@ -11,21 +11,32 @@ use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\DurableEvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use LogicException;
+use stdClass;
 
 final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder, EvidenceRecorder
 {
+    /**
+     * Mutable memo inside a readonly class. Evidence-table columns are inspected once per
+     * recorder instance: after an additive migration, restart long-lived workers so a newly
+     * constructed recorder observes the expanded schema.
+     */
+    private stdClass $schemaMemo;
+
     public function __construct(
         private ConnectionInterface $connection,
         private string $table = 'verdict_evidence',
         private string $derivationsTable = 'verdict_provenance_derivations',
-    ) {}
+    ) {
+        $this->schemaMemo = new stdClass;
+    }
 
     public function record(DecisionEvidence $evidence): void
     {
-        $this->connection->table($this->table)->insert([
+        $this->insert([
             'id' => Str::uuid()->toString(),
             'record_type' => 'decision',
             'correlation_id' => $evidence->envelopeId,
@@ -82,7 +93,7 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
     public function recordRelease(ContextReleaseEvidence $evidence): void
     {
-        $this->connection->table($this->table)->insert([
+        $this->insert([
             'id' => Str::uuid()->toString(),
             'record_type' => 'context_release',
             'correlation_id' => null,
@@ -148,7 +159,13 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
     public function recordProvenance(ProvenanceEntry $entry): void
     {
-        $this->connection->table($this->table)->insert([
+        // A provenance record without its content fingerprint cannot be hydrated into evidence.
+        // Do not leave an unreadable partial row behind on an install missing that migration.
+        if (! in_array('content_fingerprint', $this->columns(), true)) {
+            return;
+        }
+
+        $this->insert([
             'id' => Str::uuid()->toString(),
             'record_type' => 'provenance',
             'correlation_id' => $entry->correlationId,
@@ -226,6 +243,82 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
         }
 
         return $derivations;
+    }
+
+    public function hasTable(): bool
+    {
+        return $this->inspection()->tableExists;
+    }
+
+    public function table(): string
+    {
+        return $this->table;
+    }
+
+    /** @return list<string> */
+    public function missingColumns(): array
+    {
+        return array_values(array_diff(self::evidenceColumns(), $this->columns()));
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function insert(array $attributes): void
+    {
+        $columns = array_flip($this->columns());
+        $this->connection->table($this->table)->insert(array_intersect_key($attributes, $columns));
+    }
+
+    /** @return list<string> */
+    private function columns(): array
+    {
+        $inspection = $this->inspection();
+
+        if (! $inspection->tableExists) {
+            throw new LogicException("The evidence table [{$this->table}] does not exist.");
+        }
+
+        /** @var list<string> */
+        return $inspection->columns;
+    }
+
+    private function inspection(): stdClass
+    {
+        if (isset($this->schemaMemo->inspection)) {
+            return $this->schemaMemo->inspection;
+        }
+
+        if (! $this->connection instanceof Connection) {
+            throw new LogicException('The evidence connection does not support schema inspection.');
+        }
+
+        $schema = $this->connection->getSchemaBuilder();
+        $inspection = new stdClass;
+        $inspection->tableExists = $schema->hasTable($this->table);
+        /** @var list<string> $columns */
+        $columns = $inspection->tableExists ? $schema->getColumnListing($this->table) : [];
+        $inspection->columns = $columns;
+
+        return $this->schemaMemo->inspection = $inspection;
+    }
+
+    /** @return list<string> */
+    private static function evidenceColumns(): array
+    {
+        return [
+            'id', 'record_type', 'correlation_id', 'invocation_id', 'intent_id', 'capability', 'tool_kind',
+            'configuration_fingerprint', 'actor_fingerprint', 'subject_fingerprint', 'target_source',
+            'tool_description_fingerprint', 'invocation_tool_description_fingerprint', 'tool_description_matched',
+            'stage', 'disposition', 'claim_type', 'record_digest', 'reason', 'source', 'destination', 'trust_zone',
+            'trust', 'data_class', 'channel', 'component_label', 'component_fingerprint', 'content_fingerprint',
+            'argument_fingerprint', 'idempotency_key_fingerprint', 'approval_receipt_fingerprint', 'approval_phase',
+            'approval_outcome', 'target_policy', 'target_strategy', 'proposal_target_identity_fingerprint',
+            'execution_target_identity_fingerprint', 'target_identity_matched', 'rate_limit_key_fingerprint',
+            'rate_limit_policy', 'rate_limit_limit', 'rate_limit_remaining', 'rate_limit_reset_at',
+            'execution_claim_fingerprint', 'execution_claim_binding_fingerprint', 'execution_claim_policy',
+            'execution_claim_status', 'execution_claim_attempt', 'requested_path_fingerprints',
+            'released_path_fingerprints', 'transform_fingerprints', 'transformed_path_fingerprints',
+            'transformation_count', 'payload_fingerprint', 'recorded_at',
+        ];
     }
 
     private function optionalFingerprint(?string $value): ?string
