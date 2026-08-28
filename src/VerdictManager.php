@@ -523,11 +523,10 @@ final readonly class VerdictManager
             // stays outside, which is what lets the evaluation harness treat a captured statement
             // as the executor's. See Contracts\ExecutionWindow.
             $run = function () use ($evaluation, $executor, $admission): mixed {
-                $policy = $evaluation->capability?->executionTargetPolicy();
                 $capture = $this->resourceCheckpointCapture === null ? null : ($this->resourceCheckpointCapture)();
 
-                if ($capture !== null && $policy !== null) {
-                    $capture->capture($evaluation->envelope, $policy, $evaluation->target);
+                if ($capture !== null && $evaluation->capability !== null) {
+                    $capture->capture($evaluation->envelope, $evaluation->capability, $evaluation->target);
                 }
 
                 return $executor($admission);
