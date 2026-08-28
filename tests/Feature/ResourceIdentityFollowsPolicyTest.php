@@ -50,13 +50,13 @@ function permitDifferentialAuthorization(Container $app): void
 it('derives the captured identity from the policy declaration, whatever its keys are', function (): void {
     permitDifferentialAuthorization($this->app);
 
-    // Two DISTINCT targets. The resolver returns the proposal target; `refreshUsing` returns the
-    // refreshed one, whose ref — and therefore whose policy identity — differs. An implementation
-    // that captured the pre-refresh target, or never invoked `refreshUsing` at all, would produce
-    // the proposal identity and fail below. ADR 0003 makes the refreshed target the one the executor
-    // acts on, so it is the one a capture must describe.
-    $proposalTarget = (object) ['ref' => 'REC-55-STALE', 'region' => 'eu-west', 'body' => 'unchanged'];
-    $record = (object) ['ref' => 'REC-55', 'region' => 'eu-west', 'body' => 'unchanged'];
+    // Two distinct targets that share an IDENTITY and differ in CONTENT. The identity must match:
+    // ADR 0003 §7 denies an execution whose refreshed target identifies a different record, and
+    // VerdictManager enforces it — so a differential built on differing identities asks for a state
+    // the boundary forbids and could never execute. Content is where they differ, which is also the
+    // premise of this whole issue: same record, different bytes.
+    $proposalTarget = (object) ['ref' => 'REC-55', 'region' => 'eu-west', 'body' => 'as-proposed'];
+    $record = (object) ['ref' => 'REC-55', 'region' => 'eu-west', 'body' => 'as-refreshed'];
 
     // Nothing here resembles the storefront's tenant/resource_type/resource_id shape: different key
     // names, a different order, and a value drawn from context rather than from the record. A
@@ -95,12 +95,6 @@ it('derives the captured identity from the policy declaration, whatever its keys
 
     expect($sink->resources()[0]->resourceIdentity)->toBe($expected);
 
-    // ...and it is NOT the proposal target's identity, which is what a capture reading before the
-    // refresh — or skipping it — would have produced.
-    expect($sink->resources()[0]->resourceIdentity)->not->toBe(ResourceIdentity::for(
-        $policy->identity($envelope, $proposalTarget),
-    ));
-
     // And it is genuinely different from the storefront shape, so agreement above cannot be
     // coincidence between two declarations that happen to look alike.
     expect($expected)->not->toBe(ResourceIdentity::for([
@@ -108,4 +102,39 @@ it('derives the captured identity from the policy declaration, whatever its keys
         'resource_type' => 'record',
         'resource_id' => 55,
     ]));
+
+    // The capture must describe the REFRESHED target, which ADR 0003 makes the one the executor acts
+    // on. Identity cannot show that here — both targets identify the same record by necessity — so
+    // the content does: a second run whose refresh returns different bytes must produce a different
+    // digest. An implementation that captured the proposal target, or skipped the refresh, would
+    // report the same digest twice.
+    $capturedRefreshed = $sink->resources()[0]->digest;
+
+    $alternate = (object) ['ref' => 'REC-55', 'region' => 'eu-west', 'body' => 'refreshed-differently'];
+    $secondSink = new LiveToolCapture;
+
+    $verdict->capability(
+        Capability::usingPolicy('records.differential-alternate', 'view', fn (): object => $proposalTarget)
+            ->executionTarget(ExecutionTargetPolicy::refresh(
+                name: 'differential-identity-alternate',
+                identityUsing: fn (ActionEnvelope $envelope, object $target): array => [
+                    'archive' => 'ledger-b',
+                    'record_ref' => $target->ref,
+                    'region' => $envelope->context->metadata['region'] ?? null,
+                ],
+                refreshUsing: fn (ActionEnvelope $envelope, object $target): object => $alternate,
+            ))
+            ->executeUsing(fn (AuthorizedAction $action): string => 'read'),
+    );
+
+    $this->app->instance(ResourceCheckpointCapture::class, new ResourceCheckpointCapture($secondSink, 'record-body'));
+
+    $second = $verdict->runBound(ActionEnvelope::wrap(
+        new ActionProposal('records.differential-alternate', ['record_id' => 55]),
+        new ActionContext(actor: 72, metadata: ['tenant_id' => 'tenant-a', 'region' => 'eu-west']),
+    ));
+
+    expect($second->executed)->toBeTrue()
+        ->and($secondSink->resources())->toHaveCount(1)
+        ->and($secondSink->resources()[0]->digest)->not->toBe($capturedRefreshed);
 });

@@ -105,7 +105,7 @@ function swapPostDisclosure(): array
 
 function swapExpectedDigest(array $disclosure): string
 {
-    return ResourceDigest::SCHEME.':'.hash('sha256', CanonicalJson::encode($disclosure));
+    return ResourceDigest::SCHEME.':'.hash('sha256', CanonicalJson::encode($disclosure, 'resource-projection'));
 }
 
 /**
