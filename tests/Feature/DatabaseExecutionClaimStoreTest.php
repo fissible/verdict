@@ -137,3 +137,54 @@ it('rejects claim mutations inside an outer transaction on the store connection'
     expect($connection->transactionLevel())->toBe(0)
         ->and($connection->table(verdictTable('execution_claims'))->count())->toBe(0);
 });
+
+it('clears stale resolution metadata when a released claim is re-claimed (#355)', function (): void {
+    $store = databaseExecutionClaimStore();
+    $claim = databaseExecutionClaim();
+
+    expect($store->claim($claim)->outcome)->toBe(ExecutionClaimOutcome::Claimed);
+
+    // Release it with operator attribution, exactly as a reconciliation resolve does.
+    $released = $store->resolve(
+        $claim->id,
+        ExecutionClaimResolution::Retryable,
+        'operator-x',
+        'released for retry',
+        new DateTimeImmutable('2026-08-01 12:00:05', new DateTimeZone('UTC')),
+    );
+
+    expect($released->outcome)->toBe(ExecutionClaimOutcome::Released)
+        ->and($released->claim?->releasedAt)->not->toBeNull()
+        ->and($released->claim?->resolvedBy)->toBe('operator-x')
+        ->and($released->claim?->resolutionReason)->toBe('released for retry');
+
+    // Re-claim the same binding — the retry path claimExisting() exists for.
+    $reclaimed = $store->claim(new ExecutionClaim(
+        id: $claim->id,
+        capability: $claim->capability,
+        policy: $claim->policy,
+        bindingFingerprint: $claim->bindingFingerprint,
+        status: ExecutionClaimStatus::Claimed,
+        attemptCount: 1,
+        claimedAt: new DateTimeImmutable('2026-08-01 12:00:10', new DateTimeZone('UTC')),
+        completedAt: null,
+        indeterminateAt: null,
+        releasedAt: null,
+        resolvedBy: null,
+        resolutionReason: null,
+        createdAt: $claim->createdAt,
+        updatedAt: $claim->createdAt,
+    ));
+
+    expect($reclaimed->outcome)->toBe(ExecutionClaimOutcome::Claimed);
+
+    // The reloaded claim is actively Claimed again — its audit trail must not still say it was
+    // "released at T by operator-x". Stale released_at / resolved_by / resolution_reason is the bug.
+    $row = $store->find($claim->id);
+
+    expect($row?->status)->toBe(ExecutionClaimStatus::Claimed)
+        ->and($row?->attemptCount)->toBe(2)
+        ->and($row?->releasedAt)->toBeNull()
+        ->and($row?->resolvedBy)->toBeNull()
+        ->and($row?->resolutionReason)->toBeNull();
+});
