@@ -122,7 +122,7 @@ A denial is a result, not an exception. The tool call completes, the agent loop 
 }
 ```
 
-`decision` carries the disposition — `deny`, `require_confirmation`, `require_review`, or `throttle` — and the message comes from `verdict.ai.denied_message`, so you control what the model is told. Nothing else about the denial reaches the model: no policy internals, no target state. If the model retries, every retry re-enters the same pipeline; a denial cannot be worn down. When an evidence recorder is configured, the denial is recorded like any other decision.
+`decision` carries the disposition — `deny`, `require_confirmation`, or `throttle` — and the message comes from `verdict.ai.denied_message`, so you control what the model is told. Nothing else about the denial reaches the model: no policy internals, no target state. If the model retries, every retry re-enters the same pipeline; a denial cannot be worn down. When an evidence recorder is configured, the denial is recorded like any other decision.
 
 ## Installation
 
@@ -132,7 +132,7 @@ php artisan vendor:publish --provider="Fissible\Verdict\VerdictServiceProvider" 
 php artisan migrate
 ```
 
-Verdict requires PHP 8.3+, Laravel 12 or 13, and Laravel AI `^0.10.2`.
+Verdict requires PHP 8.3+, Laravel 12 or 13, and Laravel AI `^0.11.0`.
 
 See the [architecture guide](docs/architecture.md) for wiring tools into an agent and the [security model](docs/security-model.md) before protecting production-changing operations.
 
