@@ -15,6 +15,17 @@ All notable changes to Verdict will be documented in this file.
   partial row. Note for long-lived workers: the evidence-table inspection is memoized per recorder
   instance — restart workers after running the published migration, as with any deploy-time schema
   change.
+- **Added an assertion-only check-to-use resource comparison (#295).** `ResourceCheckpointCapture`
+  records an opaque policy-derived resource identity and a projection digest of the refreshed target
+  immediately before the executor runs, and
+  `Assertions::resourceDigestMatchesPriorObservation()` compares two named occurrences of a
+  checkpoint for the same resource. It **detects** a resource that changed between two resolutions;
+  it does not prevent one, does not alter the decision boundary, and never projects resource
+  observations into evidence, reports, or baselines. A capture failure records nothing rather than
+  failing the run, so an unobservable comparison reports unmeasured rather than agreement. The byte
+  projection is currently inferred from the target's shape rather than declared by the capability —
+  the classes are marked `@experimental` and [#366](https://github.com/fissible/verdict/issues/366)
+  tracks replacing it, so no attack-pack case should depend on it yet.
 
 - **Approval-binding kit scenarios now establish receipt continuity (#343).**
   `assertApprovalBindingInvalidation()` reads the exact approved receipt after an application's
