@@ -52,9 +52,20 @@ use Fissible\Verdict\Evaluation\ToolObservation;
  * honesty, as the wire-SQL predicate ladder in docs/evaluation.md. The assertion is named for what
  * it proves — a match against a prior observation — not for the continuity it cannot establish.
  */
+/**
+ * Shaped like an `ExecutionTargetPolicy::identity()` result, because that is the only thing
+ * `ResourceIdentity` accepts. Identity is the capability's own declaration, never a pair of loose
+ * strings assembled at the call site — a two-argument form would let a capture invent an identity
+ * shape instead of deriving one, which is the thing the differential in
+ * tests/Feature/ResourceIdentityFollowsPolicyTest.php exists to forbid.
+ */
 function checkpointIdentity(int $orderId): string
 {
-    return ResourceIdentity::for('order', (string) $orderId);
+    return ResourceIdentity::for([
+        'tenant_id' => 'tenant-a',
+        'resource_type' => 'order',
+        'resource_id' => $orderId,
+    ]);
 }
 
 function checkpointDigest(string $marker): string
