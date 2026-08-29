@@ -6,6 +6,21 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **Long-lived Verdict objects no longer carry a discarded request's scoped state (#358).** Three
+  sites of one defect class: an object outliving the `scoped` collaborators it captured. The
+  `CapabilityRegistry` singleton held the boot-scope `CapabilityConfigurationStore` and now resolves
+  it per registration; `AbstractVerdictTool` held the `VerdictManager`, `InvocationContext`, and
+  `ApprovalExecutionContext` and now resolves all three per use — the manager included, because it
+  reads its own captured `InvocationContext` when recording, so fixing only the tool's accessors
+  left evidence correlated to the wrong request. Third, the tool's advertised-description
+  fingerprint is per-invocation state on that same reusable object: it is now cleared when an
+  invocation ends, so a tool reused across the steps of an agent run — or across Octane requests —
+  cannot attribute one invocation's advertisement to the next. Evidence for an invocation that was
+  never advertised records `null` and `tool_description_matched` stays `null`, which is what that
+  field has always claimed to mean. The fluent `requireApproval()`/`withoutApproval()` posture is
+  deliberately *not* per-invocation: it is application configuration, and clearing it would drop a
+  declared approval requirement after the first call.
+
 - **The provenance-derivations table degrades and is audited on the same terms as evidence (#363).**
   `recordDerivation()` was the one evidence write #356 left as a flat insert, against a table
   `verdict:validate` never looked at. It now writes only the columns the table has, a missing

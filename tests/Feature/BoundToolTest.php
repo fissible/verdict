@@ -481,3 +481,95 @@ it('fingerprints the description presented to Laravel AI separately from the con
         ->and($tool->invocationDescriptionFingerprint())->toBe(ContentFingerprint::make($definition->toolDescription))
         ->and($tool->invocationDescriptionFingerprint())->not->toBe($tool->configuredDescriptionFingerprint());
 });
+
+it('does not attribute one invocation\'s advertised description to the next', function (): void {
+    // #358 residue. `invocationDescriptionFingerprint` is per-invocation state on an object whose
+    // lifetime the class does not control: a tool built once and reused — across the steps of an
+    // agent run, or across Octane requests after `forgetScopedInstances()` — carried the previous
+    // invocation's advertisement into the next one's evidence.
+    //
+    // That contradicts what `DecisionEvidence` says the field means: "Null when the description was
+    // never advertised: that is an absent observation, and reporting it as a match would claim one
+    // nobody made." A leaked fingerprint makes `toolDescriptionMatched` report exactly such a claim.
+    //
+    // Laravel AI re-reads `description()` for every provider request — `mapTools()` runs inside
+    // `buildTextRequestBody()`, once per step — so a genuinely re-advertised invocation records its
+    // own fingerprint, and only an un-advertised one records nothing.
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(boundDescriptionCapability('orders.view'));
+
+    $definition = new MutableDescriptionTool('Look up an order by ID.');
+    $tool = $verdict->bound(
+        $definition,
+        'orders.view',
+        new ActionContext(new BoundCustomer(72)),
+    );
+
+    $recorder = app(EvidenceRecorder::class);
+
+    if (! $recorder instanceof InMemoryEvidenceRecorder) {
+        throw new LogicException('Expected the in-memory evidence recorder.');
+    }
+
+    // Step one: Laravel AI builds a prompt (reading `description()`), then the model calls the tool.
+    $tool->description();
+    expect($tool->handle(new Request(['order_id' => 1001], 'call-advertised')))->toBe('executed');
+
+    $advertised = array_values(array_filter(
+        $recorder->all(),
+        static fn ($record): bool => $record->stage === 'execution',
+    ));
+
+    expect($advertised)->toHaveCount(1)
+        ->and($advertised[0]->invocationToolDescriptionFingerprint)
+        ->toBe(ContentFingerprint::make('Look up an order by ID.'))
+        ->and($advertised[0]->toolDescriptionMatched)->toBeTrue();
+
+    // Step two: the SAME tool object handles a call with no advertisement in between. Nothing was
+    // advertised for this invocation, so nothing may be recorded for it.
+    expect($tool->handle(new Request(['order_id' => 1001], 'call-unadvertised')))->toBe('executed');
+
+    $unadvertised = array_values(array_filter(
+        $recorder->all(),
+        static fn ($record): bool => $record->stage === 'execution',
+    ));
+
+    expect($unadvertised)->toHaveCount(2)
+        ->and($unadvertised[1]->invocationToolDescriptionFingerprint)->toBeNull()
+        // The load-bearing assertion: `null`, not `true`. A leaked fingerprint from step one would
+        // report a match for an advertisement this invocation never made.
+        ->and($unadvertised[1]->toolDescriptionMatched)->toBeNull();
+
+    // And the accessor agrees with the evidence, so a consumer reading either sees the same fact.
+    expect($tool->invocationDescriptionFingerprint())->toBeNull();
+
+    // Re-advertising restores it: the reset is per-invocation, not a permanent disabling.
+    $tool->description();
+
+    expect($tool->invocationDescriptionFingerprint())->toBe(ContentFingerprint::make('Look up an order by ID.'));
+});
+
+it('keeps a fluent approval requirement across invocations, because it is configuration', function (): void {
+    // The other half of #358's Site 2 note asked for per-invocation reset of `approvalRequirement`
+    // too. That would be wrong, and this pins why so the next reader does not "finish the job".
+    //
+    // `requireApproval()`/`withoutApproval()` are Laravel AI's `Approvable` builder API: an
+    // application wires them once when it composes the tool, exactly as it wires the capability
+    // name and the context resolver. Clearing them per invocation would silently drop an
+    // application's declared approval posture after its first tool call — turning a configuration
+    // call into a single-use one.
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(boundDescriptionCapability('orders.view'));
+
+    $tool = $verdict->bound(
+        new MutableDescriptionTool('Look up an order by ID.'),
+        'orders.view',
+        new ActionContext(new BoundCustomer(72)),
+    )->requireApproval('A human must approve this.');
+
+    expect($tool->shouldRequestApproval(new Request(['order_id' => 1001], 'call-one')))->not->toBeNull();
+
+    $tool->handle(new Request(['order_id' => 1001], 'call-one'));
+
+    expect($tool->shouldRequestApproval(new Request(['order_id' => 1001], 'call-two')))->not->toBeNull();
+});
