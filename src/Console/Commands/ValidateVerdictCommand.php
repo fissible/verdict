@@ -214,8 +214,7 @@ final class ValidateVerdictCommand extends Command
         // Advisory here, but an error at decision time: approve()/reject() are fail-closed and
         // refuse without a configured authorizer (#305). Surfacing it at the wiring audit makes the
         // refusal a deploy-time discovery instead of a surprise in the approval controller.
-        $authorizer = config('verdict.approvals.authorizer');
-        if ($needsApprovals && (! is_string($authorizer) || $authorizer === '')) {
+        if ($needsApprovals && (! is_string($configuredAuthorizer) || $configuredAuthorizer === '')) {
             $warnings[] = 'Capabilities require confirmation but no approval decision authorizer is configured; '
                 .'approve() and reject() will refuse every decision (fail-closed). Set verdict.approvals.authorizer '
                 .'to a class implementing ApprovalDecisionAuthorizer that verifies the receipt belongs to a '
