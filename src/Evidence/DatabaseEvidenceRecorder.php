@@ -36,6 +36,9 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
     public function record(DecisionEvidence $evidence): void
     {
+        $columns = $this->columns($this->table);
+        $this->assertRequiredColumns($this->table, self::requiredEvidenceColumns(), $columns);
+
         $this->insert($this->table, [
             'id' => Str::uuid()->toString(),
             'record_type' => 'decision',
@@ -88,11 +91,14 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
             'transformation_count' => 0,
             'payload_fingerprint' => null,
             'recorded_at' => $evidence->recordedAt,
-        ]);
+        ], $columns);
     }
 
     public function recordRelease(ContextReleaseEvidence $evidence): void
     {
+        $columns = $this->columns($this->table);
+        $this->assertRequiredColumns($this->table, self::requiredEvidenceColumns(), $columns);
+
         $this->insert($this->table, [
             'id' => Str::uuid()->toString(),
             'record_type' => 'context_release',
@@ -154,14 +160,19 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
             'transformation_count' => count($evidence->transformedPathFingerprints),
             'payload_fingerprint' => $evidence->payloadFingerprint,
             'recorded_at' => $evidence->recordedAt,
-        ]);
+        ], $columns);
     }
 
     public function recordProvenance(ProvenanceEntry $entry): void
     {
-        // A provenance record without its content fingerprint cannot be hydrated into evidence.
-        // Do not leave an unreadable partial row behind on an install missing that migration.
-        if (! in_array('content_fingerprint', $this->columns($this->table), true)) {
+        $columns = $this->columns($this->table);
+        $this->assertRequiredColumns(
+            $this->table,
+            [...self::requiredEvidenceColumns(), ...self::requiredProvenanceColumns()],
+            $columns,
+        );
+
+        if (array_diff(self::additiveProvenanceColumns(), $columns) !== []) {
             return;
         }
 
@@ -180,18 +191,21 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
             'component_fingerprint' => $entry->componentFingerprint,
             'content_fingerprint' => $entry->contentFingerprint,
             'recorded_at' => $entry->recordedAt,
-        ]);
+        ], $columns);
     }
 
     public function recordDerivation(ProvenanceDerivation $derivation): void
     {
+        $columns = $this->columns($this->derivationsTable);
+        $this->assertRequiredColumns($this->derivationsTable, self::derivationColumns(), $columns);
+
         $this->insertOrIgnore($this->derivationsTable, [
             'correlation_id' => $derivation->correlationId,
             'child_content_fingerprint' => $derivation->childContentFingerprint,
             'parent_content_fingerprint' => $derivation->parentContentFingerprint,
             'kind' => $derivation->kind->value,
             'recorded_at' => $derivation->recordedAt,
-        ]);
+        ], $columns);
     }
 
     /** @return list<ProvenanceEntry> */
@@ -288,18 +302,40 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
         ));
     }
 
-    /** @param array<string, mixed> $attributes */
-    private function insert(string $table, array $attributes): void
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $columns
+     */
+    private function insert(string $table, array $attributes, array $columns): void
     {
-        $columns = array_flip($this->columns($table));
-        $this->connection->table($table)->insert(array_intersect_key($attributes, $columns));
+        $this->connection->table($table)->insert(array_intersect_key($attributes, array_flip($columns)));
     }
 
-    /** @param array<string, mixed> $attributes */
-    private function insertOrIgnore(string $table, array $attributes): void
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $columns
+     */
+    private function insertOrIgnore(string $table, array $attributes, array $columns): void
     {
-        $columns = array_flip($this->columns($table));
-        $this->connection->table($table)->insertOrIgnore(array_intersect_key($attributes, $columns));
+        $this->connection->table($table)->insertOrIgnore(array_intersect_key($attributes, array_flip($columns)));
+    }
+
+    /**
+     * @param  list<string>  $required
+     * @param  list<string>  $columns
+     */
+    private function assertRequiredColumns(string $table, array $required, array $columns): void
+    {
+        $missing = array_values(array_diff($required, $columns));
+
+        if ($missing === []) {
+            return;
+        }
+
+        throw new LogicException(
+            "The table [{$table}] is missing required columns: ".implode(', ', $missing)
+            .". Publish and run Verdict's evidence migrations.",
+        );
     }
 
     /** @return list<string> */
@@ -350,6 +386,39 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
             'correlation_id', 'child_content_fingerprint', 'parent_content_fingerprint', 'kind',
             'recorded_at',
         ];
+    }
+
+    /**
+     * The create migration has been amended in place, with no backfill for installs built from
+     * an earlier copy. These are the columns present from its first version; additions must be too.
+     *
+     * @return list<string>
+     */
+    private static function requiredEvidenceColumns(): array
+    {
+        return ['record_type', 'correlation_id', 'recorded_at', 'stage', 'disposition'];
+    }
+
+    /**
+     * Provenance reads hydrate these fields, while decision records write all three as null and
+     * lose nothing when they are absent. Keep this requirement on the provenance path.
+     *
+     * @return list<string>
+     */
+    private static function requiredProvenanceColumns(): array
+    {
+        return ['source', 'trust', 'data_class'];
+    }
+
+    /**
+     * These arrived together in one additive migration. A deployment predating it is lagging, not
+     * broken, so #356 declines the provenance write rather than throwing when any is absent.
+     *
+     * @return list<string>
+     */
+    private static function additiveProvenanceColumns(): array
+    {
+        return ['channel', 'component_label', 'component_fingerprint', 'content_fingerprint'];
     }
 
     /** @return list<string> */

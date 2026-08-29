@@ -440,10 +440,12 @@ final class ValidateVerdictCommand extends Command
             // previously-resolved singleton can describe an earlier configuration.
             $connection = config('verdict.evidence.connection');
             $table = config('verdict.evidence.table', 'verdict_evidence');
+            $derivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations');
 
             $recorder = new DatabaseEvidenceRecorder(
                 connection: $container->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
                 table: is_string($table) ? $table : 'verdict_evidence',
+                derivationsTable: is_string($derivations) ? $derivations : 'verdict_provenance_derivations',
             );
         } catch (Throwable) {
             $errors[] = 'Configured database evidence recorder could not be constructed.';
