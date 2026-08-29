@@ -8,6 +8,7 @@ use Fissible\Verdict\Capabilities\TargetSource;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
+use Fissible\Verdict\Targets\ResourceProjection;
 
 /**
  * Every with-style method returns a new instance carrying the complete prior state — the property
@@ -33,6 +34,7 @@ function fullyComposedCapability(): Capability
         ->rateLimit(RateLimitPolicy::fixedWindow('refunds-per-hour', 3, 3600, fn (): array => ['k' => 'v']))
         ->atMostOnce(ExecutionClaimPolicy::named('refund-order', fn (): array => ['k' => 'v']))
         ->executionTarget(ExecutionTargetPolicy::acceptStaleSnapshot('refund-snapshot', fn (): array => ['k' => 'v']))
+        ->resourceProjection(ResourceProjection::declared('refund-order/v1', fn (): array => ['k' => 'v']))
         ->configurationVersion('2026-08-26.1')
         ->requiresIntentRecord();
 }
@@ -80,6 +82,10 @@ function capabilityWithers(): array
             fn (Capability $c): Capability => $c->executionTarget(ExecutionTargetPolicy::acceptStaleSnapshot('replaced', fn (): array => ['k' => 'v'])),
             ['executionTargetPolicy'],
         ],
+        'resourceProjection' => [
+            fn (Capability $c): Capability => $c->resourceProjection(ResourceProjection::declared('replaced/v1', fn (): array => ['k' => 'v'])),
+            ['resourceProjection'],
+        ],
         'configurationVersion' => [
             fn (Capability $c): Capability => $c->configurationVersion('replaced'),
             ['configurationVersion'],
@@ -101,7 +107,7 @@ it('builds a fixture in which every field is actually populated', function (): v
     $unset = array_keys(array_filter($state, static fn (mixed $value): bool => $value === null));
 
     expect($unset)->toBe([], 'The fixture must set every field: '.implode(', ', $unset).' came back null.')
-        ->and($state)->toHaveCount(13)
+        ->and($state)->toHaveCount(14)
         ->and($state['targetSource'])->toBe(TargetSource::Context);
 });
 

@@ -85,14 +85,41 @@ function swapTheRow(): void
 }
 
 /**
- * Order 1003 as the fixture holds it before any mutation. Hand-written; if the fixture changes this
+ * A mutation confined to a field the capability DECLARES and the target's own shape does not
+ * expose. Also performed by the test, through no Verdict path.
+ */
+function swapTheRevisionOnly(): void
+{
+    app(DatabaseManager::class)->connection()
+        ->table(StorefrontOrders::TABLE)
+        ->where('id', 1003)
+        ->update(['version' => 3]);
+}
+
+/**
+ * The contract `orders.ledger-read` declares. Named here rather than written at each call site so
+ * that a case and its capability cannot drift apart silently.
+ */
+function swapProjectionContract(): string
+{
+    return 'storefront-order-ledger/v1';
+}
+
+/**
+ * Order 1003 as the fixture holds it before any mutation, projected the way the capability DECLARES
+ * (#366) rather than the way its shape happens to look. Hand-written; if the fixture changes this
  * must be updated by hand, and the failure is the point.
+ *
+ * `version` is here and is the reason this file can tell a declaration from an inference.
+ * `Order::disclosure()` omits it — it is an approver-facing view, and a revision counter is not
+ * something an approver is shown — while the ledger read's executor depends on it. Those are exactly
+ * the two different answers to "which bytes matter", and only a declaration can give the second one.
  *
  * @return array<string, mixed>
  */
 function swapPreDisclosure(): array
 {
-    return ['id' => 1003, 'customer_id' => 72, 'item' => 'Wireless travel mouse', 'status' => 'delivered'];
+    return ['id' => 1003, 'customer_id' => 72, 'item' => 'Wireless travel mouse', 'status' => 'delivered', 'version' => 2];
 }
 
 /** @return array<string, mixed> */
@@ -100,7 +127,17 @@ function swapPostDisclosure(): array
 {
     // Only `item` moves. Identity is held constant on purpose: a swap that changed the id would be a
     // different record, and the pairing would correctly refuse to compare them.
-    return ['id' => 1003, 'customer_id' => 72, 'item' => 'Swapped in the gap', 'status' => 'delivered'];
+    return ['id' => 1003, 'customer_id' => 72, 'item' => 'Swapped in the gap', 'status' => 'delivered', 'version' => 2];
+}
+
+/**
+ * The same record with only its revision advanced — the mutation `Order::disclosure()` cannot see.
+ *
+ * @return array<string, mixed>
+ */
+function swapRevisedDisclosure(): array
+{
+    return ['id' => 1003, 'customer_id' => 72, 'item' => 'Wireless travel mouse', 'status' => 'delivered', 'version' => 3];
 }
 
 function swapExpectedDigest(array $disclosure): string
@@ -171,6 +208,11 @@ it('captures the pre-swap projection at the check and the post-swap one at the u
     expect($resources[0]->resourceIdentity)->toBe(swapResourceIdentity())
         ->and($resources[1]->resourceIdentity)->toBe($resources[0]->resourceIdentity);
 
+    // Both endpoints were projected under the contract the capability declared, which is what makes
+    // them comparable at all (#366).
+    expect($resources[0]->projection)->toBe(swapProjectionContract())
+        ->and($resources[1]->projection)->toBe(swapProjectionContract());
+
     // Each endpoint belongs to a DISTINCT execution that actually ran, matched by sequence rather
     // than by capability or argument fingerprint. Without this the pair could both have come from
     // one call, or from none.
@@ -202,7 +244,7 @@ it('reports the swap through the assertion, not only in the raw captures', funct
     );
 
     // What a pack case will state: declare the two endpoints, and fail when the bytes moved.
-    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', swapResourceIdentity(), 1, 2)
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', swapResourceIdentity(), swapProjectionContract(), 1, 2)
         ->evaluate($observation)->passed)->toBeFalse();
 });
 
@@ -230,7 +272,7 @@ it('holds on the unmodified flow, with both calls still resolving the resource',
         resources: $resources,
     );
 
-    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', swapResourceIdentity(), 1, 2)
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', swapResourceIdentity(), swapProjectionContract(), 1, 2)
         ->evaluate($observation)->passed)->toBeTrue();
 });
 
@@ -267,6 +309,73 @@ it('observes nothing at all when the capture is not wired', function (): void {
         resources: $sink->resources(),
     );
 
-    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', swapResourceIdentity(), 1, 2)
+    expect(fn () => Assertions::resourceDigestMatchesPriorObservation('order-disclosure', swapResourceIdentity(), swapProjectionContract(), 1, 2)
         ->evaluate($observation))->toThrow(CapabilityNotAttempted::class);
+});
+
+it('sees a revision the target\'s own shape does not expose, because the capability declared it', function (): void {
+    // THE DISCRIMINATOR between a declared projection and an inferred one, and the reason `version`
+    // is in this fixture at all.
+    //
+    // Before #366 the capture inferred its projection from the target's shape: `Arrayable`, then a
+    // `disclosure()` method, then public properties. `Order` has a `disclosure()`, and it omits
+    // `version` — correctly, because it is the approver-facing view of an order and a revision
+    // counter is not something an approver is shown. So an inferring capture is BLIND to the
+    // mutation below, reports identical digests at both endpoints, and fails this test.
+    //
+    // A declaring capability is not blind to it, because `orders.ledger-read` says `version` is one
+    // of the bytes its action depends on. The declaration adds a field inference could not reach,
+    // rather than dropping one the executor uses — which is why this direction cannot be satisfied
+    // by an implementation that ignored the declaration and kept guessing.
+    $sink = swapSink();
+
+    swapPrepared();
+
+    $check = app(VerdictManager::class)->runBound(swapEnvelope());
+    expect($check->executed)->toBeTrue();
+
+    swapTheRevisionOnly();
+
+    $use = app(VerdictManager::class)->runBound(swapEnvelope());
+    expect($use->executed)->toBeTrue();
+
+    $resources = $sink->resources();
+
+    expect($resources)->toHaveCount(2)
+        ->and($resources[0]->digest)->toBe(swapExpectedDigest(swapPreDisclosure()))
+        ->and($resources[1]->digest)->toBe(swapExpectedDigest(swapRevisedDisclosure()))
+        ->and($resources[0]->digest)->not->toBe($resources[1]->digest);
+
+    // `item` never moved, so an approver-facing disclosure of this order is byte-identical across
+    // the gap. Stated here so the assertion above cannot be read as a change to the visible record.
+    expect(swapPreDisclosure()['item'])->toBe(swapRevisedDisclosure()['item']);
+
+    $observation = new Observation(
+        disposition: null,
+        executed: true,
+        toolCalls: $sink->toolObservations(),
+        resources: $resources,
+    );
+
+    expect(Assertions::resourceDigestMatchesPriorObservation('order-disclosure', swapResourceIdentity(), swapProjectionContract(), 1, 2)
+        ->evaluate($observation)->passed)->toBeFalse();
+});
+
+it('reads the revision the declaration names, so the declaration is not describing a byte nobody uses', function (): void {
+    // A projection may only claim the bytes its action actually depends on; a declaration naming a
+    // field the executor ignores would be a fixture arranged to make the test above work. So the
+    // ledger read reports the revision it acted on, and this reads it back out of the executor's own
+    // output rather than taking the claim on trust.
+    swapPrepared();
+
+    $before = app(VerdictManager::class)->runBound(swapEnvelope());
+    expect($before->executed)->toBeTrue();
+
+    swapTheRevisionOnly();
+
+    $after = app(VerdictManager::class)->runBound(swapEnvelope());
+    expect($after->executed)->toBeTrue();
+
+    expect(json_decode((string) $before->output, true))->toMatchArray(['version' => 2])
+        ->and(json_decode((string) $after->output, true))->toMatchArray(['version' => 3]);
 });

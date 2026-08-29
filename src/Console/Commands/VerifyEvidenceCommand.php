@@ -66,10 +66,10 @@ final class VerifyEvidenceCommand extends Command
 
         return $this->call('attest:verify', array_filter([
             '--chain' => $chain,
-            '--from' => $this->option('from'),
+            '--from' => $this->option('from') === '1' ? null : $this->option('from'),
             '--to' => $this->option('to'),
-            '--trusted-key' => $this->option('trusted-key'),
-            '--trusted-key-file' => $this->option('trusted-key-file'),
+            '--trusted-key' => $this->option('trusted-key') ?: null,
+            '--trusted-key-file' => $this->option('trusted-key-file') ?: null,
             '--min-anchor' => $this->option('min-anchor'),
             '--allow-provider-disagreement' => $this->option('allow-provider-disagreement') ?: null,
             '--allow-untrusted' => $this->option('allow-untrusted') ?: null,
