@@ -8,11 +8,20 @@ use Symfony\Component\Yaml\Yaml;
  * The per-PR MySQL lane, and the bound on what it runs (#397).
  *
  * Engine-specific defects reached a release with no PR-time gate. The cross-engine matrix is
- * weekly and on-tag, and `release.yml` cuts the release regardless of its result — so the v0.13.0
- * derivations read-order defect was red on the release's own validation run and nothing blocked.
- * Two such defects surfaced in one cycle: #383 (no tiebreaker, so same-second edges came back in
- * InnoDB key order) and #389 (a random-uuid primary key clusters the table, so an unordered read
- * is not insertion order). Both are invisible on SQLite and on PostgreSQL.
+ * weekly and on-tag, and `release.yml` cuts the release regardless of its result.
+ *
+ * WHAT THE LANE IS ACTUALLY FOR, measured rather than assumed. #397 justifies it by the v0.13.0
+ * derivations read-order defect (#383), and a mutation probe against real engines says otherwise:
+ * removing that fix's tiebreakers is caught by SQLite and missed by both MySQL and PostgreSQL,
+ * because InnoDB clusters the derivations table on its composite primary key and that order
+ * already satisfies what the tiebreakers guarantee. #383 is held by the SQLite lane that already
+ * runs on every pull request.
+ *
+ * The lane earns its place on ground no other per-PR lane holds: MySQL's identifier-length limit,
+ * InnoDB under REPEATABLE READ, and MySQL/MariaDB session-timezone conversion. #389's row-ordering
+ * defect is MySQL-only too, but the probe caught it in six runs of eight — it depends on whether a
+ * generated uuid happens to sort last — so it is a probe this lane can expose, not a regression it
+ * gates.
  *
  * The lane is deliberately NOT the whole suite. PostgreSQL already runs everything per PR; MySQL's
  * job here is to be a maintained InnoDB discriminator, and #397 asks for the smallest set whose
@@ -337,9 +346,16 @@ it('states the bound in the workflow, where the next person changing it will rea
     // workflow has to say what the lane is for and what it deliberately excludes.
     $source = mysqlLaneWorkflowSource();
 
+    // What the lane must state is the GROUND it holds that no other per-PR lane does. It must not be
+    // required to name #383: that requirement encoded a premise the mutation probe falsified —
+    // removing #383's tiebreakers is caught by SQLite (3 failed) and missed by both MySQL and
+    // PostgreSQL, because InnoDB clusters the derivations table on the composite primary key and
+    // that order already satisfies the assertions the tiebreakers exist to guarantee. A lane whose
+    // stated purpose is a regression it does not detect is worse than no stated purpose.
     expect(str_contains($source, '#397'))->toBeTrue('The MySQL lane must name the issue that bounds it.')
-        ->and(str_contains($source, '#383'))->toBeTrue('The MySQL lane must name the read-order defect it exists to catch.')
-        ->and(str_contains($source, '#389'))->toBeTrue('The MySQL lane must name the row-order defect it exists to catch.')
+        ->and(str_contains($source, 'REPEATABLE READ'))->toBeTrue(
+            'The MySQL lane must name a ground it holds that the SQLite and PostgreSQL lanes do not.',
+        )
         ->and(str_contains($source, 'concurrency-matrix'))->toBeTrue(
             'The MySQL lane must point a reader at the matrix that still carries full coverage.',
         );
