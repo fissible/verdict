@@ -45,18 +45,31 @@ final class ResourceCheckpointCapture
 
     public function capture(ActionEnvelope $envelope, Capability $capability, mixed $target): void
     {
+        $sequence = $this->checkpoint($envelope, $capability, $target);
+
+        if ($sequence !== null) {
+            $this->commit($envelope, $sequence);
+        }
+    }
+
+    /**
+     * Read and record the resource endpoint before execution, reserving (but not yet recording)
+     * the sequence of the execution it will measure.
+     */
+    public function checkpoint(ActionEnvelope $envelope, Capability $capability, mixed $target): ?int
+    {
         try {
-            $this->evaluationReadSuppression->whileActive(function () use ($envelope, $capability, $target): void {
+            return $this->evaluationReadSuppression->whileActive(function () use ($envelope, $capability, $target): ?int {
                 $projection = $capability->declaredResourceProjection();
 
                 if ($projection === null) {
-                    return;
+                    return null;
                 }
 
                 $policy = $capability->executionTargetPolicy();
 
                 if ($policy === null) {
-                    return;
+                    return null;
                 }
 
                 // This is an evaluation instrument, never an execution gate. Form every value before
@@ -64,10 +77,8 @@ final class ResourceCheckpointCapture
                 // not a partially observed execution and never a reason to refuse the executor.
                 $identity = ResourceIdentity::for($policy->identity($envelope, $target));
                 $digest = ResourceDigest::for($projection->project($envelope, $target));
-                $sequence = $this->sink->recordExecution($envelope->proposal->capability, $envelope->proposal->arguments);
+                $sequence = $this->sink->reserveExecution();
 
-                // recordExecution() can throw while canonicalizing proposal arguments. Advance the
-                // occurrence only after it succeeds, so a failed capture cannot consume an endpoint.
                 $occurrence = $this->sink->nextResourceOccurrence($this->checkpoint, $identity, $projection->contract);
 
                 $this->sink->recordResource(new ResourceObservation(
@@ -78,10 +89,26 @@ final class ResourceCheckpointCapture
                     occurrence: $occurrence,
                     executionSequence: $sequence,
                 ));
+
+                return $sequence;
             });
         } catch (Throwable) {
             // An observer that cannot form a safe measurement contributes no endpoint. The
             // comparison will consequently report unmeasured; the capability still executes.
+        }
+
+        return null;
+    }
+
+    /** Commit the endpoint for a checkpoint whose executor has returned successfully. */
+    public function commit(ActionEnvelope $envelope, int $sequence): void
+    {
+        try {
+            $this->sink->commitExecution($sequence, $envelope->proposal->capability, $envelope->proposal->arguments);
+        } catch (Throwable) {
+            // Like the pre-execution read, endpoint recording is observational. A failed
+            // instrument makes the comparison unmeasured; it must not turn a completed action
+            // into an execution failure.
         }
     }
 }
