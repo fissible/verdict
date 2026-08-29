@@ -51,6 +51,7 @@ use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
+use Fissible\Verdict\Evidence\EffectiveEvidenceClass;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullRecorderWarning;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
@@ -94,7 +95,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 // see CapabilityConfigurationStoreSelection (#310). verdict:validate warns when a
                 // recorder that declares nothing falls through to the no-op store here.
                 $store = CapabilityConfigurationStoreSelection::forRecorder(
-                    config('verdict.evidence.recorder', NullEvidenceRecorder::class),
+                    EffectiveEvidenceClass::resolve(),
                 );
             }
 
@@ -165,6 +166,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 return new DatabaseApprovalReceiptStore(
                     connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
                     table: is_string($table) ? $table : 'verdict_approval_receipts',
+                    events: $app->make(Dispatcher::class),
                 );
             }
 

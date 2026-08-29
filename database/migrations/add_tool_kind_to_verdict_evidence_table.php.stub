@@ -10,16 +10,22 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $toolKindIndex = "{$evidenceTable}_tool_kind_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($toolKindIndex): void {
             $table->string('tool_kind', 16)->nullable();
-            $table->index('tool_kind', 'verdict_evidence_tool_kind_index');
+            $table->index('tool_kind', $toolKindIndex);
         });
     }
 
     public function down(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
-            $table->dropIndex('verdict_evidence_tool_kind_index');
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $toolKindIndex = "{$evidenceTable}_tool_kind_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($toolKindIndex): void {
+            $table->dropIndex($toolKindIndex);
             $table->dropColumn('tool_kind');
         });
     }
