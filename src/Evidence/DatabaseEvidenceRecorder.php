@@ -229,6 +229,8 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
             ->where('correlation_id', $correlationId)
             ->where('child_content_fingerprint', $childContentFingerprint)
             ->orderBy('recorded_at')
+            ->orderBy('parent_content_fingerprint')
+            ->orderBy('kind')
             ->get();
         $derivations = [];
 
