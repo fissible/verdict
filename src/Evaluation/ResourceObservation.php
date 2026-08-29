@@ -17,6 +17,7 @@ final readonly class ResourceObservation
     public function __construct(
         public string $checkpoint,
         public string $resourceIdentity,
+        public string $projection,
         public string $digest,
         public int $occurrence,
         public int $executionSequence,
@@ -27,6 +28,10 @@ final readonly class ResourceObservation
 
         if (! ResourceIdentity::isIdentity($this->resourceIdentity)) {
             throw new InvalidArgumentException('A resource observation requires a '.ResourceIdentity::SCHEME.'-tagged identity.');
+        }
+
+        if (trim($this->projection) === '') {
+            throw new InvalidArgumentException('A resource observation must name a projection contract.');
         }
 
         if (! ResourceDigest::isDigest($this->digest)) {

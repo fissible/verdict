@@ -55,6 +55,7 @@ You write assertions using the static factory methods on `Assertions`:
 - `executedPredicateObserved`
 - `executedPredicateDigestIs`
 - `executedPredicateNotScopedAs`
+- `resourceDigestMatchesPriorObservation`
 
 For custom assertions, use `CallbackAssertion`, which implements `ObservationAssertion` and wraps a `Closure(Observation): bool`. Assertions run against an `Observation` (or `ToolObservation`), which can be projected to `ObservationEvidence` for reporting.
 
@@ -133,8 +134,31 @@ Set-returning tools forced the harness to say explicitly what each observed fact
 | --- | --- | --- | --- |
 | Row identity in results | Predicate identity | The authorized target has cardinality one | The target is a set — a widened predicate can return a *subset* of the authorized rows and be indistinguishable by row observation alone |
 | Wire SQL + bindings (the captured predicate digest) | The effective access set | No layer below the connection contributes predicate semantics | Row-level security, views, rewrite rules, or triggers shape the result below the connection |
+| Resource checkpoint projection digest | The declared bytes a later use depends on, at two refreshed resolutions | Both capabilities declare the same projection contract and projector semantics | The contract/projector changes, the target changes below its declared projection, or an interval contains an ABA change; the comparison is assertion-only and does not enforce atomicity |
 
 At cardinality one, row identity is a serviceable stand-in for predicate identity — which is why record-keyed cases never needed query observation. The proxy expires silently for set targets, so filtered-permit cases assert the executed predicate's digest against the declared scope shape (the pack manifest is the independent source; deriving the expected side from the executor's own builder would make the comparison pass by construction). One rung down, the wire SQL is itself a proxy for effect: adopters using RLS or views on the queried tables must treat the digest comparison as blind to that layer's contribution.
+
+**Resource checkpoints.** `ResourceCheckpointCapture` is an optional evaluation instrument around a
+real execution. A capability declares its measured bytes with
+`->resourceProjection(ResourceProjection::declared('contract/v1', fn (ActionEnvelope $envelope,
+$target): array => [...]))`; its `ExecutionTargetPolicy` supplies the logical resource identity.
+Immediately before the executor, the capture applies the projector to the refreshed target and retains
+only a canonical digest, identity, checkpoint, contract, occurrence, and execution sequence.
+`Assertions::resourceDigestMatchesPriorObservation()` compares two named occurrences for that same
+identity, checkpoint, and contract. It detects a changed declared projection; it neither refuses an
+execution nor proves the interval was atomic.
+
+The declaration is intentionally capability-local: it says which bytes *this use* depends on, not
+which public properties happen to be present on a target. Capabilities over the same resource may
+therefore legitimately use different contracts and cannot be compared across them. No declared
+projection — or no execution-target policy to provide an identity — records nothing, and the
+comparison reports unmeasured. Do not retain a contract name when its projector semantics change:
+the digest's meaning expires with that change, so mint a new contract version. A comparison only
+uses endpoints captured during one run, so a contract change invalidates nothing already recorded.
+An expected projection written by hand in a pack case must be updated by hand when its declaration
+changes. Projection capture remains `@experimental`; it is not included in evidence, reports, or
+baselines, and a projector/capture failure records no endpoint rather than failing the application
+run.
 
 **The executor trust boundary**: executors are application-authored code inside the application's trust boundary, exercised by the test kit rather than attested at runtime. The two-facts gap — the authorized object and the applied predicate are separate facts, and only one produced rows — is not introduced by scope-as-target; an executor handed a scalar-resolved record can likewise run any query it wants. What set shape changes is the *composition surface*, which is why executed-predicate verification enters the harness at exactly this case.
 

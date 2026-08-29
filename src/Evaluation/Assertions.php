@@ -534,7 +534,10 @@ final class Assertions
 
     /**
      * Whether two declared occurrences observed equal declared projections for one logical
-     * resource. This is a detector, never enforcement: it proves only equal endpoint projections.
+     * resource. Pairing is by identity, checkpoint, contract, and occurrences: capabilities over
+     * one resource may legitimately declare different bytes, and comparing contracts would report
+     * a swap that never happened. This is a detector, never enforcement: it proves only equal
+     * endpoint projections.
      * It is silent about the interval (and therefore ABA-blind by construction), row-level
      * security, views, triggers, concurrent writers, and bytes below the capture boundary.
      *
@@ -546,10 +549,12 @@ final class Assertions
     public static function resourceDigestMatchesPriorObservation(
         string $checkpoint,
         string $resourceIdentity,
+        string $projection,
         int $checkOccurrence,
         int $useOccurrence,
     ): ObservationAssertion {
         self::requireNonEmpty($checkpoint, 'A resource comparison must name a checkpoint.');
+        self::requireNonEmpty($projection, 'A resource comparison must name a projection contract.');
 
         if (! ResourceIdentity::isIdentity($resourceIdentity)) {
             throw new InvalidArgumentException('A resource comparison requires a '.ResourceIdentity::SCHEME.'-tagged identity.');
@@ -561,11 +566,11 @@ final class Assertions
 
         return new CallbackAssertion(
             name: 'resource_digest_matches_prior_observation',
-            test: function (Observation $observation) use ($checkpoint, $resourceIdentity, $checkOccurrence, $useOccurrence): bool {
+            test: function (Observation $observation) use ($checkpoint, $resourceIdentity, $projection, $checkOccurrence, $useOccurrence): bool {
                 $selected = [];
 
                 foreach ($observation->resources as $resource) {
-                    if ($resource->checkpoint !== $checkpoint || $resource->resourceIdentity !== $resourceIdentity) {
+                    if ($resource->checkpoint !== $checkpoint || $resource->resourceIdentity !== $resourceIdentity || $resource->projection !== $projection) {
                         continue;
                     }
 

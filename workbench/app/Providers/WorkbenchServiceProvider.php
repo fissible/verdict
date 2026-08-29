@@ -28,6 +28,7 @@ use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
+use Fissible\Verdict\Targets\ResourceProjection;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -228,8 +229,20 @@ final class WorkbenchServiceProvider extends ServiceProvider
                     throw new LogicException('The ledger read capability expected an order.');
                 }
 
-                return json_encode($action->target->disclosure(), JSON_THROW_ON_ERROR);
-            }),
+                return json_encode([
+                    ...$action->target->disclosure(),
+                    'version' => $action->target->version,
+                ], JSON_THROW_ON_ERROR);
+            })->resourceProjection(ResourceProjection::declared(
+                'storefront-order-ledger/v1',
+                fn (ActionEnvelope $envelope, Order $order): array => [
+                    'id' => $order->id,
+                    'customer_id' => $order->customerId,
+                    'item' => $order->item,
+                    'status' => $order->status,
+                    'version' => $order->version,
+                ],
+            )),
         );
 
         $verdict->capability(
@@ -465,7 +478,7 @@ final class WorkbenchServiceProvider extends ServiceProvider
             throw TargetNotResolvable::make();
         }
 
-        return new Order((int) $row->id, (int) $row->customer_id, (string) $row->item, (string) $row->status, 0);
+        return new Order((int) $row->id, (int) $row->customer_id, (string) $row->item, (string) $row->status, (int) $row->version);
     }
 
     private function orderTargetPolicy(Catalog $catalog): ExecutionTargetPolicy

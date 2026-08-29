@@ -12,6 +12,7 @@ use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
+use Fissible\Verdict\Targets\ResourceProjection;
 
 function fingerprintFixtureCapability(): Capability
 {
@@ -151,4 +152,26 @@ it('passes custom configuration stores only the materialized closure-free value 
         ->and($store->recorded?->declared)->toBe($capability->declaredConfiguration())
         ->and(ArgumentFingerprint::make($store->recorded?->declared))->toBe($store->recorded?->fingerprint)
         ->and(json_encode($store->recorded, JSON_THROW_ON_ERROR))->not->toContain('application behavior');
+});
+
+it('does not let a declared resource projection move the content-addressed identity', function (): void {
+    // A projection declares which bytes an evaluation instrument measures (#366). It changes no
+    // authorization behaviour, so it is not the "security-material configuration" this map is
+    // documented to hold, and ADR 0017 keeps that map sparse on purpose. Letting it in would move
+    // the fingerprint of any capability that adopts one — a content-addressed identity changing for
+    // a declaration that alters nothing a decision depends on.
+    $plain = fingerprintFixtureCapability();
+    $declaring = $plain->resourceProjection(ResourceProjection::declared('order-cancel/v1', fn (): array => ['id' => 1]));
+
+    expect($declaring->declaredConfiguration())->toBe($plain->declaredConfiguration())
+        ->and($declaring->configurationFingerprint())->toBe($plain->configurationFingerprint());
+
+    // And two capabilities differing ONLY in their declared contract remain the same configuration,
+    // which is the same claim stated where it would actually bite.
+    $other = $plain->resourceProjection(ResourceProjection::declared('order-cancel/v2', fn (): array => ['id' => 1]));
+
+    expect($other->configurationFingerprint())->toBe($declaring->configurationFingerprint());
+
+    // The declaration is still reachable — it is kept off the fingerprint, not dropped.
+    expect($declaring->declaredResourceProjection()?->contract)->toBe('order-cancel/v1');
 });
