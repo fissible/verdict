@@ -20,7 +20,7 @@ minor lines may receive a fix when the change is low-risk, but are not guarantee
 
 | Verdict line | PHP | Laravel | Laravel AI | Status |
 |---|---|---|---|---|
-| `0.12.x` | `8.3`–`8.5` | `12.x`, `13.x` | `0.11.x` | Developer preview — current |
+| `0.13.x` | `8.3`–`8.5` | `12.x`, `13.x` | `0.11.x` | Developer preview — current |
 | Earlier `0.x` | See release notes | See release notes | See release notes | Superseded |
 
 Only the current line receives fixes. Older `0.x` lines may receive a low-risk fix but are not
