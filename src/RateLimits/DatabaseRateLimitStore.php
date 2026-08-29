@@ -120,7 +120,17 @@ final readonly class DatabaseRateLimitStore implements DatabaseTableStore, Pruna
         );
     }
 
-    /** @return array{DateTimeImmutable, DateTimeImmutable} */
+    /**
+     * Fixed wall-clock windows: the bucket is the flooring of the absolute timestamp to a multiple
+     * of windowSeconds, identical on every node without coordination. This trades a boundary
+     * property for that coordination-freedom — it assumes the nodes sharing a bucket agree on the
+     * wall clock. Under clock skew a request near a window edge can land in a different bucket on a
+     * lagging node than on a leading one, so across N skewed nodes a limit can admit up to roughly
+     * one extra window's allotment at the boundary. Keep nodes NTP-synchronised; the store cannot
+     * detect or correct skew itself. Per-bucket accounting within a node is exact and atomic.
+     *
+     * @return array{DateTimeImmutable, DateTimeImmutable}
+     */
     private function window(RateLimitConsumption $consumption): array
     {
         $start = intdiv($consumption->at->getTimestamp(), $consumption->windowSeconds)
