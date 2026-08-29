@@ -119,6 +119,14 @@ final readonly class ApprovalManager
         );
     }
 
+    /**
+     * @internal Consumes (spends) the approval receipt for this evaluation, transitioning it to
+     *           Consumed. VerdictManager calls this only as the final step of the full execution
+     *           gate sequence — after the intent, rate-limit, and execution-claim gates have passed.
+     *           Calling it directly from application code spends a receipt OUTSIDE those gates,
+     *           defeating rate limiting and execution-claim exclusivity. It is not part of the
+     *           supported surface; drive execution through VerdictManager, never this method.
+     */
     public function consume(Evaluation $evaluation): ApprovalTransition
     {
         $stateFailure = $this->executionStateFailure($evaluation);

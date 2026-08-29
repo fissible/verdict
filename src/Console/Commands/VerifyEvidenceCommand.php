@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Console\Commands;
 
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
+use Fissible\Verdict\Evidence\EffectiveEvidenceClass;
 use Illuminate\Console\Command;
 
 /**
@@ -49,7 +50,7 @@ final class VerifyEvidenceCommand extends Command
         }
 
         if (! $this->usesAttestRecorder($this->getLaravel()->make(EvidenceRecorder::class))) {
-            $this->components->error('Verdict evidence verification requires verdict.evidence.recorder to be AttestEvidenceRecorder.');
+            $this->components->error('Verdict evidence verification requires verdict.evidence.recorder or verdict.evidence.writer to be AttestEvidenceRecorder.');
 
             return self::FAILURE;
         }
@@ -65,10 +66,10 @@ final class VerifyEvidenceCommand extends Command
 
         return $this->call('attest:verify', array_filter([
             '--chain' => $chain,
-            '--from' => $this->option('from'),
+            '--from' => $this->option('from') === '1' ? null : $this->option('from'),
             '--to' => $this->option('to'),
-            '--trusted-key' => $this->option('trusted-key'),
-            '--trusted-key-file' => $this->option('trusted-key-file'),
+            '--trusted-key' => $this->option('trusted-key') ?: null,
+            '--trusted-key-file' => $this->option('trusted-key-file') ?: null,
             '--min-anchor' => $this->option('min-anchor'),
             '--allow-provider-disagreement' => $this->option('allow-provider-disagreement') ?: null,
             '--allow-untrusted' => $this->option('allow-untrusted') ?: null,
@@ -113,6 +114,7 @@ final class VerifyEvidenceCommand extends Command
 
     private function usesAttestRecorder(EvidenceRecorder $recorder): bool
     {
-        return $recorder instanceof AttestEvidenceRecorder;
+        return $recorder instanceof AttestEvidenceRecorder
+            || is_a(EffectiveEvidenceClass::resolve(), AttestEvidenceRecorder::class, true);
     }
 }
