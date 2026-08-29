@@ -14,6 +14,7 @@ use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\Intents\ActionIntent;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
+use Fissible\Verdict\Targets\ResourceProjection;
 use InvalidArgumentException;
 use LogicException;
 
@@ -67,6 +68,7 @@ final readonly class Capability
         private ?RateLimitPolicy $rateLimitPolicy = null,
         private ?ExecutionClaimPolicy $executionClaimPolicy = null,
         private ?ExecutionTargetPolicy $executionTargetPolicy = null,
+        private ?ResourceProjection $resourceProjection = null,
         private ?string $configurationVersion = null,
         private ?bool $requiresIntentRecord = null,
         public TargetSource $targetSource = TargetSource::Proposal,
@@ -92,7 +94,9 @@ final readonly class Capability
      * The readable, security-material configuration identified by configurationFingerprint().
      *
      * Closures and operator-facing reason strings are deliberately absent: they are not part of
-     * the content-addressed configuration identity defined by ADR 0017.
+     * the content-addressed configuration identity defined by ADR 0017. A resource projection is
+     * also deliberately absent: it declares what an evaluation instrument measures, not
+     * security-material configuration behind that identity.
      *
      * @return array<string, mixed>
      */
@@ -176,6 +180,7 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            resourceProjection: $this->resourceProjection,
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
@@ -207,6 +212,7 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            resourceProjection: $this->resourceProjection,
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
@@ -226,6 +232,7 @@ final readonly class Capability
             rateLimitPolicy: $policy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            resourceProjection: $this->resourceProjection,
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
@@ -250,6 +257,7 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $policy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            resourceProjection: $this->resourceProjection,
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
@@ -274,6 +282,7 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $policy,
+            resourceProjection: $this->resourceProjection,
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
@@ -283,6 +292,31 @@ final readonly class Capability
     public function executionTargetPolicy(): ?ExecutionTargetPolicy
     {
         return $this->executionTargetPolicy;
+    }
+
+    public function resourceProjection(ResourceProjection $projection): self
+    {
+        return new self(
+            name: $this->name,
+            ability: $this->ability,
+            resolveTarget: $this->targetResolver,
+            executor: $this->executor,
+            approvalBindingResolver: $this->approvalBindingResolver,
+            confirmationReason: $this->confirmationReason,
+            confirmationTtlSeconds: $this->confirmationTtlSeconds,
+            rateLimitPolicy: $this->rateLimitPolicy,
+            executionClaimPolicy: $this->executionClaimPolicy,
+            executionTargetPolicy: $this->executionTargetPolicy,
+            resourceProjection: $projection,
+            configurationVersion: $this->configurationVersion,
+            requiresIntentRecord: $this->requiresIntentRecord,
+            targetSource: $this->targetSource,
+        );
+    }
+
+    public function declaredResourceProjection(): ?ResourceProjection
+    {
+        return $this->resourceProjection;
     }
 
     /**
@@ -303,6 +337,7 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            resourceProjection: $this->resourceProjection,
             configurationVersion: $version,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
@@ -330,6 +365,7 @@ final readonly class Capability
             rateLimitPolicy: $this->rateLimitPolicy,
             executionClaimPolicy: $this->executionClaimPolicy,
             executionTargetPolicy: $this->executionTargetPolicy,
+            resourceProjection: $this->resourceProjection,
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $required,
             targetSource: $this->targetSource,

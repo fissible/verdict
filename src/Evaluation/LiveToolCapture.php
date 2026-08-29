@@ -27,6 +27,9 @@ final class LiveToolCapture
     /** @var list<ResourceObservation> */
     private array $resources = [];
 
+    /** @var array<string, array<string, array<string, int>>> */
+    private array $resourceOccurrences = [];
+
     private int $executionSequence = 0;
 
     private ?string $invocationId = null;
@@ -105,6 +108,7 @@ final class LiveToolCapture
         $this->challenges = [];
         $this->predicates = [];
         $this->resources = [];
+        $this->resourceOccurrences = [];
         $this->executionSequence = 0;
         $this->invocationId = null;
     }
@@ -186,6 +190,14 @@ final class LiveToolCapture
     public function recordResource(ResourceObservation $resource): void
     {
         $this->resources[] = $resource;
+    }
+
+    public function nextResourceOccurrence(string $checkpoint, string $resourceIdentity, string $projection): int
+    {
+        $occurrence = ($this->resourceOccurrences[$checkpoint][$resourceIdentity][$projection] ?? 0) + 1;
+        $this->resourceOccurrences[$checkpoint][$resourceIdentity][$projection] = $occurrence;
+
+        return $occurrence;
     }
 
     /** @return list<ResourceObservation> */

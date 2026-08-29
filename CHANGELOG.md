@@ -30,10 +30,21 @@ All notable changes to Verdict will be documented in this file.
   checkpoint for the same resource. It **detects** a resource that changed between two resolutions;
   it does not prevent one, does not alter the decision boundary, and never projects resource
   observations into evidence, reports, or baselines. A capture failure records nothing rather than
-  failing the run, so an unobservable comparison reports unmeasured rather than agreement. The byte
-  projection is currently inferred from the target's shape rather than declared by the capability —
-  the classes are marked `@experimental` and [#366](https://github.com/fissible/verdict/issues/366)
-  tracks replacing it, so no attack-pack case should depend on it yet.
+  failing the run, so an unobservable comparison reports unmeasured rather than agreement. The
+  projection is declared by its capability rather than inferred from target shape. It remains
+  `@experimental`, so no attack-pack case should depend on it yet.
+- **Resource checkpoint projections are now explicit (#366).** A capability opts into
+  `ResourceCheckpointCapture` with `->resourceProjection(ResourceProjection::declared($contract,
+  $projector))`. The projector receives the execution envelope and the refreshed target, and returns
+  the associative, canonical data the later action depends on; Verdict records only its opaque
+  digest and the declared contract. A capability with no projection (or no execution-target policy)
+  produces no endpoint, so a comparison is unmeasured rather than silently falling back to target
+  shape inference. The declaration is evaluation instrumentation, not security-material capability
+  configuration: it does not change the configuration fingerprint or the authorization decision.
+  A comparison only uses endpoints captured during one run, so a contract or projector change
+  invalidates no recorded artifact. Any expected projection written by hand in a pack case must be
+  updated by hand when its declaration changes. This remains an assertion-only detector: it never
+  prevents execution, and failures to form an observation remain fail-open.
 
 - **Approval-binding kit scenarios now establish receipt continuity (#343).**
   `assertApprovalBindingInvalidation()` reads the exact approved receipt after an application's
