@@ -9,6 +9,7 @@ use DateTimeZone;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Support\SecurityStateTransaction;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -27,6 +28,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
     public function __construct(
         private ConnectionInterface $connection,
         private string $table = 'verdict_approval_receipts',
+        private ?Dispatcher $events = null,
     ) {
         $this->schemaMemo = new stdClass;
     }

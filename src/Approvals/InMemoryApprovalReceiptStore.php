@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Approvals;
 
 use DateTimeImmutable;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Illuminate\Contracts\Events\Dispatcher;
 
 /**
  * Process-local test store. It is not safe for production, Octane, or queue workers.
@@ -14,6 +15,8 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
 {
     /** @var array<string, ApprovalReceipt> */
     private array $receipts = [];
+
+    public function __construct(private readonly ?Dispatcher $events = null) {}
 
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
     {
