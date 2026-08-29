@@ -36,7 +36,7 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
     public function record(DecisionEvidence $evidence): void
     {
-        $this->insert([
+        $this->insert($this->table, [
             'id' => Str::uuid()->toString(),
             'record_type' => 'decision',
             'correlation_id' => $evidence->envelopeId,
@@ -93,7 +93,7 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
     public function recordRelease(ContextReleaseEvidence $evidence): void
     {
-        $this->insert([
+        $this->insert($this->table, [
             'id' => Str::uuid()->toString(),
             'record_type' => 'context_release',
             'correlation_id' => null,
@@ -161,11 +161,11 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
     {
         // A provenance record without its content fingerprint cannot be hydrated into evidence.
         // Do not leave an unreadable partial row behind on an install missing that migration.
-        if (! in_array('content_fingerprint', $this->columns(), true)) {
+        if (! in_array('content_fingerprint', $this->columns($this->table), true)) {
             return;
         }
 
-        $this->insert([
+        $this->insert($this->table, [
             'id' => Str::uuid()->toString(),
             'record_type' => 'provenance',
             'correlation_id' => $entry->correlationId,
@@ -185,7 +185,7 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
     public function recordDerivation(ProvenanceDerivation $derivation): void
     {
-        $this->connection->table($this->derivationsTable)->insert([
+        $this->insert($this->derivationsTable, [
             'correlation_id' => $derivation->correlationId,
             'child_content_fingerprint' => $derivation->childContentFingerprint,
             'parent_content_fingerprint' => $derivation->parentContentFingerprint,
@@ -247,7 +247,7 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
     public function hasTable(): bool
     {
-        return $this->inspection()->tableExists;
+        return $this->inspection($this->table)->tableExists;
     }
 
     public function table(): string
@@ -258,33 +258,62 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
     /** @return list<string> */
     public function missingColumns(): array
     {
-        return array_values(array_diff(self::evidenceColumns(), $this->columns()));
+        return array_values(array_diff(self::evidenceColumns(), $this->columns($this->table)));
+    }
+
+    public function hasDerivationsTable(): bool
+    {
+        return $this->inspection($this->derivationsTable)->tableExists;
+    }
+
+    public function derivationsTable(): string
+    {
+        return $this->derivationsTable;
+    }
+
+    /**
+     * Audited on the same terms as the evidence table (#363). The derivations table has no
+     * additive migrations today, so this reports nothing until one lands — which is the point:
+     * the first one must not reintroduce #356's failure on a table nothing checks.
+     *
+     * @return list<string>
+     */
+    public function missingDerivationsColumns(): array
+    {
+        return array_values(array_diff(
+            self::derivationColumns(),
+            $this->columns($this->derivationsTable),
+        ));
     }
 
     /** @param array<string, mixed> $attributes */
-    private function insert(array $attributes): void
+    private function insert(string $table, array $attributes): void
     {
-        $columns = array_flip($this->columns());
-        $this->connection->table($this->table)->insert(array_intersect_key($attributes, $columns));
+        $columns = array_flip($this->columns($table));
+        $this->connection->table($table)->insert(array_intersect_key($attributes, $columns));
     }
 
     /** @return list<string> */
-    private function columns(): array
+    private function columns(string $table): array
     {
-        $inspection = $this->inspection();
+        $inspection = $this->inspection($table);
 
         if (! $inspection->tableExists) {
-            throw new LogicException("The evidence table [{$this->table}] does not exist.");
+            throw new LogicException("The evidence table [{$table}] does not exist.");
         }
 
         /** @var list<string> */
         return $inspection->columns;
     }
 
-    private function inspection(): stdClass
+    /**
+     * Memoized per table, not per recorder: the evidence and derivations tables are inspected
+     * independently, each once, and process restart remains the invalidation boundary for both.
+     */
+    private function inspection(string $table): stdClass
     {
-        if (isset($this->schemaMemo->inspection)) {
-            return $this->schemaMemo->inspection;
+        if (isset($this->schemaMemo->inspections[$table])) {
+            return $this->schemaMemo->inspections[$table];
         }
 
         if (! $this->connection instanceof Connection) {
@@ -293,12 +322,25 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
         $schema = $this->connection->getSchemaBuilder();
         $inspection = new stdClass;
-        $inspection->tableExists = $schema->hasTable($this->table);
+        $inspection->tableExists = $schema->hasTable($table);
         /** @var list<string> $columns */
-        $columns = $inspection->tableExists ? $schema->getColumnListing($this->table) : [];
+        $columns = $inspection->tableExists ? $schema->getColumnListing($table) : [];
         $inspection->columns = $columns;
 
-        return $this->schemaMemo->inspection = $inspection;
+        $inspections = $this->schemaMemo->inspections ?? [];
+        $inspections[$table] = $inspection;
+        $this->schemaMemo->inspections = $inspections;
+
+        return $inspection;
+    }
+
+    /** @return list<string> */
+    private static function derivationColumns(): array
+    {
+        return [
+            'correlation_id', 'child_content_fingerprint', 'parent_content_fingerprint', 'kind',
+            'recorded_at',
+        ];
     }
 
     /** @return list<string> */
