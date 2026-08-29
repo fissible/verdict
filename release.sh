@@ -184,11 +184,34 @@ if [[ -f README.md && -f composer.json ]]; then
     printf 'README install constraint: %s\n' "$constraint"
 fi
 
+# --- update the supported platform matrix ---
+#
+# RELEASES.md marks exactly one line "current", and tests/Feature/DocumentationConsistencyTest.php
+# asserts that line matches VERSION. Bumping VERSION without moving the matrix therefore leaves the
+# release commit itself red — the tag would point at a failing tree. Move them together.
+
+if [[ -f RELEASES.md ]]; then
+    matrix_line="${major}.${minor}.x"
+
+    # A silent no-op here would tag a commit whose own suite fails, so an unrecognisable matrix
+    # stops the release rather than being skipped.
+    grep -q 'current |$' RELEASES.md \
+        || die "no line marked current in RELEASES.md's platform matrix — refusing to release with a matrix that cannot be verified"
+
+    replace_in_file RELEASES.md "/current |\$/s/\`[0-9][0-9]*\.[0-9][0-9]*\.x\`/\`${matrix_line}\`/"
+
+    grep -q "\`${matrix_line}\`.*current |\$" RELEASES.md \
+        || die "could not set RELEASES.md's current platform line to ${matrix_line}"
+
+    printf 'Supported platform matrix: %s marked current\n' "$matrix_line"
+fi
+
 # --- commit and tag ---
 
 git add VERSION CHANGELOG.md
 [[ -f package.json ]] && git add package.json
 [[ -f README.md ]] && git add README.md
+[[ -f RELEASES.md ]] && git add RELEASES.md
 git commit -m "chore: release ${new_tag}"
 git tag -s "$new_tag" -m "$new_tag"   # SSH-signed per ADR 0030 (preflighted above)
 
