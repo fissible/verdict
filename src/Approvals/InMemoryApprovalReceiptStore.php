@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Approvals;
 
 use DateTimeImmutable;
+use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Illuminate\Contracts\Events\Dispatcher;
 
@@ -27,9 +28,23 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
         );
 
         if ($existing === null) {
+            $openReceipt = $this->mostRecentOpenReceiptForChangedProposal($receipt);
             $this->receipts[$receipt->id] = $receipt;
 
-            return ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
+            $transition = ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
+
+            if ($openReceipt !== null) {
+                $this->events?->dispatch(new ApprovalProposalChangedUnderOpenReceipt(
+                    toolCallId: $receipt->toolCallId,
+                    capability: $receipt->capability,
+                    openReceiptId: $openReceipt->id,
+                    openReceiptFingerprint: $openReceipt->bindingFingerprint,
+                    newReceiptId: $receipt->id,
+                    newReceiptFingerprint: $receipt->bindingFingerprint,
+                ));
+            }
+
+            return $transition;
         }
 
         if ($existing->isExpiredAt($receipt->createdAt)) {
@@ -247,6 +262,29 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
         }
 
         return null;
+    }
+
+    private function mostRecentOpenReceiptForChangedProposal(ApprovalReceipt $proposal): ?ApprovalReceipt
+    {
+        $selected = null;
+
+        foreach ($this->receipts as $receipt) {
+            if ($receipt->toolCallId !== $proposal->toolCallId
+                || $receipt->capability !== $proposal->capability
+                || hash_equals($receipt->bindingFingerprint, $proposal->bindingFingerprint)
+                || ! in_array($receipt->status, [ApprovalReceiptStatus::Pending, ApprovalReceiptStatus::Approved], true)
+                || $receipt->isExpiredAt($proposal->createdAt)) {
+                continue;
+            }
+
+            if ($selected === null
+                || $receipt->createdAt > $selected->createdAt
+                || ($receipt->createdAt == $selected->createdAt && $receipt->id > $selected->id)) {
+                $selected = $receipt;
+            }
+        }
+
+        return $selected;
     }
 
     private function findForBindingFingerprint(string $toolCallId, string $bindingFingerprint): ?ApprovalReceipt

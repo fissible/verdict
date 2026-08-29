@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Approvals;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Support\SecurityStateTransaction;
@@ -78,8 +79,10 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
 
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
     {
+        $openReceipt = null;
+
         try {
-            return SecurityStateTransaction::run($this->connection, 'issue an approval receipt', function () use ($receipt): ApprovalTransition {
+            $transition = SecurityStateTransaction::run($this->connection, 'issue an approval receipt', function () use ($receipt, &$openReceipt): ApprovalTransition {
                 $existing = $this->lockedReceiptForBinding(
                     $receipt->toolCallId,
                     $receipt->capability,
@@ -90,6 +93,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                     return $this->existingIssue($existing, $receipt);
                 }
 
+                $openReceipt = $this->lockedOpenReceiptForChangedProposal($receipt);
                 $this->connection->table($this->table)->insert($this->attributes($receipt));
 
                 return ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
@@ -105,6 +109,19 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                 ? ApprovalTransition::to(ApprovalOutcome::NotFound)
                 : $this->existingIssue($existing, $receipt);
         }
+
+        if ($transition->outcome === ApprovalOutcome::Issued && $openReceipt !== null) {
+            $this->events?->dispatch(new ApprovalProposalChangedUnderOpenReceipt(
+                toolCallId: $receipt->toolCallId,
+                capability: $receipt->capability,
+                openReceiptId: $openReceipt->id,
+                openReceiptFingerprint: $openReceipt->bindingFingerprint,
+                newReceiptId: $receipt->id,
+                newReceiptFingerprint: $receipt->bindingFingerprint,
+            ));
+        }
+
+        return $transition;
     }
 
     public function findForToolCall(string $toolCallId): ?ApprovalReceipt
@@ -297,6 +314,22 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             ->where('tool_call_id', $toolCallId)
             ->where('capability', $capability)
             ->where('binding_fingerprint', $bindingFingerprint)
+            ->lockForUpdate()
+            ->first();
+
+        return $row instanceof stdClass ? $this->receiptFromRow($row) : null;
+    }
+
+    private function lockedOpenReceiptForChangedProposal(ApprovalReceipt $receipt): ?ApprovalReceipt
+    {
+        $row = $this->connection->table($this->table)
+            ->where('tool_call_id', $receipt->toolCallId)
+            ->where('capability', $receipt->capability)
+            ->where('binding_fingerprint', '!=', $receipt->bindingFingerprint)
+            ->whereIn('status', [ApprovalReceiptStatus::Pending->value, ApprovalReceiptStatus::Approved->value])
+            ->where('expires_at', '>', $receipt->createdAt)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
             ->lockForUpdate()
             ->first();
 
