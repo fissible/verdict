@@ -185,7 +185,7 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
     public function recordDerivation(ProvenanceDerivation $derivation): void
     {
-        $this->insert($this->derivationsTable, [
+        $this->insertOrIgnore($this->derivationsTable, [
             'correlation_id' => $derivation->correlationId,
             'child_content_fingerprint' => $derivation->childContentFingerprint,
             'parent_content_fingerprint' => $derivation->parentContentFingerprint,
@@ -291,6 +291,13 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
     {
         $columns = array_flip($this->columns($table));
         $this->connection->table($table)->insert(array_intersect_key($attributes, $columns));
+    }
+
+    /** @param array<string, mixed> $attributes */
+    private function insertOrIgnore(string $table, array $attributes): void
+    {
+        $columns = array_flip($this->columns($table));
+        $this->connection->table($table)->insertOrIgnore(array_intersect_key($attributes, $columns));
     }
 
     /** @return list<string> */

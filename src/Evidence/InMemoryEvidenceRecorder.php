@@ -45,6 +45,15 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
 
     public function recordDerivation(ProvenanceDerivation $derivation): void
     {
+        foreach ($this->derivations as $recordedDerivation) {
+            if ($recordedDerivation->correlationId === $derivation->correlationId
+                && $recordedDerivation->childContentFingerprint === $derivation->childContentFingerprint
+                && $recordedDerivation->parentContentFingerprint === $derivation->parentContentFingerprint
+                && $recordedDerivation->kind === $derivation->kind) {
+                return;
+            }
+        }
+
         $this->derivations[] = $derivation;
     }
 

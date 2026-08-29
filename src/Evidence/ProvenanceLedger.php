@@ -100,6 +100,8 @@ final readonly class ProvenanceLedger
         foreach (array_values(array_unique($parentContentFingerprints)) as $parentContentFingerprint) {
             ProvenanceEntry::assertFingerprint($parentContentFingerprint, 'parent content');
 
+            // Best-effort TOCTOU guard: the database's unique-edge constraint and idempotent
+            // recording provide true write integrity; a detected cycle must still be rejected.
             if ($this->reaches($correlationId, $parentContentFingerprint, $childContentFingerprint, [])) {
                 throw new LogicException('A provenance derivation cannot create a cycle.');
             }
