@@ -489,17 +489,28 @@ it('keeps omitting a column added after the instance inspected the table', funct
     // This test is where that contract is decided. The implementation must also state it in the
     // CHANGELOG entry, the way the approval_context memo's restart note was stated — a contract
     // that lives only in a test is one operators never read.
+    // Asserted as a SET, never by row position. The evidence table's primary key is a random
+    // `uuid`, and InnoDB clusters the table on it, so an unordered read returns MySQL and MariaDB
+    // rows in UUID order rather than insertion order — while PostgreSQL's heap and SQLite's rowid
+    // happen to return insertion order. Indexing positionally here therefore passed on two engines
+    // and failed on two others roughly two runs in three, depending on which UUID sorted last. The
+    // rows are identical apart from `intent_id`, so which rows carry it is the whole contract and
+    // position says nothing. (Same root cause as #311 item 6: no monotonic column to order by.)
     $rows = evidenceRows();
 
     expect($rows)->toHaveCount(2)
-        ->and($rows[1]->intent_id)->toBeNull();
+        ->and($rows->whereNotNull('intent_id'))->toHaveCount(0);
 
     // And the other half of the contract, without which a permanent process-wide cache would
     // pass: a recorder built after the migration must see the column. Restart is the boundary,
     // so crossing it has to actually restore the evidence.
     degradationRecorder()->record(degradationEvidence());
 
-    expect(evidenceRows()[2]->intent_id)->toBe(str_repeat('1', 64));
+    $rows = evidenceRows();
+
+    expect($rows)->toHaveCount(3)
+        ->and($rows->whereNotNull('intent_id')->pluck('intent_id')->all())
+        ->toBe([str_repeat('1', 64)]);
 });
 
 it('does not silently succeed when the evidence table is missing entirely', function (): void {
