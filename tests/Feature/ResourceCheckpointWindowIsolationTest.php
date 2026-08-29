@@ -144,7 +144,18 @@ it('attributes no predicate to a capability whose only queries were the checkpoi
         ->and($sink->resources())->toHaveCount(1)
         ->and($sink->predicates())->toBe([]);
 
-    $observation = new Observation(disposition: null, executed: true, predicates: $sink->predicates());
+    // The tool observations go in too, and they matter. `Observation::$executed` says only that
+    // SOMETHING executed; `assertPredicateMeasurable()` needs a fact attributing this capability to
+    // the run before it will convert an absent predicate into a measured failure rather than an
+    // unattempted capability. The checkpoint's own `recordExecution()` supplies exactly that, so
+    // this is also what a harness really holds. Omitting it made the fixture look unattempted and
+    // would push the distinction #251 paid for into production.
+    $observation = new Observation(
+        disposition: null,
+        executed: true,
+        toolCalls: $sink->toolObservations(),
+        predicates: $sink->predicates(),
+    );
 
     expect(Assertions::executedPredicateObserved('orders.silent')->evaluate($observation)->passed)->toBeFalse();
 });
