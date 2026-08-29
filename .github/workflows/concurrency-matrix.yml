@@ -6,6 +6,10 @@ on:
   push:
     tags:
       - 'v*'
+  # This workflow runs on no pull request, so a change to it — or to a test only it exercises —
+  # is otherwise unverifiable until the next tag or the Monday cron. Both defects fixed in this
+  # commit reached a release for exactly that reason.
+  workflow_dispatch:
 
 permissions:
   contents: read
