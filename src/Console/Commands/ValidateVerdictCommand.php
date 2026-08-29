@@ -24,6 +24,7 @@ use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
+use Fissible\Verdict\Evidence\EffectiveEvidenceClass;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
@@ -214,8 +215,7 @@ final class ValidateVerdictCommand extends Command
         // Advisory here, but an error at decision time: approve()/reject() are fail-closed and
         // refuse without a configured authorizer (#305). Surfacing it at the wiring audit makes the
         // refusal a deploy-time discovery instead of a surprise in the approval controller.
-        $authorizer = config('verdict.approvals.authorizer');
-        if ($needsApprovals && (! is_string($authorizer) || $authorizer === '')) {
+        if ($needsApprovals && (! is_string($configuredAuthorizer) || $configuredAuthorizer === '')) {
             $warnings[] = 'Capabilities require confirmation but no approval decision authorizer is configured; '
                 .'approve() and reject() will refuse every decision (fail-closed). Set verdict.approvals.authorizer '
                 .'to a class implementing ApprovalDecisionAuthorizer that verifies the receipt belongs to a '
@@ -240,7 +240,8 @@ final class ValidateVerdictCommand extends Command
         // The runtime once-per-process warning (ConsequentialActionUnrecorded) is the louder,
         // action-scoped signal; this is the deploy-time one. See #194.
         $recorder = config('verdict.evidence.recorder', NullEvidenceRecorder::class);
-        if ($recorder === NullEvidenceRecorder::class) {
+        $effectiveEvidenceClass = EffectiveEvidenceClass::resolve();
+        if ($effectiveEvidenceClass === NullEvidenceRecorder::class) {
             $warnings[] = 'Evidence is going to a no-op evidence recorder (NullEvidenceRecorder), the shipped default; '
                 .'consequential decisions — confirmations and at-most-once claims — are recorded nowhere. '
                 .'Configure a durable recorder via verdict.evidence.recorder to retain an audit trail.';
@@ -259,9 +260,9 @@ final class ValidateVerdictCommand extends Command
         // resolved bindings, like every check in this command. Scoped to the unset store key on
         // purpose: an explicitly configured no-op store is a declared choice, not this silent
         // fall-through, and the remedy below would be nonsensical advice for it.
-        if ($recorder !== NullEvidenceRecorder::class
+        if ($effectiveEvidenceClass !== NullEvidenceRecorder::class
             && config('verdict.capability_configurations.store') === null
-            && CapabilityConfigurationStoreSelection::forRecorder($recorder) === NullCapabilityConfigurationStore::class) {
+            && CapabilityConfigurationStoreSelection::forRecorder($effectiveEvidenceClass) === NullCapabilityConfigurationStore::class) {
             $warnings[] = 'Evidence is being recorded, but capability configuration fingerprints are going to the '
                 .'no-op configuration store: fingerprints on retained evidence will be permanently unexpandable. '
                 .'If the recorder retains evidence, implement the DurableEvidenceRecorder contract on it '
