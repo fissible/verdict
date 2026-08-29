@@ -565,6 +565,37 @@ milestone while the cluster it unblocks lives in v0.15.0.
 verdict-console ADR 0001 that surfaced them — it was cut as its own milestone on 2026-08-25; see below.
 #230 stays on v1.0.0 (a boundary decision on the 1.0 bar) and #201 stays deliberately unscheduled.
 
+## v0.13.1 — Shipped-behaviour hardening *(patch)*
+
+**Theme.** Defects reproduced against the released `v0.13.0` tag — each a fix to *published* behaviour, so a
+patch, kept off the approvals-design minor below. The signature is consistent: each is a prior fix that landed
+one scope-boundary short — cleared at the call scope instead of the invocation scope (#390), keyed on column
+presence instead of requiredness (#391), captured inside the measurement window instead of outside it
+(#392/#393), gated on raw config instead of the effective class (#395). The two CI/release-integrity gates
+that would have caught this class ride the same patch.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#395](https://github.com/fissible/verdict/issues/395) `verdict:validate` audits by raw config, not the effective writer | XS | none | open — `scope: ready` |
+| [#390](https://github.com/fissible/verdict/issues/390) Tool-description fingerprint clears at call scope, not invocation | S | none | open — `scope: ready` |
+| [#391](https://github.com/fissible/verdict/issues/391) Evidence degradation is presence-keyed, not requiredness-keyed | S | none | open — `scope: ready` |
+| [#392](https://github.com/fissible/verdict/issues/392) Resource checkpoint runs inside the predicate-capture window | S | none | open — `scope: ready` |
+| [#393](https://github.com/fissible/verdict/issues/393) Checkpoint records `executed:true` before the executor runs; double-counts | S–M | none | open — `scope: ready` |
+| [#397](https://github.com/fissible/verdict/issues/397) Required per-PR MySQL smoke lane (smallest engine-discriminating slice) | S–M | none | open — `scope: ready` |
+| [#398](https://github.com/fissible/verdict/issues/398) Release-time changelog-completeness gate | S | none | open — `scope: ready` |
+
+**Ordering.** Smallest-first: #395 is a one-line gate correction; then the evidence/provenance-integrity fixes
+(#390/#391) and the evaluation-instrument fixes (#392/#393); then the two gates that close the release-integrity
+holes these fixes surfaced — #397 for the MySQL row-order defect that shipped because the matrix is non-blocking,
+#398 for the changelog gap caught only by a manual pass. The evaluation-surface fixes (#392/#393) touch an
+`@experimental` surface; they are measurement-integrity, not authorization-gate, corrections.
+
+**The two design-gated findings are not here.** #396 (the adapter-boundary `approveAll()` becoming a silent
+deny-all) joins **v0.14.0** once its observability contract is decided — it is an approvals-surface design
+question, squarely that milestone's theme. #394 (Octane singleton-registry re-registration + `ActionContext`
+instance-form staleness) stays deliberately unscheduled until its lifecycle design resolves. Both are recorded
+under **Deliberately unscheduled** below rather than parked in an ill-fitting milestone.
+
 ## v0.14.0 — Approvals: design rounds
 
 **Theme.** Originally the two review findings needing a design round before implementation, both concerning
@@ -676,6 +707,13 @@ owns the four repeated store sections, which have none. Whoever takes the second
 - [#259](https://github.com/fissible/verdict/issues/259) — a design-first governance/cost gate (external
   budget facts at the action boundary); it becomes scheduled work when an adopter demonstrates the
   metered-tenant requirement, the same argument that holds #201. Added to this list 2026-08-25.
+- [#394](https://github.com/fissible/verdict/issues/394) — an Octane lifecycle design question: should the
+  singleton registry's capability map be request-scoped, or identical re-registration be idempotent rather
+  than throwing; and is the `ActionContext` instance form refused, re-resolved per request, or documented as
+  unsafe. Scheduled with the appropriate hardening release once decided. Added to this list 2026-08-29.
+- [#396](https://github.com/fissible/verdict/issues/396) — the adapter-boundary deny-all needs an observability
+  contract (a log line, a dispatched event, or a recorded decision) before implementation; it then joins
+  v0.14.0, whose approvals-design theme it fits. Added 2026-08-29.
 
 ---
 
