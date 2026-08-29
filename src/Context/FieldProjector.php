@@ -35,7 +35,29 @@ final class FieldProjector
             }
         }
 
+        $this->assertScalarLeaves($projected);
+
         return $projected;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $projected
+     */
+    private function assertScalarLeaves(array $projected, string $path = ''): void
+    {
+        foreach ($projected as $key => $value) {
+            $leafPath = $path === '' ? (string) $key : $path.'.'.$key;
+
+            if (is_array($value)) {
+                $this->assertScalarLeaves($value, $leafPath);
+
+                continue;
+            }
+
+            if (! is_scalar($value) && $value !== null) {
+                throw new InvalidArgumentException("The context release field [{$leafPath}] has unsupported type [".get_debug_type($value).']; a context release can only project scalar values.');
+            }
+        }
     }
 
     /**
