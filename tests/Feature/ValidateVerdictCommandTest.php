@@ -826,3 +826,59 @@ it('does not audit the derivations table when evidence is not going to the datab
     expect($output)->not->toContain(verdictTable('derivations'))
         ->and($exitCode)->toBe(0);
 });
+
+/**
+ * #391: a required column absent from the evidence table is a deployment defect the operator has
+ * to be able to see *before* traffic reaches it. The recorder now refuses such a write at runtime,
+ * which is the right last line — but a validate run is where it should have been caught.
+ *
+ * The two layers report on different terms, deliberately. This audit is keyed on *completeness*:
+ * every column Verdict knows about, so an operator hears about lost detail. The recorder is keyed
+ * on *readability*: only the columns without which a row cannot be found or hydrated, so a lagging
+ * install keeps running. This test pins the overlap — a required column is reported by both.
+ */
+it('errors naming a required evidence column when the create migration did not produce it', function (): void {
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    EvidenceTableSchema::createWithoutColumns(['record_type']);
+    EvidenceTableSchema::createDerivations();
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    expect($output)->toContain('record_type')
+        ->and($exitCode)->toBe(1);
+
+    EvidenceTableSchema::dropDerivations();
+    EvidenceTableSchema::drop();
+});
+
+/**
+ * The audit reconstructs the configured recorder from configuration rather than resolving the
+ * binding, which is the right call and stated as such in the command — but it reconstructs it from
+ * only two of the three keys the service provider reads. `verdict.evidence.derivations_table` is
+ * dropped, so the audit checks a table name the deployment never configured.
+ *
+ * The failure is doubly wrong: the operator is told a table is missing under a name they did not
+ * choose, and the table they did choose — the one the recorder actually writes on every provenance
+ * edge — is never checked at all. Found alongside #391 because both are the same mistake: an audit
+ * and a writer that do not agree about what they are looking at.
+ */
+it('audits the derivations table the deployment configured rather than the default name', function (): void {
+    config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
+    config()->set('verdict.evidence.derivations_table', 'custom_verdict_derivations');
+
+    EvidenceTableSchema::createComplete();
+    // The default-named table must be absent, or the audit passes by finding a table nothing in
+    // this deployment writes — the test would then agree with the bug rather than catch it.
+    EvidenceTableSchema::drop('verdict_provenance_derivations');
+    EvidenceTableSchema::createDerivations();
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    expect($output)->not->toContain('verdict_provenance_derivations')
+        ->and($exitCode)->toBe(0);
+
+    EvidenceTableSchema::dropDerivations();
+    EvidenceTableSchema::drop();
+});

@@ -81,24 +81,42 @@ it('reads back a derivation recorded on a current table', function (): void {
         ->toEqual([derivation()]);
 });
 
-it('records a derivation on a table that lags a column', function (): void {
+/**
+ * #391 amended this. It previously asserted that a derivations table missing `recorded_at` still
+ * took the row minus that column — presence-keyed degradation, in the same shape #356 established
+ * for evidence.
+ *
+ * That was wrong here, and demonstrably so rather than as a matter of taste: every one of this
+ * table's five columns is read back by derivationsFor(), which filters on the correlation and the
+ * child fingerprint, orders by `recorded_at`, and hydrates all five into a ProvenanceDerivation.
+ * A row written without `recorded_at` is therefore not merely thinner — the query that would read
+ * it fails on the missing sort column, so the write left behind a row nothing can retrieve. The
+ * old test pinned exactly the defect #391 is about.
+ *
+ * The derivations table also has no additive migrations, so unlike evidence there is no lagging
+ * install to keep running: all five columns come from its create migration and always have.
+ */
+it('refuses to record a derivation when a required column is absent', function (): void {
     EvidenceTableSchema::createDerivationsWithout(['recorded_at']);
 
-    derivationRecorder()->recordDerivation(derivation());
+    $thrown = null;
 
-    $rows = derivationRows();
+    try {
+        derivationRecorder()->recordDerivation(derivation());
+    } catch (Throwable $e) {
+        $thrown = $e;
+    }
 
-    expect($rows)->toHaveCount(1);
+    expect($thrown)->not->toBeNull('the write must fail loudly rather than leave an unreadable row');
+    assert($thrown instanceof Throwable);
 
-    $row = (array) $rows->first();
-
-    // Present means written, exactly as for evidence: the columns the table still has keep their
-    // values, and only the genuinely absent one is dropped.
-    expect((string) $row['correlation_id'])->toBe('invocation-363')
-        ->and((string) $row['child_content_fingerprint'])->toBe(str_repeat('c', 64))
-        ->and((string) $row['parent_content_fingerprint'])->toBe(str_repeat('d', 64))
-        ->and((string) $row['kind'])->toBe(DerivationKind::Transformed->value)
-        ->and($row)->not->toHaveKey('recorded_at');
+    // Named, and pointing at the remedy — SQLite's own unknown-column error would satisfy the
+    // first two clauses, so the third is what proves this is a deliberate check. Zero rows,
+    // because a row written and then complained about is still one derivationsFor() cannot return.
+    expect($thrown->getMessage())->toContain('recorded_at')
+        ->and($thrown->getMessage())->toContain(verdictTable('derivations'))
+        ->and($thrown->getMessage())->toContain('migration')
+        ->and(derivationRows())->toHaveCount(0);
 });
 
 it('does not silently succeed when the derivations table is missing entirely', function (): void {
@@ -112,7 +130,7 @@ it('does not silently succeed when the derivations table is missing entirely', f
 });
 
 it('inspects the derivations column list once per instance rather than once per write', function (): void {
-    EvidenceTableSchema::createDerivationsWithout(['recorded_at']);
+    EvidenceTableSchema::createDerivations();
 
     $recorder = derivationRecorder();
     $recorder->recordDerivation(derivation());

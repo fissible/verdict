@@ -18,6 +18,44 @@ All notable changes to Verdict will be documented in this file.
   **Behaviour change:** `invocationDescriptionFingerprint()` now returns `null` outside an
   invocation frame; previously it returned the last advertised value.
 
+- **Evidence column degradation is keyed on requiredness, not presence (#391).** #356 taught the
+  database recorder to write only the columns its table actually has, so an install that had not
+  re-run Verdict's migrations kept working. The mechanism could not tell an additive column from
+  one the create migration itself produces, so it degraded both — and an evidence table missing
+  `record_type` took the row, dropped the column, and made it invisible to every typed read, with
+  no error at write and none at read. The sharpest case was provenance: the only guard checked
+  `content_fingerprint`, so a table with that column but without `record_type` wrote an entry
+  `provenanceFor()` would never return.
+
+  Degradation now distinguishes two situations. A column the row cannot be *read* without is
+  required, and its absence throws, naming the missing columns and the remedy: `record_type`,
+  `correlation_id` and `recorded_at`, which appear in the reader's `WHERE` and `ORDER BY`; `stage`
+  and `disposition`, which have been not-null since the table was created; and on the provenance
+  path `source`, `trust` and `data_class`, which a `ProvenanceEntry` is hydrated from. All five
+  columns of the derivations table are required on the same grounds. Everything else still
+  degrades exactly as before.
+
+  The required set is deliberately narrow, and it is *not* "every column the create migration
+  makes". That stub has been amended in place several times, and nothing back-fills those columns
+  for an install built from an earlier copy of it — requiring them would break working
+  deployments, which is the outage #356 exists to prevent. Every required column has instead been
+  present since the table's first migration, so no published migration path produces a deployment
+  that lacks one. The change fails closed only where evidence was already being lost silently.
+
+  The two layers report on different terms, and this is worth knowing when reading a validate run:
+  `verdict:validate` is keyed on *completeness* and errors on any column Verdict knows about, so
+  an operator hears about reduced detail before deploying; the recorder is keyed on *readability*
+  and refuses only what cannot be read back. A write refused this way propagates out of the
+  guarded action, so the action does not execute — a decision that cannot be recorded does not
+  authorize anything.
+
+- **`verdict:validate` audits the derivations table the deployment configured (#391).** The audit
+  reconstructs the configured recorder from configuration rather than from resolved bindings,
+  which is the right call, but it read only two of the three keys the service provider reads and
+  dropped `verdict.evidence.derivations_table`. A deployment that renamed that table was told a
+  table was missing under a name it never chose, while the table it did choose — the one the
+  recorder writes on every provenance edge — went unchecked.
+
 ## [0.13.0] - 2026-08-29
 
 ### Added
