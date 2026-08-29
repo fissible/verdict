@@ -658,3 +658,33 @@ it('still audits when only the ledger is overridden away from the database recor
     expectAudited($output, verdictTable('evidence'));
     expect($exitCode)->toBe(1);
 });
+
+/**
+ * A test amendment agreed after the freeze, and recorded as such rather than folded in quietly.
+ * Review of the implementation found a configuration the frozen spec never described: the database
+ * and attest audits were written as one either/or decision, when they are two independent questions
+ * about two different tables. Both models agreed the gap was real, so the tests were reopened by
+ * consensus to describe it.
+ */
+it('audits both table sets when an attest deployment overrides one role to the database recorder', function (): void {
+    config()->set('verdict.evidence.recorder', AttestEvidenceRecorder::class);
+    config()->set('verdict.evidence.writer', DatabaseEvidenceRecorder::class);
+    config()->set('verdict.evidence.table', 'mixed_writer_evidence');
+    config()->set('verdict.evidence.attest.fallback_table', 'mixed_attest_fallback');
+    auditGateAttestChain();
+
+    EvidenceTableSchema::drop('mixed_writer_evidence');
+    EvidenceTableSchema::drop('mixed_attest_fallback');
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    // Two roles, two tables, both opened. The effective writer is the database recorder and writes
+    // `mixed_writer_evidence`; the ledger is unset and falls back to Attest, which serves
+    // provenance and derivations from `mixed_attest_fallback`. An implementation that treats the
+    // two audits as alternatives reports whichever it reaches first and leaves the other table —
+    // in use, and missing — unmentioned.
+    expectAudited($output, 'mixed_writer_evidence');
+    expectAudited($output, 'mixed_attest_fallback');
+    expect($exitCode)->toBe(1);
+});
