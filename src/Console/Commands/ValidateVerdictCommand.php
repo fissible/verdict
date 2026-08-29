@@ -23,6 +23,7 @@ use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\EffectiveEvidenceClass;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
@@ -247,8 +248,25 @@ final class ValidateVerdictCommand extends Command
                 .'Configure a durable recorder via verdict.evidence.recorder to retain an audit trail.';
         }
 
-        if ($recorder === DatabaseEvidenceRecorder::class) {
+        // `writer` and `ledger` are independent narrow roles. Each falls back to the
+        // legacy recorder only when it is unset, so audit the tables only when an
+        // effective role opens them. This remains a declared-config audit: do not
+        // resolve either binding here.
+        $writer = config('verdict.evidence.writer');
+        $ledger = config('verdict.evidence.ledger');
+        $effectiveRoles = [$writer ?? $recorder, $ledger ?? $recorder];
+
+        if (in_array(DatabaseEvidenceRecorder::class, $effectiveRoles, true)) {
             $this->auditEvidenceRecorder($errors, $container);
+        }
+
+        if ($recorder === AttestEvidenceRecorder::class && ($writer === null || $ledger === null)) {
+            $this->auditEvidenceRecorder(
+                errors: $errors,
+                container: $container,
+                connectionKey: 'verdict.evidence.attest.fallback_connection',
+                tableKey: 'verdict.evidence.attest.fallback_table',
+            );
         }
 
         // Advisory: the silent-mismatch case of #310. With the store key unset, Verdict selects the
@@ -432,18 +450,24 @@ final class ValidateVerdictCommand extends Command
     }
 
     /** @param list<string> $errors */
-    private function auditEvidenceRecorder(array &$errors, Container $container): void
-    {
+    private function auditEvidenceRecorder(
+        array &$errors,
+        Container $container,
+        string $connectionKey = 'verdict.evidence.connection',
+        string $tableKey = 'verdict.evidence.table',
+    ): void {
         try {
             // Deliberately reconstruct the configured recorder rather than resolving the
             // EvidenceRecorder binding: this command audits declared deployment wiring, and a
             // previously-resolved singleton can describe an earlier configuration.
-            $connection = config('verdict.evidence.connection');
-            $table = config('verdict.evidence.table', 'verdict_evidence');
+            $connection = config($connectionKey);
+            $table = config($tableKey, 'verdict_evidence');
+            $derivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations');
 
             $recorder = new DatabaseEvidenceRecorder(
                 connection: $container->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
                 table: is_string($table) ? $table : 'verdict_evidence',
+                derivationsTable: is_string($derivations) ? $derivations : 'verdict_provenance_derivations',
             );
         } catch (Throwable) {
             $errors[] = 'Configured database evidence recorder could not be constructed.';
@@ -453,7 +477,10 @@ final class ValidateVerdictCommand extends Command
 
         try {
             if (! $recorder->hasTable()) {
-                $errors[] = "Configured evidence recorder requires missing table [{$recorder->table()}]. Publish and run Verdict's migrations.";
+                $configuration = $tableKey === 'verdict.evidence.attest.fallback_table'
+                    ? ' (configured by verdict.evidence.attest.fallback_table)'
+                    : '';
+                $errors[] = "Configured evidence recorder requires missing table [{$recorder->table()}]{$configuration}. Publish and run Verdict's migrations.";
             } else {
                 $missing = $recorder->missingColumns();
 

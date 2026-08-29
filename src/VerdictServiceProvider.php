@@ -216,15 +216,7 @@ final class VerdictServiceProvider extends ServiceProvider
             }
 
             if ($recorder === DatabaseEvidenceRecorder::class) {
-                $connection = config('verdict.evidence.connection');
-                $table = config('verdict.evidence.table', 'verdict_evidence');
-                $derivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations');
-
-                return new DatabaseEvidenceRecorder(
-                    connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
-                    table: is_string($table) ? $table : 'verdict_evidence',
-                    derivationsTable: is_string($derivations) ? $derivations : 'verdict_provenance_derivations',
-                );
+                return $this->databaseEvidenceRecorder($app);
             }
 
             if ($recorder === AttestEvidenceRecorder::class) {
@@ -351,6 +343,10 @@ final class VerdictServiceProvider extends ServiceProvider
                 throw new LogicException('The Verdict evidence writer configuration must contain a class name.');
             }
 
+            if ($writer === DatabaseEvidenceRecorder::class) {
+                return $this->databaseEvidenceRecorder($app);
+            }
+
             $instance = $app->make($writer);
 
             if (! $instance instanceof EvidenceWriter) {
@@ -374,6 +370,10 @@ final class VerdictServiceProvider extends ServiceProvider
 
             if (! is_string($ledger)) {
                 throw new LogicException('The Verdict provenance ledger configuration must contain a class name.');
+            }
+
+            if ($ledger === DatabaseEvidenceRecorder::class) {
+                return $this->databaseEvidenceRecorder($app);
             }
 
             $instance = $app->make($ledger);
@@ -547,6 +547,19 @@ final class VerdictServiceProvider extends ServiceProvider
                 evaluationReadSuppression: $app->make(EvaluationReadPredicateSuppression::class),
             );
         });
+    }
+
+    private function databaseEvidenceRecorder(Container $app): DatabaseEvidenceRecorder
+    {
+        $connection = config('verdict.evidence.connection');
+        $table = config('verdict.evidence.table', 'verdict_evidence');
+        $derivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations');
+
+        return new DatabaseEvidenceRecorder(
+            connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+            table: is_string($table) ? $table : 'verdict_evidence',
+            derivationsTable: is_string($derivations) ? $derivations : 'verdict_provenance_derivations',
+        );
     }
 
     /**

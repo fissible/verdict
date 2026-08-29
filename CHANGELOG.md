@@ -6,6 +6,38 @@ All notable changes to Verdict will be documented in this file.
 
 ### Fixed
 
+- **`verdict:validate` audits the evidence tables every deployment actually uses (#395).** The
+  command computed the effective evidence class and then gated its evidence-table audit on the raw
+  `verdict.evidence.recorder` value one line below. A deployment routing writes through
+  `verdict.evidence.writer` therefore wrote to the evidence table with no audit at all — and that
+  audit is the only loud signal the table is truncated, because a short row is written silently
+  while the action proceeds.
+
+  The gate now asks whether any *effective* evidence role opens those tables. `writer` and `ledger`
+  are independent narrow contracts that each fall back to the legacy `recorder` when unset, so
+  there are two answers to resolve rather than one: swapping the raw key for the effective writer
+  would have fixed the reported case and stopped auditing its mirror image, a deployment that
+  overrides only the writer and still serves every provenance and derivation read from those tables
+  through the recorder left holding the ledger role. Naming a database-backed recorder is likewise
+  no longer sufficient on its own: a deployment that overrides both narrow roles has left that
+  value behind and opens neither table.
+
+  An `AttestEvidenceRecorder` deployment is now audited too, against
+  `verdict.evidence.attest.fallback_table` on `attest.fallback_connection`. Attest serves
+  provenance and derivations from that database fallback and writes its `chain_gap` markers there,
+  exactly as config/verdict.php promises — "Provenance entries and derivations are always readable
+  through this table" — so the recorder chosen for evidence integrity was the one deployment
+  getting no schema audit at all.
+
+- **A narrow-role database evidence override honours the configured tables and connection (#395).**
+  The `writer` and `ledger` bindings resolved the class they name straight through the container,
+  so a `DatabaseEvidenceRecorder` configured there was built on its constructor defaults and
+  silently ignored `verdict.evidence.table`, `connection` and `derivations_table`. On a deployment
+  that had renamed its evidence table, such a writer wrote `verdict_evidence` while the migrations,
+  the audit and the legacy recorder branch all pointed somewhere else. Found while fixing the audit
+  gate above, and load-bearing for it: without this the audit would have started reporting on
+  tables the deployment never opens.
+
 - **Verdict evaluation-time reads no longer contaminate executed-predicate observations (#392).**
   Checkpoint identity resolution, declared projection, endpoint bookkeeping, and execution-target
   refresh identity resolution now run under a nestable evaluation-internal suppression scope.
@@ -23,6 +55,44 @@ All notable changes to Verdict will be documented in this file.
 
   **Behaviour change:** `invocationDescriptionFingerprint()` now returns `null` outside an
   invocation frame; previously it returned the last advertised value.
+
+- **Evidence column degradation is keyed on requiredness, not presence (#391).** #356 taught the
+  database recorder to write only the columns its table actually has, so an install that had not
+  re-run Verdict's migrations kept working. The mechanism could not tell an additive column from
+  one the create migration itself produces, so it degraded both — and an evidence table missing
+  `record_type` took the row, dropped the column, and made it invisible to every typed read, with
+  no error at write and none at read. The sharpest case was provenance: the only guard checked
+  `content_fingerprint`, so a table with that column but without `record_type` wrote an entry
+  `provenanceFor()` would never return.
+
+  Degradation now distinguishes two situations. A column the row cannot be *read* without is
+  required, and its absence throws, naming the missing columns and the remedy: `record_type`,
+  `correlation_id` and `recorded_at`, which appear in the reader's `WHERE` and `ORDER BY`; `stage`
+  and `disposition`, which have been not-null since the table was created; and on the provenance
+  path `source`, `trust` and `data_class`, which a `ProvenanceEntry` is hydrated from. All five
+  columns of the derivations table are required on the same grounds. Everything else still
+  degrades exactly as before.
+
+  The required set is deliberately narrow, and it is *not* "every column the create migration
+  makes". That stub has been amended in place several times, and nothing back-fills those columns
+  for an install built from an earlier copy of it — requiring them would break working
+  deployments, which is the outage #356 exists to prevent. Every required column has instead been
+  present since the table's first migration, so no published migration path produces a deployment
+  that lacks one. The change fails closed only where evidence was already being lost silently.
+
+  The two layers report on different terms, and this is worth knowing when reading a validate run:
+  `verdict:validate` is keyed on *completeness* and errors on any column Verdict knows about, so
+  an operator hears about reduced detail before deploying; the recorder is keyed on *readability*
+  and refuses only what cannot be read back. A write refused this way propagates out of the
+  guarded action, so the action does not execute — a decision that cannot be recorded does not
+  authorize anything.
+
+- **`verdict:validate` audits the derivations table the deployment configured (#391).** The audit
+  reconstructs the configured recorder from configuration rather than from resolved bindings,
+  which is the right call, but it read only two of the three keys the service provider reads and
+  dropped `verdict.evidence.derivations_table`. A deployment that renamed that table was told a
+  table was missing under a name it never chose, while the table it did choose — the one the
+  recorder writes on every provenance edge — went unchecked.
 
 ## [0.13.0] - 2026-08-29
 

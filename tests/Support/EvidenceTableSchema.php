@@ -139,6 +139,48 @@ final class EvidenceTableSchema
     }
 
     /**
+     * The table as it stands when a column the create migration itself produces is simply absent
+     * — a hand-built table, a partially applied create, or a column an operator dropped.
+     *
+     * Create-then-drop here, rather than the migration-granular omission {@see createWithout()}
+     * uses, and the difference is the point: this is not a migration lag. There is no migration
+     * to skip, because the columns concerned come from the create migration. #356's argument
+     * against create-then-drop was about reproducing a lag faithfully; reproducing an absent
+     * column is exactly what create-then-drop does faithfully.
+     *
+     * The five composite indexes go first because SQLite cannot drop an indexed column. That is a
+     * fixture concession, not a change of subject: the recorder never reads an index, so their
+     * absence cannot affect anything these tests conclude. It does bound what this builder
+     * supports — the columns carrying their own single-column additive index are not droppable
+     * through it, and {@see createWithoutMigration()} already covers those as the real lag they
+     * would be.
+     *
+     * `id` is not droppable either: it is the primary key. That is the honest limit of the
+     * simulation, and no install plausibly lacks its own primary key.
+     *
+     * @param  list<string>  $columns
+     */
+    public static function createWithoutColumns(array $columns): void
+    {
+        self::createComplete();
+
+        $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+        $table = verdictTable('evidence');
+
+        $schema->table($table, function ($blueprint) use ($table): void {
+            $blueprint->dropIndex(['record_type', 'recorded_at']);
+            $blueprint->dropIndex(['disposition', 'recorded_at']);
+            $blueprint->dropIndex(['capability', 'recorded_at']);
+            $blueprint->dropIndex(['source', 'recorded_at']);
+            $blueprint->dropIndex("{$table}_provenance_correlation_index");
+        });
+
+        $schema->table($table, function ($blueprint) use ($columns): void {
+            $blueprint->dropColumn($columns);
+        });
+    }
+
+    /**
      * Additive migration names, from the filesystem only — safe to call before the app boots, so
      * it can drive a Pest dataset.
      *
