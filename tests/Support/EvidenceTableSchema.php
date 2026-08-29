@@ -149,6 +149,48 @@ final class EvidenceTableSchema
         return self::additiveMigrations();
     }
 
+    /**
+     * The provenance-derivations table from its published migration — the evidence recorders write
+     * both, and a hand-rolled copy of this one drifts exactly like the evidence copy did.
+     */
+    public static function createDerivations(): void
+    {
+        app(DatabaseManager::class)->connection()->getSchemaBuilder()
+            ->dropIfExists(verdictTable('derivations'));
+
+        self::run('create_verdict_provenance_derivations_table');
+    }
+
+    /**
+     * The derivations table minus the named columns — an install whose derivations table predates
+     * a future additive migration (#363).
+     *
+     * Only `recorded_at` is actually droppable: the other four columns are all in the composite
+     * primary key, and SQLite cannot drop an indexed column. That is enough to exercise the
+     * degradation path, and it is the honest limit of what this table can simulate today.
+     *
+     * @param  list<string>  $without
+     */
+    public static function createDerivationsWithout(array $without): void
+    {
+        self::createDerivations();
+
+        if ($without === []) {
+            return;
+        }
+
+        app(DatabaseManager::class)->connection()->getSchemaBuilder()
+            ->table(verdictTable('derivations'), function ($table) use ($without): void {
+                $table->dropColumn($without);
+            });
+    }
+
+    public static function dropDerivations(): void
+    {
+        app(DatabaseManager::class)->connection()->getSchemaBuilder()
+            ->dropIfExists(verdictTable('derivations'));
+    }
+
     public static function drop(?string $table = null): void
     {
         app(DatabaseManager::class)->connection()->getSchemaBuilder()

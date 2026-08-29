@@ -31,13 +31,16 @@ which is where the state lives.
 leaves the same claim-store instance in place. The operational stores are singletons bound by Verdict
 itself:
 
+All are bound in `VerdictServiceProvider::register()` (cited by symbol, not line, so the reference
+does not drift as the provider changes):
+
 | Binding | Lifetime | Site |
 |---|---|---|
-| `ApprovalReceiptStore` | `singleton` | `src/VerdictServiceProvider.php:110` |
-| `RateLimitStore` | `singleton` | `src/VerdictServiceProvider.php:311` |
-| `ExecutionClaimStore` | `singleton` | `src/VerdictServiceProvider.php:342` |
-| `CapabilityRegistry` | `singleton` | `src/VerdictServiceProvider.php:99` |
-| `VerdictManager` | `scoped` | `src/VerdictServiceProvider.php:398` |
+| `ApprovalReceiptStore` | `singleton` | `ApprovalReceiptStore::class` binding |
+| `RateLimitStore` | `singleton` | `RateLimitStore::class` binding |
+| `ExecutionClaimStore` | `singleton` | `ExecutionClaimStore::class` binding |
+| `CapabilityRegistry` | `singleton` | `CapabilityRegistry::class` binding |
+| `VerdictManager` | `scoped` | `VerdictManager::class` binding |
 
 That binding is correct and is not in question. One store per process is what a rate limit, an approval
 receipt, and an at-most-once claim all mean in production. A store that reset itself between logical

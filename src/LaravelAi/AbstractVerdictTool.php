@@ -31,6 +31,15 @@ abstract class AbstractVerdictTool implements Approvable, Tool
      */
     private Closure $contextResolver;
 
+    /** @var Closure(): VerdictManager */
+    private readonly Closure $verdictResolver;
+
+    /** @var Closure(): InvocationContext */
+    private readonly Closure $invocationsResolver;
+
+    /** @var Closure(): ApprovalExecutionContext */
+    private readonly Closure $approvalExecutionsResolver;
+
     private Approval|false|null $approvalRequirement = null;
 
     private string $configuredDescriptionFingerprint;
@@ -48,14 +57,23 @@ abstract class AbstractVerdictTool implements Approvable, Tool
         private readonly Tool $tool,
         private readonly string $capability,
         ActionContext|callable $context,
-        private readonly VerdictManager $verdict,
+        Closure|VerdictManager $verdict,
         private readonly string $deniedMessage,
-        private readonly InvocationContext $invocations,
-        private readonly ApprovalExecutionContext $approvalExecutions,
+        Closure|InvocationContext $invocations,
+        Closure|ApprovalExecutionContext $approvalExecutions,
     ) {
         $this->contextResolver = $context instanceof ActionContext
             ? static fn (Request $request): ActionContext => $context
             : Closure::fromCallable($context);
+        $this->verdictResolver = $verdict instanceof Closure
+            ? $verdict
+            : static fn (): VerdictManager => $verdict;
+        $this->invocationsResolver = $invocations instanceof Closure
+            ? $invocations
+            : static fn (): InvocationContext => $invocations;
+        $this->approvalExecutionsResolver = $approvalExecutions instanceof Closure
+            ? $approvalExecutions
+            : static fn (): ApprovalExecutionContext => $approvalExecutions;
         $this->configuredDescriptionFingerprint = ContentFingerprint::make((string) $this->tool->description());
     }
 
@@ -136,7 +154,7 @@ abstract class AbstractVerdictTool implements Approvable, Tool
     public function shouldRequestApproval(Request $request): ?Approval
     {
         $envelope = $this->supportsVerifiedConfirmation() ? $this->envelope($request) : null;
-        $decision = $envelope === null ? null : $this->verdict->requestConfirmation($envelope);
+        $decision = $envelope === null ? null : $this->verdict()->requestConfirmation($envelope);
 
         if ($decision !== null) {
             return Approval::required($decision->reason);
@@ -164,7 +182,7 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     final protected function verdict(): VerdictManager
     {
-        return $this->verdict;
+        return ($this->verdictResolver)();
     }
 
     protected function supportsVerifiedConfirmation(): bool
@@ -174,12 +192,12 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     private function invocations(): InvocationContext
     {
-        return $this->invocations;
+        return ($this->invocationsResolver)();
     }
 
     private function approvalExecutions(): ApprovalExecutionContext
     {
-        return $this->approvalExecutions;
+        return ($this->approvalExecutionsResolver)();
     }
 
     private function envelope(Request $request): ActionEnvelope

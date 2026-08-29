@@ -453,15 +453,30 @@ final class ValidateVerdictCommand extends Command
         try {
             if (! $recorder->hasTable()) {
                 $errors[] = "Configured evidence recorder requires missing table [{$recorder->table()}]. Publish and run Verdict's migrations.";
+            } else {
+                $missing = $recorder->missingColumns();
+
+                if ($missing !== []) {
+                    $errors[] = "The [{$recorder->table()}] evidence table is missing columns: ".implode(', ', $missing)
+                        .". Publish and run Verdict's evidence migrations.";
+                }
+            }
+
+            // The derivations table on the same terms (#363). The recorder writes it on every
+            // provenance edge, and until now nothing audited it — the asymmetry #356 opened with,
+            // one table over. It reports nothing today because that table has no additive
+            // migrations; the point is that the first one cannot land unnoticed.
+            if (! $recorder->hasDerivationsTable()) {
+                $errors[] = "Configured evidence recorder requires missing table [{$recorder->derivationsTable()}]. Publish and run Verdict's migrations.";
 
                 return;
             }
 
-            $missing = $recorder->missingColumns();
+            $missingDerivations = $recorder->missingDerivationsColumns();
 
-            if ($missing !== []) {
-                $errors[] = "The [{$recorder->table()}] evidence table is missing columns: ".implode(', ', $missing)
-                    .". Publish and run Verdict's evidence migrations.";
+            if ($missingDerivations !== []) {
+                $errors[] = "The [{$recorder->derivationsTable()}] derivations table is missing columns: "
+                    .implode(', ', $missingDerivations).". Publish and run Verdict's evidence migrations.";
             }
         } catch (Throwable) {
             $errors[] = 'Configured evidence recorder could not inspect its table.';

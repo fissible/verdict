@@ -66,7 +66,6 @@ final readonly class VerdictManager
         private CapabilityAuthorizer $authorizer,
         private EvidenceWriter $evidence,
         private ApprovalManager $approvals,
-        private ApprovalExecutionContext $approvalExecutions,
         private ContextReleaseManager $contextReleases,
         private RateLimitManager $rateLimits,
         private ExecutionClaimManager $executionClaims,
@@ -343,7 +342,15 @@ final readonly class VerdictManager
      */
     public function guard(Tool $tool, string $capability, ActionContext|callable $context): GuardedTool
     {
-        return new GuardedTool($tool, $capability, $context, $this, $this->deniedMessage, $this->invocations, $this->approvalExecutions);
+        return new GuardedTool(
+            $tool,
+            $capability,
+            $context,
+            fn (): VerdictManager => app(VerdictManager::class),
+            $this->deniedMessage,
+            fn (): InvocationContext => app(InvocationContext::class),
+            fn (): ApprovalExecutionContext => app(ApprovalExecutionContext::class),
+        );
     }
 
     /**
@@ -357,7 +364,15 @@ final readonly class VerdictManager
             throw CapabilityNotExecutable::named($registered->name);
         }
 
-        return new BoundTool($definition, $capability, $context, $this, $this->deniedMessage, $this->invocations, $this->approvalExecutions);
+        return new BoundTool(
+            $definition,
+            $capability,
+            $context,
+            fn (): VerdictManager => app(VerdictManager::class),
+            $this->deniedMessage,
+            fn (): InvocationContext => app(InvocationContext::class),
+            fn (): ApprovalExecutionContext => app(ApprovalExecutionContext::class),
+        );
     }
 
     public function requestConfirmation(ActionEnvelope $envelope): ?Decision

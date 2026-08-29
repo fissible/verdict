@@ -14,77 +14,17 @@ use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\DerivationKind;
 use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
+use Fissible\Verdict\Tests\Support\EvidenceTableSchema;
 use Illuminate\Database\DatabaseManager;
-use Illuminate\Database\Schema\Blueprint;
 
 beforeEach(function (): void {
-    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
-    $schema->dropIfExists(verdictTable('evidence'));
-    $schema->dropIfExists(verdictTable('derivations'));
-    $schema->create(verdictTable('evidence'), function (Blueprint $table): void {
-        $table->uuid('id')->primary();
-        $table->string('record_type', 32);
-        $table->string('correlation_id')->nullable();
-        $table->string('invocation_id')->nullable();
-        $table->string('intent_id', 64)->nullable();
-        $table->string('capability')->nullable();
-        $table->string('tool_kind', 16)->nullable();
-        $table->char('configuration_fingerprint', 64)->nullable();
-        $table->char('actor_fingerprint', 64)->nullable();
-        $table->char('subject_fingerprint', 64)->nullable();
-        $table->string('target_source', 16)->nullable();
-        $table->char('tool_description_fingerprint', 64)->nullable();
-        $table->char('invocation_tool_description_fingerprint', 64)->nullable();
-        $table->boolean('tool_description_matched')->nullable();
-        $table->string('stage', 32);
-        $table->string('disposition', 32);
-        $table->string('claim_type', 64)->nullable();
-        $table->string('record_digest', 96)->nullable();
-        $table->text('reason')->nullable();
-        $table->string('source')->nullable();
-        $table->string('destination')->nullable();
-        $table->string('trust_zone')->nullable();
-        $table->string('trust', 32)->nullable();
-        $table->string('data_class', 32)->nullable();
-        $table->char('argument_fingerprint', 64)->nullable();
-        $table->char('idempotency_key_fingerprint', 64)->nullable();
-        $table->char('approval_receipt_fingerprint', 64)->nullable();
-        $table->string('approval_phase', 32)->nullable();
-        $table->string('approval_outcome', 32)->nullable();
-        $table->string('target_policy')->nullable();
-        $table->string('target_strategy', 32)->nullable();
-        $table->char('proposal_target_identity_fingerprint', 64)->nullable();
-        $table->char('execution_target_identity_fingerprint', 64)->nullable();
-        $table->boolean('target_identity_matched')->nullable();
-        $table->char('rate_limit_key_fingerprint', 64)->nullable();
-        $table->string('rate_limit_policy')->nullable();
-        $table->unsignedInteger('rate_limit_limit')->nullable();
-        $table->unsignedInteger('rate_limit_remaining')->nullable();
-        $table->timestamp('rate_limit_reset_at')->nullable();
-        $table->char('execution_claim_fingerprint', 64)->nullable();
-        $table->char('execution_claim_binding_fingerprint', 64)->nullable();
-        $table->string('execution_claim_policy')->nullable();
-        $table->string('execution_claim_status', 24)->nullable();
-        $table->unsignedInteger('execution_claim_attempt')->nullable();
-        $table->json('requested_path_fingerprints')->nullable();
-        $table->json('released_path_fingerprints')->nullable();
-        $table->json('transform_fingerprints')->nullable();
-        $table->json('transformed_path_fingerprints')->nullable();
-        $table->unsignedInteger('transformation_count')->default(0);
-        $table->char('payload_fingerprint', 64)->nullable();
-        $table->string('channel', 32)->nullable();
-        $table->string('component_label')->nullable();
-        $table->char('component_fingerprint', 64)->nullable();
-        $table->char('content_fingerprint', 64)->nullable();
-        $table->timestamp('recorded_at');
-    });
-    $schema->create(verdictTable('derivations'), function (Blueprint $table): void {
-        $table->string('correlation_id');
-        $table->char('child_content_fingerprint', 64);
-        $table->char('parent_content_fingerprint', 64);
-        $table->string('kind', 32);
-        $table->timestamp('recorded_at');
-    });
+    // The evidence and derivations tables come from their published migrations (#359). These were
+    // hand-rolled blueprints, which had already drifted — both declared rate_limit_limit and
+    // rate_limit_remaining as unsignedInteger where the migration writes unsignedBigInteger, and
+    // the two files disagreed with each other about which columns exist at all. A fixture that
+    // does not match the schema it stands in for cannot prove anything about production.
+    EvidenceTableSchema::createComplete();
+    EvidenceTableSchema::createDerivations();
 });
 
 afterEach(function (): void {

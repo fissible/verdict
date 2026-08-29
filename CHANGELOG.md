@@ -6,6 +6,14 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **The provenance-derivations table degrades and is audited on the same terms as evidence (#363).**
+  `recordDerivation()` was the one evidence write #356 left as a flat insert, against a table
+  `verdict:validate` never looked at. It now writes only the columns the table has, a missing
+  derivations table surfaces rather than becoming a silent no-op, and the audit reports a missing
+  table or missing columns as errors. Nothing is reported today — that table has no additive
+  migrations — which is the point: the first one cannot land unnoticed on a table nothing checks.
+  Column inspection is memoized per table, so the restart obligation from #356 covers both.
+
 - **Database evidence recording now degrades safely during additive-schema rollout (#356).**
   `DatabaseEvidenceRecorder` writes every evidence column that exists and omits only columns from
   unpublished or unapplied additive migrations, so a lagging table no longer fails every guarded
