@@ -10,16 +10,22 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $configurationFingerprintIndex = "{$evidenceTable}_configuration_fingerprint_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($configurationFingerprintIndex): void {
             $table->char('configuration_fingerprint', 64)->nullable();
-            $table->index('configuration_fingerprint', 'verdict_evidence_configuration_fingerprint_index');
+            $table->index('configuration_fingerprint', $configurationFingerprintIndex);
         });
     }
 
     public function down(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
-            $table->dropIndex('verdict_evidence_configuration_fingerprint_index');
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $configurationFingerprintIndex = "{$evidenceTable}_configuration_fingerprint_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($configurationFingerprintIndex): void {
+            $table->dropIndex($configurationFingerprintIndex);
             $table->dropColumn('configuration_fingerprint');
         });
     }

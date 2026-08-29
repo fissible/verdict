@@ -10,19 +10,27 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $actorFingerprintIndex = "{$evidenceTable}_actor_fingerprint_index";
+        $subjectFingerprintIndex = "{$evidenceTable}_subject_fingerprint_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($actorFingerprintIndex, $subjectFingerprintIndex): void {
             $table->char('actor_fingerprint', 64)->nullable();
             $table->char('subject_fingerprint', 64)->nullable();
-            $table->index('actor_fingerprint', 'verdict_evidence_actor_fingerprint_index');
-            $table->index('subject_fingerprint', 'verdict_evidence_subject_fingerprint_index');
+            $table->index('actor_fingerprint', $actorFingerprintIndex);
+            $table->index('subject_fingerprint', $subjectFingerprintIndex);
         });
     }
 
     public function down(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
-            $table->dropIndex('verdict_evidence_actor_fingerprint_index');
-            $table->dropIndex('verdict_evidence_subject_fingerprint_index');
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $actorFingerprintIndex = "{$evidenceTable}_actor_fingerprint_index";
+        $subjectFingerprintIndex = "{$evidenceTable}_subject_fingerprint_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($actorFingerprintIndex, $subjectFingerprintIndex): void {
+            $table->dropIndex($actorFingerprintIndex);
+            $table->dropIndex($subjectFingerprintIndex);
             $table->dropColumn(['actor_fingerprint', 'subject_fingerprint']);
         });
     }

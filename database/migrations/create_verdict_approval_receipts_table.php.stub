@@ -10,7 +10,10 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create((string) config('verdict.approvals.table', 'verdict_approval_receipts'), function (Blueprint $table): void {
+        $approvalsTable = (string) config('verdict.approvals.table', 'verdict_approval_receipts');
+        $bindingUnique = "{$approvalsTable}_binding_unique";
+
+        Schema::create($approvalsTable, function (Blueprint $table) use ($bindingUnique): void {
             $table->string('id', 64)->primary();
             $table->string('tool_call_id');
             $table->string('capability');
@@ -25,7 +28,7 @@ return new class extends Migration
             $table->timestamp('consumed_at')->nullable();
             $table->timestamps();
 
-            $table->unique(['tool_call_id', 'capability', 'binding_fingerprint'], 'verdict_approval_receipts_binding_unique');
+            $table->unique(['tool_call_id', 'capability', 'binding_fingerprint'], $bindingUnique);
             $table->index(['tool_call_id', 'status']);
             $table->index(['status', 'expires_at']);
         });
@@ -33,6 +36,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists((string) config('verdict.approvals.table', 'verdict_approval_receipts'));
+        $approvalsTable = (string) config('verdict.approvals.table', 'verdict_approval_receipts');
+
+        Schema::dropIfExists($approvalsTable);
     }
 };
