@@ -150,6 +150,13 @@ only a canonical digest, identity, checkpoint, contract, occurrence, and executi
 identity, checkpoint, and contract. It detects a changed declared projection; it neither refuses an
 execution nor proves the interval was atomic.
 
+Verdict-owned evaluation-time reads are excluded from the executed-predicate window: checkpoint
+identity resolution, projection, endpoint bookkeeping, and execution-target refresh identity
+resolution. This prevents Verdict's own reads from being attributed to the capability as executor
+predicates. The exclusion remains active when a projector runs a nested capability inside another
+capability's executor, so neither capability's evaluation-time reads can leak into the enclosing
+predicate window; actual executor statements remain observed.
+
 The declaration is intentionally capability-local: it says which bytes *this use* depends on, not
 which public properties happen to be present on a target. Capabilities over the same resource may
 therefore legitimately use different contracts and cannot be compared across them. No declared

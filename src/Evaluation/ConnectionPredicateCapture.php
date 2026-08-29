@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Evaluation;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Illuminate\Container\Container;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Events\QueryExecuted;
 
@@ -26,6 +27,10 @@ use Illuminate\Database\Events\QueryExecuted;
  * The window is opened by `VerdictManager` through the {@see ExecutionWindow} seam — around
  * exactly the executor invocation, so Verdict's own store traffic (evidence, receipts, claims,
  * rate limits) runs outside it by construction and can never satisfy the presence assertion.
+ * Verdict-owned evaluation-time reads — checkpoint identity, projection, endpoint bookkeeping,
+ * and execution-target refresh identity resolution — are excluded as well. They can run while an
+ * enclosing executor's nested window remains open, so {@see EvaluationReadPredicateSuppression}
+ * excludes them by execution phase rather than statement shape.
  * Windows nest: a capability executed from inside another's executor opens an inner frame, each
  * statement belongs to the innermost open frame, and closing a frame never disarms or absorbs the
  * one around it.
@@ -59,6 +64,8 @@ use Illuminate\Database\Events\QueryExecuted;
  */
 final class ConnectionPredicateCapture implements ExecutionWindow
 {
+    private readonly EvaluationReadPredicateSuppression $evaluationReadSuppression;
+
     /**
      * One frame per open window, innermost last; each holds the prepared statements observed
      * while it was the innermost.
@@ -72,11 +79,15 @@ final class ConnectionPredicateCapture implements ExecutionWindow
 
     public function __construct(
         private readonly ?LiveToolCapture $sink = null,
-    ) {}
+        ?EvaluationReadPredicateSuppression $evaluationReadSuppression = null,
+    ) {
+        $this->evaluationReadSuppression = $evaluationReadSuppression
+            ?? Container::getInstance()->make(EvaluationReadPredicateSuppression::class);
+    }
 
     public function __invoke(QueryExecuted $event): void
     {
-        if ($this->frames === [] || $event->connection->pretending()) {
+        if ($this->evaluationReadSuppression->isActive() || $this->frames === [] || $event->connection->pretending()) {
             return;
         }
 

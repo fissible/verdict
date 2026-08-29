@@ -6,6 +6,12 @@ All notable changes to Verdict will be documented in this file.
 
 ### Fixed
 
+- **Verdict evaluation-time reads no longer contaminate executed-predicate observations (#392).**
+  Checkpoint identity resolution, declared projection, endpoint bookkeeping, and execution-target
+  refresh identity resolution now run under a nestable evaluation-internal suppression scope.
+  Executor statements remain observed, including statements byte-identical to those reads and
+  executions nested from a projector.
+
 - **Parallel Laravel AI calls retain the description the model was shown (#390).** v0.13.0's
   per-call clearing let the first of two parallel calls to the same tool erase the advertisement
   before the other recorded evidence, leaving `toolDescriptionMatched` `null` for a description the

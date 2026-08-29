@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Evaluation;
 
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Capabilities\Capability;
+use Illuminate\Container\Container;
 use InvalidArgumentException;
 use Throwable;
 
@@ -27,10 +28,16 @@ use Throwable;
  */
 final class ResourceCheckpointCapture
 {
+    private readonly EvaluationReadPredicateSuppression $evaluationReadSuppression;
+
     public function __construct(
         private readonly LiveToolCapture $sink,
         private readonly string $checkpoint,
+        ?EvaluationReadPredicateSuppression $evaluationReadSuppression = null,
     ) {
+        $this->evaluationReadSuppression = $evaluationReadSuppression
+            ?? Container::getInstance()->make(EvaluationReadPredicateSuppression::class);
+
         if (trim($this->checkpoint) === '') {
             throw new InvalidArgumentException('A resource checkpoint capture must name a checkpoint.');
         }
@@ -38,38 +45,40 @@ final class ResourceCheckpointCapture
 
     public function capture(ActionEnvelope $envelope, Capability $capability, mixed $target): void
     {
-        $projection = $capability->declaredResourceProjection();
-
-        if ($projection === null) {
-            return;
-        }
-
-        $policy = $capability->executionTargetPolicy();
-
-        if ($policy === null) {
-            return;
-        }
-
         try {
-            // This is an evaluation instrument, never an execution gate. Form every value before
-            // emitting either observation: a target the instrument cannot describe is unmeasured,
-            // not a partially observed execution and never a reason to refuse the executor.
-            $identity = ResourceIdentity::for($policy->identity($envelope, $target));
-            $digest = ResourceDigest::for($projection->project($envelope, $target));
-            $sequence = $this->sink->recordExecution($envelope->proposal->capability, $envelope->proposal->arguments);
+            $this->evaluationReadSuppression->whileActive(function () use ($envelope, $capability, $target): void {
+                $projection = $capability->declaredResourceProjection();
 
-            // recordExecution() can throw while canonicalizing proposal arguments. Advance the
-            // occurrence only after it succeeds, so a failed capture cannot consume an endpoint.
-            $occurrence = $this->sink->nextResourceOccurrence($this->checkpoint, $identity, $projection->contract);
+                if ($projection === null) {
+                    return;
+                }
 
-            $this->sink->recordResource(new ResourceObservation(
-                checkpoint: $this->checkpoint,
-                resourceIdentity: $identity,
-                projection: $projection->contract,
-                digest: $digest,
-                occurrence: $occurrence,
-                executionSequence: $sequence,
-            ));
+                $policy = $capability->executionTargetPolicy();
+
+                if ($policy === null) {
+                    return;
+                }
+
+                // This is an evaluation instrument, never an execution gate. Form every value before
+                // emitting either observation: a target the instrument cannot describe is unmeasured,
+                // not a partially observed execution and never a reason to refuse the executor.
+                $identity = ResourceIdentity::for($policy->identity($envelope, $target));
+                $digest = ResourceDigest::for($projection->project($envelope, $target));
+                $sequence = $this->sink->recordExecution($envelope->proposal->capability, $envelope->proposal->arguments);
+
+                // recordExecution() can throw while canonicalizing proposal arguments. Advance the
+                // occurrence only after it succeeds, so a failed capture cannot consume an endpoint.
+                $occurrence = $this->sink->nextResourceOccurrence($this->checkpoint, $identity, $projection->contract);
+
+                $this->sink->recordResource(new ResourceObservation(
+                    checkpoint: $this->checkpoint,
+                    resourceIdentity: $identity,
+                    projection: $projection->contract,
+                    digest: $digest,
+                    occurrence: $occurrence,
+                    executionSequence: $sequence,
+                ));
+            });
         } catch (Throwable) {
             // An observer that cannot form a safe measurement contributes no endpoint. The
             // comparison will consequently report unmeasured; the capability still executes.

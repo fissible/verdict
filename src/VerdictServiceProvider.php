@@ -47,6 +47,7 @@ use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evaluation\EvaluationReadPredicateSuppression;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
@@ -151,6 +152,10 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->scoped(ApprovalExecutionContext::class);
         $this->app->scoped(InvocationContext::class);
         $this->app->scoped(PromptProvenanceRegistry::class);
+        // This depth counter suppresses only Verdict's own evaluation-time reads. It must not
+        // survive an Octane request: a fatal during a suppressed operation can bypass normal
+        // request cleanup, and a singleton would then hide executor predicates indefinitely.
+        $this->app->scoped(EvaluationReadPredicateSuppression::class);
 
         $this->app->singleton(ApprovalReceiptStore::class, function (Container $app): ApprovalReceiptStore {
             $store = config('verdict.approvals.store', DatabaseApprovalReceiptStore::class);
@@ -539,6 +544,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 resourceCheckpointCapture: static fn (): ?ResourceCheckpointCapture => $app->bound(ResourceCheckpointCapture::class)
                     ? $app->make(ResourceCheckpointCapture::class)
                     : null,
+                evaluationReadSuppression: $app->make(EvaluationReadPredicateSuppression::class),
             );
         });
     }

@@ -29,6 +29,7 @@ use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Decisions\ExecutionResult;
+use Fissible\Verdict\Evaluation\EvaluationReadPredicateSuppression;
 use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\DecisionEvidence;
@@ -76,6 +77,7 @@ final readonly class VerdictManager
         private string $deniedMessage,
         private Dispatcher $events,
         private NullRecorderWarning $nullRecorderWarning,
+        private EvaluationReadPredicateSuppression $evaluationReadSuppression,
         /**
          * Resolved per execution, never at construction: a provider that type-hints this manager
          * in boot() constructs it before any evaluation harness runs, and an eagerly-captured
@@ -537,15 +539,13 @@ final readonly class VerdictManager
             // traffic before this line (claims, rate limits, evidence) and after it (finalization)
             // stays outside, which is what lets the evaluation harness treat a captured statement
             // as the executor's. See Contracts\ExecutionWindow.
-            $run = function () use ($evaluation, $executor, $admission): mixed {
-                $capture = $this->resourceCheckpointCapture === null ? null : ($this->resourceCheckpointCapture)();
+            $capture = $this->resourceCheckpointCapture === null ? null : ($this->resourceCheckpointCapture)();
 
-                if ($capture !== null && $evaluation->capability !== null) {
-                    $capture->capture($evaluation->envelope, $evaluation->capability, $evaluation->target);
-                }
+            if ($capture !== null && $evaluation->capability !== null) {
+                $capture->capture($evaluation->envelope, $evaluation->capability, $evaluation->target);
+            }
 
-                return $executor($admission);
-            };
+            $run = fn (): mixed => $executor($admission);
             $window = $this->executionWindow === null ? null : ($this->executionWindow)();
             $output = $window === null
                 ? $run()
@@ -725,11 +725,11 @@ final readonly class VerdictManager
         Evaluation $evaluation,
         mixed $target,
     ): string {
-        return ArgumentFingerprint::make([
+        return $this->evaluationReadSuppression->whileActive(fn (): string => ArgumentFingerprint::make([
             'capability' => $capability->name,
             'target_policy' => $policy->name,
             'identity' => $policy->identity($evaluation->envelope, $target),
-        ]);
+        ]));
     }
 
     private function claimExecution(Evaluation $evaluation, ?string $intentId): ?ExecutionClaimAdmission
