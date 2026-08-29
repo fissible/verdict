@@ -6,6 +6,38 @@ All notable changes to Verdict will be documented in this file.
 
 ### Fixed
 
+- **`verdict:validate` audits the evidence tables every deployment actually uses (#395).** The
+  command computed the effective evidence class and then gated its evidence-table audit on the raw
+  `verdict.evidence.recorder` value one line below. A deployment routing writes through
+  `verdict.evidence.writer` therefore wrote to the evidence table with no audit at all — and that
+  audit is the only loud signal the table is truncated, because a short row is written silently
+  while the action proceeds.
+
+  The gate now asks whether any *effective* evidence role opens those tables. `writer` and `ledger`
+  are independent narrow contracts that each fall back to the legacy `recorder` when unset, so
+  there are two answers to resolve rather than one: swapping the raw key for the effective writer
+  would have fixed the reported case and stopped auditing its mirror image, a deployment that
+  overrides only the writer and still serves every provenance and derivation read from those tables
+  through the recorder left holding the ledger role. Naming a database-backed recorder is likewise
+  no longer sufficient on its own: a deployment that overrides both narrow roles has left that
+  value behind and opens neither table.
+
+  An `AttestEvidenceRecorder` deployment is now audited too, against
+  `verdict.evidence.attest.fallback_table` on `attest.fallback_connection`. Attest serves
+  provenance and derivations from that database fallback and writes its `chain_gap` markers there,
+  exactly as config/verdict.php promises — "Provenance entries and derivations are always readable
+  through this table" — so the recorder chosen for evidence integrity was the one deployment
+  getting no schema audit at all.
+
+- **A narrow-role database evidence override honours the configured tables and connection (#395).**
+  The `writer` and `ledger` bindings resolved the class they name straight through the container,
+  so a `DatabaseEvidenceRecorder` configured there was built on its constructor defaults and
+  silently ignored `verdict.evidence.table`, `connection` and `derivations_table`. On a deployment
+  that had renamed its evidence table, such a writer wrote `verdict_evidence` while the migrations,
+  the audit and the legacy recorder branch all pointed somewhere else. Found while fixing the audit
+  gate above, and load-bearing for it: without this the audit would have started reporting on
+  tables the deployment never opens.
+
 - **Parallel Laravel AI calls retain the description the model was shown (#390).** v0.13.0's
   per-call clearing let the first of two parallel calls to the same tool erase the advertisement
   before the other recorded evidence, leaving `toolDescriptionMatched` `null` for a description the
