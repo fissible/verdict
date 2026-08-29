@@ -6,7 +6,10 @@ namespace Fissible\Verdict\LaravelAi;
 
 use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Contracts\ClassifiesToolResult;
+use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\Exceptions\ToolResultProvenanceUnrecordable;
+use InvalidArgumentException;
 use Laravel\Ai\Events\ToolInvoked;
 use Stringable;
 
@@ -23,6 +26,16 @@ final readonly class RecordToolResultProvenance
         $result = $event->result instanceof Stringable
             ? (string) $event->result
             : $event->result;
+
+        try {
+            ContentFingerprint::make($result);
+        } catch (InvalidArgumentException $exception) {
+            throw ToolResultProvenanceUnrecordable::forTool(
+                $event->tool::class,
+                $event->invocationId,
+                $exception,
+            );
+        }
 
         $this->provenance->record(
             correlationId: $event->invocationId,
