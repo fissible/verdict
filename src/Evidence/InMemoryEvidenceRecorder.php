@@ -69,11 +69,18 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
     /** @return list<ProvenanceDerivation> */
     public function derivationsFor(string $correlationId, string $childContentFingerprint): array
     {
-        return array_values(array_filter(
+        $derivations = array_values(array_filter(
             $this->derivations,
             fn (ProvenanceDerivation $derivation): bool => $derivation->correlationId === $correlationId
                 && $derivation->childContentFingerprint === $childContentFingerprint,
         ));
+
+        usort($derivations, static function (ProvenanceDerivation $left, ProvenanceDerivation $right): int {
+            return [$left->recordedAt, $left->parentContentFingerprint, $left->kind->value]
+                <=> [$right->recordedAt, $right->parentContentFingerprint, $right->kind->value];
+        });
+
+        return $derivations;
     }
 
     /**
