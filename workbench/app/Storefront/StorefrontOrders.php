@@ -31,10 +31,14 @@ final class StorefrontOrders
             $table->integer('customer_id');
             $table->string('item');
             $table->string('status');
+            $table->integer('version');
         });
 
         foreach ($catalog->all() as $order) {
-            $connection->table(self::TABLE)->insert($order->disclosure());
+            $connection->table(self::TABLE)->insert([
+                ...$order->disclosure(),
+                'version' => $order->version,
+            ]);
         }
     }
 
