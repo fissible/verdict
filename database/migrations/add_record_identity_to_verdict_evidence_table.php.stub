@@ -10,7 +10,11 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $claimTypeIndex = "{$evidenceTable}_claim_type_index";
+        $recordDigestIndex = "{$evidenceTable}_record_digest_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($claimTypeIndex, $recordDigestIndex): void {
             // The record's semantic identity: what it asserts, as a stable namespaced label.
             // Indexed because it exists to be filtered on — an auditor selecting every
             // execution-claim completion should not have to know which stage/disposition/status
@@ -24,16 +28,20 @@ return new class extends Migration
             // claim, and the UUID primary key remains what distinguishes rows.
             $table->string('record_digest', 96)->nullable();
 
-            $table->index('claim_type', 'verdict_evidence_claim_type_index');
-            $table->index('record_digest', 'verdict_evidence_record_digest_index');
+            $table->index('claim_type', $claimTypeIndex);
+            $table->index('record_digest', $recordDigestIndex);
         });
     }
 
     public function down(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
-            $table->dropIndex('verdict_evidence_claim_type_index');
-            $table->dropIndex('verdict_evidence_record_digest_index');
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $claimTypeIndex = "{$evidenceTable}_claim_type_index";
+        $recordDigestIndex = "{$evidenceTable}_record_digest_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($claimTypeIndex, $recordDigestIndex): void {
+            $table->dropIndex($claimTypeIndex);
+            $table->dropIndex($recordDigestIndex);
             $table->dropColumn(['claim_type', 'record_digest']);
         });
     }

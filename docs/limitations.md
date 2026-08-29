@@ -285,7 +285,8 @@ Before protecting a consequential action, the application team should:
 - size approval TTLs from worst-case validate-to-execute latency; see [human approval guidance](security-model.md#sizing-approval-ttls);
 - include all material facts in approval and claim identities;
 - add domain-level concurrency and idempotency controls;
-- protect non-AI invocation paths consistently; and
+- protect non-AI invocation paths consistently;
+- keep nodes NTP-synchronised where a database-backed rate limit spans hosts: the fixed wall-clock windows are computed per node without coordination, so clock skew at a window boundary can admit up to roughly one extra window's allotment across skewed nodes (per-node accounting stays exact); and
 - review data release, provider, logging, and retention practices.
 - when using tamper-evident evidence, schedule daily and verify-on-anchor checks; see [verification guidance](#verification-is-the-control-not-the-chain-alone).
 

@@ -10,19 +10,25 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $intentIdIndex = "{$evidenceTable}_intent_id_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($intentIdIndex): void {
             // The write-ahead intent record this outcome references, when the intent lever is on
             // (#160). The scheduled-verification query joins on it: an intent id no outcome row
             // carries is the gap signal.
             $table->string('intent_id', 64)->nullable();
-            $table->index('intent_id', 'verdict_evidence_intent_id_index');
+            $table->index('intent_id', $intentIdIndex);
         });
     }
 
     public function down(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
-            $table->dropIndex('verdict_evidence_intent_id_index');
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $intentIdIndex = "{$evidenceTable}_intent_id_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($intentIdIndex): void {
+            $table->dropIndex($intentIdIndex);
             $table->dropColumn('intent_id');
         });
     }
