@@ -188,7 +188,12 @@ it('leaves a declared-shape comparison holding when the checkpoint queries besid
         ->and($sink->predicates()[0]->digest)
         ->toBe(PredicateDigest::for('select id, customer_id, item from checkpoint_orders where customer_id = ?', [72]));
 
-    $observation = new Observation(disposition: null, executed: true, predicates: $sink->predicates());
+    $observation = new Observation(
+        disposition: null,
+        executed: true,
+        toolCalls: $sink->toolObservations(),
+        predicates: $sink->predicates(),
+    );
 
     expect(Assertions::executedPredicateShapeIsDeclared('orders.declared', [
         'select id, customer_id, item from checkpoint_orders where customer_id = ?',
@@ -238,7 +243,12 @@ it('keeps a nested capability\'s checkpoint out of the enclosing capability\'s w
         ->and($sink->predicates()[0]->digest)
         ->toBe(PredicateDigest::for('select id from checkpoint_orders where customer_id = ?', [72]));
 
-    $observation = new Observation(disposition: null, executed: true, predicates: $sink->predicates());
+    $observation = new Observation(
+        disposition: null,
+        executed: true,
+        toolCalls: $sink->toolObservations(),
+        predicates: $sink->predicates(),
+    );
 
     expect(Assertions::executedPredicateObserved('orders.inner')->evaluate($observation)->passed)->toBeFalse();
 });
