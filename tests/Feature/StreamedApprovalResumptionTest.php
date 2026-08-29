@@ -168,8 +168,9 @@ it('pauses a streamed run for confirmation and resumes without raising', functio
     // the executor runs afterwards. Under Agent::fake() it does not, and whether that is the product or
     // the fake is unresolved: a fake supplies provider output, and a resume replays a pending call from
     // conversation history rather than asking the model again. Asserting completion here would pin
-    // whichever answer the fake happens to give. The completion half is tracked in #218 and needs a live
-    // provider; see docs/architecture.md's compatibility-matrix note for the boundary.
+    // whichever answer the fake happens to give. The completion half is asserted separately below, in
+    // the StreamedApprovalCompletionGateway case, which drives the real stream()/resume pipeline (#218,
+    // closed) — this case keeps its narrower scope on purpose.
     $resumed = null;
     $turn2 = $agent->stream(AiDecision::approveAll());
     $turn2->then(function ($response) use (&$resumed): void {

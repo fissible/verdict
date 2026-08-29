@@ -30,6 +30,8 @@ The real blocker is Verdict-side, tracked in
 
 **Scope of that update, stated precisely.** This sentence originally ended "Streaming approval resumption is supported as of this change," which claimed more than #22 established and more than is verified today. What is exercised — by `StreamedApprovalResumptionTest`, through Laravel AI's real `stream()` pipeline — is that a confirmation-gated capability pauses a streamed run, that the executor does not run before approval, and that resuming an approved run does not raise. Whether the executor runs *after* the resume is not asserted: it does not fire under `Agent::fake()`, and fake-versus-product is unresolved there, so it needs a live provider ([#218](https://github.com/fissible/verdict/issues/218)). Read this ADR's title as still governing the completion half.
 
+**Update (#218): the completion half is now asserted, and this supersedes the caveat above.** `StreamedApprovalResumptionTest` gained a second case that drives Laravel AI's real `stream()`/resume pipeline through a `StepTextGateway` — not `Agent::fake()`, which cannot express resumption at all — and asserts the executor runs **exactly once** after an approved, specifically-decided resume (`ApprovalManager::approve()` plus a specific tool-call `Decision`; `approveAll()`'s wildcard is deliberately skipped). [#218](https://github.com/fissible/verdict/issues/218) is closed. Completion is therefore verified deterministically, not merely deferred; the "deferred" in this ADR's title now describes only the original history, not the current state.
+
 ## Context
 
 Verdict's confirmation flow resumes a Laravel AI agent after approval by calling

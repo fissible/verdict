@@ -40,6 +40,13 @@ contribution — scope, security design notes, tests — are in [CONTRIBUTING.md
 There are no shared accounts, bots with write access, or deploy keys. Dependabot opens pull
 requests and cannot merge them.
 
+The project currently has a single maintainer, who opens and merges their own pull requests once the
+`CI success` check passes. A change therefore receives automated CI review but not a second,
+independent human reviewer — a known limitation of a solo pre-1.0 project, and the reason the
+OpenSSF Scorecard's Code-Review score is low. This is stated plainly here rather than left implied by
+the branch-protection row above, which requires a pull request and passing CI but cannot, with one
+maintainer, supply independent review.
+
 ## Changing this document
 
 Adding a maintainer, granting any standing access, or changing the release or disclosure process

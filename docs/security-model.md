@@ -61,8 +61,9 @@ the injected order; the context-resolved one holds to the intended order and ign
 injection. This measures a capability property: a context-resolved target is not redirectable
 by an injected argument. It does **not** make intent determinable — Verdict still cannot tell a
 wanted action from an unwanted one, only remove the model's ability to choose the record
-(`limitation.intent` stays untestable). Making the resolution path visible in evidence is a
-separate mechanism, tracked in [#192](https://github.com/fissible/verdict/issues/192).
+(`limitation.intent` stays untestable). The resolution path each capability uses is recorded in
+decision evidence as `target_source` ([#192](https://github.com/fissible/verdict/issues/192)), so a
+proposal-resolved consequential action is auditable as such after the fact.
 
 <!-- @verdict-claim capability.context-resolved-target tested -->
 
@@ -107,7 +108,7 @@ Refreshing reduces the window between authorization and execution, but no in-pro
 
 `requiresConfirmation()` creates a human-approval gate. Its binding resolver produces canonical, application-defined facts such as an account ID, amount, or destination. Approval is for that binding—not for a broad conversational intent—and it is consumed before execution.
 
-The application decides which facts are material. Include every fact whose change would require a new human decision. Streaming approval resumption is intentionally deferred and fails closed; see [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md).
+The application decides which facts are material. Include every fact whose change would require a new human decision. Streaming approval resumption is supported: a streamed run pauses at the confirmation gate, the executor does not run before approval, and an approved, specifically-decided resume executes the capability exactly once — verified deterministically by `StreamedApprovalResumptionTest`. See [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md) and [architecture](architecture.md).
 
 ### Who may decide a receipt
 
