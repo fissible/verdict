@@ -44,8 +44,6 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     private string $configuredDescriptionFingerprint;
 
-    private ?string $invocationDescriptionFingerprint = null;
-
     /**
      * @internal Construct tool adapters through Verdict::bound() or Verdict::guard(). This
      *           constructor is not part of the supported surface and may gain required
@@ -85,7 +83,7 @@ abstract class AbstractVerdictTool implements Approvable, Tool
     public function description(): Stringable|string
     {
         $description = $this->tool->description();
-        $this->invocationDescriptionFingerprint = ContentFingerprint::make((string) $description);
+        $this->invocations()->rememberAdvertisedToolDescription($this, ContentFingerprint::make((string) $description));
 
         return $description;
     }
@@ -97,7 +95,7 @@ abstract class AbstractVerdictTool implements Approvable, Tool
 
     public function invocationDescriptionFingerprint(): ?string
     {
-        return $this->invocationDescriptionFingerprint;
+        return $this->invocations()->advertisedToolDescriptionFingerprint($this);
     }
 
     /**
@@ -113,43 +111,28 @@ abstract class AbstractVerdictTool implements Approvable, Tool
      */
     final public function handle(Request $request): Stringable|string
     {
-        try {
-            $toolCallId = $request->toolCallId() ?? '';
-            $prepared = $this->invocations()->takePreparedEnvelope($toolCallId, $request->all());
-            $envelope = ! $this->approvalExecutions()->allows($toolCallId)
-                ? ($prepared ?? $this->envelope($request))
-                : $this->envelope($request);
+        $toolCallId = $request->toolCallId() ?? '';
+        $prepared = $this->invocations()->takePreparedEnvelope($toolCallId, $request->all());
+        $envelope = ! $this->approvalExecutions()->allows($toolCallId)
+            ? ($prepared ?? $this->envelope($request))
+            : $this->envelope($request);
 
-            $result = $this->executeAction($envelope, $request);
+        $result = $this->executeAction($envelope, $request);
 
-            if ($result->executed) {
-                if (! is_string($result->output) && ! $result->output instanceof Stringable) {
-                    throw new LogicException('A Verdict Laravel AI tool must return a string or Stringable result.');
-                }
-
-                return $result->output;
+        if ($result->executed) {
+            if (! is_string($result->output) && ! $result->output instanceof Stringable) {
+                throw new LogicException('A Verdict Laravel AI tool must return a string or Stringable result.');
             }
 
-            return json_encode([
-                'status' => 'not_executed',
-                'capability' => $this->capability,
-                'decision' => $result->evaluation->decision->disposition->value,
-                'message' => $this->deniedMessage,
-            ], JSON_THROW_ON_ERROR);
-        } finally {
-            // The advertisement belongs to the invocation it was made for, and this object can
-            // outlive that invocation — reused across the steps of an agent run, or across Octane
-            // requests once a boot-time instance survives forgetScopedInstances() (#358). Carrying
-            // the value forward would let the NEXT invocation's evidence report a match for an
-            // advertisement nobody made, which is the one thing DecisionEvidence says this field
-            // must never do.
-            //
-            // Clearing costs no signal: Laravel AI maps every tool's description into each provider
-            // request (mapTools() inside the gateway's request builder), so a re-advertised
-            // invocation sets it again before the model can call anything. In `finally` because a
-            // throwing executor must not leave the value behind for the retry either.
-            $this->invocationDescriptionFingerprint = null;
+            return $result->output;
         }
+
+        return json_encode([
+            'status' => 'not_executed',
+            'capability' => $this->capability,
+            'decision' => $result->evaluation->decision->disposition->value,
+            'message' => $this->deniedMessage,
+        ], JSON_THROW_ON_ERROR);
     }
 
     public function requireApproval(?string $reason = null): static
@@ -234,11 +217,12 @@ abstract class AbstractVerdictTool implements Approvable, Tool
                     // The description this tool was wired with, and the one it last advertised to
                     // the model. A divergence is the signal that a tool's advertised description
                     // changed between wiring and invocation; Verdict computed it already and kept
-                    // it nowhere. See #163. The invocation value is null until Laravel AI reads
-                    // description() to build a prompt — never advertised is not advertised
-                    // unchanged.
+                    // it nowhere. See #163. An advertisement belongs to the invocation that made
+                    // it, so every call within that invocation carries it and nothing outside it
+                    // does. The value is null until Laravel AI reads description() to build a
+                    // prompt — never advertised is not advertised unchanged.
                     'tool_description_fingerprint' => $this->configuredDescriptionFingerprint,
-                    'invocation_tool_description_fingerprint' => $this->invocationDescriptionFingerprint,
+                    'invocation_tool_description_fingerprint' => $this->invocationDescriptionFingerprint(),
                 ],
             ),
             context: $context,

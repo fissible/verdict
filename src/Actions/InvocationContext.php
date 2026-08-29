@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Actions;
 
 use Closure;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
+use WeakMap;
 
 /**
  * Tracks the Laravel AI invocation currently in scope.
@@ -16,7 +17,9 @@ use Fissible\Verdict\Evidence\ProvenanceEntry;
  *
  * Frames are a stack rather than a single value because a tool may start a nested generation while it
  * runs — `AgentTool` does this by design when it prompts a sub-agent. Nesting unwinds strictly LIFO,
- * so the innermost frame is always the invocation a decision belongs to.
+ * so the innermost frame is always the invocation a decision belongs to. The context also holds
+ * per-invocation transient state: prepared envelopes and advertised tool descriptions. That state is
+ * released only when an id leaves the stack entirely, which makes a nested frame reusing the same id safe.
  *
  * Outside any Laravel AI invocation — a queue job, a controller, a test — there is no frame and
  * {@see self::current()} returns `null`. That `null` means "no invocation context," not "lost."
@@ -28,6 +31,9 @@ final class InvocationContext
 
     /** @var array<string, array<string, array{arguments: array<string, mixed>, envelope: ActionEnvelope}>> */
     private array $preparedEnvelopes = [];
+
+    /** @var array<string, WeakMap<object, string>> */
+    private array $advertisedToolDescriptionFingerprints = [];
 
     /**
      * The invocation currently in scope, or null when not inside one.
@@ -72,7 +78,41 @@ final class InvocationContext
 
         if ($invocationId !== null && ! in_array($invocationId, $this->frames, true)) {
             unset($this->preparedEnvelopes[$invocationId]);
+            unset($this->advertisedToolDescriptionFingerprints[$invocationId]);
         }
+    }
+
+    /**
+     * Remember the description an adapter advertised while the current invocation was built.
+     *
+     * Object identity is intentional: distinct adapters may share a capability, and an adapter
+     * can be collected before a later adapter is created. WeakMap keeps those identities distinct
+     * without retaining an adapter after its invocation has ended.
+     */
+    public function rememberAdvertisedToolDescription(object $adapter, string $fingerprint): void
+    {
+        $invocationId = $this->current();
+
+        if ($invocationId === null) {
+            return;
+        }
+
+        $advertisements = $this->advertisedToolDescriptionFingerprints[$invocationId] ??= new WeakMap;
+        $advertisements[$adapter] = $fingerprint;
+    }
+
+    /**
+     * Return the current invocation's advertised description for this adapter, if observed.
+     */
+    public function advertisedToolDescriptionFingerprint(object $adapter): ?string
+    {
+        $invocationId = $this->current();
+
+        if ($invocationId === null) {
+            return null;
+        }
+
+        return $this->advertisedToolDescriptionFingerprints[$invocationId][$adapter] ?? null;
     }
 
     /** @param array<string, mixed> $arguments */
