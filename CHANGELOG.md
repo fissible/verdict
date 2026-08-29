@@ -4,6 +4,20 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Parallel Laravel AI calls retain the description the model was shown (#390).** v0.13.0's
+  per-call clearing let the first of two parallel calls to the same tool erase the advertisement
+  before the other recorded evidence, leaving `toolDescriptionMatched` `null` for a description the
+  model was shown. Advertisements are now scoped to the invocation rather than the call, so every
+  call within an invocation observes the same description and the state is released only when that
+  invocation fully unwinds. #385's cross-invocation protection still holds: state is keyed by the
+  invocation and is removed when that id is no longer on the stack, so a re-advertised later
+  invocation is observed afresh rather than inheriting an earlier one.
+
+  **Behaviour change:** `invocationDescriptionFingerprint()` now returns `null` outside an
+  invocation frame; previously it returned the last advertised value.
+
 ## [0.13.0] - 2026-08-29
 
 ### Added
