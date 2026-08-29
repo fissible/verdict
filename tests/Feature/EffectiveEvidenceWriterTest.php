@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
-use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
-use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
-use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceWriter;
+use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
+use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\DecisionEvidence;
+use Fissible\Verdict\Evidence\NullEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Illuminate\Support\Facades\Artisan;
