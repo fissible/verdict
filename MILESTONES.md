@@ -506,22 +506,22 @@ with design), so it follows the v0.12.0 hardening batch rather than leading the 
 |---|---|---|---|
 | [#304](https://github.com/fissible/verdict/issues/304) Privacy-safe observation: did a registered secret marker appear in an executed argument? | M | none | ✅ Shipped — ADR 0032 (PR #332) + build (PR #334) |
 | [#294](https://github.com/fissible/verdict/issues/294) Data exfiltration through a scoped search tool's arguments | M | #304 ✅ | ✅ Merged — PR #337 |
-| [#295](https://github.com/fissible/verdict/issues/295) Check-to-use digest binding (TOCTOU) | M–L | new cross-call primitive | mechanism ✅ merged (PR #368); the pack case waits on #366 |
+| [#295](https://github.com/fissible/verdict/issues/295) Check-to-use digest binding (TOCTOU) | M–L | new cross-call primitive | ✅ Closed — mechanism PR #368, declared projection #366, pack case and proxy-ladder docs PR #387 |
 | [#324](https://github.com/fissible/verdict/issues/324) laravel/ai compatibility contract: adapter boundary, named contract tests, published matrix | L | none | ✅ Closed — ADR 0033 (PR #338) plus all three build units below |
 | [#339](https://github.com/fissible/verdict/issues/339) Enforce the adapter boundary: `ApprovedToolCalls`, the `InvocationContext` move, the zone rule | M | #324 ✅ | ✅ Merged — PR #344 |
 | [#340](https://github.com/fissible/verdict/issues/340) A named laravel/ai contract suite, run against the version matrix | M | none | ✅ Merged — PR #347 |
 | [#341](https://github.com/fissible/verdict/issues/341) Publish a verdict × console × laravel/ai compatibility matrix | S | none | ✅ Merged — PR #350 |
-| [#366](https://github.com/fissible/verdict/issues/366) A resource checkpoint's byte projection is inferred, not declared | S–M | #295 ✅ | open — blocks #295's pack case |
+| [#366](https://github.com/fissible/verdict/issues/366) A resource checkpoint's byte projection is inferred, not declared | S–M | #295 ✅ | ✅ Merged — PR #374 |
 | [#356](https://github.com/fissible/verdict/issues/356) `DatabaseEvidenceRecorder` has no column degradation; `verdict:validate` never checks the evidence table | S–M | none | ✅ Merged — PR #364 |
-| [#363](https://github.com/fissible/verdict/issues/363) `recordDerivation()` has no column degradation and the derivations table is never audited | XS–S | #356 ✅ | open — #356's mirror; the risk is prospective, and closing it is cheapest while the pattern is warm |
+| [#363](https://github.com/fissible/verdict/issues/363) `recordDerivation()` has no column degradation and the derivations table is never audited | XS–S | #356 ✅ | ✅ Merged — PR #372 |
 | [#359](https://github.com/fissible/verdict/issues/359) Concurrency-harness drain has no timeout; evidence fixtures drift from migrations | S | none | ✅ Merged — PR #370 |
 | [#362](https://github.com/fissible/verdict/issues/362) Connection-timezone timestamp boundary | XS–S | #335 ✅ | ✅ Merged — PR #365 |
-| [#358](https://github.com/fissible/verdict/issues/358) Octane lifetime: longer-lived objects capture scoped collaborators | M | none | open |
-| [#360](https://github.com/fissible/verdict/issues/360) Reconcile remaining doc inconsistencies from external review | S | none | open |
-| [#322](https://github.com/fissible/verdict/issues/322) Durability checks read `verdict.evidence.recorder` while runtime honors the writer override — one blind spot, three sites | S | none | open — from the v0.12.0 review round |
-| [#311](https://github.com/fissible/verdict/issues/311) Low-severity hardening batch from the external review | S–M (batch) | none | open — triage batch; items split out when picked up |
-| [#315](https://github.com/fissible/verdict/issues/315) Named indexes keep default-derived names — two renamed installs collide on PostgreSQL | S | #290 ✅ | open |
-| [#321](https://github.com/fissible/verdict/issues/321) Housekeeping: `verdict:evidence:verify` option forwarding; validate double-reads authorizer config | XS–S | none | open |
+| [#358](https://github.com/fissible/verdict/issues/358) Octane lifetime: longer-lived objects capture scoped collaborators | M | none | ✅ Closed — three sites: PR #369 (registry), PR #371 (tool collaborators), PR #385 (per-invocation advertisement) |
+| [#360](https://github.com/fissible/verdict/issues/360) Reconcile remaining doc inconsistencies from external review | S | none | ✅ Merged — PR #373 |
+| [#322](https://github.com/fissible/verdict/issues/322) Durability checks read `verdict.evidence.recorder` while runtime honors the writer override — one blind spot, three sites | S | none | ✅ Merged — PR #376 |
+| [#311](https://github.com/fissible/verdict/issues/311) Low-severity hardening batch from the external review | S–M (batch) | none | 6 of 7 shipped — PRs #378, #379, #380, #381, #383, #384; item 5's ledger gap-marker half is the milestone's only open work |
+| [#315](https://github.com/fissible/verdict/issues/315) Named indexes keep default-derived names — two renamed installs collide on PostgreSQL | S | #290 ✅ | ✅ Merged — PR #377 |
+| [#321](https://github.com/fissible/verdict/issues/321) Housekeeping: `verdict:evidence:verify` option forwarding; validate double-reads authorizer config | XS–S | none | ✅ Merged — PR #375 |
 | [#335](https://github.com/fissible/verdict/issues/335) `recorded_at` stamped in the application timezone but read back as UTC | XS–S | none | ✅ Merged — PR #336; filed without a milestone, attached here, found by verdict-console VC-13 |
 
 **Attack-surface track.** #304 is design-first: a boundary observation that records only a boolean match
@@ -549,6 +549,11 @@ they never dereference the type they name. What remains is three independently r
 on the ADR at all. #340 and #341 can be picked up in any order, including by different people; #339 is the
 one that changes the security kernel and should be reviewed as such. **All three shipped**, and #324 closed
 with them on 2026-08-28.
+
+**Release status (2026-08-29).** Every issue in this milestone is closed except #311, whose seventh item —
+a provenance-ledger gap marker for a tool result that cannot be canonicalized — is the only open work. Its
+locality half shipped in PR #384, so what remains is a design question about the ledger's vocabulary rather
+than a defect in published behaviour. `main` is 44 commits past `v0.12.0`.
 
 **Hardening carry-over.** #322, #311, #315, #321, #358, #360, and #363 are fix-shaped work from the review rounds
 riding the next tag rather than joining either design track. #298's design half also ships in this tag:

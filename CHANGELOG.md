@@ -29,6 +29,93 @@ All notable changes to Verdict will be documented in this file.
   migrations — which is the point: the first one cannot land unnoticed on a table nothing checks.
   Column inspection is memoized per table, so the restart obligation from #356 covers both.
 
+- **The Laravel AI adapter boundary is enforced, and `InvocationContext` moved (#339, ADR 0033).**
+  Upstream approval vocabulary no longer reaches Verdict's kernel: the new
+  `Fissible\Verdict\Approvals\ApprovedToolCalls` carries approved tool-call ids as plain strings,
+  refuses the `*` wildcard, blank ids, and anything that is not a string — the last closing a
+  duck-typing route where an implementation could accept an upstream `Decision` and call
+  `isApproved()` on it, leaving the filtering semantically in the kernel while naming no upstream
+  symbol. Translation from upstream decisions happens in the adapter middleware and nowhere else.
+
+  **Upgrade:** `InvocationContext` moved from `Fissible\Verdict\LaravelAi\InvocationContext` to
+  `Fissible\Verdict\Actions\InvocationContext` — it is an action-layer concern that the adapter
+  consumes, not an adapter type. Update the import if you type-hint it directly; the most likely
+  place is an evaluation harness constructing `CapturingTool`, whose fifth constructor argument it
+  is (see `docs/evaluation.md`). Nothing else about its behaviour changed.
+
+- **Named indexes derive from the configured table, so two renamed installs can share one PostgreSQL
+  database (#315).** [#290](https://github.com/fissible/verdict/issues/290) taught the migration
+  stubs to read table names from configuration, but explicitly *named* indexes kept hardcoded
+  literals. PostgreSQL index names are schema-global, so two installs that renamed their tables
+  still collided on the index. Every named index, unique constraint, and the provenance-derivations
+  primary key now derives `{configured_table}_<suffix>` on both the `create` and `down()` sides, and
+  `docs/architecture.md` records that multiple renamed installs may now share one PostgreSQL
+  database.
+
+  **Upgrade:** the rate-limit unique constraint's default name changes (`bucket` → `buckets`) to
+  match its configured table — a one-time pre-1.0 correction. A deployment that already published
+  and ran the rate-limit migration keeps its existing constraint under the old name; the new name
+  applies to installs published from this release onward. Republish the migration stubs to pick up
+  the derived names.
+
+- **Evidence timestamps are minted in UTC (#335), and the connection-timezone boundary is documented
+  (#362).** `recorded_at` was stamped in the application timezone and read back as UTC, so on a
+  non-UTC host the stored value disagreed with the record digest — which normalises to UTC — and
+  `docs/evidence-record-identity.md`'s promise that a digest stays re-derivable from the row that
+  wrote it did not hold. Decision evidence, the attest `chain_gap` marker, and capability
+  configuration `first_seen_at` all now write UTC into their timezone-naive columns. Provenance was
+  already stamped through `Clock` and is unchanged. Separately, #362 verified the surrounding
+  database-session timezone boundary and documented the assumption rather than changing behaviour.
+
+- **A re-claimed execution claim no longer reports a phantom release (#355).** Re-claiming a
+  `Released` row cleared `completed_at`/`indeterminate_at` but left `released_at`, `resolved_by`, and
+  `resolution_reason` from the prior resolution, so a row that was actively claimed again still read
+  as "released at T by operator X", and a later completion could carry a stale release timestamp.
+  The three resolution fields are cleared on reclaim. Enforcement — the status transition under the
+  row lock — was never affected; this is audit-trail integrity on the retry path.
+
+- **Durability judgments follow the effective evidence writer (#322).** `verdict.evidence.writer`
+  overrides where evidence writes go regardless of the configured recorder, but three durability
+  judgments consulted the recorder alone: the capability-configuration store fall-through,
+  `verdict:validate`'s warnings, and `verdict:evidence:verify`'s Attest gate. All three now resolve
+  the effective class — the writer when set, otherwise the recorder — so a writer-override deployment
+  selects the durable configuration store, is audited correctly, and can be verified.
+
+- **`verdict:evidence:verify` defers to `attest:verify`'s own defaults (#321).** It forwarded
+  `--from=1` and empty `--trusted-key`/`--trusted-key-file` values, overriding attest's defaults with
+  Verdict's rather than passing through only what an operator actually set. It now omits an
+  unset `--from` and drops empty array options. `verdict:validate` also read
+  `verdict.approvals.authorizer` twice; that is collapsed to a single read.
+
+- **Five hardening items from the external review (#311).** Each was fail-closed already; each lost a
+  signal or surfaced a failure far from its cause.
+  - A changed-argument re-issue under an open receipt now dispatches
+    `ApprovalProposalChangedUnderOpenReceipt` (both receipt ids and both binding fingerprints), so an
+    adopter UI keying a decision on `toolCallId` can no longer pair an approval with the wrong
+    proposal in silence.
+  - `FieldProjector::project()` rejects a non-scalar leaf **naming its dotted path**, including
+    wildcard-expanded indices and descendants of a selected subtree. Previously an object-valued leaf
+    survived projection and threw deep inside canonicalization while evidence was being built — a
+    type-only message, far from the offending field. The failure is earlier and the exception
+    different; a permitted release now surfaces it before writing any evidence.
+  - Re-declaring an identical provenance derivation edge is idempotent across both recorders. The
+    database recorder threw a unique-constraint violation and the in-memory recorder silently
+    appended a duplicate; the first edge and its original `recorded_at` are now kept, edges differing
+    in any identity component stay distinct, and the best-effort cycle guard still rejects a cycle.
+  - `derivationsFor()` returns a deterministic total order — `recorded_at`, then parent fingerprint,
+    then kind — identically across both recorders, so an audit renders the same way every run and on
+    every engine. Same-second edges previously came back in engine order.
+  - A classified tool result that cannot be canonicalized still halts the turn, but now throws
+    `ToolResultProvenanceUnrecordable` naming the tool and invocation and chaining the original
+    error, instead of an opaque type-only message. This is the locality half of the item only; the
+    ledger gap-marker half remains open on #311.
+
+- **A named Laravel AI contract suite, run against the version matrix (#340).** Contract tests that
+  say, when Laravel AI changes, which Verdict guarantee just lost its footing. Each test names the
+  consumer-side consequence and declares its fidelity — whether it exercised upstream's real runtime
+  or a hand-built input — because a contract test built on a mock of the thing it means to pin proves
+  only Verdict's own logic.
+
 - **Database evidence recording now degrades safely during additive-schema rollout (#356).**
   `DatabaseEvidenceRecorder` writes every evidence column that exists and omits only columns from
   unpublished or unapplied additive migrations, so a lagging table no longer fails every guarded
