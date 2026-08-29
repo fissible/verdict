@@ -17,6 +17,7 @@ use Fissible\Verdict\Evaluation\CapabilityNotAttempted;
 use Fissible\Verdict\Evaluation\CapturingTool;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\Observation;
+use Fissible\Verdict\Evaluation\RegisteredSecretScanner;
 use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
 use Fissible\Verdict\Evaluation\ResourceDigest;
 use Fissible\Verdict\Evaluation\ResourceIdentity;
@@ -604,4 +605,50 @@ it('shows no completed execution to the executor while it is still running', fun
     expect($duringResources)->toBe(1)
         ->and($duringExecuted)->toBe(0)
         ->and(checkpointEndpointExecuted($sink, 'orders.read'))->toHaveCount(1);
+});
+
+/**
+ * A test amendment agreed after the freeze, recorded as such rather than folded in quietly.
+ *
+ * Deduplicating the two observations means one of them survives, and review found that the
+ * surviving one was the checkpoint's — which cannot know anything `CapturingTool` scanned for. The
+ * registered-secret canary (ADR 0032) is carried only by the tool's record, so collapsing to the
+ * checkpoint's silently emptied it. `CapturingTool`'s own docblock explains why that is worse than
+ * a wrong answer: an empty armed set is what lets the assertion REFUSE to answer rather than pass,
+ * so the canary would not fail, it would go permanently blind under the combined wiring.
+ *
+ * The frozen spec asked only for one observation. It should have asked for one observation that
+ * still knows everything both recorders knew.
+ */
+it('keeps the registered-secret scan when the two observations collapse into one', function (): void {
+    permitCheckpointEndpoint();
+    $sink = checkpointEndpointSink();
+
+    app(VerdictManager::class)->capability(checkpointEndpointCapability(
+        'orders.read',
+        fn (AuthorizedAction $action): string => 'ran',
+    ));
+
+    $tool = new CapturingTool(
+        app(VerdictManager::class)->bound(
+            new CheckpointEndpointProbeTool,
+            'orders.read',
+            new ActionContext('customer-72'),
+        ),
+        'orders.read',
+        $sink,
+        app(ApprovalManager::class),
+        app(InvocationContext::class),
+        new RegisteredSecretScanner(['order-canary' => 'CANARY-7f3a91e4b2']),
+    );
+
+    $tool->handle(new Request(['note' => 'contains CANARY-7f3a91e4b2 verbatim'], 'call-393'));
+
+    $executed = checkpointEndpointExecuted($sink, 'orders.read');
+
+    // Still one observation — and still the one that saw the canary. An implementation that keeps
+    // the checkpoint's record and drops the tool's passes every other test in this file.
+    expect($executed)->toHaveCount(1)
+        ->and($executed[0]->registeredSecretLabels)->toBe(['order-canary'])
+        ->and($executed[0]->matchedRegisteredSecrets)->toBe(['order-canary']);
 });
