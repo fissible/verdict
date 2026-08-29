@@ -148,8 +148,12 @@ it('creates the verdict_rate_limit_buckets table with expected columns, unique c
 
     $indexes = $schema->getIndexes(verdictTable('rate_limits'));
 
+    // Derived from the configured table name (#315, option a): the default install's name forks
+    // from the former `verdict_rate_limit_bucket_window_unique` (singular) to the derived
+    // `{table}_window_unique`, a one-time pre-1.0 change accepted so two renamed installs can share
+    // one PostgreSQL database.
     $windowUnique = collect($indexes)->first(
-        fn (array $index): bool => $index['name'] === 'verdict_rate_limit_bucket_window_unique'
+        fn (array $index): bool => $index['name'] === 'verdict_rate_limit_buckets_window_unique'
             && $index['unique'] === true
             && $index['columns'] === ['bucket_fingerprint', 'window_starts_at']
     );

@@ -10,28 +10,55 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create((string) config('verdict.evidence.derivations_table', 'verdict_provenance_derivations'), function (Blueprint $table): void {
+        $derivationsTable = (string) config('verdict.evidence.derivations_table', 'verdict_provenance_derivations');
+        $primaryKey = "{$derivationsTable}_primary";
+        $backwardIndex = "{$derivationsTable}_backward_index";
+        $connection = Schema::getConnection();
+        $usesNamedPrimaryConstraint = $connection->getDriverName() === 'pgsql';
+
+        Schema::create($derivationsTable, function (Blueprint $table) use ($primaryKey, $backwardIndex, $usesNamedPrimaryConstraint): void {
             $table->string('correlation_id');
             $table->char('child_content_fingerprint', 64);
             $table->char('parent_content_fingerprint', 64);
             $table->string('kind', 32);
             $table->timestamp('recorded_at');
 
-            $table->primary([
+            if (! $usesNamedPrimaryConstraint) {
+                $table->primary([
+                    'correlation_id',
+                    'child_content_fingerprint',
+                    'parent_content_fingerprint',
+                    'kind',
+                ], $primaryKey);
+            }
+            $table->index(
+                ['correlation_id', 'child_content_fingerprint'],
+                $backwardIndex,
+            );
+        });
+
+        if ($usesNamedPrimaryConstraint) {
+            $grammar = $connection->getSchemaGrammar();
+            $columns = implode(', ', array_map($grammar->wrap(...), [
                 'correlation_id',
                 'child_content_fingerprint',
                 'parent_content_fingerprint',
                 'kind',
-            ], 'verdict_provenance_derivations_primary');
-            $table->index(
-                ['correlation_id', 'child_content_fingerprint'],
-                'verdict_provenance_derivations_backward_index',
-            );
-        });
+            ]));
+
+            $connection->statement(sprintf(
+                'alter table %s add constraint %s primary key (%s)',
+                $grammar->wrapTable($derivationsTable),
+                $grammar->wrap($primaryKey),
+                $columns,
+            ));
+        }
     }
 
     public function down(): void
     {
-        Schema::dropIfExists((string) config('verdict.evidence.derivations_table', 'verdict_provenance_derivations'));
+        $derivationsTable = (string) config('verdict.evidence.derivations_table', 'verdict_provenance_derivations');
+
+        Schema::dropIfExists($derivationsTable);
     }
 };

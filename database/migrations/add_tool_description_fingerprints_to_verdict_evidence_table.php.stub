@@ -10,7 +10,10 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $toolDescriptionMatchedIndex = "{$evidenceTable}_tool_description_matched_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($toolDescriptionMatchedIndex): void {
             $table->char('tool_description_fingerprint', 64)->nullable();
             $table->char('invocation_tool_description_fingerprint', 64)->nullable();
 
@@ -18,14 +21,17 @@ return new class extends Migration
             // incident should be able to filter for divergences without knowing to compare two
             // columns. Nullable because "never advertised" is not "advertised unchanged".
             $table->boolean('tool_description_matched')->nullable();
-            $table->index('tool_description_matched', 'verdict_evidence_tool_description_matched_index');
+            $table->index('tool_description_matched', $toolDescriptionMatchedIndex);
         });
     }
 
     public function down(): void
     {
-        Schema::table((string) config('verdict.evidence.table', 'verdict_evidence'), function (Blueprint $table): void {
-            $table->dropIndex('verdict_evidence_tool_description_matched_index');
+        $evidenceTable = (string) config('verdict.evidence.table', 'verdict_evidence');
+        $toolDescriptionMatchedIndex = "{$evidenceTable}_tool_description_matched_index";
+
+        Schema::table($evidenceTable, function (Blueprint $table) use ($toolDescriptionMatchedIndex): void {
+            $table->dropIndex($toolDescriptionMatchedIndex);
             $table->dropColumn([
                 'tool_description_fingerprint',
                 'invocation_tool_description_fingerprint',

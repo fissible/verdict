@@ -10,7 +10,10 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create((string) config('verdict.rate_limits.table', 'verdict_rate_limit_buckets'), function (Blueprint $table): void {
+        $rateLimitBucketsTable = (string) config('verdict.rate_limits.table', 'verdict_rate_limit_buckets');
+        $bucketWindowUnique = "{$rateLimitBucketsTable}_window_unique";
+
+        Schema::create($rateLimitBucketsTable, function (Blueprint $table) use ($bucketWindowUnique): void {
             $table->char('bucket_fingerprint', 64);
             $table->timestamp('window_starts_at');
             $table->timestamp('reset_at');
@@ -19,7 +22,7 @@ return new class extends Migration
 
             $table->unique(
                 ['bucket_fingerprint', 'window_starts_at'],
-                'verdict_rate_limit_bucket_window_unique',
+                $bucketWindowUnique,
             );
             $table->index('reset_at');
         });
@@ -27,6 +30,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::dropIfExists((string) config('verdict.rate_limits.table', 'verdict_rate_limit_buckets'));
+        $rateLimitBucketsTable = (string) config('verdict.rate_limits.table', 'verdict_rate_limit_buckets');
+
+        Schema::dropIfExists($rateLimitBucketsTable);
     }
 };
