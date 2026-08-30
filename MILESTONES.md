@@ -565,7 +565,7 @@ milestone while the cluster it unblocks lives in v0.15.0.
 verdict-console ADR 0001 that surfaced them — it was cut as its own milestone on 2026-08-25; see below.
 #230 stays on v1.0.0 (a boundary decision on the 1.0 bar) and #201 stays deliberately unscheduled.
 
-## v0.13.1 — Shipped-behaviour hardening *(patch)*
+## v0.13.1 — Shipped-behaviour hardening *(patch)* — **shipped 2026-08-30**
 
 **Theme.** Defects reproduced against the released `v0.13.0` tag — each a fix to *published* behaviour, so a
 patch, kept off the approvals-design minor below. The signature is consistent: each is a prior fix that landed
@@ -576,13 +576,20 @@ that would have caught this class ride the same patch.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#395](https://github.com/fissible/verdict/issues/395) `verdict:validate` audits by raw config, not the effective writer | XS | none | open — `scope: ready` |
-| [#390](https://github.com/fissible/verdict/issues/390) Tool-description fingerprint clears at call scope, not invocation | S | none | open — `scope: ready` |
-| [#391](https://github.com/fissible/verdict/issues/391) Evidence degradation is presence-keyed, not requiredness-keyed | S | none | open — `scope: ready` |
-| [#392](https://github.com/fissible/verdict/issues/392) Resource checkpoint runs inside the predicate-capture window | S | none | open — `scope: ready` |
-| [#393](https://github.com/fissible/verdict/issues/393) Checkpoint records `executed:true` before the executor runs; double-counts | S–M | none | open — `scope: ready` |
-| [#397](https://github.com/fissible/verdict/issues/397) Required per-PR MySQL smoke lane (smallest engine-discriminating slice) | S–M | none | open — `scope: ready` |
-| [#398](https://github.com/fissible/verdict/issues/398) Release-time changelog-completeness gate | S | none | open — `scope: ready` |
+| [#395](https://github.com/fissible/verdict/issues/395) `verdict:validate` audits by raw config, not the effective writer | XS | none | ✅ Shipped — PR #404 |
+| [#390](https://github.com/fissible/verdict/issues/390) Tool-description fingerprint clears at call scope, not invocation | S | none | ✅ Shipped — PR #401 |
+| [#391](https://github.com/fissible/verdict/issues/391) Evidence degradation is presence-keyed, not requiredness-keyed | S | none | ✅ Shipped — PR #402 |
+| [#392](https://github.com/fissible/verdict/issues/392) Resource checkpoint runs inside the predicate-capture window | S | none | ✅ Shipped — PR #403 |
+| [#393](https://github.com/fissible/verdict/issues/393) Checkpoint records `executed:true` before the executor runs; double-counts | S–M | none | ✅ Shipped — PR #405 |
+| [#397](https://github.com/fissible/verdict/issues/397) Required per-PR MySQL smoke lane (smallest engine-discriminating slice) | S–M | none | ✅ Shipped — PR #406 |
+| [#398](https://github.com/fissible/verdict/issues/398) Release-time changelog-completeness gate | S | none | ✅ Shipped — PR #407 |
+| [#408](https://github.com/fissible/verdict/issues/408) A narrow-role writer/ledger override ignores the configured evidence table and connection | XS | none | ✅ Shipped — PR #404 |
+
+**#408 was filed after the fact.** It was found while fixing #395 and fixed in the same pull request, because
+it was load-bearing for it: #395 teaches `verdict:validate` to audit the tables a narrow-role deployment uses,
+and without #408 the audit would have begun reporting on tables the deployment never opens. Filed retroactively
+so the change has a ticket rather than only a changelog line; it has no entry of its own, and is described
+inside #395's.
 
 **Ordering.** Smallest-first: #395 is a one-line gate correction; then the evidence/provenance-integrity fixes
 (#390/#391) and the evaluation-instrument fixes (#392/#393); then the two gates that close the release-integrity
@@ -596,6 +603,28 @@ deny-all) was held back "until its observability contract is decided" — which 
 item on that milestone is treated: v0.14.0 exists to *carry* a design round, not to receive work after one.
 #394 (Octane singleton-registry re-registration + `ActionContext` instance-form staleness) rides along as
 hardening carry-over. Both moved 2026-08-30; see v0.14.0 below.
+
+## v0.13.2 — Release-tooling integrity *(patch)*
+
+**Theme.** Work on the release *path* rather than on shipped behaviour. v0.13.1 closed the changelog hole
+(#398) and made the MySQL lane blocking (#397); this closes the last one it left — the release script tagged
+before anything could vet the commit it tagged.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#410](https://github.com/fissible/verdict/issues/410) `release.sh` tags before CI can vet the release commit, and never runs the suite itself | XS | #398 | ✅ Shipped — PR #411 |
+
+**Why this is a milestone and not just a merge.** The fix is effective the moment it is on `main`, because
+`release.sh` runs from the working tree rather than from an installed package — so unlike every other milestone
+here, the tag is bookkeeping rather than delivery. It exists to give release-path work a home of its own, so it
+is neither smuggled into a behaviour patch nor left unscheduled.
+
+**What it does not close.** The push to `main` still bypasses branch protection, deliberately: requiring a pull
+request for a version bump would mean the tag cannot sit on `main`'s tip without a second round-trip. The gap
+that mattered was tagging before a verdict, and that is now a local gate — measured on v0.13.1, CI started nine
+seconds before the GitHub Release published, with the run still in flight.
+
+---
 
 ## v0.14.0 — Approvals: design rounds
 
