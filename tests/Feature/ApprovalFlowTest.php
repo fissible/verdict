@@ -37,6 +37,7 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceDerivation;
 use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\Exceptions\UnsupportedApprovalDecision;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\VerdictApprovalMiddleware;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
@@ -765,7 +766,10 @@ it('rejects changed arguments after approval', function (): void {
         ->toBe(ApprovalReceiptStatus::Approved);
 });
 
-it('does not accept wildcard or edited Laravel approval decisions', function (Decisions $decisions): void {
+it('silently skips a wildcard approval, requiring a specific decision', function (): void {
+    // The wildcard is deliberately skipped: the agent loop passes approveAll() on resume, and a
+    // blanket approval must not authorize a specific consequential action. Authorization comes from
+    // the receipt plus a specific tool-call decision, not the wildcard. It does not throw.
     $executions = 0;
     $tool = approvalTool([1001 => new ApprovalOrder(1001, 72)], $executions);
     $request = new Request(['order_id' => 1001], 'call-cancel-explicit-only');
@@ -776,19 +780,35 @@ it('does not accept wildcard or edited Laravel approval decisions', function (De
 
     app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'customer:72');
     $result = json_decode(
-        executeWithinApprovalMiddleware($tool, $request, $decisions),
+        executeWithinApprovalMiddleware($tool, $request, Decision::approveAll()),
         true,
         flags: JSON_THROW_ON_ERROR,
     );
 
     expect($result['decision'])->toBe('require_confirmation')
         ->and($executions)->toBe(0);
-})->with([
-    'wildcard approval' => fn (): Decisions => Decision::approveAll(),
-    'edited arguments' => fn (): Decisions => Decisions::from([
+});
+
+it('throws on an edited Laravel approval decision', function (): void {
+    // An edit() asks to execute different arguments than the proposal the receipt bound. Verdict
+    // cannot honor an edited-arguments approval, and refuses it loudly rather than dropping it
+    // silently — a distinguishable, never-legitimate input, unlike the wildcard.
+    $executions = 0;
+    $tool = approvalTool([1001 => new ApprovalOrder(1001, 72)], $executions);
+    $request = new Request(['order_id' => 1001], 'call-cancel-explicit-only');
+    $tool->shouldRequestApproval($request);
+    $challenge = app(ApprovalManager::class)->challengeForToolCall('call-cancel-explicit-only');
+
+    expect($challenge)->not->toBeNull();
+
+    app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'customer:72');
+
+    expect(fn () => executeWithinApprovalMiddleware($tool, $request, Decisions::from([
         'call-cancel-explicit-only' => Decision::edit(['order_id' => 1001]),
-    ]),
-]);
+    ])))->toThrow(UnsupportedApprovalDecision::class);
+
+    expect($executions)->toBe(0);
+});
 
 it('does not execute after the approval receipt expires', function (): void {
     $clock = new ApprovalTestClock(new DateTimeImmutable('2026-08-01 12:00:00'));
