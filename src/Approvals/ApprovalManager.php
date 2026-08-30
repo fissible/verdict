@@ -70,11 +70,18 @@ final readonly class ApprovalManager
         return $this->receipts->issue($receipt);
     }
 
+    /**
+     * Issues a challenge only for one pending, unexpired receipt. Absence and a collision both
+     * yield null deliberately: a challenge names exactly one receipt, so choosing between two
+     * live proposals for an approver would reintroduce the behaviour #425 removes.
+     */
     public function challengeForToolCall(string $toolCallId): ?ApprovalChallenge
     {
-        $receipt = $this->receipts->findForToolCall($toolCallId);
+        $lookup = $this->receipts->findForToolCall($toolCallId);
+        $receipt = $lookup->receipt;
 
-        if ($receipt === null
+        if ($lookup->outcome !== ApprovalLookupOutcome::Single
+            || $receipt === null
             || $receipt->status !== ApprovalReceiptStatus::Pending
             || $receipt->isExpiredAt($this->clock->now())) {
             return null;
@@ -236,9 +243,8 @@ final readonly class ApprovalManager
      * authority on receipt state: a missing or call-mismatched receipt is delegated to it
      * untouched so it produces the canonical NotFound/Mismatch/Expired/InvalidState outcome, and
      * the authorizer is consulted only for a found, call-matching receipt. The receipt is
-     * addressed by id — never by findForToolCall(), whose null is ambiguous (absent OR a
-     * colliding tool-call id) and would let a second receipt on the same call bypass the
-     * authorizer while the store still finalized by id. The fetch-then-transition
+     * addressed by id — never by findForToolCall(), whose explicit multiple outcome records a
+     * tool-call collision rather than selecting a receipt. The fetch-then-transition
      * race is benign because the authorizer reads only fields that are immutable after issue.
      */
     private function unauthorized(

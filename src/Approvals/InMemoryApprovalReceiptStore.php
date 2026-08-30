@@ -8,7 +8,6 @@ use DateTimeImmutable;
 use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Illuminate\Contracts\Events\Dispatcher;
-use LogicException;
 
 /**
  * Process-local test store. It is not safe for production, Octane, or queue workers.
@@ -61,7 +60,25 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
 
     public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
     {
-        throw new LogicException('#425: unimplemented');
+        $receipts = array_values(array_filter(
+            $this->receipts,
+            static fn (ApprovalReceipt $receipt): bool => $receipt->toolCallId === $toolCallId,
+        ));
+
+        usort(
+            $receipts,
+            static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => [$a->createdAt->format('Y-m-d H:i:s'), $a->id]
+                <=> [$b->createdAt->format('Y-m-d H:i:s'), $b->id],
+        );
+
+        return match (count($receipts)) {
+            0 => ApprovalReceiptLookup::absent(),
+            1 => ApprovalReceiptLookup::single($receipts[0]),
+            default => ApprovalReceiptLookup::multiple(array_map(
+                static fn (ApprovalReceipt $receipt): string => $receipt->id,
+                $receipts,
+            )),
+        };
     }
 
     public function find(string $receiptId): ?ApprovalReceipt

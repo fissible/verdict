@@ -29,7 +29,7 @@ final readonly class StoreBackedApprovalStatusReader implements ApprovalStatusRe
 
     public function statusForToolCall(string $toolCallId): ApprovalStatusLookup
     {
-        throw new LogicException('#425: unimplemented');
+        return ApprovalStatusLookup::fromReceiptLookup($this->store->findForToolCall($toolCallId));
     }
 
     public function pendingWithin(array $scope): array

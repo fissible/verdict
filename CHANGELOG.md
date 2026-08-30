@@ -4,6 +4,13 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tool-call receipt collisions are now explicit lookup outcomes (#425).** Approval receipt and
+  status reads distinguish no receipt, one receipt, and every receipt sharing a provider-supplied
+  tool-call id. Challenge issuance refuses a collision rather than selecting a receipt for an
+  approver.
+
 ## [0.14.0] - 2026-08-30
 
 ### Added

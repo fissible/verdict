@@ -28,10 +28,10 @@ interface ApprovalStatusReader
     public function statusFor(string $receiptId): ?ApprovalStatusView;
 
     /**
-     * The status view of the single receipt for this tool call. Inherits
-     * ApprovalReceiptStore::findForToolCall()'s documented ambiguity: null when there is none OR
-     * when more than one receipt shares the tool call id, so null never proves absence.
-     * Consumers that hold a receiptId should prefer statusFor().
+     * Looks up status by a provider-supplied tool-call id. The result explicitly distinguishes
+     * absence, one receipt with its status view, and a collision of multiple receipts. A multiple
+     * result carries every matching receipt id and no status, so consumers never act on a silently
+     * canonicalized receipt. Consumers that hold a receiptId should prefer statusFor().
      */
     public function statusForToolCall(string $toolCallId): ApprovalStatusLookup;
 
