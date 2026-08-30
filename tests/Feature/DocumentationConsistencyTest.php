@@ -253,3 +253,49 @@ it('does not advertise require_review as a live disposition while nothing produc
         );
     }
 });
+
+/**
+ * The framing claim must never travel alone.
+ *
+ * Verdict bounds authority, duplication, rate and approval. What a reader hears in "security
+ * boundary" is a fifth thing it does not bound — intent: under prompt injection the actor is the
+ * legitimate authenticated user, so an injected instruction selecting any record inside that
+ * user's own authority passes every check by design.
+ *
+ * That is not a documentation bug a paragraph elsewhere fixes. `docs/limitations.md` and
+ * `docs/security-model.md` already say it thoroughly, and the gap is one click away — but the
+ * top-line claim is the part doing the most unsupervised work, because it is what gets quoted
+ * without the surrounding material. So the qualifier ships WITH the claim, and this test is what
+ * stops the two drifting apart: move the claim, and the sentence naming the bounds moves with it.
+ *
+ * The recorded decision behind this is the naming round of 2026-08-16, which weighed narrowing the
+ * category to "authorization boundary" and recommended keeping it while never letting it appear
+ * unqualified. Narrowing remains defensible pre-1.0; if it is ever taken, this test is where the
+ * new framing gets its qualifier.
+ */
+it('never states the framing claim without naming the four bounds and the one non-bound', function (): void {
+    $readme = verdictReadContent('README.md');
+    $paragraphs = preg_split('/\n\s*\n/', $readme) ?: [];
+
+    $claim = null;
+
+    foreach ($paragraphs as $index => $paragraph) {
+        if (str_contains($paragraph, 'security boundary for AI-triggered application actions')) {
+            // The claim's own paragraph plus the one after it — the qualifier may share the line or
+            // follow it, and which of the two is a matter of prose rather than of contract.
+            $claim = $paragraph."\n\n".($paragraphs[$index + 1] ?? '');
+
+            break;
+        }
+    }
+
+    expect($claim)->not->toBeNull('README must state what Verdict is');
+
+    // Each of the four bounds by name. `toContain()` takes needles rather than a message, so the
+    // reason lives here: a claim that names three of four is the same over-promise in miniature.
+    expect(strtolower((string) $claim))->toContain('authority', 'duplication', 'rate', 'approval');
+
+    // And the non-bound, which is the whole reason the qualifier exists.
+    expect(strtolower((string) $claim))->toContain('intent')
+        ->and(strtolower((string) $claim))->toMatch('/does not bound|not what it was trying/');
+});
