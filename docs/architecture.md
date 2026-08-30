@@ -50,6 +50,8 @@ return Verdict::bound(
 );
 ```
 
+Prefer the **callable** context form shown above: it re-resolves per request, so a `BoundTool` that outlives a request under Octane always acts for the current actor. The instance form (`context: $anActionContext`) is captured for the tool's lifetime and would serve the first request's actor to every later one. Declare each capability **once** — in `boot()` or by discovery — never per request: a capability is a durable declaration that survives `forgetScopedInstances()`, and re-declaring a name throws `CapabilityAlreadyRegistered` rather than silently replacing it. See [ADR 0027 §7](adr/0027-a-capability-definition-is-a-declaration.md).
+
 The executor receives an `AuthorizedAction`, including the application-selected target. Keep business-side validation in the executor as well; Verdict is not a substitute for domain invariants.
 
 ## Capability lifecycle
