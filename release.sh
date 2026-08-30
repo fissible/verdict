@@ -25,8 +25,11 @@ replace_in_file() {
 [[ -f VERSION ]] || die "VERSION file not found — are you in a fissible repo root?"
 [[ -f scripts/prepare-release-changelog.php ]] \
     || die "scripts/prepare-release-changelog.php not found"
+[[ -f scripts/audit-release-changelog.php ]] \
+    || die "scripts/audit-release-changelog.php not found"
 command -v php >/dev/null 2>&1 || die "php not found"
 command -v git >/dev/null 2>&1 || die "git not found"
+command -v gh >/dev/null 2>&1 || die "gh not found"
 
 # Tag signing (ADR 0030): releases are SSH-signed. Refuse rather than cut an unsigned tag that would
 # read as a normal release. One-time setup: git config gpg.format ssh; git config user.signingkey
@@ -147,6 +150,13 @@ confirm "Proceed?" || { printf 'Aborted.\n'; exit 0; }
 
 # --- update files ---
 
+pull_requests=$(mktemp) || die "could not create temporary pull-request file"
+commit_subjects=$(mktemp) || die "could not create temporary commit-subject file"
+trap 'rm -f "$pull_requests" "$commit_subjects"' EXIT
+gh pr list --state merged --limit 200 --json number,title,labels,files,closingIssuesReferences > "$pull_requests"
+# The empty-tag form is HEAD, matching the commit-display fallback above.
+git log "${last_tag:+$last_tag..}HEAD" --format=%s > "$commit_subjects"
+php scripts/audit-release-changelog.php CHANGELOG.md "$pull_requests" "$commit_subjects"
 php scripts/prepare-release-changelog.php \
     CHANGELOG.md "$new_version" "$last_tag" "$new_tag" "$(date +%F)"
 printf '%s\n' "$new_version" > VERSION

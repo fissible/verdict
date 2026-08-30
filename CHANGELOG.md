@@ -4,6 +4,33 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **A release cannot ship an externally-visible change nobody decided about (#398).** Nothing
+  checked that shipped work reached the changelog; the gap found during v0.13.0 preparation — 13 of
+  21 merged changes unrepresented — was caught by a person reading a list, which is the check that
+  stops happening the week it matters. `release.sh` now runs `scripts/audit-release-changelog.php`
+  before promoting the Unreleased section, and stops if any change since the last tag that touches
+  `src/`, `config/` or `database/` neither appears in the changelog nor carries a
+  `release: no changelog` label.
+
+  It is a release gate rather than a per-PR requirement, and it demands a DECISION rather than an
+  entry. Most merged work is internal; taxing every pull request to catch the few that matter is
+  how a check gets switched off. And "somebody forgot" and "we agreed it does not belong" look
+  identical in an empty changelog, so the waiver is a first-class answer.
+
+  The release range is checked rather than trusted. `gh pr list` returns open pull requests by
+  default and caps at 30, so every plausible wiring mistake returns too few records and would let a
+  gate that only reasons about what it was handed approve the release enthusiastically. The audit
+  reads the commit subjects for the range and refuses to run unless the fetch covers every pull
+  request in it.
+
+  Two limits are worth knowing. A commit with no trailing merge reference has no pull request to
+  fetch and no file list to classify: it is printed, not blocked, so the guarantee there is
+  visibility rather than enforcement. And a direct commit whose subject happens to end in a merge
+  reference is indistinguishable from a squash merge — commit subjects are a convention, not a
+  signature. Both are the price of reading the range from data that already exists.
+
 ### Fixed
 
 - **A resource checkpoint no longer records an execution that has not happened yet (#393).** The
