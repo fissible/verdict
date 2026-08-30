@@ -152,7 +152,7 @@ tell them apart.
 When #297's `ReviewRequest` records exist, their reads arrive through this same contract — the
 same DTO discipline, the same poll-consistency statement, the same scope rule — rather than
 through a second, parallel read surface. This is a reservation, not a design of #297: the shape of
-those records, their refusal payload, and their transitions live on that issue.
+those records, their refusal payload, and their transitions live on that issue. Designed as of [ADR 0035](0035-the-asynchronous-review-lane.md), which realizes "this same contract" as the same read *discipline* through a separate typed `ReviewStatusReader` — a review's DTO and per-item key (the request id) differ from a receipt's.
 
 ## Alternatives rejected
 
