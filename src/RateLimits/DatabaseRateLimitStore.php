@@ -21,6 +21,11 @@ final readonly class DatabaseRateLimitStore implements DatabaseTableStore, Pruna
         private string $table = 'verdict_rate_limit_buckets',
     ) {}
 
+    public function connection(): ConnectionInterface
+    {
+        return $this->connection;
+    }
+
     public function hasTable(): bool
     {
         if (! $this->connection instanceof Connection) {

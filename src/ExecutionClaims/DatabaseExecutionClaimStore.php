@@ -22,6 +22,11 @@ final readonly class DatabaseExecutionClaimStore implements DatabaseTableStore, 
         private string $table = 'verdict_execution_claims',
     ) {}
 
+    public function connection(): ConnectionInterface
+    {
+        return $this->connection;
+    }
+
     public function hasTable(): bool
     {
         if (! $this->connection instanceof Connection) {
