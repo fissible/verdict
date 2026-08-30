@@ -916,6 +916,34 @@ function verdictAuditStatement(string $pattern): array
 /** @var non-empty-string */
 const VERDICT_AUDIT_INVOCATION = '/^php scripts\/audit-release-changelog\.php\b/';
 
+/**
+ * A shell line with any trailing comment removed — a `#` outside quotes and everything after it.
+ *
+ * Central, so no assertion in this file can be satisfied by commentary. That is not hypothetical:
+ * the first implementation of the empty-tag-safe `git log` range satisfied this file's literal
+ * range expectation only through a trailing comment, which is the same failure the preflight and
+ * invocation checks already close.
+ */
+function verdictAuditWithoutComment(string $line): string
+{
+    $single = false;
+    $double = false;
+
+    for ($index = 0, $length = strlen($line); $index < $length; $index++) {
+        $character = $line[$index];
+
+        if ($character === "'" && ! $double) {
+            $single = ! $single;
+        } elseif ($character === '"' && ! $single) {
+            $double = ! $double;
+        } elseif ($character === '#' && ! $single && ! $double) {
+            return rtrim(substr($line, 0, $index));
+        }
+    }
+
+    return rtrim($line);
+}
+
 /** @return array{string, string, int} */
 function verdictAuditProducer(string $command): array
 {
@@ -939,8 +967,10 @@ function verdictAuditProducer(string $command): array
             continue;
         }
 
-        if (preg_match('/>\s*"\$\{?(?<variable>\w+)\}?"/', $line, $matches) === 1) {
-            return [$line, $matches['variable'], $number];
+        $statement = verdictAuditWithoutComment($line);
+
+        if (preg_match('/>\s*"\$\{?(?<variable>\w+)\}?"/', $statement, $matches) === 1) {
+            return [$statement, $matches['variable'], $number];
         }
     }
 
@@ -974,7 +1004,10 @@ it('derives the release range from the commits since the last tag', function ():
 
     // The third input, and what the range check depends on. Reading a wider or narrower window
     // here silently changes which pull requests the release believes it contains.
-    expect($line)->toContain('$last_tag..HEAD')
+    // Either the plain tagged range or the empty-tag-safe expansion, which resolves to bare HEAD
+    // when there is no previous tag — the state the commit survey above already handles and the
+    // one a repository's first release is in. A hard-coded tag or a different endpoint fails.
+    expect($line)->toMatch('/(?:\$last_tag\.\.HEAD|\$\{last_tag:\+\$last_tag\.\.\}HEAD)/')
         ->and($line)->toContain('--format=%s')
         ->and(verdictAuditInvocation())->toMatch(verdictAuditArgumentPattern($variable))
         ->and($at)->toBeLessThan(verdictAuditExecutableLine(VERDICT_AUDIT_INVOCATION));
