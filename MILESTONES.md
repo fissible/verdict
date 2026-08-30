@@ -663,18 +663,26 @@ verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#300](https://github.com/fissible/verdict/issues/300) `ApprovalChallenge` has no `issuedAt` | XS | none | open — ungated, contributor-drivable; design with #306 |
-| [#327](https://github.com/fissible/verdict/issues/327) Implement the `ApprovalStatusReader` read contract | S | ADR 0031 ✅ | open — semantics fixed by the ADR |
+| [#327](https://github.com/fissible/verdict/issues/327) Implement the `ApprovalStatusReader` read contract | S | ADR 0031 ✅ | ✅ shipped (ApprovalStatusReader) |
 | [#320](https://github.com/fissible/verdict/issues/320) Does authorization precede receipt-state resolution — `Unauthorized` can mask expired/consumed | S (round) | #305 ✅ | open — design round |
 | [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()` | S | watches laravel/ai #932 | open |
 | [#299](https://github.com/fissible/verdict/issues/299) Receipt transitions dispatch no events | S–M | #327 | open — gated on the read contract |
 | [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design`; moved from v0.14.0 |
 | [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` is a disposition with no runtime | L–XL | none | open — `scope: design`, the keystone; design rounds can proceed on the issue any time |
+| [#357](https://github.com/fissible/verdict/issues/357) `pendingWithin()` is an unbounded scan + N+1 with no expiry filter | S–M | none | open — reader-queue scale; a pre-1.0 must-fix the v0.14.0 review named |
+| [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) | none | open — `scope: design`; the read-ambiguity companion to #357 |
 
 **Cluster membership, settled.** #230 stays on v1.0.0 — it is a boundary decision on the 1.0 bar, and it
 was already scheduled there when the cluster was cut. #201 stays deliberately unscheduled with its recorded
 reason. ADR 0031 §6 reserves #297's review-request reads to ride the #327 contract, and #299 is only
 meaningful against that contract's freshness statement — the intra-milestone ordering is load-bearing, not
 aesthetic.
+
+**The two reader-queue defects ride this milestone.** #357 (`pendingWithin()` scan + N+1) and #425
+(`findForToolCall()` ambiguity → `null`) are the two the v0.14.0 external review named as most likely to
+bite an adopter's approval queue at scale, and asked to see fixed before 1.0. Both are independent of the
+design keystone and drivable any time; #425 carries a small read-contract decision — distinguish absence
+from multiplicity — before code.
 
 ---
 
@@ -703,6 +711,7 @@ Ordered by suggested pickup order: defects first, then self-contained work with 
 | [#151](https://github.com/fissible/verdict/issues/151) Harden field-path handling in the release path | M | `help wanted` | none — #150 shipped in v0.5.0 |
 | [#164](https://github.com/fissible/verdict/issues/164) Cover rate-limit window boundary, expiry, and cross-window leakage | M | `scope: ready` | none |
 | [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | `scope: ready` | none — precedent in #91 |
+| [#424](https://github.com/fissible/verdict/issues/424) Make the cross-recorder derivation order contract true below one-second precision | S | `scope: ready` | none — in-memory precision + a same-second fixture |
 
 **#151 is the hardening that remains open after the same audit.** #149 and #150 were fixed in v0.5.0:
 neither was an authorization bypass, but both were asymmetries that were cheap to fix and expensive to
@@ -734,6 +743,12 @@ covers SQLite and MySQL only.
 
 **#142 and #141 must not collide.** #141 owns the `evidence.attest` block, which has real invariants; #142
 owns the four repeated store sections, which have none. Whoever takes the second should rebase on the first.
+
+**#424 is the pinning pool's exact shape.** The v0.14.0 review's degradation audit found the
+"identical derivation order across both recorders" contract pinned but false below one-second precision:
+the database column stores whole seconds while the in-memory recorder sorts on microseconds, and every
+fixture is whole-second, so the suite cannot see the divergence. A guarantee true in appearance but not in
+fact, with the fixture that would catch it missing.
 
 **Deliberately unscheduled**, each for its own reason rather than by the old blanket rule:
 
@@ -800,6 +815,12 @@ write-ahead intent lever (PR #330, ADR 0007 Update); its review round's two code
 through adoption — [#237](https://github.com/fissible/verdict/issues/237) is the nearest instrument;
 external contributors and issue reports are the rest. A 1.0 with every issue above closed but no
 integration feedback is not a true 1.0. The tag waits for the evidence, not the checklist.
+
+**One hardening advisory carries here.** [#426](https://github.com/fissible/verdict/issues/426): the
+instance-form `ActionContext` is documented-forbidden (ADR 0027 §7) yet runtime-accepted with no warning.
+Documentation-not-enforcement is a defensible posture, consistent with `GuardedTool`, which is why this is
+low — but "the docs forbid it, the code accepts it silently" is the asymmetry a 1.0 bar exists to close.
+The fix is an advisory (warn, never reject).
 
 ---
 
