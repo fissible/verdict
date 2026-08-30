@@ -590,26 +590,36 @@ holes these fixes surfaced — #397 for the MySQL row-order defect that shipped 
 #398 for the changelog gap caught only by a manual pass. The evaluation-surface fixes (#392/#393) touch an
 `@experimental` surface; they are measurement-integrity, not authorization-gate, corrections.
 
-**The two design-gated findings are not here.** #396 (the adapter-boundary `approveAll()` becoming a silent
-deny-all) joins **v0.14.0** once its observability contract is decided — it is an approvals-surface design
-question, squarely that milestone's theme. #394 (Octane singleton-registry re-registration + `ActionContext`
-instance-form staleness) stays deliberately unscheduled until its lifecycle design resolves. Both are recorded
-under **Deliberately unscheduled** below rather than parked in an ill-fitting milestone.
+**The two design-gated findings are not here**, and both now sit on v0.14.0 rather than in the unscheduled
+list this section originally sent them to. #396 (the adapter-boundary `approveAll()` becoming a silent
+deny-all) was held back "until its observability contract is decided" — which contradicted how every other
+item on that milestone is treated: v0.14.0 exists to *carry* a design round, not to receive work after one.
+#394 (Octane singleton-registry re-registration + `ActionContext` instance-form staleness) rides along as
+hardening carry-over. Both moved 2026-08-30; see v0.14.0 below.
 
 ## v0.14.0 — Approvals: design rounds
 
 **Theme.** Originally the two review findings needing a design round before implementation, both concerning
 the approval receipt. #306 moved to v0.15.0 on 2026-08-25 — the move this section always planned — leaving
-the schema/portability round.
+the schema/portability round. #396 and #394 joined on 2026-08-30.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#309](https://github.com/fissible/verdict/issues/309) Receipt timestamp round-trips depend on a uniform DB session timezone | S (validate) / M (schema) | #168 | open — `scope: design` |
+| [#396](https://github.com/fissible/verdict/issues/396) `approveAll()`/`approveRemaining()` becomes a silent deny-all at the adapter boundary | S (round) + S (impl) | ADR 0033 | open — `scope: design` |
+| [#394](https://github.com/fissible/verdict/issues/394) Octane: singleton registry throws on same-name re-registration; `ActionContext` instance capture goes stale | M (round) + M (impl) | #358 | open — `scope: design` |
 
 **Relationship to the approval-surface cluster.** #306 is squarely an ADR 0026 round; when the cluster was
 cut as v0.15.0 it moved there, **to be designed together with #300** (`issuedAt`) rather than shipped
 alone — they touch the same `ApprovalChallenge` payload. #309 is a narrower schema/portability correctness
 round and stands on its own; it relates #168.
+
+**Why #396 is on-theme and #394 is not.** #396 is an approvals-surface design round — what an adapter owes an
+adopter when it fail-closes silently — so it belongs here on the same terms as #309: the milestone carries the
+round, it does not wait for it. #394 is the honest exception. It is a confirmed Octane lifecycle defect with no
+approvals content, and there is no hardening minor to hold it; rather than leave it indefinitely unscheduled it
+rides this milestone as **hardening carry-over**, which this document has precedent for. Recorded as an
+exception so the theme stays legible: if an Octane/hardening minor is ever cut, #394 is the item that moves.
 ---
 
 ## v0.15.0 — Approvals: the approval-surface cluster
@@ -707,13 +717,6 @@ owns the four repeated store sections, which have none. Whoever takes the second
 - [#259](https://github.com/fissible/verdict/issues/259) — a design-first governance/cost gate (external
   budget facts at the action boundary); it becomes scheduled work when an adopter demonstrates the
   metered-tenant requirement, the same argument that holds #201. Added to this list 2026-08-25.
-- [#394](https://github.com/fissible/verdict/issues/394) — an Octane lifecycle design question: should the
-  singleton registry's capability map be request-scoped, or identical re-registration be idempotent rather
-  than throwing; and is the `ActionContext` instance form refused, re-resolved per request, or documented as
-  unsafe. Scheduled with the appropriate hardening release once decided. Added to this list 2026-08-29.
-- [#396](https://github.com/fissible/verdict/issues/396) — the adapter-boundary deny-all needs an observability
-  contract (a log line, a dispatched event, or a recorded decision) before implementation; it then joins
-  v0.14.0, whose approvals-design theme it fits. Added 2026-08-29.
 
 ---
 
