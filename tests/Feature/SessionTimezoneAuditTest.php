@@ -421,20 +421,19 @@ it('fails a MySQL deployment whose session zone was never declared', function ()
 })->skip(fn (): bool => ! sessionTimezoneIsMysql(), 'Requires a MySQL/MariaDB session zone.');
 
 /**
- * The other half of the coupling proof, and it does not run on the required lane. Stated rather
- * than implied.
+ * The other half of the coupling proof, and it is what makes the lane's coverage complete.
  *
- * Named zones need the server's timezone tables, and the official `mysql:8` image the lane uses
- * ships without them — so this skips there, and the live coupling on that lane rests on `+00:00`,
- * `+05:30` and `SYSTEM`. Those three do not distinguish a command that calls
- * {@see SessionTimezoneAudit::rejects()} from one that hard-codes a `+00:00` comparison, because
- * all three agree on those values. What that leaves unproven on the lane is narrow and specific: a
- * command that rejects a named-UTC session Verdict's own policy accepts.
+ * `+00:00`, `+05:30` and `SYSTEM` do not on their own distinguish a command that calls
+ * {@see SessionTimezoneAudit::rejects()} from one that hard-codes a `+00:00` comparison — all three
+ * agree on those values. Only a named-UTC session separates them, so this is the case that proves
+ * the command accepts what Verdict's own policy accepts rather than the offset spelling it was
+ * probably written against.
  *
- * Closing it would mean loading timezone tables into the lane's MySQL service.
- * `mysql_tzinfo_to_sql` ships with mysql-server rather than the client the runner has, so that is a
- * setup change with its own failure mode, to close a gap the pure matrix above already covers.
- * Recorded as a deliberate bound, not an oversight; this test still runs anywhere the tables exist.
+ * It was written expecting to skip on CI: named zones need the server's timezone tables, and the
+ * `mysql:8` image is commonly shipped without them. That expectation was wrong — the lane resolves
+ * `UTC` and this test runs there. The guard stays because the assumption it defends against is
+ * real for other servers, and because a skip is the honest outcome when a server genuinely cannot
+ * set a named zone; it is no longer a gap in what the lane proves.
  */
 it('accepts the named UTC form against a real session', function (): void {
     config()->set('verdict.evidence.recorder', DatabaseEvidenceRecorder::class);
