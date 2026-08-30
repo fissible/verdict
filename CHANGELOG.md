@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-08-30
+
 ### Added
 
 - **`verdict:validate` asserts the database session timezone (#309).** Every Verdict table stores
@@ -1852,7 +1854,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/fissible/verdict/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/fissible/verdict/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/fissible/verdict/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/fissible/verdict/compare/v0.11.0...v0.12.0
