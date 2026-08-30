@@ -34,6 +34,12 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
         $this->schemaMemo = new stdClass;
     }
 
+    /** @internal */
+    public function connection(): ConnectionInterface
+    {
+        return $this->connection;
+    }
+
     public function record(DecisionEvidence $evidence): void
     {
         $columns = $this->columns($this->table);

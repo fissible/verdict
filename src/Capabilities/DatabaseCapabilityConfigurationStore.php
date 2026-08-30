@@ -28,6 +28,11 @@ final class DatabaseCapabilityConfigurationStore implements CapabilityConfigurat
         private readonly ?Dispatcher $events = null,
     ) {}
 
+    public function connection(): ConnectionInterface
+    {
+        return $this->connection;
+    }
+
     public function record(CapabilityConfiguration $configuration): bool
     {
         // Once introspection has failed, further attempts this boot would each pay a fresh

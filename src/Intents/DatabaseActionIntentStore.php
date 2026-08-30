@@ -21,6 +21,11 @@ final readonly class DatabaseActionIntentStore implements ActionIntentStore, Dat
         private string $table = 'verdict_action_intents',
     ) {}
 
+    public function connection(): ConnectionInterface
+    {
+        return $this->connection;
+    }
+
     public function hasTable(): bool
     {
         if (! $this->connection instanceof Connection) {

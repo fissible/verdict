@@ -90,6 +90,9 @@ function mysqlLaneSlice(): array
         'tests/Feature/SecurityStateConcurrencyRetryTest.php',
         // Session-timezone conversion on MySQL/MariaDB (#362).
         'tests/Feature/ConnectionTimezoneEvidenceTest.php',
+        // The deploy-time assertion over that same conversion (#309): only a real session zone can
+        // be wrong, so only this engine can prove the check reads one.
+        'tests/Feature/SessionTimezoneAuditTest.php',
         // The two defects that motivated the lane.
         'tests/Feature/DeterministicDerivationReadOrderTest.php',
         'tests/Feature/EvidenceColumnDegradationTest.php',

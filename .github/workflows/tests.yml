@@ -269,7 +269,7 @@ jobs:
           composer run prepare
 
       - name: Test MySQL smoke slice
-        run: vendor/bin/pest tests/Feature/DatabaseRateLimitStoreTest.php tests/Feature/DerivedIndexNamesTest.php tests/Feature/SchemaMigrationAssertionsTest.php tests/Feature/IncidentResponseQueriesTest.php tests/Feature/SecurityStateConcurrencyRetryTest.php tests/Feature/ConnectionTimezoneEvidenceTest.php tests/Feature/DeterministicDerivationReadOrderTest.php tests/Feature/EvidenceColumnDegradationTest.php
+        run: vendor/bin/pest tests/Feature/DatabaseRateLimitStoreTest.php tests/Feature/DerivedIndexNamesTest.php tests/Feature/SchemaMigrationAssertionsTest.php tests/Feature/IncidentResponseQueriesTest.php tests/Feature/SecurityStateConcurrencyRetryTest.php tests/Feature/ConnectionTimezoneEvidenceTest.php tests/Feature/DeterministicDerivationReadOrderTest.php tests/Feature/EvidenceColumnDegradationTest.php tests/Feature/SessionTimezoneAuditTest.php
 
   tests:
     runs-on: ${{ matrix.os }}

@@ -15,6 +15,7 @@ use Fissible\Verdict\Capabilities\InMemoryCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\NullCapabilityConfigurationStore;
 use Fissible\Verdict\Capabilities\UnaffirmedDefinition;
 use Fissible\Verdict\Console\DatabaseTableStore;
+use Fissible\Verdict\Console\SessionTimezoneAudit;
 use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Contracts\ActionIntentStore;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
@@ -269,6 +270,8 @@ final class ValidateVerdictCommand extends Command
             );
         }
 
+        $this->auditSessionTimeZones($errors, $container);
+
         // Advisory: the silent-mismatch case of #310. With the store key unset, Verdict selects the
         // capability-configuration store by the recorder's declared capability (the
         // DurableEvidenceRecorder marker) — a recorder that declares nothing gets the no-op store,
@@ -508,6 +511,30 @@ final class ValidateVerdictCommand extends Command
             }
         } catch (Throwable) {
             $errors[] = 'Configured evidence recorder could not inspect its table.';
+        }
+    }
+
+    /** @param list<string> $errors */
+    private function auditSessionTimeZones(array &$errors, Container $container): void
+    {
+        foreach (SessionTimezoneAudit::auditable($container) as $name => $connection) {
+            try {
+                $driver = $connection->getDriverName();
+
+                if (! in_array($driver, ['mysql', 'mariadb'], true)) {
+                    continue;
+                }
+
+                $row = $connection->selectOne('select @@session.time_zone as tz');
+                $timeZone = isset($row->tz) ? (string) $row->tz : null;
+
+                if (SessionTimezoneAudit::rejects($driver, $timeZone)) {
+                    $errors[] = "Database connection [{$name}] has session time zone [{$timeZone}], not the required UTC session time zone.";
+                }
+            } catch (Throwable) {
+                // A failed connection inspection is already covered by the relevant store
+                // audit. Continue so an independent connection can still be diagnosed.
+            }
         }
     }
 
