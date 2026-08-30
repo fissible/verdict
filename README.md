@@ -8,6 +8,14 @@
 
 **Verdict is a Laravel security boundary for AI-triggered application actions.**
 
+It bounds four things: **authority** — your Laravel policies, evaluated against a resolved target;
+**duplication** — at-most-once execution claims; **rate** — semantic limits; and **approval** —
+human confirmation carrying a bound receipt. It does not bound **intent**. Under prompt injection
+the actor is still the legitimate authenticated user, so an instruction that selects any record
+inside that user's own authority passes every check by design. It bounds what an agent may do, not
+what it was trying to do — see [the security model](docs/security-model.md) and
+[limitations](docs/limitations.md).
+
 Verdict makes an AI ask your application for permission before it performs an important action. Language models are good at proposing what to do next; they should not be the final authority on what they are allowed to do.
 
 > Models propose. Applications authorize.
