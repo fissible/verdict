@@ -17,6 +17,8 @@ use Fissible\Verdict\Approvals\InMemoryApprovalStatusReader;
 use Fissible\Verdict\Approvals\StoreBackedApprovalStatusReader;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalStatusReader;
+use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Tests\Support\FrozenClock;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Database\Schema\Builder;
@@ -404,6 +406,10 @@ it('builds each outcome from its own named constructor', function (): void {
 });
 
 it('issues a challenge only for a single receipt, never for absence or a collision', function (): void {
+    // The manager reads its own clock to reject lapsed receipts. Feature tests run on the system
+    // clock, so the fixture's 2026-08-01 expiry would make every leg of this test return null for
+    // the ordinary reason and prove nothing about collisions.
+    app()->instance(Clock::class, new FrozenClock);
     $store = app(ApprovalReceiptStore::class);
     $manager = app(ApprovalManager::class);
 
@@ -419,6 +425,7 @@ it('issues a challenge only for a single receipt, never for absence or a collisi
 });
 
 it('issues no challenge when the proposal changed under an open receipt', function (): void {
+    app()->instance(Clock::class, new FrozenClock);
     $store = app(ApprovalReceiptStore::class);
     $manager = app(ApprovalManager::class);
 
