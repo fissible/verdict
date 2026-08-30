@@ -695,3 +695,33 @@ it('attributes the wildcard special case to the code that performs it', function
         );
     }
 });
+
+it('attributes the edited-decision refusal to the code that performs it', function (): void {
+    $adapter = (string) file_get_contents(compatibilityRepositoryRoot().'/src/LaravelAi/LaravelApprovalDecisions.php');
+    $section = compatibilityNamedSection('edited');
+
+    expect($section)->not->toBeNull(
+        'The edited-approval refusal is undocumented. It is live behaviour — a rejected, not silently dropped, decision — and must be stated where the wildcard case is.'
+    );
+    expect(str_contains($section, 'LaravelApprovalDecisions'))->toBeTrue(
+        'The edited-decision section does not name the class that performs the refusal.'
+    );
+    expect(str_contains($section, 'UnsupportedApprovalDecision'))->toBeTrue(
+        'The edited-decision section does not name the exception the refusal throws, which is what an adopter must catch.'
+    );
+
+    // Symbols are not behaviour: the section must actually say an edit is refused, not merely mention
+    // the class and the exception in passing.
+    expect(preg_match('/\b(reject|refus|throw|unsupported)/i', $section))->toBe(
+        1,
+        'The edited-decision section names the symbols but never states that the decision is refused.'
+    );
+
+    // Attribution must be real: the credited adapter must actually THROW the exception, not merely
+    // import, mention, or hold a dead reference to it. Match a throw of the class directly or via a
+    // named constructor.
+    expect(preg_match('/throw\s+(new\s+UnsupportedApprovalDecision\b|UnsupportedApprovalDecision::)/', $adapter))->toBe(
+        1,
+        'The section credits LaravelApprovalDecisions, but that class does not throw UnsupportedApprovalDecision.'
+    );
+});

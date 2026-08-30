@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovedToolCalls;
+use Fissible\Verdict\Exceptions\UnsupportedApprovalDecision;
 use Fissible\Verdict\LaravelAi\VerdictApprovalMiddleware;
 use Laravel\Ai\Approvals\Decision as AiDecision;
 use Laravel\Ai\Approvals\Decisions;
@@ -131,3 +132,31 @@ it('unwinds its frame when the downstream callback throws', function (): void {
 
     expect($context->allows('call-1'))->toBeFalse();
 });
+
+it('throws on an edited decision rather than translating it', function (Decisions $decisions): void {
+    // Unlike the wildcard, an edit() is distinguishable and appears in no resume flow. It asks the
+    // framework to execute *different* arguments (TextGenerationLoop substitutes Decision::$arguments)
+    // while a Verdict receipt binds the original proposal, so a silent drop would hide a real
+    // incompatibility. It is refused loudly: the downstream tool run never begins, and an edit
+    // anywhere in the map refuses the whole translation rather than partially approving the rest.
+    $context = new ApprovalExecutionContext;
+    $ran = false;
+
+    expect(fn () => (new VerdictApprovalMiddleware($context))->handle(
+        translatingPrompt($decisions),
+        function () use (&$ran): string {
+            $ran = true;
+
+            return 'done';
+        },
+    ))->toThrow(UnsupportedApprovalDecision::class);
+
+    expect($ran)->toBeFalse()
+        ->and($context->allows('call-1'))->toBeFalse();
+})->with([
+    'edit alone' => fn (): Decisions => Decisions::from(['call-1' => AiDecision::edit(['order_id' => 7])]),
+    'edit mixed with an explicit approval' => fn (): Decisions => Decisions::from([
+        'call-1' => AiDecision::approve(),
+        'call-2' => AiDecision::edit(['order_id' => 7]),
+    ]),
+]);
