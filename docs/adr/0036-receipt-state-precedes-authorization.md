@@ -89,11 +89,19 @@ that did not was already producing outcomes Verdict does not define.
 
 ## The race is benign
 
-The pre-read is not the authority and does not need to be atomic with the transition. A receipt
-cannot return from terminal to pending, so a read that says "terminal" can never become wrong. A
-read that says "decidable" is optimistic, and the store re-validates under its own transaction
-before finalizing, so the worst case is an authorizer consulted for a receipt that has since become
-undecidable — which then fails on state, as it should.
+The pre-read is not the authority and is not atomic with the transition. A receipt cannot return
+from terminal to pending, so a read that says "terminal" can never become wrong. A read that says
+"decidable" is optimistic: the receipt may expire or be decided before the store transitions it, in
+which case the authorizer *is* consulted and the store then refuses on state — the outcome is still
+canonical, and nothing is finalized.
+
+So the guarantee this decision makes is deliberately the narrower one. A receipt that is already
+terminal or expired **when it is read** never reaches the authorizer and reports its own state.
+A receipt that becomes terminal in the window between that read and the transition still reaches
+the authorizer. This is an ordering and reporting decision, not an atomic
+state-before-authorization guarantee, and it does not need to be one: the store's transition is
+atomic (`DatabaseApprovalReceiptStore` under a locked security-state transaction, per ADR 0004),
+and that is where admission is actually decided.
 
 ## Consequences
 
@@ -101,8 +109,10 @@ undecidable — which then fails on state, as it should.
   authorizer would also have denied. An application that keyed on `unauthorized` for those cases
   reads a different outcome; the decision is refused in both orders, so nothing that was denied
   becomes permitted.
-- The authorizer is consulted strictly less often. An authorizer with side effects — an audit line,
-  a metric, a notification — no longer records an attempt against a receipt that was never
-  decidable. This is the intended reading of "an authorization decision was made".
+- The authorizer is never consulted more often than before, and never for a receipt that was
+  already terminal or expired when it was read. An authorizer with side effects — an audit line, a
+  metric, a notification — stops recording attempts against those receipts, which is the intended
+  reading of "an authorization decision was made". It still records one for a receipt that goes
+  terminal inside the window described above.
 - The store contract carries an invariant it did not carry before, and adapter authors must satisfy
   it. It is documented on `approve()` and in the extension-contract inventory.

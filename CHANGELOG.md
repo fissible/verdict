@@ -21,8 +21,8 @@ All notable changes to Verdict will be documented in this file.
 
   Two consequences worth naming. An application that keyed on `unauthorized` for an expired or
   already-decided receipt now reads `expired` or `invalid_state`. And an authorizer with side
-  effects — an audit line, a metric — no longer records an attempt against a receipt that was never
-  decidable.
+  effects — an audit line, a metric — no longer records an attempt against a receipt that was
+  already undecidable when the decision arrived.
 
   This moves a load-bearing invariant onto `ApprovalReceiptStore`, which is a stable extension
   point: a decision is admissible only for a call-matching, `Pending`, unexpired receipt at the
