@@ -79,28 +79,30 @@ final class CapturingTool implements Approvable, Tool
 
     public function handle(Request $request): Stringable|string
     {
-        $result = $this->inner->handle($request);
-        $decoded = json_decode((string) $result, true);
-        $notExecuted = is_array($decoded) && ($decoded['status'] ?? null) === 'not_executed';
+        return $this->capture->whileCapturingTool(function () use ($request): Stringable|string {
+            $result = $this->inner->handle($request);
+            $decoded = json_decode((string) $result, true);
+            $notExecuted = is_array($decoded) && ($decoded['status'] ?? null) === 'not_executed';
 
-        if ($notExecuted && ! is_string($decoded['decision'] ?? null)) {
-            throw LiveObservationUnavailable::because('a bound tool returned a decision envelope with no decision');
-        }
+            if ($notExecuted && ! is_string($decoded['decision'] ?? null)) {
+                throw LiveObservationUnavailable::because('a bound tool returned a decision envelope with no decision');
+            }
 
-        $this->capture->record(
-            capability: $this->capability,
-            argumentFingerprint: $this->fingerprint($request),
-            disposition: $notExecuted
-                ? Disposition::tryFrom($decoded['decision']) ?? throw LiveObservationUnavailable::because(
-                    "a bound tool returned an unrecognized decision [{$decoded['decision']}]",
-                )
-                : Disposition::Permit,
-            executed: ! $notExecuted,
-            matchedRegisteredSecrets: $this->registeredSecrets->scan($request->all()),
-            registeredSecretLabels: $this->registeredSecrets->labels(),
-        );
+            $this->capture->record(
+                capability: $this->capability,
+                argumentFingerprint: $this->fingerprint($request),
+                disposition: $notExecuted
+                    ? Disposition::tryFrom($decoded['decision']) ?? throw LiveObservationUnavailable::because(
+                        "a bound tool returned an unrecognized decision [{$decoded['decision']}]",
+                    )
+                    : Disposition::Permit,
+                executed: ! $notExecuted,
+                matchedRegisteredSecrets: $this->registeredSecrets->scan($request->all()),
+                registeredSecretLabels: $this->registeredSecrets->labels(),
+            );
 
-        return $result;
+            return $result;
+        });
     }
 
     public function requireApproval(?string $reason = null): static

@@ -147,9 +147,11 @@ it('attributes no predicate to a capability whose only queries were the checkpoi
     // The tool observations go in too, and they matter. `Observation::$executed` says only that
     // SOMETHING executed; `assertPredicateMeasurable()` needs a fact attributing this capability to
     // the run before it will convert an absent predicate into a measured failure rather than an
-    // unattempted capability. The checkpoint's own `recordExecution()` supplies exactly that, so
-    // this is also what a harness really holds. Omitting it made the fixture look unattempted and
-    // would push the distinction #251 paid for into production.
+    // unattempted capability. The checkpoint's own endpoint supplies exactly that, so this is also
+    // what a harness really holds. Omitting it made the fixture look unattempted and would push the
+    // distinction #251 paid for into production. (#393 split that endpoint into a reservation taken
+    // before the executor and a commit taken after it succeeds, so the fact still arrives — just
+    // only once the execution it describes has actually happened.)
     $observation = new Observation(
         disposition: null,
         executed: true,

@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Evaluation;
 
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use LogicException;
 
 final class LiveToolCapture
 {
@@ -32,6 +33,20 @@ final class LiveToolCapture
 
     private int $executionSequence = 0;
 
+    /** @var array<int, true> */
+    private array $reservedExecutionSequences = [];
+
+    /** @var array<int, true> */
+    private array $committedExecutionSequences = [];
+
+    /**
+     * `CapturingTool::handle()` is synchronous and nested handles return in LIFO order. A
+     * checkpoint commit therefore belongs to the innermost active tool and its observation is
+     * consumed before an outer handle can record. This counter is not safe for concurrent or
+     * deferred tool execution; such a path needs an execution-scoped correlation token.
+     */
+    private int $capturingToolDepth = 0;
+
     private ?string $invocationId = null;
 
     /**
@@ -49,6 +64,25 @@ final class LiveToolCapture
         array $matchedRegisteredSecrets = [],
         array $registeredSecretLabels = [],
     ): void {
+        $committedExecution = $this->capturingToolDepth > 0
+            ? $this->consumeCommittedExecution($capability, $argumentFingerprint)
+            : null;
+
+        if ($committedExecution !== null) {
+            $checkpoint = $this->calls[$committedExecution];
+            array_splice($this->calls, $committedExecution, 1, [new ToolObservation(
+                capability: $checkpoint->capability,
+                argumentFingerprint: $checkpoint->argumentFingerprint,
+                disposition: $checkpoint->disposition,
+                executed: $checkpoint->executed,
+                matchedRegisteredSecrets: $matchedRegisteredSecrets,
+                registeredSecretLabels: $registeredSecretLabels,
+                executionSequence: $checkpoint->executionSequence,
+            )]);
+
+            return;
+        }
+
         $this->calls[] = new ToolObservation(
             $capability,
             $argumentFingerprint,
@@ -110,6 +144,9 @@ final class LiveToolCapture
         $this->resources = [];
         $this->resourceOccurrences = [];
         $this->executionSequence = 0;
+        $this->reservedExecutionSequences = [];
+        $this->committedExecutionSequences = [];
+        $this->capturingToolDepth = 0;
         $this->invocationId = null;
     }
 
@@ -169,13 +206,30 @@ final class LiveToolCapture
     }
 
     /**
-     * Record the execution that a resource checkpoint belongs to and return its sequence.
+     * Reserve the sequence a resource observation will use before its executor begins.
+     *
+     * The reservation is intentionally not itself an execution observation: a thrown executor
+     * must leave its pre-execution resource digest unpaired rather than looking completed.
+     */
+    public function reserveExecution(): int
+    {
+        $sequence = ++$this->executionSequence;
+        $this->reservedExecutionSequences[$sequence] = true;
+
+        return $sequence;
+    }
+
+    /**
+     * Commit a previously reserved execution after its executor returned successfully.
      *
      * @param  array<string, mixed>  $arguments
      */
-    public function recordExecution(string $capability, array $arguments): int
+    public function commitExecution(int $sequence, string $capability, array $arguments): void
     {
-        $sequence = ++$this->executionSequence;
+        if (! isset($this->reservedExecutionSequences[$sequence])) {
+            throw new LogicException("Execution sequence [{$sequence}] was not reserved.");
+        }
+
         $this->calls[] = new ToolObservation(
             capability: $capability,
             argumentFingerprint: ArgumentFingerprint::make($arguments),
@@ -183,8 +237,38 @@ final class LiveToolCapture
             executed: true,
             executionSequence: $sequence,
         );
+        if ($this->capturingToolDepth > 0) {
+            $this->committedExecutionSequences[$sequence] = true;
+        }
+    }
 
-        return $sequence;
+    /** @param callable(): mixed $callback */
+    public function whileCapturingTool(callable $callback): mixed
+    {
+        $this->capturingToolDepth++;
+
+        try {
+            return $callback();
+        } finally {
+            $this->capturingToolDepth--;
+        }
+    }
+
+    private function consumeCommittedExecution(string $capability, string $argumentFingerprint): ?int
+    {
+        foreach (array_reverse($this->calls, true) as $callIndex => $call) {
+            if (! isset($this->committedExecutionSequences[$call->executionSequence])
+                || $call->capability !== $capability
+                || $call->argumentFingerprint !== $argumentFingerprint) {
+                continue;
+            }
+
+            unset($this->committedExecutionSequences[$call->executionSequence]);
+
+            return $callIndex;
+        }
+
+        return null;
     }
 
     public function recordResource(ResourceObservation $resource): void

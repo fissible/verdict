@@ -6,6 +6,28 @@ All notable changes to Verdict will be documented in this file.
 
 ### Fixed
 
+- **A resource checkpoint no longer records an execution that has not happened yet (#393).** The
+  checkpoint's `executed: true` endpoint was written before the executor ran, so a throwing
+  executor left a completed-looking record behind. That matters because `Assertions` pairs a
+  resource endpoint to a tool observation by execution sequence *and* `executed === true`: a
+  check-to-use comparison could be reported against an execution that never finished, which for an
+  instrument whose job is to say whether the bytes changed between check and use is the wrong
+  answer rather than a missing one. Such a run now reads as unmeasured.
+
+  The digest itself is still taken before the executor, and deliberately — that is the whole point
+  of a check-to-use measurement, and moving the read later would report the post-mutation bytes at
+  both endpoints and never detect a swap. What moved is when the endpoint counts as an execution,
+  not when the resource is read.
+
+- **A checkpointed execution is counted once when both evaluation instruments share a sink (#393).**
+  `ResourceCheckpointCapture` and `CapturingTool` each recorded a `ToolObservation` for the same
+  call, so one executed call counted as two — `toolCallCount($capability, 1)` saw 2. Nothing in the
+  package builds that combination today, which is why it had never failed; a live evaluation
+  wanting both a check-to-use digest and a tool-call count is the obvious next harness, and the
+  composition is now sound before anything depends on it. The endpoint deliberately still exists on
+  the `runBound()` path, where there is no `CapturingTool` to record it and dropping it would have
+  made every resource comparison silently unmeasured.
+
 - **`verdict:validate` audits the evidence tables every deployment actually uses (#395).** The
   command computed the effective evidence class and then gated its evidence-table audit on the raw
   `verdict.evidence.recorder` value one line below. A deployment routing writes through
