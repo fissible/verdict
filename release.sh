@@ -216,6 +216,25 @@ if [[ -f RELEASES.md ]]; then
     printf 'Supported platform matrix: %s marked current\n' "$matrix_line"
 fi
 
+# --- gate on the suite, before anything is committed or tagged ---
+
+# CI already runs on the release commit, but it is a detector rather than a gate: the tag and the
+# GitHub Release are pushed in the same breath, so a failure arrives after Packagist has the tag.
+# This runs AFTER the edits above on purpose — running before would only re-test what CI covered on
+# the previous commit, and the point is to test the state about to be tagged. The two tests that
+# assert on the files edited above (DocumentationConsistencyTest, CompatibilityMatrixConformanceTest)
+# are exactly what this catches.
+#
+# The local suite is enough here and the reasoning is specific: this commit changes CHANGELOG.md,
+# VERSION, README.md and RELEASES.md and no src/, so there is no matrix-specific failure (PHP or
+# Laravel version, MySQL, PostgreSQL) it could introduce that CI would catch and this run would not.
+# That argument would NOT license skipping CI for a src/ change.
+#
+# On failure the tree deliberately keeps the release edits rather than being reverted: the preflight
+# above already refused to start on a dirty tree, so nothing unrelated is at stake, and the edits are
+# what an operator needs in order to see why the suite rejected them.
+composer test || die "the release commit does not pass the suite — the tree still holds the release edits; run 'git checkout -- .' to discard them"
+
 # --- commit and tag ---
 
 git add VERSION CHANGELOG.md
