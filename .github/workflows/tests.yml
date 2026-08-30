@@ -216,6 +216,61 @@ jobs:
       - name: Test suite against PostgreSQL
         run: vendor/bin/pest
 
+  # #397: This focused MySQL lane holds ground no other per-PR lane does: MySQL's identifier-
+  # length limit, InnoDB under REPEATABLE READ, and MySQL/MariaDB session-timezone conversion.
+  # PostgreSQL already runs the full suite per PR, so this stays a narrow maintained InnoDB
+  # discriminator; broader cross-engine coverage remains in concurrency-matrix.yml.
+  mysql:
+    runs-on: ubuntu-latest
+    name: MySQL 8
+
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_DATABASE: verdict
+          MYSQL_USER: verdict
+          MYSQL_PASSWORD: verdict
+          MYSQL_ROOT_PASSWORD: verdict
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -u verdict -pverdict"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 30
+
+    env:
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_DATABASE: verdict
+      DB_USERNAME: verdict
+      DB_PASSWORD: verdict
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-tags: true
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # v2
+        with:
+          php-version: 8.4
+          extensions: dom, curl, libxml, mbstring, zip, fileinfo, sqlite, pdo_sqlite, pdo_mysql, bcmath, intl, sodium
+          tools: composer:v2
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "laravel/framework:12.*" "orchestra/testbench:10.*" --no-interaction --no-update
+          composer update --prefer-stable --prefer-dist --no-interaction --no-progress --no-scripts
+          composer run prepare
+
+      - name: Test MySQL smoke slice
+        run: vendor/bin/pest tests/Feature/DatabaseRateLimitStoreTest.php tests/Feature/DerivedIndexNamesTest.php tests/Feature/SchemaMigrationAssertionsTest.php tests/Feature/IncidentResponseQueriesTest.php tests/Feature/SecurityStateConcurrencyRetryTest.php tests/Feature/ConnectionTimezoneEvidenceTest.php tests/Feature/DeterministicDerivationReadOrderTest.php tests/Feature/EvidenceColumnDegradationTest.php
+
   tests:
     runs-on: ${{ matrix.os }}
 
@@ -286,13 +341,13 @@ jobs:
   ci-success:
     name: CI success
     if: always()
-    needs: [claims, consumer-install, coverage, evaluation, postgres, tests]
+    needs: [claims, consumer-install, coverage, evaluation, postgres, mysql, tests]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all required jobs succeeded
         run: |
-          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}" = "true" ]; then
-            echo "A required job failed or was cancelled."
+          if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
+            echo "A required job failed, was cancelled, or was skipped."
             exit 1
           fi
           echo "All required jobs passed."

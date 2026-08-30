@@ -28,6 +28,18 @@ All notable changes to Verdict will be documented in this file.
   the `runBound()` path, where there is no `CapturingTool` to record it and dropping it would have
   made every resource comparison silently unmeasured.
 
+- **A required MySQL 8 smoke lane now holds the MySQL-only per-PR ground (#397).** It exercises
+  MySQL's identifier-length limit, InnoDB under `REPEATABLE READ`, and MySQL/MariaDB
+  session-timezone conversion. PostgreSQL already runs the full suite per PR, so this is a narrow
+  maintained discriminator while the broader cross-engine coverage remains in
+  `concurrency-matrix.yml`.
+
+  The lane does not gate #383: removing that fix's tiebreakers produced three SQLite failures and
+  no MySQL or PostgreSQL failures, because InnoDB clusters the derivations table on its composite
+  primary key and that order already satisfies the tiebreakers' contract. The #389 probe caught
+  its row-ordering defect in six of eight runs, depending on whether a generated UUID sorted last;
+  it is therefore probabilistic exposure, not a regression this lane gates.
+
 - **`verdict:validate` audits the evidence tables every deployment actually uses (#395).** The
   command computed the effective evidence class and then gated its evidence-table audit on the raw
   `verdict.evidence.recorder` value one line below. A deployment routing writes through
