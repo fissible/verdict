@@ -268,10 +268,10 @@ it('does not advertise require_review as a live disposition while nothing produc
  * without the surrounding material. So the qualifier ships WITH the claim, and this test is what
  * stops the two drifting apart: move the claim, and the sentence naming the bounds moves with it.
  *
- * The recorded decision behind this is the naming round of 2026-08-16, which weighed narrowing the
- * category to "authorization boundary" and recommended keeping it while never letting it appear
- * unqualified. Narrowing remains defensible pre-1.0; if it is ever taken, this test is where the
- * new framing gets its qualifier.
+ * The recorded decision behind this is [ADR 0034](../../docs/adr/0034-the-framing-claim-never-travels-alone.md),
+ * which weighed narrowing the category to "authorization boundary" and kept it on condition that it
+ * never appears unqualified. Narrowing remains defensible pre-1.0; if it is ever taken, this test is
+ * where the new framing gets its qualifier.
  */
 it('never states the framing claim without naming the four bounds and the one non-bound', function (): void {
     $readme = verdictReadContent('README.md');
