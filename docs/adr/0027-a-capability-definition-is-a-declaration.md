@@ -5,6 +5,9 @@ Status: Accepted
 ## Related issues
 
 - [#210](https://github.com/fissible/verdict/issues/210) is the work this settles.
+- [#394](https://github.com/fissible/verdict/issues/394) asked whether the registry should scope
+  request-time registrations for Octane. It must not — §7 records why, and the lifetime rule below is
+  the answer.
 - [ADR 0019](0019-verdict-services-are-container-resolved.md) — Verdict's *services* are container-resolved.
   This ADR states where that posture stops.
 - [ADR 0020](0020-live-trial-isolation-is-application-owned.md) — state that must not leak across trials.
@@ -150,6 +153,40 @@ Shipping without a cache is a deliberate trade, recorded here so the first php-f
 boot finds a known decision rather than an undiscovered defect. The future move is bootstrap-cache
 integration, the way Laravel caches event discovery. **The trigger is profiling showing it matters** — not
 a suspicion that it might.
+
+### 7. A declaration is durable and made once per process; re-declaration is an error, not a replacement
+
+The registry is a process-lifetime singleton, and that is deliberate: a capability is a declaration, so
+it persists for the life of the worker and **survives `Container::forgetScopedInstances()`**. This is
+required, not incidental. The live-evaluation trial harness ([ADR 0020](0020-live-trial-isolation-is-application-owned.md))
+resets the scoped *execution* state between trials — fresh claim store, `forgetScopedInstances()` — while
+the capability declaration stays put; a declaration erased by a scoped reset would take the capability
+under measurement with it. `forgetScopedInstances()` is the request boundary under Octane *and* the
+between-trials reset here, so a registry that scoped its declarations could not tell the two apart. This
+is why [#394](https://github.com/fissible/verdict/issues/394)'s scoped-registry proposal was rejected:
+the attempt made the conflict concrete, and the invariant is the one this ADR already rests on.
+
+Under Octane a capability is therefore declared **once per worker** — in a provider's `boot()` or by
+discovery (§3), not per request. Two consequences follow, both intended:
+
+- **Do not re-declare per request.** A second `Verdict::capability()` for a name already declared throws
+  `CapabilityAlreadyRegistered`. This is a deliberate error, never a silent replacement: the
+  configuration fingerprint excludes closures ([ADR 0017](0017-configuration-identity-in-evidence.md)),
+  so Verdict cannot tell an identical re-declaration from one that swaps the target resolver, executor,
+  or policy behind the same name. A silent replace would let a later declaration change an authorization
+  behaviour undetectably; failing closed is the only safe answer Verdict can give without seeing inside
+  the closures. An application whose capability *set* is genuinely runtime-determined should still
+  declare each distinct capability once, under a distinct name.
+
+- **A declaration must not capture request-specific state.** Because a declaration outlives the request
+  that composed it, it must not close over a request's `ActionContext` or any scoped service. Resolve
+  them at invocation time: pass the **callable** context form —
+  `context: fn (Request $request): ActionContext => new ActionContext(auth()->user())` — which
+  re-resolves per request in the scope the invocation belongs to. The **instance** form
+  (`context: $anActionContext`) is captured for the bound tool's lifetime, so a tool that outlives a
+  request under Octane would serve the first request's actor to every later one. This is §2's lifetime
+  rule — *a binding must not outlive what it captures* — applied to the tool's own context rather than a
+  definition class's constructor injection.
 
 ## Alternatives rejected
 
