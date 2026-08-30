@@ -39,6 +39,7 @@ use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\Exceptions\ExecutionClaimFinalizationFailed;
 use Fissible\Verdict\Exceptions\ExecutionCompletedWithUnfinalizedClaim;
+use Fissible\Verdict\Exceptions\RequireReviewNotImplemented;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimAdmission;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
@@ -198,6 +199,7 @@ final readonly class VerdictManager
     public function run(ActionEnvelope $envelope, callable $executor): ExecutionResult
     {
         $evaluation = $this->evaluate($envelope);
+        $this->rejectUnimplementedReview($evaluation);
 
         if (! $evaluation->decision->permitsExecution()) {
             return ExecutionResult::denied($evaluation);
@@ -209,6 +211,7 @@ final readonly class VerdictManager
     public function runBound(ActionEnvelope $envelope): ExecutionResult
     {
         $proposalEvaluation = $this->evaluate($envelope);
+        $this->rejectUnimplementedReview($proposalEvaluation);
 
         if (! in_array($proposalEvaluation->decision->disposition, [
             Disposition::Permit,
@@ -270,6 +273,7 @@ final readonly class VerdictManager
             decision: $this->authorizer->decide($capability, $envelope, $refreshEvaluation->target),
             stage: EvaluationStage::Execution,
         ));
+        $this->rejectUnimplementedReview($executionEvaluation);
 
         if (! $executionEvaluation->decision->permitsExecution()) {
             return ExecutionResult::denied($executionEvaluation);
@@ -426,6 +430,13 @@ final readonly class VerdictManager
         ));
 
         return $evaluation;
+    }
+
+    private function rejectUnimplementedReview(Evaluation $evaluation): void
+    {
+        if ($evaluation->decision->disposition === Disposition::RequireReview) {
+            throw RequireReviewNotImplemented::forCapability($evaluation->envelope->proposal->capability);
+        }
     }
 
     private function rateLimit(Evaluation $evaluation, ?string $intentId): ?Evaluation

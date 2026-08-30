@@ -50,8 +50,11 @@ Until the substrate lands, a **shared** `RequireReview` handling path — used b
 `runBound()` — records the decision evidence and then throws a loud `RequireReviewNotImplemented`. This is a
 change from today's *silent* denial (`src/VerdictManager.php:198,209`), and it is deliberately **not** a
 registration-time check: an authorizer returns dispositions dynamically at decision time
-(`src/VerdictManager.php:154-167`), so registration never sees the disposition. The loud-reserve is the first
-buildable step; §3–§7 replace the throw.
+(`src/VerdictManager.php:154-167`), so registration never sees the disposition. **Loud** here is a contract,
+not only a thrown type: the refusal **names the capability it declined**, so the misconfiguration is
+actionable from the error alone — the house exception convention (`CapabilityNotExecutable::named()`,
+`UnsupportedApprovalDecision::editedArguments()`). The loud-reserve is the first buildable step; §3–§7 replace
+the throw.
 
 ### 2. A separate primitive, sharing the gate — not a receipt reused
 
