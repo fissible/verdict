@@ -4,6 +4,24 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **The release script gates on the suite instead of tagging first and finding out (#410).** CI
+  already ran on the release commit, but as a detector rather than a gate: on v0.13.1 it started
+  nine seconds before the GitHub Release published, with the run still in flight, so a failure would
+  have arrived after Packagist had the tag. `release.sh` now runs `composer test` after its edits and
+  before the commit and the tag.
+
+  After the edits on purpose — running before would only re-test what CI covered on the previous
+  commit, and the state that matters is the one about to be tagged. That state is also what
+  `DocumentationConsistencyTest` and `CompatibilityMatrixConformanceTest` assert on, and
+  `release.sh` already cited the first by name in the comment above the `RELEASES.md` edit it makes.
+
+  A failing suite leaves the release edits in the working tree rather than reverting them: the
+  preflight already refuses to start on a dirty tree, so nothing unrelated is at stake, and those
+  edits are what shows an operator why the suite rejected them. The message names the command to
+  discard them.
+
 ## [0.13.1] - 2026-08-30
 
 ### Added
