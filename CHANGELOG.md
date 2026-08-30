@@ -4,6 +4,37 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`verdict:validate` asserts the database session timezone (#309).** Every Verdict table stores
+  instants as `$table->timestamp()`, and six stores reinterpret what comes back as UTC
+  unconditionally. On MySQL and MariaDB that column type converts on write *and* on read using the
+  session `time_zone`, so the round-trip is correct only because both ends happen to agree —
+  #362 proved the agreement holds under one zone, and named the case it could not cover: a zone
+  that differs between the write and the read. Two app nodes, a queue worker, a migration job or a
+  DBA session on different zones shift stored instants, and approvals then outlive or predecease
+  their TTL with nothing to say so.
+
+  The audit covers **every distinct connection a database-backed store actually opens**, not the
+  default one: seven configuration keys select a connection and each falls back to the application
+  default, so a deployment with approvals on one connection and evidence on another has two answers
+  to this question. Connections belonging to stores that are not database-backed are skipped, on the
+  terms #395 settled, and the evidence connection is reached through the effective writer and ledger
+  roles rather than the legacy key alone.
+
+  Anything other than an explicitly declared UTC session is an error, **`SYSTEM` included**. It
+  means "whatever the host is", which is not a property the deployment declared and does not survive
+  a host change, an image bump, or a second node configured differently. Accepted spellings are
+  `+00:00` and `UTC`, the latter case-insensitively because MySQL compares named zones that way.
+
+  Set it per connection — Laravel applies a connection's `timezone` option on every connect,
+  including the reconnects a long-lived worker makes — rather than once at boot.
+
+  This is the guard, not the cure. Whether Verdict should store instants in a representation that
+  cannot be reinterpreted at all is filed separately as a 1.0-boundary decision (#415); a change
+  scoped to the receipt columns alone was rejected, because it would leave the identical defect on
+  the audit trail and on at-most-once admission.
+
 ### Changed
 
 - **The release script gates on the suite instead of tagging first and finding out (#410).** CI
