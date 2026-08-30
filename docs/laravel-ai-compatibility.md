@@ -105,7 +105,11 @@ nested and unwound-frame isolation.
 
 ### Wildcard approval decisions
 
-`LaravelApprovalDecisions` special-cases a Laravel AI decision keyed `'*'` (`if ($toolCallId !== '*' && $decision->isApproved())`), which corresponds to `Laravel\Ai\Approvals\Decision::approveAll()`. This is genuinely well-covered, not a gap: `tests/Feature/ApprovalFlowTest.php`, `'does not accept wildcard or edited Laravel approval decisions'`, explicitly constructs a wildcard `Decisions` object via `Decision::approveAll()` and asserts Verdict rejects it rather than silently approving every tool call. Listed here because it's exactly the kind of magic-string convention issue #18 asks to surface, and because it's the one place `Laravel\Ai\Approvals\Decision` (singular) is actually used — see the correction below.
+`LaravelApprovalDecisions` special-cases a Laravel AI decision keyed `'*'` (`if ($toolCallId !== '*' && $decision->isApproved())`), which corresponds to `Laravel\Ai\Approvals\Decision::approveAll()`. This is genuinely well-covered, not a gap: `tests/Feature/ApprovalFlowTest.php`, `'silently skips a wildcard approval, requiring a specific decision'`, explicitly constructs a wildcard `Decisions` object via `Decision::approveAll()` and asserts Verdict silently skips it rather than approving every tool call, requiring a specific decision. Listed here because it's exactly the kind of magic-string convention issue #18 asks to surface, and because it's the one place `Laravel\Ai\Approvals\Decision` (singular) is actually used — see the correction below.
+
+### Edited approval decisions
+
+`LaravelApprovalDecisions` refuses an edited approval decision by throwing `UnsupportedApprovalDecision`; adopters should catch that exception and resume with `Decision::approve()` for the original proposal. This is intentionally not a silent drop: Verdict receipts bind the original arguments, while an edited decision requests different ones. By contrast, the `'*'` wildcard remains silently skipped so streamed and queued resumption does not treat it as an explicit approval.
 
 ## Corrections to the issue draft
 
