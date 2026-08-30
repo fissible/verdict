@@ -4,6 +4,32 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **An approval decision resolves receipt state before it authorizes (#320).** `ApprovalManager`
+  consulted the required `ApprovalDecisionAuthorizer` for any found, call-matching receipt —
+  including one already expired, approved, rejected, or consumed — so a denying authorizer returned
+  `unauthorized` for a receipt whose real problem was its state. The decision was refused either
+  way, but the reason was wrong: an operator holding an hour-old receipt read an authorization
+  failure and went looking for a permissions problem.
+
+  The authorizer is now consulted only for a matching receipt that is still decidable — `Pending`
+  and unexpired — and every other outcome is the store's, returned unaltered. `unauthorized` is the
+  one outcome the manager originates. Refusing without a configured authorizer is unchanged and
+  unconditional: `approve()`/`reject()` throw `ApprovalAuthorizerMissing` whatever the receipt's
+  state, and no decision reaches the store.
+
+  Two consequences worth naming. An application that keyed on `unauthorized` for an expired or
+  already-decided receipt now reads `expired` or `invalid_state`. And an authorizer with side
+  effects — an audit line, a metric — no longer records an attempt against a receipt that was never
+  decidable.
+
+  This moves a load-bearing invariant onto `ApprovalReceiptStore`, which is a stable extension
+  point: a decision is admissible only for a call-matching, `Pending`, unexpired receipt at the
+  supplied instant, and **a store that finalizes a terminal or expired receipt finalizes it without
+  authorization.** Both shipped stores already satisfy this. See
+  [ADR 0036](docs/adr/0036-receipt-state-precedes-authorization.md).
+
 ## [0.14.0] - 2026-08-30
 
 ### Added

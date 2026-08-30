@@ -233,13 +233,16 @@ final readonly class ApprovalManager
     /**
      * Runs the required authorizer against the receipt this decision names — approval decisions
      * are fail-closed, so no configured authorizer means no decision. The store remains the single
-     * authority on receipt state: a missing or call-mismatched receipt is delegated to it
-     * untouched so it produces the canonical NotFound/Mismatch/Expired/InvalidState outcome, and
-     * the authorizer is consulted only for a found, call-matching receipt. The receipt is
-     * addressed by id — never by findForToolCall(), whose null is ambiguous (absent OR a
-     * colliding tool-call id) and would let a second receipt on the same call bypass the
-     * authorizer while the store still finalized by id. The fetch-then-transition
-     * race is benign because the authorizer reads only fields that are immutable after issue.
+     * authority on receipt state: after a read establishes that the receipt is pending and
+     * unexpired, the authorizer may decide whether the caller can make the decision. Every other
+     * receipt is delegated to the store untouched so it produces the canonical
+     * NotFound/Mismatch/Expired/InvalidState outcome. The receipt is addressed by id — never by
+     * findForToolCall(), whose null is ambiguous (absent OR a colliding tool-call id) and would
+     * let a second receipt on the same call bypass the authorizer while the store still finalized
+     * by id. The fetch-then-transition race is benign: a terminal receipt cannot become pending,
+     * and the store re-validates state atomically, so a decidable pre-read is only optimistic.
+     * Apart from Unauthorized, the manager originates no state outcome and returns the store's
+     * transition unaltered.
      */
     private function unauthorized(
         string $receiptId,
@@ -258,7 +261,11 @@ final readonly class ApprovalManager
 
         $receipt = $this->receipts->find($receiptId);
 
-        if ($receipt === null || $receipt->toolCallId !== $toolCallId) {
+        // This is delegation, not approval: only a currently decidable receipt reaches the authorizer.
+        if ($receipt === null
+            || $receipt->toolCallId !== $toolCallId
+            || $receipt->status !== ApprovalReceiptStatus::Pending
+            || $receipt->isExpiredAt($this->clock->now())) {
             return null;
         }
 
