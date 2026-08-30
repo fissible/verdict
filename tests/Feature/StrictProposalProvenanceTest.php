@@ -6,6 +6,7 @@ use Fissible\Verdict\Actions\ActionContext;
 use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Actions\InvocationContext;
+use Fissible\Verdict\Approvals\ApprovalLookupOutcome;
 use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Approvals\ProposalAnchor;
 use Fissible\Verdict\Approvals\StrictProvenanceGuard;
@@ -120,8 +121,10 @@ it('denies before issuing a receipt, so no approval state is consumed', function
 
     strictProvenanceEvaluate();
 
-    expect(app(ApprovalReceiptStore::class)->findForToolCall('call-strict-refund'))
-        ->toBeNull();
+    // Nothing was issued at all, so this is the absence outcome — distinguishable since #425
+    // from a tool call that issued two colliding receipts.
+    expect(app(ApprovalReceiptStore::class)->findForToolCall('call-strict-refund')->outcome)
+        ->toBe(ApprovalLookupOutcome::Absent);
 });
 
 it('refuses a strict-provenance configuration that registers no approver route', function (): void {

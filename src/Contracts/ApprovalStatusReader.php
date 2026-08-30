@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Contracts;
 
+use Fissible\Verdict\Approvals\ApprovalStatusLookup;
 use Fissible\Verdict\Approvals\ApprovalStatusView;
 
 /**
@@ -32,7 +33,7 @@ interface ApprovalStatusReader
      * when more than one receipt shares the tool call id, so null never proves absence.
      * Consumers that hold a receiptId should prefer statusFor().
      */
-    public function statusForToolCall(string $toolCallId): ?ApprovalStatusView;
+    public function statusForToolCall(string $toolCallId): ApprovalStatusLookup;
 
     /**
      * The receipts whose persisted lifecycle status is Pending and whose approval_context

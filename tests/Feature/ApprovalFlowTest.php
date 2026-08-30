@@ -11,6 +11,7 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApprovalReceiptLookup;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\ApprovalTransition;
 use Fissible\Verdict\Approvals\ApproverAudience;
@@ -109,7 +110,7 @@ final class RacingApprovalReceiptStore implements ApprovalReceiptStore
         return $this->receipts->issue($receipt);
     }
 
-    public function findForToolCall(string $toolCallId): ?ApprovalReceipt
+    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
     {
         return $this->receipts->findForToolCall($toolCallId);
     }
@@ -155,7 +156,7 @@ final class RacingApprovalReceiptStore implements ApprovalReceiptStore
 
             return ApprovalTransition::to(
                 ApprovalOutcome::InvalidState,
-                $this->receipts->findForToolCall($toolCallId),
+                $this->receipts->findForToolCall($toolCallId)->receipt,
             );
         }
 
@@ -297,7 +298,7 @@ it('preserves an approved receipt when a temporary rate limit blocks execution',
     );
 
     expect($result['decision'])->toBe('throttle')
-        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-throttled-cancel')?->status)
+        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-throttled-cancel')->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Approved)
         ->and($executions)->toBe(1);
 });
@@ -345,7 +346,7 @@ it('validates approval bindings against refreshed state before consuming the rec
     $approvalEvidence = collect($evidence->all())->where('stage', 'approval')->last();
 
     expect($result['decision'])->toBe('require_confirmation')
-        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-refresh-binding')?->status)
+        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-refresh-binding')->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Approved)
         ->and($executions)->toBe(0)
         ->and($approvalEvidence?->approvalPhase)->toBe('execution_validation')
@@ -433,7 +434,7 @@ it('fails closed when receipt state changes after validation and spends only a r
     );
 
     expect($blocked['decision'])->toBe('require_confirmation')
-        ->and($store->findForToolCall('call-racing-consumption')?->status)
+        ->and($store->findForToolCall('call-racing-consumption')->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Approved)
         ->and($executions)->toBe(0)
         ->and(executeWithinApprovalMiddleware($tool, $request, $decisions))->toBe('cancelled')
@@ -523,7 +524,7 @@ it('requires an exact durable approval before executing and consumes it once', f
 
     expect($replay['decision'])->toBe('require_confirmation')
         ->and($executions)->toBe(1)
-        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-cancel-1001')?->status)
+        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-cancel-1001')->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Consumed);
 });
 
@@ -762,7 +763,7 @@ it('rejects changed arguments after approval', function (): void {
 
     expect($result['decision'])->toBe('require_confirmation')
         ->and($executions)->toBe(0)
-        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-cancel-changed')?->status)
+        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-cancel-changed')->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Approved);
 });
 
@@ -876,7 +877,7 @@ it('re-authorizes after approval and preserves an unused receipt when policy now
     expect($result['decision'])->toBe('deny')
         ->and($executions)->toBe(0)
         ->and($authorizer->calls)->toBe(2)
-        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-cancel-revoked')?->status)
+        ->and(app(ApprovalReceiptStore::class)->findForToolCall('call-cancel-revoked')->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Approved);
 });
 

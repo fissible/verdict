@@ -61,7 +61,7 @@ it('refuses to approve when no authorizer is configured', function (): void {
     expect(fn () => app(ApprovalManager::class)->approve($challenge->receiptId, $challenge->toolCallId, 'user:9'))
         ->toThrow(ApprovalAuthorizerMissing::class);
 
-    expect(app(ApprovalReceiptStore::class)->findForToolCall($challenge->toolCallId)?->status)
+    expect(app(ApprovalReceiptStore::class)->findForToolCall($challenge->toolCallId)->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Pending);
 });
 
@@ -72,7 +72,7 @@ it('refuses to reject when no authorizer is configured', function (): void {
     expect(fn () => app(ApprovalManager::class)->reject($challenge->receiptId, $challenge->toolCallId, 'user:9'))
         ->toThrow(ApprovalAuthorizerMissing::class);
 
-    expect(app(ApprovalReceiptStore::class)->findForToolCall($challenge->toolCallId)?->status)
+    expect(app(ApprovalReceiptStore::class)->findForToolCall($challenge->toolCallId)->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Pending);
 });
 
@@ -84,7 +84,7 @@ it('returns unauthorized and leaves the receipt pending when the authorizer deni
 
     expect($transition->outcome)->toBe(ApprovalOutcome::Unauthorized)
         ->and($transition->succeeded())->toBeFalse()
-        ->and(app(ApprovalReceiptStore::class)->findForToolCall($challenge->toolCallId)?->status)
+        ->and(app(ApprovalReceiptStore::class)->findForToolCall($challenge->toolCallId)->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Pending);
 });
 
@@ -131,7 +131,7 @@ it('does not consult the authorizer when the receipt id does not match the tool 
     // wrong id is canonically NotFound (Mismatch is reserved for binding mismatches).
     expect($transition->outcome)->toBe(ApprovalOutcome::NotFound)
         ->and($authorizer->decisions)->toBeEmpty()
-        ->and(app(ApprovalReceiptStore::class)->findForToolCall($challenge->toolCallId)?->status)
+        ->and(app(ApprovalReceiptStore::class)->findForToolCall($challenge->toolCallId)->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Pending);
 });
 
@@ -140,8 +140,9 @@ it('still consults the authorizer when a second receipt shares the tool call id'
     $challenge = authorizationChallenge('call-shared-id');
 
     // A colliding provider tool-call id with a different capability is legal under the
-    // three-column unique key; it makes findForToolCall() ambiguous (null), which must not
-    // become a hole the authorizer falls through — decisions look receipts up by id.
+    // three-column unique key; it makes findForToolCall() report multiplicity rather than a
+    // receipt (#425), which must not become a hole the authorizer falls through — decisions
+    // look receipts up by id.
     $context = new ActionContext(actor: 'customer:73', approvalContext: ['conversation_id' => 'conv-99']);
     app(ApprovalManager::class)->issue(confirmationEvaluation($context, 'call-shared-id', 'orders.refund'));
 

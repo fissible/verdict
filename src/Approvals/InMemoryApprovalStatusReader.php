@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Approvals;
 
 use Fissible\Verdict\Contracts\ApprovalStatusReader;
+use LogicException;
 
 /**
  * The reader paired with InMemoryApprovalReceiptStore (ADR 0031 §2): status reads ride the
@@ -22,9 +23,9 @@ final readonly class InMemoryApprovalStatusReader implements ApprovalStatusReade
         return ApprovalStatusView::fromNullableReceipt($this->store->find($receiptId));
     }
 
-    public function statusForToolCall(string $toolCallId): ?ApprovalStatusView
+    public function statusForToolCall(string $toolCallId): ApprovalStatusLookup
     {
-        return ApprovalStatusView::fromNullableReceipt($this->store->findForToolCall($toolCallId));
+        throw new LogicException('#425: unimplemented');
     }
 
     public function pendingWithin(array $scope): array

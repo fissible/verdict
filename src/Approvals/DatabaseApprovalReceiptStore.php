@@ -124,16 +124,9 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         return $transition;
     }
 
-    public function findForToolCall(string $toolCallId): ?ApprovalReceipt
+    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
     {
-        $rows = $this->connection->table($this->table)
-            ->where('tool_call_id', $toolCallId)
-            ->limit(2)
-            ->get();
-
-        return $rows->count() === 1 && $rows->first() instanceof stdClass
-            ? $this->receiptFromRow($rows->first())
-            : null;
+        throw new LogicException('#425: unimplemented');
     }
 
     public function find(string $receiptId): ?ApprovalReceipt

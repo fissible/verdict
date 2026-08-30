@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Contracts;
 
 use DateTimeImmutable;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApprovalReceiptLookup;
 use Fissible\Verdict\Approvals\ApprovalTransition;
 
 /**
@@ -27,7 +28,7 @@ interface ApprovalReceiptStore
      * receipt shares the tool call id (a colliding provider id is legal under the three-part
      * issue identity). Null therefore never proves absence — use find() to address one receipt.
      */
-    public function findForToolCall(string $toolCallId): ?ApprovalReceipt;
+    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup;
 
     /**
      * The receipt with this id, or null. Ids are unique, so this is never ambiguous;
