@@ -37,6 +37,19 @@ All notable changes to Verdict will be documented in this file.
 
 ### Changed
 
+- **An edited Laravel approval decision is now rejected loudly instead of silently dropped (#396).**
+  `LaravelApprovalDecisions` throws `UnsupportedApprovalDecision` when an approval `Decision::edit()`
+  reaches the adapter. A Verdict receipt binds the original proposal's arguments, while an edit asks the
+  framework to execute different ones, so translating it as an approval — or dropping it silently —
+  would hide a real incompatibility. The approving wildcard (`approveAll()`/`approveRemaining()`) is
+  unchanged: it stays silently skipped, because the agent loop passes it on resume and a blanket
+  approval must not authorize a specific consequential action.
+
+  **Upgrade:** an application that resumes a Verdict-bound tool with `Decision::edit([...])` now receives
+  `UnsupportedApprovalDecision` instead of silent non-execution — catch it and resume with a specific
+  `Decision::approve()` for the original proposal. Safely honoring edited-arguments approvals is tracked
+  as a future design (#419).
+
 - **The release script gates on the suite instead of tagging first and finding out (#410).** CI
   already ran on the release commit, but as a detector rather than a gate: on v0.13.1 it started
   nine seconds before the GitHub Release published, with the run still in flight, so a failure would
