@@ -14,6 +14,7 @@ use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Exceptions\ApprovalAuthorizerMissing;
 
 final class RecordingApprovalAuthorizer implements ApprovalDecisionAuthorizer
@@ -46,8 +47,12 @@ final class AuthorizationOrderClock implements Clock
  * a manager that defers to the store from one that computed Expired/InvalidState itself — both
  * return the same enum — and calling the store proves only that it was asked, not that its answer
  * was the one returned. The recorded transitions are compared by identity for that.
+ *
+ * It declares EnforcesDecisionAdmissibility (#436) because it is a transparent recorder over a store
+ * that enforces it. Without the declaration these tests would measure the undeclared fallback path
+ * rather than the behaviour #320 decided, which is precisely the confusion #436 exists to prevent.
  */
-final class DecisionRecordingReceiptStore implements ApprovalReceiptStore
+final class DecisionRecordingReceiptStore implements ApprovalReceiptStore, EnforcesDecisionAdmissibility
 {
     /** @var list<string> */
     public array $decisionCalls = [];
