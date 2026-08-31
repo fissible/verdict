@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Approvals\ApprovalLookupOutcome;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
@@ -86,13 +87,13 @@ it('atomically advances a database receipt from pending to approved to consumed'
         ->toBe(ApprovalOutcome::Approved)
         ->and($store->validate($receipt->toolCallId, $receipt->bindingFingerprint, $now)->outcome)
         ->toBe(ApprovalOutcome::Approved)
-        ->and($store->findForToolCall($receipt->toolCallId)?->status)
+        ->and($store->findForToolCall($receipt->toolCallId)->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Approved)
         ->and($store->consume($receipt->toolCallId, $receipt->bindingFingerprint, $now)->outcome)
         ->toBe(ApprovalOutcome::Consumed)
         ->and($store->consume($receipt->toolCallId, $receipt->bindingFingerprint, $now)->outcome)
         ->toBe(ApprovalOutcome::InvalidState)
-        ->and($store->findForToolCall($receipt->toolCallId)?->status)
+        ->and($store->findForToolCall($receipt->toolCallId)->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Consumed);
 });
 
@@ -106,7 +107,11 @@ it('keeps colliding provider tool-call IDs separated by exact action binding', f
     $store->approve($receipt->id, $receipt->toolCallId, 'customer:72', $now);
 
     expect($store->issue($different)->outcome)->toBe(ApprovalOutcome::Issued)
-        ->and($store->findForToolCall($receipt->toolCallId))->toBeNull()
+        // Two receipts now share the tool-call id: the read reports multiplicity by name
+        // (#425), never the absence it used to be indistinguishable from.
+        ->and($store->findForToolCall($receipt->toolCallId)->outcome)->toBe(ApprovalLookupOutcome::Multiple)
+        ->and($store->findForToolCall($receipt->toolCallId)->receiptIds)
+        ->toEqualCanonicalizing([$receipt->id, $different->id])
         ->and($store->consume($receipt->toolCallId, $different->bindingFingerprint, $now)->outcome)
         ->toBe(ApprovalOutcome::InvalidState)
         ->and($store->consume($receipt->toolCallId, $receipt->bindingFingerprint, $now)->outcome)
@@ -128,7 +133,7 @@ it('requires the unpredictable receipt identifier to approve or reject', functio
         ->toBe(ApprovalOutcome::Rejected)
         ->and($store->approve($receipt->id, $receipt->toolCallId, 'customer:72', $now)->outcome)
         ->toBe(ApprovalOutcome::InvalidState)
-        ->and($store->findForToolCall($receipt->toolCallId)?->status)
+        ->and($store->findForToolCall($receipt->toolCallId)->receipt?->status)
         ->toBe(ApprovalReceiptStatus::Rejected);
 });
 
@@ -143,7 +148,7 @@ it('hydrates receipt timestamps as UTC regardless of the application timezone', 
 
         $store->issue($receipt);
 
-        $stored = $store->findForToolCall($receipt->toolCallId);
+        $stored = $store->findForToolCall($receipt->toolCallId)->receipt;
 
         expect($stored)->not->toBeNull()
             ->and($stored?->expiresAt->getTimestamp())->toBe($receipt->expiresAt->getTimestamp())
@@ -200,7 +205,7 @@ it('rejects every receipt mutation inside an outer transaction on the store conn
 
     expect($connection->transactionLevel())->toBe(0)
         ->and($connection->table(verdictTable('approvals'))->count())->toBe(1)
-        ->and($store->findForToolCall($receipt->toolCallId)?->status)->toBe(ApprovalReceiptStatus::Pending);
+        ->and($store->findForToolCall($receipt->toolCallId)->receipt?->status)->toBe(ApprovalReceiptStatus::Pending);
 });
 
 it('round-trips the approver provenance payload through the durable receipt store', function (): void {
@@ -236,7 +241,7 @@ it('round-trips the approver provenance payload through the durable receipt stor
         updatedAt: $receipt->updatedAt,
     ));
 
-    $stored = $store->findForToolCall($receipt->toolCallId)?->provenance;
+    $stored = $store->findForToolCall($receipt->toolCallId)->receipt?->provenance;
 
     expect($stored?->disclosure)->toBe(ProvenanceDisclosure::Declared)
         ->and($stored?->sources)->toHaveCount(1)
@@ -252,7 +257,7 @@ it('reads a receipt issued before provenance was recorded as never captured', fu
     $store = databaseReceiptStore();
     $store->issue(databaseReceipt());
 
-    expect($store->findForToolCall('call-database-receipt')?->provenance)->toBeNull();
+    expect($store->findForToolCall('call-database-receipt')->receipt?->provenance)->toBeNull();
 });
 
 it('round-trips the approval context through the database', function (): void {
@@ -261,7 +266,7 @@ it('round-trips the approval context through the database', function (): void {
 
     $store->issue($receipt);
 
-    expect($store->findForToolCall($receipt->toolCallId)?->approvalContext)
+    expect($store->findForToolCall($receipt->toolCallId)->receipt?->approvalContext)
         ->toBe(['tenant_id' => 'tenant-9', 'conversation_id' => 'conv-41']);
 });
 
@@ -270,7 +275,7 @@ it('keeps a captured-empty approval context distinct from a never-captured one',
 
     $store->issue(databaseReceipt(approvalContext: []));
 
-    expect($store->findForToolCall('call-database-receipt')?->approvalContext)->toBe([]);
+    expect($store->findForToolCall('call-database-receipt')->receipt?->approvalContext)->toBe([]);
 });
 
 it('hydrates a receipt issued before approval context existed as never captured', function (): void {
@@ -278,7 +283,7 @@ it('hydrates a receipt issued before approval context existed as never captured'
 
     $store->issue(databaseReceipt(approvalContext: null));
 
-    expect($store->findForToolCall('call-database-receipt')?->approvalContext)->toBeNull();
+    expect($store->findForToolCall('call-database-receipt')->receipt?->approvalContext)->toBeNull();
 });
 
 it('issues and decides receipts when the approval_context column has not been migrated yet', function (): void {
@@ -307,7 +312,7 @@ it('issues and decides receipts when the approval_context column has not been mi
     // context reads as never-captured — not hard-fail every confirmation-gated issue().
     expect($store->issue(databaseReceipt(approvalContext: ['tenant_id' => 't-9']))->outcome)
         ->toBe(ApprovalOutcome::Issued)
-        ->and($store->findForToolCall('call-database-receipt')?->approvalContext)->toBeNull();
+        ->and($store->findForToolCall('call-database-receipt')->receipt?->approvalContext)->toBeNull();
 });
 
 it('hydrates a corrupt approval_context value as never captured rather than erroring', function (): void {
@@ -319,5 +324,5 @@ it('hydrates a corrupt approval_context value as never captured rather than erro
         ->where('id', $receipt->id)
         ->update(['approval_context' => '"not-an-array"']);
 
-    expect($store->findForToolCall($receipt->toolCallId)?->approvalContext)->toBeNull();
+    expect($store->findForToolCall($receipt->toolCallId)->receipt?->approvalContext)->toBeNull();
 });

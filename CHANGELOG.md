@@ -30,6 +30,30 @@ All notable changes to Verdict will be documented in this file.
   authorization.** Both shipped stores already satisfy this. See
   [ADR 0036](docs/adr/0036-receipt-state-precedes-authorization.md).
 
+### Fixed
+
+- **A tool-call collision is now an outcome, not the same null as absence (#425).**
+  `ApprovalReceiptStore::findForToolCall()` returned `null` for two different states — no receipt
+  exists, and two or more receipts share this tool-call id — so a caller could not tell absence
+  from ambiguity, and `ApprovalStatusReader::statusForToolCall()` rode the same null. A tool-call
+  id is a provider-supplied identifier and receipts are unique on
+  `(tool_call_id, capability, binding_fingerprint)`, so a collision is a legal, real event: a
+  cross-capability collision, or a proposal that changed while its receipt was still open. A
+  reviewer queue rendered it as nothing at all.
+
+  Both reads now return a result naming one of three outcomes — absent, single, multiple — with
+  the complete list of colliding receipt ids in `created_at` then id order, and a count. A
+  multiple result deliberately carries **no** receipt and no status view: canonicalizing one would
+  conceal exactly the event the queue exists to resolve. `challengeForToolCall()` refuses a
+  collision rather than choosing between two live proposals for an approver. Reads addressed by
+  receipt id were never ambiguous and are unchanged.
+
+  **Breaking for custom implementations.** `ApprovalReceiptStore::findForToolCall()` now returns
+  `ApprovalReceiptLookup` and `ApprovalStatusReader::statusForToolCall()` returns
+  `ApprovalStatusLookup`, both non-nullable. A custom store or reader must be updated; the shipped
+  ones, the store-backed reader default, and every consumer in this package already are.
+
+
 ## [0.14.0] - 2026-08-30
 
 ### Added
