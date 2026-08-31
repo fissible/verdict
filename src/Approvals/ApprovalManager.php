@@ -14,6 +14,7 @@ use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Exceptions\ApprovalAuthorizerMissing;
+use Fissible\Verdict\Support\ApproverSummary;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -47,13 +48,18 @@ final readonly class ApprovalManager
             return ApprovalTransition::to(ApprovalOutcome::InvalidState);
         }
 
+        $binding = $capability->approvalBinding($evaluation->envelope, $evaluation->target);
+        $content = $capability->approverDescription($evaluation->envelope, $evaluation->target, $binding);
+        $approverSummary = $content === null
+            ? null
+            : new ApproverSummary($content, hash('sha256', $content));
         $now = $this->clock->now();
         $ttl = $capability->confirmationTtlSeconds() ?? $this->defaultTtlSeconds;
         $receipt = new ApprovalReceipt(
             id: Str::random(64),
             toolCallId: $toolCallId,
             capability: $capability->name,
-            bindingFingerprint: $this->fingerprint($evaluation),
+            bindingFingerprint: $this->fingerprint($evaluation, $binding),
             provenance: $this->provenance($evaluation),
             approvalContext: $evaluation->envelope->context->approvalContext,
             status: ApprovalReceiptStatus::Pending,
@@ -66,6 +72,10 @@ final readonly class ApprovalManager
             consumedAt: null,
             createdAt: $now,
             updatedAt: $now,
+            approverSummary: $approverSummary,
+            approverSummaryRelease: $approverSummary === null
+                ? ApproverSummaryRelease::NotReleased
+                : ApproverSummaryRelease::Released,
         );
 
         return $this->receipts->issue($receipt);
@@ -208,7 +218,8 @@ final readonly class ApprovalManager
         );
     }
 
-    private function fingerprint(Evaluation $evaluation): string
+    /** @param ?array<string, mixed> $binding */
+    private function fingerprint(Evaluation $evaluation, ?array $binding = null): string
     {
         $capability = $evaluation->capability;
 
@@ -226,7 +237,7 @@ final readonly class ApprovalManager
             'capability' => $capability->name,
             'execution_target_policy' => $capability->executionTargetPolicy()?->name,
             'arguments' => $evaluation->envelope->proposal->arguments,
-            'binding' => $capability->approvalBinding($evaluation->envelope, $evaluation->target),
+            'binding' => $binding ?? $capability->approvalBinding($evaluation->envelope, $evaluation->target),
         ];
 
         $approvalContext = $evaluation->envelope->context->approvalContext;

@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Reviews;
 
 use DateTimeImmutable;
 use Fissible\Verdict\Approvals\ProposalProvenance;
+use Fissible\Verdict\Support\ApproverSummary;
 
 final readonly class ReviewRequest
 {

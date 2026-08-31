@@ -8,16 +8,20 @@ use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Approvals\ApprovalReceipt;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
-use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Approvals\ApproverSummaryRelease;
+use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
+use Fissible\Verdict\Reviews\ReviewRequest;
 use Fissible\Verdict\Support\ApproverSummary;
+use Illuminate\Database\DatabaseManager;
 
 // ADR 0038 §1/§6 — the confirmation lane materialises the approver summary at ISSUANCE, inside the frame, from
 // the ALREADY-COMPUTED binding, and persists it on the receipt. The typed release state records why a summary is
@@ -126,8 +130,8 @@ it('surfaces the approver summary and release state on the challenge', function 
 
 it('shares one ApproverSummary value shape between the approval and review lanes', function (): void {
     // Both lanes' approverSummary fields are the SAME relocated shared value — Fissible\Verdict\Support\ApproverSummary.
-    $reviewType = (new ReflectionProperty(\Fissible\Verdict\Reviews\ReviewRequest::class, 'approverSummary'))->getType();
-    $receiptType = (new ReflectionProperty(\Fissible\Verdict\Approvals\ApprovalReceipt::class, 'approverSummary'))->getType();
+    $reviewType = (new ReflectionProperty(ReviewRequest::class, 'approverSummary'))->getType();
+    $receiptType = (new ReflectionProperty(ApprovalReceipt::class, 'approverSummary'))->getType();
     assert($reviewType instanceof ReflectionNamedType && $receiptType instanceof ReflectionNamedType);
 
     expect($reviewType->getName())->toBe(ApproverSummary::class)
@@ -137,7 +141,7 @@ it('shares one ApproverSummary value shape between the approval and review lanes
 // ── the summary survives the durable round-trip (the default store must not drop it) ──────────────
 
 it('persists the approver summary and release state through the database store', function (): void {
-    $connection = app(\Illuminate\Database\DatabaseManager::class)->connection();
+    $connection = app(DatabaseManager::class)->connection();
     $schema = $connection->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('approvals'));
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
@@ -145,7 +149,7 @@ it('persists the approver summary and release state through the database store',
     (require __DIR__.'/../../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_approver_summary_to_verdict_approval_receipts_table.php.stub')->up();
 
-    $store = new \Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore($connection);
+    $store = new DatabaseApprovalReceiptStore($connection);
 
     // Materialise via the manager so the stored row carries a real summary, then hydrate it back from the DB.
     $issued = summaryManager($store)->issue(summaryEvaluation(summaryCapability(), 4242));
@@ -164,7 +168,7 @@ it('degrades gracefully against a table lacking the approver-summary columns, hy
     // An upgrading deployment whose approvals table predates the summary columns must not fail on issue, and a
     // row without the columns hydrates as a PRE-FEATURE record — a null release state, distinct from NotReleased
     // ("a summary was not produced"). ADR 0038 §3.
-    $connection = app(\Illuminate\Database\DatabaseManager::class)->connection();
+    $connection = app(DatabaseManager::class)->connection();
     $schema = $connection->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('approvals'));
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
@@ -172,7 +176,7 @@ it('degrades gracefully against a table lacking the approver-summary columns, hy
     (require __DIR__.'/../../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub')->up();
     // Deliberately NOT running add_approver_summary_… — the lagging-table case.
 
-    $store = new \Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore($connection);
+    $store = new DatabaseApprovalReceiptStore($connection);
     $issued = summaryManager($store)->issue(summaryEvaluation(summaryCapability(), 4242)); // has a describer
     $hydrated = $store->find($issued->receipt->id);
 

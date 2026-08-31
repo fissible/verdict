@@ -2,10 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Fissible\Verdict\Reviews;
+namespace Fissible\Verdict\Support;
 
 final readonly class ApproverSummary
 {
+    /**
+     * The fingerprint is hash('sha256', content): the identity of this exact plain-text snapshot,
+     * distinct from any binding fingerprint. It is never canonical JSON or the binding.
+     */
     public function __construct(
         public string $content,
         public string $fingerprint,
