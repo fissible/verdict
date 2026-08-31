@@ -12,6 +12,7 @@ use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
+use Fissible\Verdict\Support\ApproverSummary;
 use Fissible\Verdict\Support\SecurityStateTransaction;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Connection;
@@ -52,6 +53,32 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         return $this->schemaMemo->hasApprovalContext ??= $this->connection
             ->getSchemaBuilder()
             ->hasColumn($this->table, 'approval_context');
+    }
+
+    /**
+     * Whether the approver-summary columns exist. An install that has not yet run the additive
+     * migration continues issuing receipts, but cannot durably retain this feature's fields.
+     */
+    public function hasApproverSummaryColumn(): bool
+    {
+        if (! $this->connection instanceof Connection) {
+            throw new LogicException('The approval receipt connection does not support schema inspection.');
+        }
+
+        return $this->schemaMemo->hasApproverSummary ??= $this->connection
+            ->getSchemaBuilder()
+            ->hasColumn($this->table, 'approver_summary');
+    }
+
+    private function hasApproverSummaryReleaseColumn(): bool
+    {
+        if (! $this->connection instanceof Connection) {
+            throw new LogicException('The approval receipt connection does not support schema inspection.');
+        }
+
+        return $this->schemaMemo->hasApproverSummaryRelease ??= $this->connection
+            ->getSchemaBuilder()
+            ->hasColumn($this->table, 'approver_summary_release');
     }
 
     /**
@@ -498,6 +525,13 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                 : json_encode($receipt->approvalContext, JSON_THROW_ON_ERROR);
         }
 
+        if ($this->hasApproverSummaryColumn() && $this->hasApproverSummaryReleaseColumn()) {
+            $attributes['approver_summary'] = $receipt->approverSummary === null
+                ? null
+                : json_encode($receipt->approverSummary->toArray(), JSON_THROW_ON_ERROR);
+            $attributes['approver_summary_release'] = $receipt->approverSummaryRelease?->value;
+        }
+
         return $attributes;
     }
 
@@ -520,6 +554,8 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             consumedAt: $row->consumed_at === null ? null : $this->dateFromDatabase($row->consumed_at),
             createdAt: $this->dateFromDatabase($row->created_at),
             updatedAt: $this->dateFromDatabase($row->updated_at),
+            approverSummary: $this->approverSummaryFromRow($row),
+            approverSummaryRelease: $this->approverSummaryReleaseFromRow($row),
         );
     }
 
@@ -558,6 +594,30 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         $decoded = json_decode($stored, true, flags: JSON_THROW_ON_ERROR);
 
         return is_array($decoded) ? ProposalProvenance::fromArray($decoded) : null;
+    }
+
+    private function approverSummaryFromRow(stdClass $row): ?ApproverSummary
+    {
+        $stored = $row->approver_summary ?? null;
+
+        if (! is_string($stored) || $stored === '') {
+            return null;
+        }
+
+        try {
+            $decoded = json_decode($stored, true, flags: JSON_THROW_ON_ERROR);
+
+            return is_array($decoded) ? ApproverSummary::fromArray($decoded) : null;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function approverSummaryReleaseFromRow(stdClass $row): ?ApproverSummaryRelease
+    {
+        return is_string($row->approver_summary_release ?? null)
+            ? ApproverSummaryRelease::tryFrom($row->approver_summary_release)
+            : null;
     }
 
     private function dateFromDatabase(mixed $value): DateTimeImmutable

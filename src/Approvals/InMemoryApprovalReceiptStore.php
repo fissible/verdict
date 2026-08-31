@@ -294,6 +294,8 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
             consumedAt: $consumedAt ?? $receipt->consumedAt,
             createdAt: $receipt->createdAt,
             updatedAt: $updatedAt ?? $receipt->updatedAt,
+            approverSummary: $receipt->approverSummary,
+            approverSummaryRelease: $receipt->approverSummaryRelease,
         );
 
         $this->receipts[$receipt->id] = $updated;

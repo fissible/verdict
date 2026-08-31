@@ -72,6 +72,7 @@ final readonly class Capability
         private ?string $configurationVersion = null,
         private ?bool $requiresIntentRecord = null,
         public TargetSource $targetSource = TargetSource::Proposal,
+        private ?Closure $approverSummaryDescriber = null,
     ) {
         if (trim($this->name) === '') {
             throw new InvalidArgumentException('A capability must have a name.');
@@ -184,6 +185,7 @@ final readonly class Capability
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
+            approverSummaryDescriber: $this->approverSummaryDescriber,
         );
     }
 
@@ -216,6 +218,7 @@ final readonly class Capability
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
+            approverSummaryDescriber: $this->approverSummaryDescriber,
         );
     }
 
@@ -236,6 +239,7 @@ final readonly class Capability
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
+            approverSummaryDescriber: $this->approverSummaryDescriber,
         );
     }
 
@@ -261,6 +265,7 @@ final readonly class Capability
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
+            approverSummaryDescriber: $this->approverSummaryDescriber,
         );
     }
 
@@ -286,6 +291,7 @@ final readonly class Capability
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
+            approverSummaryDescriber: $this->approverSummaryDescriber,
         );
     }
 
@@ -311,6 +317,7 @@ final readonly class Capability
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
+            approverSummaryDescriber: $this->approverSummaryDescriber,
         );
     }
 
@@ -341,6 +348,7 @@ final readonly class Capability
             configurationVersion: $version,
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
+            approverSummaryDescriber: $this->approverSummaryDescriber,
         );
     }
 
@@ -369,6 +377,7 @@ final readonly class Capability
             configurationVersion: $this->configurationVersion,
             requiresIntentRecord: $required,
             targetSource: $this->targetSource,
+            approverSummaryDescriber: $this->approverSummaryDescriber,
         );
     }
 
@@ -379,6 +388,38 @@ final readonly class Capability
     public function intentRecordRequirement(): ?bool
     {
         return $this->requiresIntentRecord;
+    }
+
+    /**
+     * @param  callable(ActionEnvelope, mixed, array<string, mixed>): string  $describe
+     */
+    public function describeForApprover(callable $describe): self
+    {
+        return new self(
+            name: $this->name,
+            ability: $this->ability,
+            resolveTarget: $this->targetResolver,
+            executor: $this->executor,
+            approvalBindingResolver: $this->approvalBindingResolver,
+            confirmationReason: $this->confirmationReason,
+            confirmationTtlSeconds: $this->confirmationTtlSeconds,
+            rateLimitPolicy: $this->rateLimitPolicy,
+            executionClaimPolicy: $this->executionClaimPolicy,
+            executionTargetPolicy: $this->executionTargetPolicy,
+            resourceProjection: $this->resourceProjection,
+            configurationVersion: $this->configurationVersion,
+            requiresIntentRecord: $this->requiresIntentRecord,
+            targetSource: $this->targetSource,
+            approverSummaryDescriber: Closure::fromCallable($describe),
+        );
+    }
+
+    /** @param array<string, mixed> $binding */
+    public function approverDescription(ActionEnvelope $envelope, mixed $target, array $binding): ?string
+    {
+        return $this->approverSummaryDescriber === null
+            ? null
+            : ($this->approverSummaryDescriber)($envelope, $target, $binding);
     }
 
     public function configurationFingerprint(): string

@@ -25,6 +25,7 @@ use Fissible\Verdict\Targets\ResourceProjection;
 function fullyComposedCapability(): Capability
 {
     return Capability::usingPolicyForContextTarget('orders.refund', 'refund', fn (): int => 1)
+        ->describeForApprover(fn (): string => 'Refund order #1')
         ->executeUsing(fn (): string => 'executed')
         ->requiresConfirmation(
             bindUsing: fn (ActionEnvelope $envelope, mixed $target): array => ['id' => 1],
@@ -65,6 +66,10 @@ function capabilityWithers(): array
 {
     return [
         // wither => [invocation, the properties it is allowed to change]
+        'describeForApprover' => [
+            fn (Capability $c): Capability => $c->describeForApprover(fn (): string => 'Replaced.'),
+            ['approverSummaryDescriber'],
+        ],
         'executeUsing' => [fn (Capability $c): Capability => $c->executeUsing(fn (): string => 'replaced'), ['executor']],
         'requiresConfirmation' => [
             fn (Capability $c): Capability => $c->requiresConfirmation(fn (): array => ['replaced' => true], 'Replaced.', 60),
@@ -107,7 +112,7 @@ it('builds a fixture in which every field is actually populated', function (): v
     $unset = array_keys(array_filter($state, static fn (mixed $value): bool => $value === null));
 
     expect($unset)->toBe([], 'The fixture must set every field: '.implode(', ', $unset).' came back null.')
-        ->and($state)->toHaveCount(14)
+        ->and($state)->toHaveCount(15)
         ->and($state['targetSource'])->toBe(TargetSource::Context);
 });
 

@@ -3,11 +3,11 @@
 declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\ProposalProvenance;
-use Fissible\Verdict\Reviews\ApproverSummary;
 use Fissible\Verdict\Reviews\ReviewOutcome;
 use Fissible\Verdict\Reviews\ReviewRequest;
 use Fissible\Verdict\Reviews\ReviewStatus;
 use Fissible\Verdict\Reviews\ReviewTransition;
+use Fissible\Verdict\Support\ApproverSummary;
 
 // ADR 0035 §3/§6 — the value layer of the asynchronous review lane: a durable ReviewRequest record
 // and the store's transition vocabulary. These types are the SEPARATE primitive of §2 (they are not

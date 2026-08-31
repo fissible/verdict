@@ -3,13 +3,13 @@
 declare(strict_types=1);
 
 use Fissible\Verdict\Contracts\ReviewStatusReader;
-use Fissible\Verdict\Reviews\ApproverSummary;
 use Fissible\Verdict\Reviews\InMemoryReviewRequestStore;
 use Fissible\Verdict\Reviews\InMemoryReviewStatusReader;
 use Fissible\Verdict\Reviews\ReviewRequest;
 use Fissible\Verdict\Reviews\ReviewStatus;
 use Fissible\Verdict\Reviews\ReviewStatusView;
 use Fissible\Verdict\Reviews\StoreBackedReviewStatusReader;
+use Fissible\Verdict\Support\ApproverSummary;
 
 // ADR 0035 §4 — the review lane's read surface, which realizes ADR 0031's discipline through a SEPARATE
 // typed reader (not a widening of ApprovalStatusReader). Because a review is id-addressed, the reader is

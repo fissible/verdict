@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
-use Fissible\Verdict\Reviews\ApproverSummary;
 use Fissible\Verdict\Reviews\InMemoryReviewRequestStore;
 use Fissible\Verdict\Reviews\ReviewOutcome;
 use Fissible\Verdict\Reviews\ReviewRequest;
 use Fissible\Verdict\Reviews\ReviewStatus;
+use Fissible\Verdict\Support\ApproverSummary;
 
 // ADR 0035 §6 — the review-request store's lifecycle, idempotency, and single-use admission. Adapts
 // the confirmation lane's ApprovalReceiptStore for a review that is OUT OF BAND: there is no live tool

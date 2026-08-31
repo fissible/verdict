@@ -9,6 +9,7 @@ use DateTimeZone;
 use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
+use Fissible\Verdict\Support\ApproverSummary;
 use Fissible\Verdict\Support\SecurityStateTransaction;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Approvals;
 
 use DateTimeImmutable;
+use Fissible\Verdict\Support\ApproverSummary;
 
 final readonly class ApprovalReceipt
 {
@@ -40,6 +41,8 @@ final readonly class ApprovalReceipt
         public ?DateTimeImmutable $consumedAt,
         public DateTimeImmutable $createdAt,
         public DateTimeImmutable $updatedAt,
+        public ?ApproverSummary $approverSummary = null,
+        public ?ApproverSummaryRelease $approverSummaryRelease = null,
     ) {}
 
     public function isExpiredAt(DateTimeImmutable $time): bool
