@@ -664,7 +664,7 @@ verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
 |---|---|---|---|
 | [#300](https://github.com/fissible/verdict/issues/300) `ApprovalChallenge` has no `issuedAt` | XS | none | open — ungated, contributor-drivable; design with #306 |
 | [#327](https://github.com/fissible/verdict/issues/327) Implement the `ApprovalStatusReader` read contract | S | ADR 0031 ✅ | ✅ shipped (ApprovalStatusReader) |
-| [#320](https://github.com/fissible/verdict/issues/320) Does authorization precede receipt-state resolution — `Unauthorized` can mask expired/consumed | S (round) | #305 ✅ | open — design round |
+| [#320](https://github.com/fissible/verdict/issues/320) Does authorization precede receipt-state resolution — `Unauthorized` can mask expired/consumed | S (round) | #305 ✅ | ✅ shipped ([ADR 0036](docs/adr/0036-receipt-state-precedes-authorization.md), PR #430) |
 | [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()` | S | watches laravel/ai #932 | open |
 | [#299](https://github.com/fissible/verdict/issues/299) Receipt transitions dispatch no events | S–M | #327 | open — gated on the read contract |
 | [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design`; moved from v0.14.0 |
@@ -815,6 +815,17 @@ write-ahead intent lever (PR #330, ADR 0007 Update); its review round's two code
 through adoption — [#237](https://github.com/fissible/verdict/issues/237) is the nearest instrument;
 external contributors and issue reports are the rest. A 1.0 with every issue above closed but no
 integration feedback is not a true 1.0. The tag waits for the evidence, not the checklist.
+
+**One evidence-ordering decision carries here.** [#432](https://github.com/fissible/verdict/issues/432):
+evidence rows have no insertion-order column — the primary key is a random UUID and `recorded_at` is a
+whole-second timestamp, so `provenanceFor()` breaks ties by UUID and returns a *stable* order that is not
+the recorded one. #311 item 6 named this root cause and #383 closed the half the review had reported
+(run-to-run instability) with a portable data-order tiebreaker, deliberately not adding a monotonic column
+because SQLite forbids a secondary auto-increment. What is left is the promise itself: whether Verdict
+states that evidence reads are in recorded order, or states that they are not. It belongs to the 1.0 bar
+as a documented-contract question rather than a defect — the current behaviour is stable and safe, and
+"an audit reader may assume the order they see is the order it happened" is either true or must be said
+to be false. #389 is where it surfaced, as the reason a degradation test can only assert sets.
 
 **One hardening advisory carries here.** [#426](https://github.com/fissible/verdict/issues/426): the
 instance-form `ActionContext` is documented-forbidden (ADR 0027 §7) yet runtime-accepted with no warning.
