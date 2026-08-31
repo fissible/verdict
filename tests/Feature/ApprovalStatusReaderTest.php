@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Approvals\ApprovalLookupOutcome;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApprovalReceiptLookup;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\ApprovalStatusView;
 use Fissible\Verdict\Approvals\ApprovalTransition;
@@ -133,16 +135,20 @@ it('returns null from statusFor for an unknown receipt id', function (Closure $p
     expect($reader->statusFor('missing'))->toBeNull();
 })->with('paired readers');
 
-it('reads status by tool call id and inherits the documented collision ambiguity', function (Closure $pair): void {
+it('reads status by tool call id and names a collision instead of collapsing it', function (Closure $pair): void {
     [$store, $reader] = $pair();
 
     $store->issue(statusReaderReceipt('receipt-tc-one', toolCallId: 'call-shared'));
 
-    expect($reader->statusForToolCall('call-shared')?->receiptId)->toBe('receipt-tc-one');
+    expect($reader->statusForToolCall('call-shared')->status?->receiptId)->toBe('receipt-tc-one');
 
     $store->issue(statusReaderReceipt('receipt-tc-two', toolCallId: 'call-shared', capability: 'orders.refund'));
 
-    expect($reader->statusForToolCall('call-shared'))->toBeNull()
+    // Before #425 this read returned the same null as an unknown tool call, so a queue could not
+    // tell a collision from nothing at all. Reads by receipt id were never ambiguous.
+    expect($reader->statusForToolCall('call-shared')->outcome)->toBe(ApprovalLookupOutcome::Multiple)
+        ->and($reader->statusForToolCall('call-shared')->status)->toBeNull()
+        ->and($reader->statusForToolCall('call-unknown')->outcome)->toBe(ApprovalLookupOutcome::Absent)
         ->and($reader->statusFor('receipt-tc-one'))->not->toBeNull();
 })->with('paired readers');
 
@@ -230,9 +236,11 @@ it('serves the two status reads over any custom store, and refuses enumeration i
             return ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
         }
 
-        public function findForToolCall(string $toolCallId): ?ApprovalReceipt
+        public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
         {
-            return $this->receipt?->toolCallId === $toolCallId ? $this->receipt : null;
+            return $this->receipt?->toolCallId === $toolCallId
+                ? ApprovalReceiptLookup::single($this->receipt)
+                : ApprovalReceiptLookup::absent();
         }
 
         public function find(string $receiptId): ?ApprovalReceipt
@@ -265,7 +273,7 @@ it('serves the two status reads over any custom store, and refuses enumeration i
     $store->issue(statusReaderReceipt('receipt-custom'));
 
     expect($reader->statusFor('receipt-custom')?->receiptId)->toBe('receipt-custom')
-        ->and($reader->statusForToolCall('call-status-reader')?->receiptId)->toBe('receipt-custom')
+        ->and($reader->statusForToolCall('call-status-reader')->status?->receiptId)->toBe('receipt-custom')
         ->and(fn (): array => $reader->pendingWithin(['tenant_id' => 1]))->toThrow(LogicException::class);
 });
 

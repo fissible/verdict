@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Tests\Support;
 use DateTimeImmutable;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApprovalReceiptLookup;
 use Fissible\Verdict\Approvals\ApprovalTransition;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 
@@ -21,9 +22,9 @@ final class CustomStatusReaderTestStore implements ApprovalReceiptStore
         return ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
     }
 
-    public function findForToolCall(string $toolCallId): ?ApprovalReceipt
+    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
     {
-        return null;
+        return ApprovalReceiptLookup::absent();
     }
 
     public function find(string $receiptId): ?ApprovalReceipt

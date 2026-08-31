@@ -124,16 +124,27 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         return $transition;
     }
 
-    public function findForToolCall(string $toolCallId): ?ApprovalReceipt
+    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
     {
-        $rows = $this->connection->table($this->table)
+        // Do one ordered read so the common single result is fully hydrated without a second
+        // query; collisions are rare and must expose every id rather than a limit(2) sample.
+        $receipts = $this->connection->table($this->table)
             ->where('tool_call_id', $toolCallId)
-            ->limit(2)
-            ->get();
+            ->orderBy('created_at')
+            ->orderBy('id')
+            ->get()
+            ->map(fn (stdClass $row): ApprovalReceipt => $this->receiptFromRow($row))
+            ->values()
+            ->all();
 
-        return $rows->count() === 1 && $rows->first() instanceof stdClass
-            ? $this->receiptFromRow($rows->first())
-            : null;
+        return match (count($receipts)) {
+            0 => ApprovalReceiptLookup::absent(),
+            1 => ApprovalReceiptLookup::single($receipts[0]),
+            default => ApprovalReceiptLookup::multiple(array_map(
+                static fn (ApprovalReceipt $receipt): string => $receipt->id,
+                $receipts,
+            )),
+        };
     }
 
     public function find(string $receiptId): ?ApprovalReceipt

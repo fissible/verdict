@@ -7,7 +7,9 @@ namespace Fissible\Verdict\Tests\Support;
 use DateTimeImmutable;
 use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApprovalReceiptLookup;
 use Fissible\Verdict\Approvals\ApprovalScopeMatch;
+use Fissible\Verdict\Approvals\ApprovalStatusLookup;
 use Fissible\Verdict\Approvals\ApprovalStatusView;
 use Fissible\Verdict\Approvals\ApprovalTransition;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
@@ -25,9 +27,9 @@ final class SelfPairingStatusReaderTestStore implements ApprovalReceiptStore, Ap
         return ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
     }
 
-    public function findForToolCall(string $toolCallId): ?ApprovalReceipt
+    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
     {
-        return null;
+        return ApprovalReceiptLookup::absent();
     }
 
     public function find(string $receiptId): ?ApprovalReceipt
@@ -60,9 +62,9 @@ final class SelfPairingStatusReaderTestStore implements ApprovalReceiptStore, Ap
         return null;
     }
 
-    public function statusForToolCall(string $toolCallId): ?ApprovalStatusView
+    public function statusForToolCall(string $toolCallId): ApprovalStatusLookup
     {
-        return null;
+        return ApprovalStatusLookup::absent();
     }
 
     public function pendingWithin(array $scope): array
