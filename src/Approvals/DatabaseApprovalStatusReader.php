@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Approvals;
 
 use Fissible\Verdict\Contracts\ApprovalStatusReader;
+use Fissible\Verdict\Contracts\DistinguishesStatusCollisions;
 
 /**
  * The reader paired with DatabaseApprovalReceiptStore (ADR 0031 §2), on the store's own
@@ -22,7 +23,7 @@ use Fissible\Verdict\Contracts\ApprovalStatusReader;
  * migration must be restarted after it — the standard worker-restart obligation for any
  * deploy-time schema or configuration change.
  */
-final readonly class DatabaseApprovalStatusReader implements ApprovalStatusReader
+final readonly class DatabaseApprovalStatusReader implements ApprovalStatusReader, DistinguishesStatusCollisions
 {
     public function __construct(
         private DatabaseApprovalReceiptStore $store,
@@ -33,9 +34,14 @@ final readonly class DatabaseApprovalStatusReader implements ApprovalStatusReade
         return ApprovalStatusView::fromNullableReceipt($this->store->find($receiptId));
     }
 
-    public function statusForToolCall(string $toolCallId): ApprovalStatusLookup
+    public function statusForToolCall(string $toolCallId): ?ApprovalStatusView
     {
-        return ApprovalStatusLookup::fromReceiptLookup($this->store->findForToolCall($toolCallId));
+        return ApprovalStatusView::fromNullableReceipt($this->store->findForToolCall($toolCallId));
+    }
+
+    public function statusLookupForToolCall(string $toolCallId): ApprovalStatusLookup
+    {
+        return ApprovalStatusLookup::fromReceiptLookup($this->store->lookupForToolCall($toolCallId));
     }
 
     public function pendingWithin(array $scope): array

@@ -9,6 +9,7 @@ use DateTimeZone;
 use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Support\SecurityStateTransaction;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Connection;
@@ -17,7 +18,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use LogicException;
 use stdClass;
 
-final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore
+final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore, DistinguishesReceiptCollisions
 {
     /**
      * Mutable memo inside a readonly class: holds the lazily-checked presence of the
@@ -124,10 +125,25 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         return $transition;
     }
 
-    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
+    public function findForToolCall(string $toolCallId): ?ApprovalReceipt
     {
-        // Do one ordered read so the common single result is fully hydrated without a second
-        // query; collisions are rare and must expose every id rather than a limit(2) sample.
+        $rows = $this->connection->table($this->table)
+            ->where('tool_call_id', $toolCallId)
+            ->limit(2)
+            ->get();
+
+        return $rows->count() === 1 && $rows->first() instanceof stdClass
+            ? $this->receiptFromRow($rows->first())
+            : null;
+    }
+
+    /**
+     * The #425 collision seam. One ordered read, so the common single result is fully hydrated
+     * without a second query; collisions are rare and must expose every id rather than the
+     * limit(2) sample findForToolCall() is content with.
+     */
+    public function lookupForToolCall(string $toolCallId): ApprovalReceiptLookup
+    {
         $receipts = $this->connection->table($this->table)
             ->where('tool_call_id', $toolCallId)
             ->orderBy('created_at')

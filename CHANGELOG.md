@@ -4,6 +4,38 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **A tool-call collision can be told from an absent receipt, through an opt-in seam (#425).**
+  `ApprovalReceiptStore::findForToolCall()` returns `null` for two different states — no receipt
+  exists, and two or more receipts share this tool-call id — so a caller cannot tell absence from
+  ambiguity, and `ApprovalStatusReader::statusForToolCall()` rides the same null. A tool-call id is
+  a **provider-supplied** identifier and receipts are unique on
+  `(tool_call_id, capability, binding_fingerprint)`, so a collision is a legal, real event: a
+  cross-capability collision, or a proposal that changed while its receipt was still open. A
+  reviewer queue rendered it as nothing at all.
+
+  Two new contracts answer that question without changing either existing method.
+  `DistinguishesReceiptCollisions::lookupForToolCall()` and
+  `DistinguishesStatusCollisions::statusLookupForToolCall()` return one of three outcomes — absent,
+  single, multiple — with the complete list of colliding receipt ids in `created_at` then id
+  order, and a count. A multiple result deliberately carries **no** receipt and no status view:
+  canonicalizing one would conceal exactly the event the queue exists to resolve.
+
+  **Nothing existing changes.** `ApprovalReceiptStore` is `Stable` through 1.0, so
+  `findForToolCall()` keeps its signature and its documented ambiguity, and
+  `statusForToolCall()` keeps its nullable view. Both shipped stores and all three shipped readers
+  implement the new interfaces; a custom store or reader that has not adopted them keeps working
+  exactly as before. `ApprovalManager::challengeForToolCall()` is deliberately not moved onto the
+  seam — a collision yields no challenge either way, so requiring it would make every custom
+  store's support load-bearing for no behavioural gain.
+
+  A reader carries the status seam only when it can answer it. The container pairs a custom store
+  with `DistinguishingStoreBackedApprovalStatusReader` when that store adopted
+  `DistinguishesReceiptCollisions`, and with the unchanged `StoreBackedApprovalStatusReader`, which
+  does not declare the interface, when it has not — so `instanceof` stays an honest probe rather
+  than a capability that throws half the time.
+
 ### Changed
 
 - **An approval decision resolves receipt state before it authorizes (#320).** `ApprovalManager`
@@ -29,30 +61,6 @@ All notable changes to Verdict will be documented in this file.
   supplied instant, and **a store that finalizes a terminal or expired receipt finalizes it without
   authorization.** Both shipped stores already satisfy this. See
   [ADR 0036](docs/adr/0036-receipt-state-precedes-authorization.md).
-
-### Fixed
-
-- **A tool-call collision is now an outcome, not the same null as absence (#425).**
-  `ApprovalReceiptStore::findForToolCall()` returned `null` for two different states — no receipt
-  exists, and two or more receipts share this tool-call id — so a caller could not tell absence
-  from ambiguity, and `ApprovalStatusReader::statusForToolCall()` rode the same null. A tool-call
-  id is a provider-supplied identifier and receipts are unique on
-  `(tool_call_id, capability, binding_fingerprint)`, so a collision is a legal, real event: a
-  cross-capability collision, or a proposal that changed while its receipt was still open. A
-  reviewer queue rendered it as nothing at all.
-
-  Both reads now return a result naming one of three outcomes — absent, single, multiple — with
-  the complete list of colliding receipt ids in `created_at` then id order, and a count. A
-  multiple result deliberately carries **no** receipt and no status view: canonicalizing one would
-  conceal exactly the event the queue exists to resolve. `challengeForToolCall()` refuses a
-  collision rather than choosing between two live proposals for an approver. Reads addressed by
-  receipt id were never ambiguous and are unchanged.
-
-  **Breaking for custom implementations.** `ApprovalReceiptStore::findForToolCall()` now returns
-  `ApprovalReceiptLookup` and `ApprovalStatusReader::statusForToolCall()` returns
-  `ApprovalStatusLookup`, both non-nullable. A custom store or reader must be updated; the shipped
-  ones, the store-backed reader default, and every consumer in this package already are.
-
 
 ## [0.14.0] - 2026-08-30
 

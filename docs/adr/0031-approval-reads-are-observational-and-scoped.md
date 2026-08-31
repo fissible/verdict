@@ -17,8 +17,9 @@ Status: Accepted
   its records are reserved to ride this contract when they exist (§6).
 - [#299](https://github.com/fissible/verdict/issues/299) (open) is gated on this ADR: a
   transition-event stream is only meaningful against a defined status-read contract.
-- [#425](https://github.com/fissible/verdict/issues/425) supersedes this ADR's former nullable
-  tool-call ambiguity consequence: collisions are now explicit outcomes.
+- [#425](https://github.com/fissible/verdict/issues/425) adds a collision-distinguishing read
+  *beside* the contracts this ADR defines rather than changing them: this ADR's nullable tool-call
+  ambiguity still stands on `statusForToolCall()`.
 - [ADR 0004](0004-independent-security-state-transactions.md) and
   [ADR 0007](0007-evidence-layering.md) place receipts in the operational layer; that placement is
   why this contract is not an evidence query seam.
@@ -80,10 +81,20 @@ interface ApprovalStatusReader
 {
     public function statusFor(string $receiptId): ?ApprovalStatusView;
 
-    public function statusForToolCall(string $toolCallId): ApprovalStatusLookup;
+    public function statusForToolCall(string $toolCallId): ?ApprovalStatusView;
 
     /** @param non-empty-array<string, string|int> $scope */
     public function pendingWithin(array $scope): array; // list<ApprovalStatusView>
+}
+```
+
+This contract is unchanged since it shipped. #425 added its collision read *beside* it, so a
+reader written against the signatures above still satisfies it:
+
+```php
+interface DistinguishesStatusCollisions   // opt-in, #425
+{
+    public function statusLookupForToolCall(string $toolCallId): ApprovalStatusLookup;
 }
 ```
 
@@ -99,10 +110,15 @@ trailing optional addition when a consumer demonstrates a concrete need.
 
 **Store pairing.** `statusFor()` and `statusForToolCall()` are implementable over
 `ApprovalReceiptStore::find()` and `findForToolCall()`, so a store-backed default serves them
-against **any** store implementation with zero new store methods. Issue #425 supersedes the
-former nullable ambiguity: `statusForToolCall()` carries absence, single, or multiple explicitly;
-a multiple result has no status to canonicalize and names every colliding receipt. Consumers that
-hold a `receiptId` should prefer `statusFor()`. `pendingWithin()` cannot ride the store: it has no
+against **any** store implementation with zero new store methods. `statusForToolCall()` inherits
+`findForToolCall()`'s documented ambiguity — null never proves absence — and consumers that hold a
+`receiptId` should prefer `statusFor()`. Issue #425 did not change that. A consumer that must see
+the collision itself reads the opt-in `DistinguishesStatusCollisions`, which the shipped readers
+implement beside this contract. The store-backed default splits on the same question: a custom
+store that implements `DistinguishesReceiptCollisions` is paired with a reader that carries the
+status seam, and one that does not is paired with the unchanged reader that does not declare it —
+never a reader that claims the capability and then refuses, and never one that reports an
+unresolvable read as absence. `pendingWithin()` cannot ride the store: it has no
 enumeration method, by #106's design, and this ADR does not add one. The shipped readers are
 therefore store-paired — the database reader queries the configured table, the in-memory reader
 its array — and a custom-store owner who wants enumeration implements the reader contract too.
@@ -198,17 +214,22 @@ narrow reader, not a projection pipeline. `ApprovalStatusReader` matches the exi
   table shape: the harness through `statusForToolCall()` (or the unchanged
   `challengeForToolCall()`), incident response through `pendingWithin()` + `statusFor()`, the
   console through pause-time ingestion plus `statusFor()` refresh now and `pendingWithin()` for
-  the asynchronous lane when #297 lands. #425 makes a tool-call collision observable rather than
-  indistinguishable from absence. Acceptance criterion 2 of #298 is met by inspection.
+  the asynchronous lane when #297 lands. #425 makes a tool-call collision observable through an
+  opt-in seam, without moving any consumer that does not need it. Acceptance criterion 2 of #298
+  is met by inspection.
 - verdict-console's three workarounds acquire their deletion path: VC-10's cut durable retry
   (decision read-back now exists), VC-43's both-halves defence for a null challenge, and VC-45's
   "expired or already decided" copy, which §5 splits. A null challenge still covers missing,
-  expired, non-pending, and colliding receipts; #425 exposes the collision on the status-read path.
+  expired, non-pending, and colliding receipts; #425 exposes the collision to a consumer that opts
+  in, and `challengeForToolCall()` is deliberately not moved onto it — a collision yields no
+  challenge either way.
 - #299's event stream now has the status-read contract it is defined against, and inherits §4's
   framing: events shrink the stale window; they do not change the consistency statement.
 - The contract, DTO, store-backed default, and paired database and in-memory readers are shipped.
-  Issue #425 supersedes the former `findForToolCall()` nullable ambiguity with explicit absence,
-  single, and multiple outcomes; the adoption guide's join guidance remains the enumeration story.
+  `findForToolCall()` keeps its nullable ambiguity — `ApprovalReceiptStore` is Stable through 1.0 —
+  and #425's absence/single/multiple outcomes arrive on the opt-in seam instead, so an existing
+  custom store keeps working untouched. The adoption guide's join guidance remains the enumeration
+  story.
 - The adoption guide keeps documenting the application-owned join path: it is the enumeration
   story for applications that do not capture `approval_context`, and #106's decision comment
   remains its record.

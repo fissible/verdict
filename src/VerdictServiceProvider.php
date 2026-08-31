@@ -11,6 +11,7 @@ use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\DatabaseApprovalStatusReader;
+use Fissible\Verdict\Approvals\DistinguishingStoreBackedApprovalStatusReader;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalStatusReader;
 use Fissible\Verdict\Approvals\StoreBackedApprovalStatusReader;
@@ -41,6 +42,7 @@ use Fissible\Verdict\Contracts\AttestChainResolver;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
@@ -583,7 +585,11 @@ final class VerdictServiceProvider extends ServiceProvider
             return new InMemoryApprovalStatusReader($store);
         }
 
-        return new StoreBackedApprovalStatusReader($store);
+        // The collision seam is opt-in, so the paired reader must advertise it only when the
+        // store can actually answer it — instanceof is what a consumer probes (#425).
+        return $store instanceof DistinguishesReceiptCollisions
+            ? new DistinguishingStoreBackedApprovalStatusReader($store)
+            : new StoreBackedApprovalStatusReader($store);
     }
 
     /**

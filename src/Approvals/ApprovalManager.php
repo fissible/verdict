@@ -71,17 +71,17 @@ final readonly class ApprovalManager
     }
 
     /**
-     * Issues a challenge only for one pending, unexpired receipt. Absence and a collision both
-     * yield null deliberately: a challenge names exactly one receipt, so choosing between two
-     * live proposals for an approver would reintroduce the behaviour #425 removes.
+     * A challenge for the one pending, unexpired receipt on this tool call, or null. A collision
+     * yields null too, and that needs no collision seam to be correct: a challenge names exactly
+     * one receipt, and findForToolCall()'s ambiguous null already refuses to pick between two
+     * live proposals for an approver. Reading DistinguishesReceiptCollisions here would change
+     * nothing but would make every custom store's support of it load-bearing (#425).
      */
     public function challengeForToolCall(string $toolCallId): ?ApprovalChallenge
     {
-        $lookup = $this->receipts->findForToolCall($toolCallId);
-        $receipt = $lookup->receipt;
+        $receipt = $this->receipts->findForToolCall($toolCallId);
 
-        if ($lookup->outcome !== ApprovalLookupOutcome::Single
-            || $receipt === null
+        if ($receipt === null
             || $receipt->status !== ApprovalReceiptStatus::Pending
             || $receipt->isExpiredAt($this->clock->now())) {
             return null;
@@ -244,11 +244,12 @@ final readonly class ApprovalManager
      * unexpired, the authorizer may decide whether the caller can make the decision. Every other
      * receipt is delegated to the store untouched so it produces the canonical
      * NotFound/Mismatch/Expired/InvalidState outcome. The receipt is addressed by id — never by
-     * findForToolCall(), whose explicit multiple outcome records a tool-call collision rather than
-     * selecting a receipt. The fetch-then-transition race is benign: a terminal receipt cannot
-     * become pending, and the store re-validates state atomically, so a decidable pre-read is only
-     * optimistic. Apart from Unauthorized, the manager originates no state outcome and returns the
-     * store's transition unaltered.
+     * findForToolCall(), whose null is ambiguous (absent OR a colliding tool-call id) and would
+     * let a second receipt on the same call bypass the authorizer while the store still finalized
+     * by id. The fetch-then-transition race is benign: a terminal receipt cannot become pending,
+     * and the store re-validates state atomically, so a decidable pre-read is only optimistic.
+     * Apart from Unauthorized, the manager originates no state outcome and returns the store's
+     * transition unaltered.
      */
     private function unauthorized(
         string $receiptId,
