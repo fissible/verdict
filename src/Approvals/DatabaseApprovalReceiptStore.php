@@ -11,6 +11,7 @@ use Fissible\Verdict\Approvals\Events\ApprovalReceiptTransitioned;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
+use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Support\SecurityStateTransaction;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Connection;
@@ -19,7 +20,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use LogicException;
 use stdClass;
 
-final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore, DistinguishesReceiptCollisions
+final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility
 {
     /**
      * Mutable memo inside a readonly class: holds the lazily-checked presence of the

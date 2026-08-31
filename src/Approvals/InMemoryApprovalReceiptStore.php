@@ -9,12 +9,13 @@ use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
 use Fissible\Verdict\Approvals\Events\ApprovalReceiptTransitioned;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
+use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Illuminate\Contracts\Events\Dispatcher;
 
 /**
  * Process-local test store. It is not safe for production, Octane, or queue workers.
  */
-final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, DistinguishesReceiptCollisions
+final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility
 {
     /** @var array<string, ApprovalReceipt> */
     private array $receipts = [];

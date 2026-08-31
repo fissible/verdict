@@ -116,3 +116,57 @@ and that is where admission is actually decided.
   terminal inside the window described above.
 - The store contract carries an invariant it did not carry before, and adapter authors must satisfy
   it. It is documented on `approve()` and in the extension-contract inventory.
+
+## Update (#436): the shortcut is taken only for a store that declares it refuses an inadmissible decision
+
+The section above — *What this moves onto the store contract* — understated what it was doing. It
+recorded a new obligation on `ApprovalReceiptStore` as though documenting it were enough. It was not,
+for a reason the original text names without following through: `ApprovalReceiptStore` is labelled
+**Stable**, "intended to remain compatible through Verdict 1.0".
+
+Before this ADR, the authorizer ran for every found, call-matching receipt, so a store that was lax
+about receipt state was still covered — the authorizer ran, and a denial stopped the decision. After
+it, the manager skips the authorizer for a receipt it reads as inadmissible and delegates anyway. A
+store written against v0.14.0, unchanged and still compiling, therefore acquired an authorization
+hole on upgrade, with no signal but prose in three documents. That is worse than a signature break,
+which at least fails at load: this one is compile-clean, and its failure mode is a missing
+authorization check.
+
+**The decision, unchanged in substance and narrowed in reach.** The shortcut stands, and is taken for
+a store that declares `Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility` — a marker by which
+a store states that `approve()`/`reject()` atomically refuse any receipt that is not call-matching,
+`Pending`, and unexpired. For such a store everything above holds exactly: an inadmissible receipt
+bypasses the authorizer, the store produces the canonical `Expired`/`InvalidState`, and the manager
+returns that transition unaltered.
+
+**A store that does not declare it keeps the pre-#320 order.** Every found, call-matching receipt
+reaches the authorizer first, whatever its state; a denial returns `Unauthorized` and nothing is
+delegated, so a lax store is never handed a decision to mishandle. Both shipped stores declare the
+marker, so a default install is unaffected.
+
+**What an undeclared store gives up is the reporting fidelity this ADR was written to add.** A
+denying authorizer masks `Expired` and `InvalidState` again — the exact defect §*Context* opens with.
+That is the price of compatibility and it is deliberate: an authorization hole is a worse failure
+than a misreported outcome. The two properties move together the moment the store declares the marker
+*and honours it* — a false declaration buys the reporting fidelity back while giving up the safety,
+which is the trade nobody should want and the reason the marker's meaning is stated as a promise
+rather than a switch. Note also that only `Expired` and `InvalidState` are masked: `NotFound` and
+`Mismatch` are delegated without authorization under either order, because neither addresses a
+receipt the store would finalize.
+
+**The marker is a claim, not a verification.** Verdict cannot prove an external store's atomic state
+semantics, and does not try — conformance belongs in an adapter's own contract tests. What the marker
+changes is who bears the consequence of being wrong: a store that declares and then finalizes an
+inadmissible receipt has broken its own stated promise, where before the package had quietly assumed
+one it never asked for.
+
+**A decorator does not inherit the declaration, and that is the safe direction.** An application
+wrapping a shipped store for logging or tenancy produces an object that is not `instanceof` the
+marker, so the manager falls back to authorizing everything. This is the most likely way a real
+deployment reaches the compatibility path — more likely than a genuinely old store — and the fallback
+costs an authorizer call, not a security property.
+
+This is the same shape as the #425 correction in PR #435, and deliberately so: an `Experimental`
+opt-in interface beside a `Stable` contract, shipped implementations adopting it, and existing
+adapters unchanged and safe. A `Stable` label constrains how a fix may be shaped. Recording a break
+is not shaping it.

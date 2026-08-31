@@ -42,11 +42,15 @@ interface ApprovalReceiptStore
 
     /**
      * Finalize by receipt id; the store owns the canonical failure outcomes
-     * (NotFound/Mismatch/Expired/InvalidState) and the transition must be atomic. A decision is
-     * admissible only when, at $at, the identified receipt has the matching tool call, is Pending,
-     * and is unexpired; every other receipt must be refused with the applicable failure outcome.
-     * ApprovalManager consults its decision authorizer only for a receipt this predicate admits, so
-     * a store that finalizes a terminal or expired receipt finalizes it without authorization.
+     * (NotFound/Mismatch/Expired/InvalidState) and the transition must be atomic. Every store
+     * must refuse a decision unless, at $at, the identified receipt has the matching tool call,
+     * is Pending, and is unexpired, with the applicable failure outcome. This is required whether
+     * or not a store declares an additional capability.
+     *
+     * Separately, EnforcesDecisionAdmissibility tells ApprovalManager it may delegate a found,
+     * call-matching inadmissible receipt without authorizing it first. A store that does not
+     * declare the marker receives the pre-#320 order: every found, call-matching receipt is
+     * authorized before delegation.
      */
     public function approve(
         string $receiptId,
