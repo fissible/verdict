@@ -670,7 +670,7 @@ verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
 | [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design`; moved from v0.14.0 |
 | [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` is a disposition with no runtime | L–XL | none | open — `scope: design`, the keystone; design rounds can proceed on the issue any time |
 | [#357](https://github.com/fissible/verdict/issues/357) `pendingWithin()` is an unbounded scan + N+1 with no expiry filter | S–M | none | open — reader-queue scale; a pre-1.0 must-fix the v0.14.0 review named |
-| [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) | none | open — `scope: design`; the read-ambiguity companion to #357 |
+| [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) + S (impl) | none | shipped (PR #431) — **contract correction in flight**, see below; row not final |
 
 **Cluster membership, settled.** #230 stays on v1.0.0 — it is a boundary decision on the 1.0 bar, and it
 was already scheduled there when the cluster was cut. #201 stays deliberately unscheduled with its recorded
@@ -681,8 +681,27 @@ aesthetic.
 **The two reader-queue defects ride this milestone.** #357 (`pendingWithin()` scan + N+1) and #425
 (`findForToolCall()` ambiguity → `null`) are the two the v0.14.0 external review named as most likely to
 bite an adopter's approval queue at scale, and asked to see fixed before 1.0. Both are independent of the
-design keystone and drivable any time; #425 carries a small read-contract decision — distinguish absence
-from multiplicity — before code.
+design keystone and drivable any time. #357 is still open; #425 shipped, with a correction outstanding.
+
+**#425 shipped, and the contract change it carried is being reshaped.** PR #431 gave the tool-call lookup
+three outcomes — absent, single, collision — because `null` could not express the third, and a reviewer
+queue therefore rendered a receipt collision as absence. That part is right and stands. What shipped with
+it was an incompatible change to the return type of `ApprovalReceiptStore::findForToolCall()` — a contract
+this repository labels **Stable** in [`docs/extension-contract-stability.md`](docs/extension-contract-stability.md),
+meaning "intended to remain compatible through Verdict 1.0". The break was *recorded* in that document
+rather than reversed, which is the wrong order: a Stable-through-1.0 promise is not something to normalize
+after the fact, and the window to reshape it closes the moment an adopter writes a custom store against it.
+
+The correction, decided 2026-08-31: restore `findForToolCall(): ?ApprovalReceipt` for existing custom
+stores, and add the three-outcome lookup as a **new opt-in read seam**. The shipped stores implement the
+richer seam; a custom store that has not adopted it keeps the old ambiguous behaviour until it does. That
+preserves compatibility without pretending absence and collision are distinguishable through the old
+method. `ApprovalStatusReader::statusForToolCall()` changed alongside it and needs no reversal — that
+contract is `Experimental` and carries no such promise.
+
+**The row above is deliberately not final.** It records what shipped and what is being changed, not a
+settled outcome. It is rewritten when the correction lands, together with the "Stable contract changes
+before 1.0" section #431 added to the extension-contract inventory.
 
 ---
 
