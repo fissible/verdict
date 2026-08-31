@@ -146,6 +146,29 @@ it('applies the add_* stubs to the configured table name', function (): void {
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->down();
 });
 
+it('applies the add_review_outcome stub to the configured evidence table and rolls it back cleanly', function (): void {
+    foreach (verdictRenamedTableConfig() as $key => $name) {
+        config()->set($key, $name);
+    }
+
+    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+
+    (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_review_outcome_to_verdict_evidence_table.php.stub')->up();
+
+    // The nullable column lands on the CONFIGURED table, never the hardcoded default.
+    expect($schema->hasColumn('renamed_evidence', 'review_outcome'))->toBeTrue()
+        ->and($schema->hasTable('verdict_evidence'))->toBeFalse();
+
+    // down() honours the same configured name and removes only the column it added.
+    (require __DIR__.'/../../database/migrations/add_review_outcome_to_verdict_evidence_table.php.stub')->down();
+
+    expect($schema->hasColumn('renamed_evidence', 'review_outcome'))->toBeFalse()
+        ->and($schema->hasTable('renamed_evidence'))->toBeTrue(); // rollback drops the column, not the table
+
+    (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->down();
+});
+
 it('records evidence and derivations into the renamed tables through the provider-wired recorder', function (): void {
     foreach (verdictRenamedTableConfig() as $key => $name) {
         config()->set($key, $name);

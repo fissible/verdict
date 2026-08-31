@@ -46,6 +46,7 @@ const ADDITIVE_COLUMN_WRITERS = [
     'tool_description_matched' => ['decision'],
     'claim_type' => ['decision'],
     'record_digest' => ['decision'],
+    'review_outcome' => ['decision'],
     'channel' => ['provenance'],
     'component_label' => ['provenance'],
     'component_fingerprint' => ['provenance'],
@@ -122,6 +123,7 @@ function degradationEvidence(): DecisionEvidence
         invocationToolDescriptionFingerprint: str_repeat('7', 64),
         toolDescriptionMatched: true,
         intentId: str_repeat('1', 64),
+        reviewOutcome: 'admitted',
     );
 }
 
@@ -172,6 +174,7 @@ function expectedDecisionValues(DecisionEvidence $evidence): array
         'tool_description_fingerprint' => str_repeat('7', 64),
         'invocation_tool_description_fingerprint' => str_repeat('7', 64),
         'tool_description_matched' => '1',
+        'review_outcome' => 'admitted',
         // Derived by DecisionEvidence itself, so taken from the object rather than restated.
         'claim_type' => (string) $evidence->claimType?->value,
         'record_digest' => $evidence->recordDigest,
@@ -350,11 +353,12 @@ it('writes every surviving column when the table lags a migration', function (ar
     'tool kind' => [['tool_kind']],
     'target source' => [['target_source']],
     'tool description fingerprints' => [['tool_description_fingerprint']],
+    'review outcome' => [['review_outcome']],
     'provenance columns' => [['content_fingerprint']],
     'every additive migration' => [[
         'intent_id', 'actor_fingerprint', 'configuration_fingerprint', 'invocation_id',
         'record_digest', 'tool_kind', 'target_source', 'tool_description_fingerprint',
-        'content_fingerprint',
+        'review_outcome', 'content_fingerprint',
     ]],
 ]);
 
