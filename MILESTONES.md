@@ -668,9 +668,9 @@ verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
 | [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()` | S | watches laravel/ai #932 | open |
 | [#299](https://github.com/fissible/verdict/issues/299) Receipt transitions dispatch no events | S–M | #327 | open — gated on the read contract |
 | [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design`; moved from v0.14.0 |
-| [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` is a disposition with no runtime | L–XL | none | open — `scope: design`, the keystone; design rounds can proceed on the issue any time |
+| [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` is a disposition with no runtime | L–XL | none | open — `scope: ready`, building; [ADR 0035](docs/adr/0035-the-asynchronous-review-lane.md) (#428), the loud reserve (#429) and the value layer (#434) have landed |
 | [#357](https://github.com/fissible/verdict/issues/357) `pendingWithin()` is an unbounded scan + N+1 with no expiry filter | S–M | none | open — reader-queue scale; a pre-1.0 must-fix the v0.14.0 review named |
-| [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) + S (impl) | none | ✅ Shipped — PRs #431 and #435 |
+| [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) + M (impl) | none | ✅ shipped (PRs #431, #435) — collision is an opt-in seam; the `Stable` contract is intact |
 | [#436](https://github.com/fissible/verdict/issues/436) #320 placed a new behavioural obligation on the Stable `ApprovalReceiptStore` contract | S (round) + S (impl) | #320 ✅ | open — the silent half of the same Stable-contract question #425 raised loudly |
 
 **Cluster membership, settled.** #230 stays on v1.0.0 — it is a boundary decision on the 1.0 bar, and it
@@ -682,7 +682,7 @@ aesthetic.
 **The two reader-queue defects ride this milestone.** #357 (`pendingWithin()` scan + N+1) and #425
 (`findForToolCall()` ambiguity → `null`) are the two the v0.14.0 external review named as most likely to
 bite an adopter's approval queue at scale, and asked to see fixed before 1.0. Both are independent of the
-design keystone and drivable any time. #357 is still open; #425 is shipped and settled.
+design keystone and drivable any time. #357 is still open; #425 is closed and settled.
 
 **#425 shipped in two parts, and the second one is the point.** PR #431 gave the tool-call lookup three
 outcomes — absent, single, collision — because `null` could not express the third, and a reviewer queue
@@ -724,9 +724,9 @@ recommendation; it is not a proposal to revert #320, whose outcome semantics are
 [fissible/verdict-console#96](https://github.com/fissible/verdict-console/issues/96) (milestone
 `verdict-gated`), which also carries the `fissible/verdict` constraint bump from `^0.14`.
 
-**The row above is deliberately not final.** It records what shipped and what is being changed, not a
-settled outcome. It is rewritten when the correction lands, together with the "Stable contract changes
-before 1.0" section #431 added to the extension-contract inventory.
+**The precedent this sets.** A `Stable` label is a constraint on how a fix may be shaped, not a note to be
+amended when a fix is inconvenient. The three-outcome read was the right diagnosis both times; what
+changed is that the second version does not charge existing adapters for it.
 
 ---
 
