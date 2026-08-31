@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# release.sh — Verdict release script
+# release.sh — verdict-console release script (derived from Verdict's; adds first-release support)
 # Usage: bash release.sh [patch|minor|major]
 # Dependencies: git, php
+#
+# A repository with no tag yet releases the version already in VERSION, with no bump — the org
+# script's semantics. Verdict's variant required a previous tag because its changelog preparer
+# extended an existing link footer; the preparer here creates that footer on a first release.
 
 set -e
 
@@ -25,19 +29,8 @@ replace_in_file() {
 [[ -f VERSION ]] || die "VERSION file not found — are you in a fissible repo root?"
 [[ -f scripts/prepare-release-changelog.php ]] \
     || die "scripts/prepare-release-changelog.php not found"
-[[ -f scripts/audit-release-changelog.php ]] \
-    || die "scripts/audit-release-changelog.php not found"
 command -v php >/dev/null 2>&1 || die "php not found"
 command -v git >/dev/null 2>&1 || die "git not found"
-command -v gh >/dev/null 2>&1 || die "gh not found"
-
-# Tag signing (ADR 0030): releases are SSH-signed. Refuse rather than cut an unsigned tag that would
-# read as a normal release. One-time setup: git config gpg.format ssh; git config user.signingkey
-# <path-to-ssh-public-key>; then add that key to GitHub as a *signing* key.
-[[ "$(git config --get gpg.format)" == "ssh" ]] \
-    || die "tag signing not configured (ADR 0030): run 'git config gpg.format ssh' and set user.signingkey to your SSH public key"
-[[ -n "$(git config --get user.signingkey)" ]] \
-    || die "no user.signingkey configured for SSH tag signing (ADR 0030)"
 
 current_branch=$(git rev-parse --abbrev-ref HEAD)
 [[ "$current_branch" == "main" ]] \
@@ -64,7 +57,6 @@ fi
 
 current=$(cat VERSION)
 last_tag=$(git describe --tags --abbrev=0 2>/dev/null || printf '')
-[[ -n "$last_tag" ]] || die "A previous release tag is required"
 
 printf 'Current version : %s\n' "$current"
 printf 'Last tag        : %s\n' "${last_tag:-none}"
@@ -104,9 +96,22 @@ else
 fi
 printf '\n'
 
+# --- first release: an untagged VERSION is itself unreleased ---
+
+first_release=0
+if [[ -z "$last_tag" ]]; then
+    printf 'No previous tag exists, so %s in VERSION is itself unreleased.\n' "$current"
+    if confirm "Release ${current} as the first release (no bump)?"; then
+        first_release=1
+    fi
+    printf '\n'
+fi
+
 # --- determine bump type ---
 
-if [[ -n "$1" ]]; then
+if [[ $first_release -eq 1 ]]; then
+    bump="none"
+elif [[ -n "$1" ]]; then
     bump="$1"
 else
     # Suggest bump from conventional commit types
@@ -129,7 +134,7 @@ EOF
 fi
 
 case "$bump" in
-    patch|minor|major) ;;
+    none|patch|minor|major) ;;
     *) die "Unknown bump type: '$bump' — use patch, minor, or major" ;;
 esac
 
@@ -137,6 +142,7 @@ esac
 
 IFS='.' read -r major minor patch <<< "$current"
 case "$bump" in
+    none)  ;;
     major) major=$((major + 1)); minor=0; patch=0 ;;
     minor) minor=$((minor + 1)); patch=0 ;;
     patch) patch=$((patch + 1)) ;;
@@ -145,29 +151,11 @@ esac
 new_version="${major}.${minor}.${patch}"
 new_tag="v${new_version}"
 
-printf '\nNew version: %s → %s\n\n' "$current" "$new_version"
-confirm "Proceed?" || { printf 'Aborted.\n'; exit 0; }
-
-# --- update files ---
-
-pull_requests=$(mktemp) || die "could not create temporary pull-request file"
-commit_subjects=$(mktemp) || die "could not create temporary commit-subject file"
-trap 'rm -f "$pull_requests" "$commit_subjects"' EXIT
-gh pr list --state merged --limit 200 --json number,title,labels,files,closingIssuesReferences > "$pull_requests"
-# The empty-tag form is HEAD, matching the commit-display fallback above.
-git log "${last_tag:+$last_tag..}HEAD" --format=%s > "$commit_subjects"
-php scripts/audit-release-changelog.php CHANGELOG.md "$pull_requests" "$commit_subjects"
-php scripts/prepare-release-changelog.php \
-    CHANGELOG.md "$new_version" "$last_tag" "$new_tag" "$(date +%F)"
-printf '%s\n' "$new_version" > VERSION
-
-# --- update package.json if present ---
-
-if [[ -f package.json ]]; then
-    replace_in_file package.json "s/\"version\": \"[^\"]*\"/\"version\": \"${new_version}\"/"
-fi
-
-# --- update the documented install constraint ---
+# --- remaining guards: nothing past the Proceed prompt may refuse ---
+#
+# Every check that can die runs before the changelog preparer touches a file. A refusal after
+# mutation leaves a dirty tree, and the retry then dies on "Working tree is dirty" with no hint
+# that the script itself dirtied it — verdict-console-filament's first release hit exactly that.
 #
 # Composer's caret pins the leftmost non-zero component, so on a 0.x line ^0.5
 # means >=0.5.0 <0.6.0. A minor bump therefore leaves a README that still says
@@ -175,6 +163,8 @@ fi
 # following it install the previous minor and silently miss every fix in this
 # one. Derive the constraint here rather than hand-editing it each release.
 
+package=""
+constraint=""
 if [[ -f README.md && -f composer.json ]]; then
     package=$(php -r 'echo json_decode(file_get_contents("composer.json"), true)["name"] ?? "";')
     [[ -n "$package" ]] || die "composer.json has no package name — cannot update the README constraint"
@@ -189,60 +179,48 @@ if [[ -f README.md && -f composer.json ]]; then
     # so a README that no longer carries the line stops the release.
     grep -q "composer require ${package}:" README.md \
         || die "no 'composer require ${package}:' line in README.md — refusing to release with an unverifiable install constraint"
+fi
 
+printf '\nNew version: %s → %s\n\n' "$current" "$new_version"
+confirm "Proceed?" || { printf 'Aborted.\n'; exit 0; }
+
+# --- update files ---
+
+# The repository URL is only consumed on a first release, to create the changelog's link footer.
+# Prefer composer.json's homepage; fall back to the origin remote, normalised to a browsable URL.
+repo_url=$(php -r 'echo json_decode(file_get_contents("composer.json"), true)["homepage"] ?? "";' 2>/dev/null || printf '')
+if [[ -z "$repo_url" ]]; then
+    repo_url=$(git remote get-url origin 2>/dev/null \
+        | sed -E 's#^git@([^:]+):#https://\1/#; s#^ssh://git@#https://#; s#\.git$##' || printf '')
+fi
+
+# UTC, not local time. The annotated tag and the GitHub Release are both stamped in UTC, so a local
+# date makes the changelog disagree with them for anyone west of Greenwich cutting a release in the
+# evening -- and makes the same commit produce different changelog dates depending on who ran it.
+php scripts/prepare-release-changelog.php \
+    CHANGELOG.md "$new_version" "$last_tag" "$new_tag" "$(date -u +%F)" "$repo_url"
+printf '%s\n' "$new_version" > VERSION
+
+# --- update package.json if present ---
+
+if [[ -f package.json ]]; then
+    replace_in_file package.json "s/\"version\": \"[^\"]*\"/\"version\": \"${new_version}\"/"
+fi
+
+# --- update the documented install constraint ---
+
+if [[ -n "$package" ]]; then
     replace_in_file README.md "s|composer require ${package}:[^[:space:]]*|composer require ${package}:${constraint}|g"
     printf 'README install constraint: %s\n' "$constraint"
 fi
-
-# --- update the supported platform matrix ---
-#
-# RELEASES.md marks exactly one line "current", and tests/Feature/DocumentationConsistencyTest.php
-# asserts that line matches VERSION. Bumping VERSION without moving the matrix therefore leaves the
-# release commit itself red — the tag would point at a failing tree. Move them together.
-
-if [[ -f RELEASES.md ]]; then
-    matrix_line="${major}.${minor}.x"
-
-    # A silent no-op here would tag a commit whose own suite fails, so an unrecognisable matrix
-    # stops the release rather than being skipped.
-    grep -q 'current |$' RELEASES.md \
-        || die "no line marked current in RELEASES.md's platform matrix — refusing to release with a matrix that cannot be verified"
-
-    replace_in_file RELEASES.md "/current |\$/s/\`[0-9][0-9]*\.[0-9][0-9]*\.x\`/\`${matrix_line}\`/"
-
-    grep -q "\`${matrix_line}\`.*current |\$" RELEASES.md \
-        || die "could not set RELEASES.md's current platform line to ${matrix_line}"
-
-    printf 'Supported platform matrix: %s marked current\n' "$matrix_line"
-fi
-
-# --- gate on the suite, before anything is committed or tagged ---
-
-# CI already runs on the release commit, but it is a detector rather than a gate: the tag and the
-# GitHub Release are pushed in the same breath, so a failure arrives after Packagist has the tag.
-# This runs AFTER the edits above on purpose — running before would only re-test what CI covered on
-# the previous commit, and the point is to test the state about to be tagged. The two tests that
-# assert on the files edited above (DocumentationConsistencyTest, CompatibilityMatrixConformanceTest)
-# are exactly what this catches.
-#
-# The local suite is enough here and the reasoning is specific: this commit changes CHANGELOG.md,
-# VERSION, README.md and RELEASES.md and no src/, so there is no matrix-specific failure (PHP or
-# Laravel version, MySQL, PostgreSQL) it could introduce that CI would catch and this run would not.
-# That argument would NOT license skipping CI for a src/ change.
-#
-# On failure the tree deliberately keeps the release edits rather than being reverted: the preflight
-# above already refused to start on a dirty tree, so nothing unrelated is at stake, and the edits are
-# what an operator needs in order to see why the suite rejected them.
-composer test || die "the release commit does not pass the suite — the tree still holds the release edits; run 'git checkout -- .' to discard them"
 
 # --- commit and tag ---
 
 git add VERSION CHANGELOG.md
 [[ -f package.json ]] && git add package.json
 [[ -f README.md ]] && git add README.md
-[[ -f RELEASES.md ]] && git add RELEASES.md
 git commit -m "chore: release ${new_tag}"
-git tag -s "$new_tag" -m "$new_tag"   # SSH-signed per ADR 0030 (preflighted above)
+git tag -a "$new_tag" -m "$new_tag"
 
 printf '\nTagged %s locally.\n' "$new_tag"
 

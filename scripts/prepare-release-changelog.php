@@ -3,13 +3,17 @@
 
 declare(strict_types=1);
 
-if ($argc !== 6) {
-    fwrite(STDERR, "Usage: prepare-release-changelog.php <path> <version> <previous-tag> <new-tag> <date>\n");
+// A first release has no previous tag: pass '' and supply the repository URL, which is what the
+// changelog's comparison links are built from when there is no existing footer to extend.
+if ($argc !== 6 && $argc !== 7) {
+    fwrite(STDERR, "Usage: prepare-release-changelog.php <path> <version> <previous-tag|''> <new-tag> <date> [repository-url]\n");
 
     exit(1);
 }
 
 [, $path, $version, $previousTag, $newTag, $date] = $argv;
+$repositoryUrl = rtrim((string) ($argv[6] ?? ''), '/');
+$firstRelease = $previousTag === '';
 
 if (preg_match('/^\d+\.\d+\.\d+$/', $version) !== 1) {
     fwrite(STDERR, "Version must use x.y.z format.\n");
@@ -23,7 +27,13 @@ if ($newTag !== 'v'.$version) {
     exit(1);
 }
 
-if (preg_match('/^v\d+\.\d+\.\d+$/', $previousTag) !== 1) {
+if ($firstRelease) {
+    if ($repositoryUrl === '') {
+        fwrite(STDERR, "A first release (no previous tag) needs the repository URL to build the changelog links.\n");
+
+        exit(1);
+    }
+} elseif (preg_match('/^v\d+\.\d+\.\d+$/', $previousTag) !== 1) {
     fwrite(STDERR, "Previous tag must use vx.y.z format.\n");
 
     exit(1);
@@ -49,12 +59,14 @@ if (str_contains($contents, "## [{$version}]")) {
     exit(1);
 }
 
-$unreleasedPattern = '/^## \[Unreleased\]\R(?<body>.*?)(?=^## \[)/ms';
+// The Unreleased section ends at the next release heading, at the link footer, or — on a first
+// release, where neither exists yet — at the end of the file.
+$unreleasedPattern = '/^## \[Unreleased\]\R(?<body>.*?)(?=^## \[|^\[Unreleased\]: |\z)/ms';
 $matches = [];
 $matchCount = preg_match_all($unreleasedPattern, $contents, $matches);
 
 if ($matchCount !== 1) {
-    fwrite(STDERR, "Changelog must contain exactly one Unreleased section followed by a release section.\n");
+    fwrite(STDERR, "Changelog must contain exactly one Unreleased section.\n");
 
     exit(1);
 }
@@ -76,24 +88,39 @@ if ($updated === null || $replaceCount !== 1) {
     exit(1);
 }
 
-$linkPattern = '/^\[Unreleased\]: (?<base>\S+\/compare\/)'.preg_quote($previousTag, '/').'\.\.\.HEAD$/m';
-$linkMatches = [];
-$linkCount = preg_match_all($linkPattern, $updated, $linkMatches);
+if ($firstRelease) {
+    // A footer with no previous tag is a contradiction for a human to resolve, not one to paper over.
+    if (preg_match('/^\[Unreleased\]: /m', $updated) === 1) {
+        fwrite(STDERR, "The changelog already carries an Unreleased comparison link, but there is no previous tag to compare from.\n");
 
-if ($linkCount !== 1) {
-    fwrite(STDERR, "Unreleased comparison link must target {$previousTag}...HEAD.\n");
+        exit(1);
+    }
 
-    exit(1);
-}
+    // Create the footer the next release will extend. The first version links to its release page
+    // rather than a comparison, because there is nothing earlier to compare against.
+    $updated = rtrim($updated, "\n")."\n\n"
+        ."[Unreleased]: {$repositoryUrl}/compare/{$newTag}...HEAD\n"
+        ."[{$version}]: {$repositoryUrl}/releases/tag/{$newTag}\n";
+} else {
+    $linkPattern = '/^\[Unreleased\]: (?<base>\S+\/compare\/)'.preg_quote($previousTag, '/').'\.\.\.HEAD$/m';
+    $linkMatches = [];
+    $linkCount = preg_match_all($linkPattern, $updated, $linkMatches);
 
-$base = (string) $linkMatches['base'][0];
-$releaseLinks = "[Unreleased]: {$base}{$newTag}...HEAD\n[{$version}]: {$base}{$previousTag}...{$newTag}";
-$updated = preg_replace($linkPattern, $releaseLinks, $updated, 1, $linkReplaceCount);
+    if ($linkCount !== 1) {
+        fwrite(STDERR, "Unreleased comparison link must target {$previousTag}...HEAD.\n");
 
-if ($updated === null || $linkReplaceCount !== 1) {
-    fwrite(STDERR, "Unable to update changelog comparison links.\n");
+        exit(1);
+    }
 
-    exit(1);
+    $base = (string) $linkMatches['base'][0];
+    $releaseLinks = "[Unreleased]: {$base}{$newTag}...HEAD\n[{$version}]: {$base}{$previousTag}...{$newTag}";
+    $updated = preg_replace($linkPattern, $releaseLinks, $updated, 1, $linkReplaceCount);
+
+    if ($updated === null || $linkReplaceCount !== 1) {
+        fwrite(STDERR, "Unable to update changelog comparison links.\n");
+
+        exit(1);
+    }
 }
 
 $directory = dirname($path);
