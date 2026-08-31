@@ -281,7 +281,16 @@ it('refuses to approve a rejected request, preserving the rejection', function (
 it('refuses to approve a consumed request', function (): void {
     seedConsumed($this->store);
 
-    refusedWithoutMutation($this->store, fn (): mixed => $this->store->approve('rev_1', 'reviewer-7', at('13:00')), ReviewOutcome::InvalidState);
+    // At 12:50 the request is not yet expired (expiresAt 13:00), so the terminal-state check is what refuses.
+    refusedWithoutMutation($this->store, fn (): mixed => $this->store->approve('rev_1', 'reviewer-7', at('12:50')), ReviewOutcome::InvalidState);
+});
+
+it('reports Expired, not InvalidState, for a consumed request past its expiry — expiry precedes the terminal-state check', function (): void {
+    // House convention (mirrors ApprovalReceiptStore::transitionFailure): expiry is checked before the
+    // status, so an expired-and-consumed request refuses as Expired. Pinned so the ordering cannot silently flip.
+    seedConsumed($this->store); // expiresAt 13:00, consumed at 12:45
+
+    refusedWithoutMutation($this->store, fn (): mixed => $this->store->approve('rev_1', 'reviewer-7', at('13:00')), ReviewOutcome::Expired);
 });
 
 it('reports Expired approving a request past its expiry, leaving it untouched', function (): void {
@@ -323,7 +332,7 @@ it('refuses to reject an approved request, preserving the approval', function ()
 it('refuses to reject a consumed request', function (): void {
     seedConsumed($this->store);
 
-    refusedWithoutMutation($this->store, fn (): mixed => $this->store->reject('rev_1', 'reviewer-9', at('13:00')), ReviewOutcome::InvalidState);
+    refusedWithoutMutation($this->store, fn (): mixed => $this->store->reject('rev_1', 'reviewer-9', at('12:50')), ReviewOutcome::InvalidState);
 });
 
 it('refuses to reject an already-rejected request, preserving the first decision', function (): void {
@@ -385,7 +394,16 @@ it('refuses to validate a rejected request', function (): void {
 it('refuses to validate a consumed request', function (): void {
     seedConsumed($this->store);
 
-    refusedWithoutMutation($this->store, fn (): mixed => $this->store->validate('orders.cancel', 'bind-abc', at('13:00')), ReviewOutcome::InvalidState);
+    // At 12:50 the request is not yet expired, so the terminal-state check refuses.
+    refusedWithoutMutation($this->store, fn (): mixed => $this->store->validate('orders.cancel', 'bind-abc', at('12:50')), ReviewOutcome::InvalidState);
+});
+
+it('reports Expired validating a consumed request past its expiry — the read path checks expiry first too', function (): void {
+    // validate() has its own guard path (separate from approve/reject's), so its expiry-before-status
+    // ordering is pinned independently.
+    seedConsumed($this->store); // expiresAt 13:00, consumed at 12:45
+
+    refusedWithoutMutation($this->store, fn (): mixed => $this->store->validate('orders.cancel', 'bind-abc', at('13:00')), ReviewOutcome::Expired);
 });
 
 it('reports Expired validating an approved-but-lapsed request', function (): void {
