@@ -142,6 +142,7 @@ function requiredColumnDecision(): DecisionEvidence
         argumentFingerprint: str_repeat('a', 64),
         idempotencyKey: 'tool-call-391',
         approvalReceiptFingerprint: null,
+        reviewRequestFingerprint: null,
         approvalPhase: null,
         approvalOutcome: null,
         targetPolicy: null,

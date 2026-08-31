@@ -8,6 +8,7 @@ enum EvaluationStage: string
 {
     case Proposal = 'proposal';
     case Approval = 'approval';
+    case Review = 'review';
     case TargetRefresh = 'target_refresh';
     case Execution = 'execution';
     case Intent = 'intent';

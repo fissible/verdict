@@ -169,6 +169,7 @@ function liveObserverStreamingDecisionEvidence(string $capability, string $argum
         argumentFingerprint: $argumentFingerprint,
         idempotencyKey: null,
         approvalReceiptFingerprint: null,
+        reviewRequestFingerprint: null,
         approvalPhase: null,
         approvalOutcome: null,
         targetPolicy: null,

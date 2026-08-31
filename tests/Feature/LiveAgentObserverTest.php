@@ -243,6 +243,7 @@ function liveObserverDecisionEvidence(string $capability, string $argumentFinger
         argumentFingerprint: $argumentFingerprint,
         idempotencyKey: null,
         approvalReceiptFingerprint: null,
+        reviewRequestFingerprint: null,
         approvalPhase: null,
         approvalOutcome: null,
         targetPolicy: null,

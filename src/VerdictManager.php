@@ -40,6 +40,7 @@ use Fissible\Verdict\Exceptions\CapabilityNotExecutable;
 use Fissible\Verdict\Exceptions\ExecutionClaimFinalizationFailed;
 use Fissible\Verdict\Exceptions\ExecutionCompletedWithUnfinalizedClaim;
 use Fissible\Verdict\Exceptions\RequireReviewNotImplemented;
+use Fissible\Verdict\Exceptions\ReviewRequestNotIssued;
 use Fissible\Verdict\Exceptions\TargetNotResolvable;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimAdmission;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimManager;
@@ -49,6 +50,7 @@ use Fissible\Verdict\Intents\IntentGateOutcome;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
 use Fissible\Verdict\RateLimits\RateLimitManager;
+use Fissible\Verdict\Reviews\ReviewManager;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Support\Arrayable;
@@ -89,6 +91,8 @@ final readonly class VerdictManager
         private ?Closure $executionWindow = null,
         /** @var (Closure(): ?ResourceCheckpointCapture)|null */
         private ?Closure $resourceCheckpointCapture = null,
+        /** @var (Closure(): ?ReviewManager)|null */
+        private ?Closure $reviewManager = null,
     ) {}
 
     public function capability(Capability $capability): self
@@ -199,7 +203,11 @@ final readonly class VerdictManager
     public function run(ActionEnvelope $envelope, callable $executor): ExecutionResult
     {
         $evaluation = $this->evaluate($envelope);
-        $this->rejectUnimplementedReview($evaluation);
+        $review = $this->issueReviewOrReserve($evaluation);
+
+        if ($review !== null) {
+            return $review;
+        }
 
         if (! $evaluation->decision->permitsExecution()) {
             return ExecutionResult::denied($evaluation);
@@ -437,6 +445,39 @@ final readonly class VerdictManager
         if ($evaluation->decision->disposition === Disposition::RequireReview) {
             throw RequireReviewNotImplemented::forCapability($evaluation->envelope->proposal->capability);
         }
+    }
+
+    private function issueReviewOrReserve(Evaluation $evaluation): ?ExecutionResult
+    {
+        if ($evaluation->decision->disposition !== Disposition::RequireReview) {
+            return null;
+        }
+
+        $manager = $this->reviewManager === null ? null : ($this->reviewManager)();
+
+        if ($manager === null) {
+            throw RequireReviewNotImplemented::forCapability($evaluation->envelope->proposal->capability);
+        }
+
+        $transition = $manager->issue($evaluation);
+
+        if (! $transition->succeeded() || $transition->request === null) {
+            throw ReviewRequestNotIssued::forCapability($evaluation->envelope->proposal->capability);
+        }
+
+        $request = $transition->request;
+        $reviewEvaluation = $this->record(new Evaluation(
+            envelope: $evaluation->envelope,
+            capability: $evaluation->capability,
+            target: $evaluation->target,
+            decision: Decision::requireReview('This action requires human review; a review request is pending a decision.', [
+                'review_request_id' => $request->id,
+                'review_request_fingerprint' => $request->bindingFingerprint,
+            ]),
+            stage: EvaluationStage::Review,
+        ));
+
+        return ExecutionResult::denied($reviewEvaluation);
     }
 
     private function rateLimit(Evaluation $evaluation, ?string $intentId): ?Evaluation

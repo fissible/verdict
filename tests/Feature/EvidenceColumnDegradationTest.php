@@ -93,6 +93,7 @@ function degradationEvidence(): DecisionEvidence
         argumentFingerprint: str_repeat('a', 64),
         idempotencyKey: 'tool-call-356',
         approvalReceiptFingerprint: str_repeat('9', 64),
+        reviewRequestFingerprint: null,
         approvalPhase: 'execution_validation',
         approvalOutcome: 'approved',
         targetPolicy: 'order-primary-key',

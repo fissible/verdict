@@ -49,6 +49,8 @@ use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\ExecutionWindow;
 use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Contracts\ReviewDecisionAuthorizer;
+use Fissible\Verdict\Contracts\ReviewRequestStore;
 use Fissible\Verdict\Evaluation\EvaluationReadPredicateSuppression;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
@@ -68,6 +70,7 @@ use Fissible\Verdict\LaravelAi\RecordToolResultProvenance;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitManager;
+use Fissible\Verdict\Reviews\ReviewManager;
 use Fissible\Verdict\Support\SystemClock;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -201,6 +204,35 @@ final class VerdictServiceProvider extends ServiceProvider
                 invocations: $app->make(InvocationContext::class),
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
                 authorizer: fn (): ?ApprovalDecisionAuthorizer => $this->approvalDecisionAuthorizer($app),
+            );
+        });
+
+        if ($this->app->bound(ReviewRequestStore::class) || config('verdict.reviews.store') !== null) {
+            $this->app->singleton(ReviewRequestStore::class, function (Container $app): ReviewRequestStore {
+                $store = config('verdict.reviews.store');
+
+                if (! is_string($store)) {
+                    throw new LogicException('The Verdict review request store configuration must contain a class name.');
+                }
+
+                $instance = $app->make($store);
+
+                if (! $instance instanceof ReviewRequestStore) {
+                    throw new LogicException("The [{$store}] review request store must implement ".ReviewRequestStore::class.'.');
+                }
+
+                return $instance;
+            });
+        }
+
+        $this->app->scoped(ReviewManager::class, function (Container $app): ReviewManager {
+            $ttl = config('verdict.reviews.ttl_seconds', 900);
+
+            return new ReviewManager(
+                reviews: $app->make(ReviewRequestStore::class),
+                clock: $app->make(Clock::class),
+                authorizer: fn (): ?ReviewDecisionAuthorizer => $this->reviewDecisionAuthorizer($app),
+                defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
             );
         });
 
@@ -546,6 +578,10 @@ final class VerdictServiceProvider extends ServiceProvider
                 resourceCheckpointCapture: static fn (): ?ResourceCheckpointCapture => $app->bound(ResourceCheckpointCapture::class)
                     ? $app->make(ResourceCheckpointCapture::class)
                     : null,
+                reviewManager: static fn (): ?ReviewManager => ($app->bound(ReviewRequestStore::class)
+                    || is_string(config('verdict.reviews.store')))
+                    ? $app->make(ReviewManager::class)
+                    : null,
                 evaluationReadSuppression: $app->make(EvaluationReadPredicateSuppression::class),
             );
         });
@@ -615,6 +651,27 @@ final class VerdictServiceProvider extends ServiceProvider
 
         if (! $instance instanceof ApprovalDecisionAuthorizer) {
             throw new LogicException("The [{$authorizer}] approval decision authorizer must implement ".ApprovalDecisionAuthorizer::class.'.');
+        }
+
+        return $instance;
+    }
+
+    private function reviewDecisionAuthorizer(Container $app): ?ReviewDecisionAuthorizer
+    {
+        $authorizer = config('verdict.reviews.authorizer');
+
+        if (! is_string($authorizer) || $authorizer === '') {
+            return null;
+        }
+
+        if (! class_exists($authorizer)) {
+            throw new LogicException("The [{$authorizer}] review decision authorizer configured in [verdict.reviews.authorizer] does not exist.");
+        }
+
+        $instance = $app->make($authorizer);
+
+        if (! $instance instanceof ReviewDecisionAuthorizer) {
+            throw new LogicException("The [{$authorizer}] review decision authorizer must implement ".ReviewDecisionAuthorizer::class.'.');
         }
 
         return $instance;

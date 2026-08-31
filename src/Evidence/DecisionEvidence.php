@@ -37,6 +37,7 @@ final readonly class DecisionEvidence
         public string $argumentFingerprint,
         public ?string $idempotencyKey,
         public ?string $approvalReceiptFingerprint,
+        public ?string $reviewRequestFingerprint,
         public ?string $approvalPhase,
         public ?string $approvalOutcome,
         public ?string $targetPolicy,
@@ -116,6 +117,9 @@ final readonly class DecisionEvidence
             idempotencyKey: $evaluation->envelope->proposal->idempotencyKey,
             approvalReceiptFingerprint: is_string($evaluation->decision->metadata['approval_receipt_fingerprint'] ?? null)
                 ? $evaluation->decision->metadata['approval_receipt_fingerprint']
+                : null,
+            reviewRequestFingerprint: is_string($evaluation->decision->metadata['review_request_fingerprint'] ?? null)
+                ? $evaluation->decision->metadata['review_request_fingerprint']
                 : null,
             approvalPhase: is_string($evaluation->decision->metadata['approval_phase'] ?? null)
                 ? $evaluation->decision->metadata['approval_phase']
