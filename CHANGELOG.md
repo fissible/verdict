@@ -23,8 +23,10 @@ All notable changes to Verdict will be documented in this file.
   A store that has not declared it gets the pre-#320 order back: every found, call-matching receipt
   reaches the authorizer first, whatever its state, and a denial returns `unauthorized` without
   anything being delegated. Such a store gives up #320's reporting fidelity — a denying authorizer
-  masks `expired` and `invalid_state` again — which is the deliberate price of not having an
-  authorization hole. Both properties return together when the store declares the marker.
+  masks `expired` and `invalid_state` again, though only those two: `not_found` and `mismatch` are
+  delegated without authorization under either order. That is the deliberate price of not having an
+  authorization hole, and both properties return together once the store declares the marker and
+  honours it.
 
   Two things worth knowing before you write a custom store. The marker is a claim Verdict cannot
   verify, so declaring it moves the consequence of being wrong onto the store rather than proving

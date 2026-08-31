@@ -147,7 +147,12 @@ marker, so a default install is unaffected.
 **What an undeclared store gives up is the reporting fidelity this ADR was written to add.** A
 denying authorizer masks `Expired` and `InvalidState` again — the exact defect §*Context* opens with.
 That is the price of compatibility and it is deliberate: an authorization hole is a worse failure
-than a misreported outcome, and the two properties move together the moment the store declares.
+than a misreported outcome. The two properties move together the moment the store declares the marker
+*and honours it* — a false declaration buys the reporting fidelity back while giving up the safety,
+which is the trade nobody should want and the reason the marker's meaning is stated as a promise
+rather than a switch. Note also that only `Expired` and `InvalidState` are masked: `NotFound` and
+`Mismatch` are delegated without authorization under either order, because neither addresses a
+receipt the store would finalize.
 
 **The marker is a claim, not a verification.** Verdict cannot prove an external store's atomic state
 semantics, and does not try — conformance belongs in an adapter's own contract tests. What the marker
