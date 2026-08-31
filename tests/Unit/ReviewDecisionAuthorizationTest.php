@@ -57,8 +57,8 @@ final class RecordingReviewStore implements ReviewRequestStore
 
     public function __construct()
     {
-        $this->found = pendingReviewRequest();
-        $this->sentinel = ReviewTransition::to(ReviewOutcome::Approved, pendingReviewRequest());
+        $this->found = pendingReviewFixture();
+        $this->sentinel = ReviewTransition::to(ReviewOutcome::Approved, pendingReviewFixture());
     }
 
     public function issue(ReviewRequest $request): ReviewTransition
@@ -101,7 +101,7 @@ function reviewClock(): FrozenClock
     return new FrozenClock('2026-08-30 12:30:00');
 }
 
-function pendingReviewRequest(string $expiresAt = '2026-08-30 13:00:00'): ReviewRequest
+function pendingReviewFixture(string $expiresAt = '2026-08-30 13:00:00'): ReviewRequest
 {
     return ReviewRequest::pending(
         id: 'rev_1',
@@ -116,7 +116,7 @@ function pendingReviewRequest(string $expiresAt = '2026-08-30 13:00:00'): Review
 
 function seedPendingReview(ReviewRequestStore $store, string $expiresAt = '2026-08-30 13:00:00'): void
 {
-    $store->issue(pendingReviewRequest($expiresAt));
+    $store->issue(pendingReviewFixture($expiresAt));
 }
 
 dataset('decisionMethod', ['approve', 'reject']);
@@ -385,7 +385,7 @@ it('is fail-closed when a Closure authorizer resolves to null, for both methods'
 
 it('the AllowAllReviewAuthorizer authorizes any decision', function (): void {
     $authorizer = new AllowAllReviewAuthorizer;
-    $request = pendingReviewRequest();
+    $request = pendingReviewFixture();
 
     expect($authorizer->authorize($request, ReviewDecisionKind::Approve, 'anyone'))->toBeTrue()
         ->and($authorizer->authorize($request, ReviewDecisionKind::Reject, 'anyone'))->toBeTrue();
