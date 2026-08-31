@@ -9,11 +9,17 @@ use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
+use Fissible\Verdict\Approvals\ApproverSummaryMaterializer;
 use Fissible\Verdict\Approvals\ApproverSummaryRelease;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Context\ContextReleaseManager;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\ReleasePolicy;
+use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Decisions\Decision;
@@ -21,6 +27,7 @@ use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
 use Fissible\Verdict\Reviews\ReviewRequest;
 use Fissible\Verdict\Support\ApproverSummary;
+use Fissible\Verdict\VerdictManager;
 use Illuminate\Database\DatabaseManager;
 
 // ADR 0038 §1/§6 — the confirmation lane materialises the approver summary at ISSUANCE, inside the frame, from
@@ -40,10 +47,25 @@ function summaryManager(ApprovalReceiptStore $store): ApprovalManager
         invocations: app(InvocationContext::class),
         defaultTtlSeconds: 900,
         authorizer: null,
+        summaries: new ApproverSummaryMaterializer(app(ContextReleaseManager::class)),
     );
 }
 
-function summaryCapability(bool $withDescriber = true, ?int &$bindCalls = null): Capability
+/**
+ * Register the approver-audience release policy that PERMITS a summary's classification. Slice 4 routes
+ * the candidate through the ADR 0008 approver-audience path, so a summary is Released only when a policy
+ * allows it — issuance no longer releases a candidate merely because a describer produced one.
+ */
+function permitMaterializedSummaries(): void
+{
+    app(VerdictManager::class)->releasePolicy(
+        ReleasePolicy::between(ApproverAudience::source(), ApproverAudience::destination())
+            ->allow(DataClass::Internal)
+            ->whenTrustIs(Trust::Untrusted, Trust::Trusted),
+    );
+}
+
+function summaryCapability(bool $withDescriber = true, ?int &$bindCalls = null, bool $invalidDescriber = false): Capability
 {
     $capability = Capability::usingPolicy('orders.cancel', 'cancel', fn (ActionEnvelope $e): array => $e->proposal->arguments)
         ->executionTarget(acceptTestSnapshot('summary-target'))
@@ -58,11 +80,29 @@ function summaryCapability(bool $withDescriber = true, ?int &$bindCalls = null):
 
     if ($withDescriber) {
         $capability = $capability->describeForApprover(
-            fn (ActionEnvelope $envelope, mixed $target, array $binding): string => "Cancel order #{$binding['bound_order']}",
+            // A display-contract-INVALID candidate (embedded NUL) exercises the normal-mode "never fails
+            // issuance" guarantee: the describer runs, the candidate is rejected at the value boundary.
+            fn (ActionEnvelope $envelope, mixed $target, array $binding): string => $invalidDescriber
+                ? "Cancel order\x00#{$binding['bound_order']}"
+                : "Cancel order #{$binding['bound_order']}",
         );
     }
 
     return $capability;
+}
+
+/**
+ * Create the approvals table with all columns through the approver-summary migration. Shared by the
+ * durable round-trip cases that pin every release state (Released / ReleaseDenied / NotReleased).
+ */
+function migrateApprovalsWithSummary(object $connection): void
+{
+    $schema = $connection->getSchemaBuilder();
+    $schema->dropIfExists(verdictTable('approvals'));
+    (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_approver_summary_to_verdict_approval_receipts_table.php.stub')->up();
 }
 
 function summaryEvaluation(Capability $capability, int $orderId = 9001): Evaluation
@@ -78,6 +118,7 @@ function summaryEvaluation(Capability $capability, int $orderId = 9001): Evaluat
 // ── the summary is materialised at issuance and persisted on the receipt ──────────────────────────
 
 it('materialises an approver summary at issuance and persists it on the receipt as Released', function (): void {
+    permitMaterializedSummaries();
     $store = new InMemoryApprovalReceiptStore;
     $verdict = summaryManager($store);
 
@@ -112,9 +153,38 @@ it('records NotReleased with no summary when the capability registers no describ
         ->and($receipt->approverSummaryRelease)->toBe(ApproverSummaryRelease::NotReleased);
 });
 
+it('records ReleaseDenied with no summary when the capability describes but no policy permits', function (): void {
+    // A describer authored a valid candidate, but no approver-audience policy is registered, so the summary
+    // is withheld. The receipt records ReleaseDenied and retains NO content (ADR 0038 §3/§4).
+    $store = new InMemoryApprovalReceiptStore;
+    $verdict = summaryManager($store);
+
+    $verdict->issue(summaryEvaluation(summaryCapability(), 9001));
+    $receipt = array_values($store->all())[0];
+
+    expect($receipt->approverSummary)->toBeNull()
+        ->and($receipt->approverSummaryRelease)->toBe(ApproverSummaryRelease::ReleaseDenied);
+});
+
+it('succeeds and persists NotReleased when the describer returns a display-contract-invalid candidate', function (): void {
+    // Normal mode NEVER fails issuance (ADR 0038 §5 — strict mode is a later slice). A describer that yields
+    // an invalid candidate (embedded control char) must still mint a receipt, recording NotReleased with no
+    // content, even with no policy registered. Proven end to end through the manager.
+    $store = new InMemoryApprovalReceiptStore;
+    $verdict = summaryManager($store);
+
+    $transition = $verdict->issue(summaryEvaluation(summaryCapability(invalidDescriber: true), 9001));
+    $receipt = array_values($store->all())[0];
+
+    expect($transition->receipt)->not->toBeNull() // issuance succeeded
+        ->and($receipt->approverSummary)->toBeNull()
+        ->and($receipt->approverSummaryRelease)->toBe(ApproverSummaryRelease::NotReleased);
+});
+
 // ── the challenge surfaces the summary and its release state ──────────────────────────────────────
 
 it('surfaces the approver summary and release state on the challenge', function (): void {
+    permitMaterializedSummaries();
     $store = new InMemoryApprovalReceiptStore;
     $verdict = summaryManager($store);
     $verdict->issue(summaryEvaluation(summaryCapability(), 7001));
@@ -141,6 +211,7 @@ it('shares one ApproverSummary value shape between the approval and review lanes
 // ── the summary survives the durable round-trip (the default store must not drop it) ──────────────
 
 it('persists the approver summary and release state through the database store', function (): void {
+    permitMaterializedSummaries();
     $connection = app(DatabaseManager::class)->connection();
     $schema = $connection->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('approvals'));
@@ -162,12 +233,43 @@ it('persists the approver summary and release state through the database store',
         ->and($hydrated?->approverSummaryRelease)->toBe(ApproverSummaryRelease::Released);
 });
 
+it('persists ReleaseDenied through the database store, retaining no content', function (): void {
+    // A described candidate with NO policy is withheld. The durable row must record ReleaseDenied and hold
+    // NO raw content — ADR 0038 §3/§4: denied content is never retained anywhere.
+    $connection = app(DatabaseManager::class)->connection();
+    migrateApprovalsWithSummary($connection);
+    $store = new DatabaseApprovalReceiptStore($connection);
+
+    $issued = summaryManager($store)->issue(summaryEvaluation(summaryCapability(), 4242));
+    $hydrated = $store->find($issued->receipt->id);
+
+    $connection->getSchemaBuilder()->dropIfExists(verdictTable('approvals'));
+
+    expect($hydrated?->approverSummary)->toBeNull()
+        ->and($hydrated?->approverSummaryRelease)->toBe(ApproverSummaryRelease::ReleaseDenied);
+});
+
+it('persists NotReleased through the database store for a capability with no describer', function (): void {
+    $connection = app(DatabaseManager::class)->connection();
+    migrateApprovalsWithSummary($connection);
+    $store = new DatabaseApprovalReceiptStore($connection);
+
+    $issued = summaryManager($store)->issue(summaryEvaluation(summaryCapability(withDescriber: false), 4242));
+    $hydrated = $store->find($issued->receipt->id);
+
+    $connection->getSchemaBuilder()->dropIfExists(verdictTable('approvals'));
+
+    expect($hydrated?->approverSummary)->toBeNull()
+        ->and($hydrated?->approverSummaryRelease)->toBe(ApproverSummaryRelease::NotReleased);
+});
+
 // ── durable degradation: a pre-migration table keeps working, and legacy rows are NULL, not NotReleased ──
 
 it('degrades gracefully against a table lacking the approver-summary columns, hydrating a null release', function (): void {
     // An upgrading deployment whose approvals table predates the summary columns must not fail on issue, and a
     // row without the columns hydrates as a PRE-FEATURE record — a null release state, distinct from NotReleased
     // ("a summary was not produced"). ADR 0038 §3.
+    permitMaterializedSummaries(); // the issued receipt IS a Released summary; the missing columns drop it
     $connection = app(DatabaseManager::class)->connection();
     $schema = $connection->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('approvals'));
