@@ -454,60 +454,78 @@ it('dispatches only what a separate connection can already see committed', funct
 });
 
 it('dispatches once for one committed transition, even when the transaction is retried', function (): void {
-    $db = app(DatabaseManager::class);
-    $real = $db->connection();
+    // On its own sqlite file rather than the default connection: the flaky wrapper below is a
+    // SQLiteConnection, and building one around whatever PDO the lane happens to supply emits
+    // SQLite syntax at PostgreSQL. What is under test — that dispatch sits outside the retried
+    // closure — is engine-independent, so pinning the engine costs no coverage.
+    $file = tempnam(sys_get_temp_dir(), 'verdict-retry-').'.sqlite';
+    touch($file);
 
-    // A connection whose first transaction runs the work, rolls it back, and reports a
-    // concurrency conflict — so TransactionRetry runs the closure a second time. An implementation
-    // that dispatches inside the closure, or buffers inside it and flushes after, emits twice for
-    // the single commit that actually happened.
-    $flaky = new class($real->getPdo(), $real->getDatabaseName(), $real->getTablePrefix(), $real->getConfig()) extends SQLiteConnection
-    {
-        public int $attempts = 0;
+    try {
+        config()->set('database.connections.transition_retry', [
+            'driver' => 'sqlite', 'database' => $file, 'prefix' => '', 'foreign_key_constraints' => false,
+        ]);
 
-        public bool $armed = false;
+        $db = app(DatabaseManager::class);
+        $real = $db->connection('transition_retry');
+        transitionEventSchema($real->getSchemaBuilder());
 
-        public function transaction(Closure $callback, $attempts = 1): mixed
+        // A connection whose armed transaction runs the work, rolls it back, and reports a
+        // concurrency conflict — so TransactionRetry runs the closure a second time. An
+        // implementation that dispatches inside the closure, or buffers inside it and flushes
+        // after, emits twice for the single commit that actually happened.
+        $flaky = new class($real->getPdo(), $real->getDatabaseName(), $real->getTablePrefix(), $real->getConfig()) extends SQLiteConnection
         {
-            $this->attempts++;
+            public int $attempts = 0;
 
-            if ($this->armed) {
-                $this->armed = false;
-                try {
-                    parent::transaction(function () use ($callback) {
-                        $callback();
+            public bool $armed = false;
 
-                        throw new RuntimeException('forced rollback');
-                    });
-                } catch (RuntimeException) {
-                    // Rolled back: nothing this attempt wrote survives.
+            public function transaction(Closure $callback, $attempts = 1): mixed
+            {
+                $this->attempts++;
+
+                if ($this->armed) {
+                    $this->armed = false;
+
+                    try {
+                        parent::transaction(function () use ($callback) {
+                            $callback();
+
+                            throw new RuntimeException('forced rollback');
+                        });
+                    } catch (RuntimeException) {
+                        // Rolled back: nothing this attempt wrote survives.
+                    }
+
+                    throw new PDOException('deadlock detected');
                 }
 
-                throw new PDOException('deadlock detected');
+                return parent::transaction($callback, $attempts);
             }
+        };
 
-            return parent::transaction($callback, $attempts);
-        }
-    };
+        $listener = transitionListener();
+        $store = new DatabaseApprovalReceiptStore(connection: $flaky, events: app(Dispatcher::class));
+        $receipt = transitionReceipt();
+        $store->issue($receipt);
 
-    $listener = transitionListener();
-    $store = new DatabaseApprovalReceiptStore(connection: $flaky, events: app(Dispatcher::class));
-    $receipt = transitionReceipt();
-    $store->issue($receipt);
+        // Armed only now, so it is the APPROVAL that retries. Arming from construction would let
+        // issuance absorb the forced conflict and leave approve() running exactly once — a retry
+        // test that never retries the transition it names.
+        $baseline = count($listener->events);
+        $attemptsBefore = $flaky->attempts;
+        $flaky->armed = true;
 
-    // Armed only now, so it is the APPROVAL that retries. Arming from construction would let
-    // issuance absorb the forced conflict and leave approve() running exactly once — a retry test
-    // that never retries the transition it names.
-    $baseline = count($listener->events);
-    $attemptsBefore = $flaky->attempts;
-    $flaky->armed = true;
+        $transition = $store->approve($receipt->id, $receipt->toolCallId, 'user:42', transitionAt());
 
-    $transition = $store->approve($receipt->id, $receipt->toolCallId, 'user:42', transitionAt());
-
-    expect($transition->outcome)->toBe(ApprovalOutcome::Approved)
-        ->and($flaky->attempts - $attemptsBefore)->toBe(2)
-        ->and($listener->events)->toHaveCount($baseline + 1)
-        ->and($listener->events[$baseline]->status)->toBe(ApprovalReceiptStatus::Approved);
+        expect($transition->outcome)->toBe(ApprovalOutcome::Approved)
+            ->and($flaky->attempts - $attemptsBefore)->toBe(2)
+            ->and($listener->events)->toHaveCount($baseline + 1)
+            ->and($listener->events[$baseline]->status)->toBe(ApprovalReceiptStatus::Approved);
+    } finally {
+        app(DatabaseManager::class)->purge('transition_retry');
+        @unlink($file);
+    }
 });
 
 it('emits once when a second decision arrives after the first resolved the receipt', function (Closure $make): void {
