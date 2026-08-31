@@ -38,7 +38,11 @@ interface ApprovalReceiptStore
 
     /**
      * Finalize by receipt id; the store owns the canonical failure outcomes
-     * (NotFound/Mismatch/Expired/InvalidState) and the transition must be atomic.
+     * (NotFound/Mismatch/Expired/InvalidState) and the transition must be atomic. A decision is
+     * admissible only when, at $at, the identified receipt has the matching tool call, is Pending,
+     * and is unexpired; every other receipt must be refused with the applicable failure outcome.
+     * ApprovalManager consults its decision authorizer only for a receipt this predicate admits, so
+     * a store that finalizes a terminal or expired receipt finalizes it without authorization.
      */
     public function approve(
         string $receiptId,
@@ -47,7 +51,7 @@ interface ApprovalReceiptStore
         DateTimeImmutable $at,
     ): ApprovalTransition;
 
-    /** Finalize by receipt id, with the same guarantees as approve(). */
+    /** Finalize by receipt id, with the same admissibility and atomicity guarantees as approve(). */
     public function reject(
         string $receiptId,
         string $toolCallId,
