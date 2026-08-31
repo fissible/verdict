@@ -14,6 +14,7 @@ final readonly class ApprovalChallenge
         public string $capability,
         public ?string $reason,
         public DateTimeImmutable $expiresAt,
+        public DateTimeImmutable $issuedAt = new DateTimeImmutable,
         public ?ProposalProvenance $provenance = null,
     ) {}
 
@@ -25,6 +26,7 @@ final readonly class ApprovalChallenge
             capability: $receipt->capability,
             reason: $receipt->reason,
             expiresAt: $receipt->expiresAt,
+            issuedAt: $receipt->createdAt,
             provenance: $receipt->provenance,
         );
     }
