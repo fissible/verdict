@@ -10,5 +10,6 @@ enum Disposition: string
     case Deny = 'deny';
     case RequireConfirmation = 'require_confirmation';
     case RequireReview = 'require_review';
+    case ReviewAdmitted = 'review_admitted';
     case Throttle = 'throttle';
 }

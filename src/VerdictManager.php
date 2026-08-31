@@ -51,6 +51,7 @@ use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\GuardedTool;
 use Fissible\Verdict\RateLimits\RateLimitManager;
 use Fissible\Verdict\Reviews\ReviewManager;
+use Fissible\Verdict\Reviews\ReviewOutcome;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Support\Arrayable;
@@ -156,7 +157,7 @@ final readonly class VerdictManager
             ));
         }
 
-        $decision = $this->authorizer->decide($capability, $envelope, $target);
+        $decision = $this->authorizerDecision($this->authorizer->decide($capability, $envelope, $target));
 
         if ($decision->permitsExecution() && $capability->confirmationRequired()) {
             $decision = $this->strictProvenanceDenial($capability, $envelope)
@@ -219,11 +220,11 @@ final readonly class VerdictManager
     public function runBound(ActionEnvelope $envelope): ExecutionResult
     {
         $proposalEvaluation = $this->evaluate($envelope);
-        $this->rejectUnimplementedReview($proposalEvaluation);
 
         if (! in_array($proposalEvaluation->decision->disposition, [
             Disposition::Permit,
             Disposition::RequireConfirmation,
+            Disposition::RequireReview,
         ], true)) {
             return ExecutionResult::denied($proposalEvaluation);
         }
@@ -253,6 +254,23 @@ final readonly class VerdictManager
         }
 
         $confirmationRequired = $proposalEvaluation->decision->disposition === Disposition::RequireConfirmation;
+        $reviewRequired = $proposalEvaluation->decision->disposition === Disposition::RequireReview;
+        $reviews = null;
+
+        if ($reviewRequired) {
+            $reviews = $this->reviewManager === null ? null : ($this->reviewManager)();
+
+            if ($reviews === null) {
+                throw RequireReviewNotImplemented::forCapability($envelope->proposal->capability);
+            }
+
+            $transition = $reviews->validate($proposalEvaluation);
+
+            if ($transition->outcome !== ReviewOutcome::Approved
+                && $transition->outcome !== ReviewOutcome::NotFound) {
+                return $this->reviewPending($proposalEvaluation);
+            }
+        }
 
         if ($confirmationRequired) {
             $approvalEvaluation = $this->approvalEvaluation(
@@ -278,12 +296,20 @@ final readonly class VerdictManager
             envelope: $envelope,
             capability: $capability,
             target: $refreshEvaluation->target,
-            decision: $this->authorizer->decide($capability, $envelope, $refreshEvaluation->target),
+            decision: $this->authorizerDecision($this->authorizer->decide($capability, $envelope, $refreshEvaluation->target)),
             stage: EvaluationStage::Execution,
         ));
-        $this->rejectUnimplementedReview($executionEvaluation);
 
-        if (! $executionEvaluation->decision->permitsExecution()) {
+        $reviewAdmissionRequired = $reviewRequired
+            && $executionEvaluation->decision->disposition !== Disposition::Deny;
+
+        if (! $reviewRequired
+            && $executionEvaluation->decision->disposition === Disposition::RequireReview
+            && ($this->reviewManager === null || ($this->reviewManager)() === null)) {
+            throw RequireReviewNotImplemented::forCapability($envelope->proposal->capability);
+        }
+
+        if (! $executionEvaluation->decision->permitsExecution() && ! $reviewAdmissionRequired) {
             return ExecutionResult::denied($executionEvaluation);
         }
 
@@ -298,6 +324,24 @@ final readonly class VerdictManager
 
             if (! $approvalEvaluation->decision->permitsExecution()) {
                 return ExecutionResult::denied($approvalEvaluation);
+            }
+        }
+
+        if ($reviewAdmissionRequired) {
+            $transition = $reviews->validate($executionEvaluation);
+
+            if ($transition->outcome === ReviewOutcome::NotFound) {
+                $review = $this->issueReviewOrReserve($executionEvaluation);
+
+                if ($review !== null) {
+                    return $review;
+                }
+
+                return $this->reviewPending($executionEvaluation);
+            }
+
+            if ($transition->outcome !== ReviewOutcome::Approved) {
+                return $this->reviewPending($executionEvaluation);
             }
         }
 
@@ -339,16 +383,56 @@ final readonly class VerdictManager
             }
         }
 
-        return $this->executeAfterRateLimit(
-            $executionEvaluation,
+        $admittedExecutionEvaluation = $executionEvaluation;
+
+        if ($reviewAdmissionRequired) {
+            $transition = $reviews->consume($executionEvaluation);
+
+            if ($transition->outcome !== ReviewOutcome::Consumed) {
+                return $this->reviewPending($executionEvaluation);
+            }
+
+            $request = $transition->request;
+
+            if ($request === null) {
+                return $this->reviewPending($executionEvaluation);
+            }
+
+            $reviewAdmissionEvaluation = $this->record(new Evaluation(
+                envelope: $executionEvaluation->envelope,
+                capability: $executionEvaluation->capability,
+                target: $executionEvaluation->target,
+                decision: Decision::requireReview($executionEvaluation->decision->reason, [
+                    'review_request_id' => $request->id,
+                    'review_request_fingerprint' => $request->bindingFingerprint,
+                    'review_admitted' => true,
+                ]),
+                stage: EvaluationStage::Review,
+            ));
+
+            $admittedExecutionEvaluation = new Evaluation(
+                envelope: $executionEvaluation->envelope,
+                capability: $executionEvaluation->capability,
+                target: $executionEvaluation->target,
+                decision: Decision::reviewAdmitted($executionEvaluation->decision->reason),
+                stage: EvaluationStage::Execution,
+            );
+        }
+
+        $result = $this->executeAfterRateLimit(
+            $admittedExecutionEvaluation,
             fn (?ExecutionClaimAdmission $admission): mixed => $capability->execute(
                 AuthorizedAction::fromExecutionEvaluation(
-                    $executionEvaluation,
+                    $admittedExecutionEvaluation,
                     $admission?->claim()?->id,
                 ),
             ),
             $intent->intentId,
         );
+
+        return $reviewAdmissionRequired && $result->executed
+            ? ExecutionResult::executed($reviewAdmissionEvaluation, $result->output)
+            : $result;
     }
 
     /**
@@ -440,11 +524,11 @@ final readonly class VerdictManager
         return $evaluation;
     }
 
-    private function rejectUnimplementedReview(Evaluation $evaluation): void
+    private function authorizerDecision(Decision $decision): Decision
     {
-        if ($evaluation->decision->disposition === Disposition::RequireReview) {
-            throw RequireReviewNotImplemented::forCapability($evaluation->envelope->proposal->capability);
-        }
+        return $decision->disposition === Disposition::ReviewAdmitted
+            ? Decision::deny('An authorizer may not self-admit a review.')
+            : $decision;
     }
 
     private function issueReviewOrReserve(Evaluation $evaluation): ?ExecutionResult
@@ -478,6 +562,17 @@ final readonly class VerdictManager
         ));
 
         return ExecutionResult::denied($reviewEvaluation);
+    }
+
+    private function reviewPending(Evaluation $evaluation): ExecutionResult
+    {
+        return ExecutionResult::denied($this->record(new Evaluation(
+            envelope: $evaluation->envelope,
+            capability: $evaluation->capability,
+            target: $evaluation->target,
+            decision: Decision::requireReview('This action requires human review; a review request is pending a decision.'),
+            stage: EvaluationStage::Review,
+        )));
     }
 
     private function rateLimit(Evaluation $evaluation, ?string $intentId): ?Evaluation

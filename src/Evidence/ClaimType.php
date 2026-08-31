@@ -67,6 +67,12 @@ enum ClaimType: string
     /** A human-review request was issued and the action remains pending a decision. */
     case ReviewRequestIssued = 'verdict.review.request-issued';
 
+    /** An approved human-review request was consumed to admit this action. */
+    case ReviewRequestAdmitted = 'verdict.review.request-admitted';
+
+    /** A review-gated action was refused without admission. */
+    case ReviewNotAdmitted = 'verdict.review.not-admitted';
+
     /** The execution-time target identity was compared against the proposal's. `disposition` carries whether they matched. */
     case TargetRefresh = 'verdict.target.refresh';
 
@@ -122,7 +128,8 @@ enum ClaimType: string
      * unrecognized value yields null rather than raising).
      *
      * `$discriminator` is the stage's third key: `approval_phase` for the approval stage,
-     * `execution_claim_status` for the execution-claim stage, and ignored elsewhere.
+     * review outcome for the review stage, `execution_claim_status` for the execution-claim stage,
+     * and ignored elsewhere.
      */
     public static function for(string $stage, string $disposition, ?string $discriminator): ?self
     {
@@ -154,9 +161,7 @@ enum ClaimType: string
                 default => null,
             },
             EvaluationStage::Approval => self::approval($resolvedDisposition, $discriminator),
-            EvaluationStage::Review => $resolvedDisposition === Disposition::RequireReview
-                ? self::ReviewRequestIssued
-                : null,
+            EvaluationStage::Review => self::review($resolvedDisposition, $discriminator),
             EvaluationStage::ExecutionClaim => self::executionClaim($resolvedDisposition, $discriminator),
         };
     }
@@ -179,6 +184,7 @@ enum ClaimType: string
     {
         return match ($stage) {
             EvaluationStage::Approval => 'approval_phase',
+            EvaluationStage::Review => 'review_outcome',
             EvaluationStage::ExecutionClaim => 'execution_claim_status',
             default => null,
         };
@@ -236,8 +242,9 @@ enum ClaimType: string
             EvaluationStage::Approval => $discriminator === null
                 || ! in_array($disposition, [Disposition::Permit, Disposition::RequireConfirmation], true),
 
-            // VerdictManager::issueReviewOrReserve() records only a pending review request.
-            EvaluationStage::Review => $disposition !== Disposition::RequireReview,
+            // VerdictManager records issuance, admission, and pending-review refusal events.
+            EvaluationStage::Review => $disposition !== Disposition::RequireReview
+                || ! in_array($discriminator, ['issued', 'admitted', 'not_admitted'], true),
 
             EvaluationStage::ExecutionClaim => self::executionClaimUnreachable($disposition, $discriminator),
         };
@@ -256,6 +263,8 @@ enum ClaimType: string
             self::ApprovalExecutionValidationFailed => 'Execution-gate re-validation did not accept the receipt.',
             self::ApprovalConsumptionFailed => 'A receipt could not be spent — the signal a replay of a consumed receipt produces.',
             self::ReviewRequestIssued => 'A human-review request was issued and the action remains pending a decision.',
+            self::ReviewRequestAdmitted => 'An approved human-review request was consumed to admit this action.',
+            self::ReviewNotAdmitted => 'A review-gated action was refused without admission.',
             self::TargetRefresh => 'The execution-time target identity was compared against the proposal target.',
             self::RateLimitConsumption => 'A semantic rate-limit budget was consumed by this attempt.',
             self::RateLimitRefusal => 'A semantic rate limit refused this attempt.',
@@ -277,6 +286,7 @@ enum ClaimType: string
                 ...array_map(static fn (ApprovalEvidencePhase $p): string => $p->value, ApprovalEvidencePhase::cases()),
                 null,
             ],
+            EvaluationStage::Review => ['issued', 'admitted', 'not_admitted', null],
             EvaluationStage::ExecutionClaim => [
                 ...array_map(static fn (ExecutionClaimStatus $s): string => $s->value, ExecutionClaimStatus::cases()),
                 null,
@@ -304,6 +314,20 @@ enum ClaimType: string
                 ApprovalEvidencePhase::ExecutionValidation => self::ApprovalExecutionValidationFailed,
                 ApprovalEvidencePhase::Consumption => self::ApprovalConsumptionFailed,
             },
+            default => null,
+        };
+    }
+
+    private static function review(Disposition $disposition, ?string $outcome): ?self
+    {
+        if ($disposition !== Disposition::RequireReview) {
+            return null;
+        }
+
+        return match ($outcome) {
+            'issued' => self::ReviewRequestIssued,
+            'admitted' => self::ReviewRequestAdmitted,
+            'not_admitted' => self::ReviewNotAdmitted,
             default => null,
         };
     }

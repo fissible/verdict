@@ -94,6 +94,9 @@ result.
 | `verdict.approval.proposal-validation-failed` | `approval` + `require_confirmation` + `proposal_validation` | Proposal-gate validation did not accept the receipt; a human confirmation is required. |
 | `verdict.approval.execution-validation-failed` | `approval` + `require_confirmation` + `execution_validation` | Execution-gate re-validation did not accept the receipt. |
 | `verdict.approval.consumption-failed` | `approval` + `require_confirmation` + `consumption` | A receipt could not be spent — the signal a replay of a consumed receipt produces. |
+| `verdict.review.request-issued` | `review` + `require_review` + `issued` | A human-review request was issued and the action remains pending a decision. |
+| `verdict.review.request-admitted` | `review` + `require_review` + `admitted` | An approved human-review request was consumed to admit this action. The recorded decision stays `require_review`. |
+| `verdict.review.not-admitted` | `review` + `require_review` + `not_admitted` | A review-gated action was refused without admission (pending, rejected, expired, or already consumed). |
 | `verdict.target.refresh` | `target_refresh` + `permit`/`deny` | The execution-time target identity was compared against the proposal target. `disposition` carries whether they matched. |
 | `verdict.rate-limit.consumption` | `rate_limit` + `permit` | A semantic rate-limit budget was consumed by this attempt. |
 | `verdict.rate-limit.refusal` | `rate_limit` + `throttle` | A semantic rate limit refused this attempt. |
@@ -117,6 +120,12 @@ distinct events behind one pair:
 - **`approval` + `permit`** is emitted at three phases. A *consumption* spends a single-use receipt;
   calling it "validated" describes a different claim, and a consumption *failure* is a replay signal
   the other two are not. The disambiguator is `approval_phase`.
+- **`review` + `require_review`** is emitted for three distinct review events — a request *issued* and
+  pending, an approved request *admitted* (consumed to let this execution through), and a review-gated
+  action *not admitted*. The disambiguator is `review_outcome`. It is also the one discriminator that
+  enters the digest's stable fields, and only for a review record that carries an outcome: an issuance
+  and an admission of the same request are different claims, so they must have different content
+  identities, while non-review records omit the field entirely and keep their digests unchanged.
 
 `verdict.execution.claim-indeterminate` is the one label that deliberately covers two paths: this
 attempt's executor threw after admission, or a duplicate was refused because an earlier attempt is

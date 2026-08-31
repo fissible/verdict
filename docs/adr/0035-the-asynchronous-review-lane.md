@@ -129,15 +129,18 @@ reuses the confirmation gate's structure in `runBound()`:
 itself does **not** permit execution. Unlike `RequireConfirmation` — admitted at the proposal stage
 (`src/VerdictManager.php:213-216`), after which the confirmation gate rides a **`Permit`** execution decision
 plus the always-present receipt gate — `RequireReview` is the authorizer's own decision, returned at the
-execution stage as well, and `permitsExecution()` is true only for `Permit`
-(`src/Decisions/Decision.php:58-60`). A `RequireReview` execution decision therefore cannot pass the execution
-boundaries, and *making* it permit would fail **open** for any capability whose authorizer returned it with no
-review gate wired. So a bare `RequireReview` with no admissible review must refuse or issue (§7), **never**
-execute; admission cannot ride the policy disposition.
+execution stage as well. A bare `RequireReview` does **not** permit execution; `permitsExecution()` admits only
+`Permit` and the gate-minted `Disposition::ReviewAdmitted` (`src/Decisions/Decision.php`). A `RequireReview`
+execution decision therefore cannot pass the execution boundaries, and *making* it permit would fail **open**
+for any capability whose authorizer returned it with no review gate wired. So a bare `RequireReview` with no
+admissible review must refuse or issue (§7), **never** execute; admission cannot ride the policy disposition.
+An authorizer that returns `ReviewAdmitted` directly is an illegal policy output and is coerced to `Deny` — the
+admitted authority is only ever minted by a consumed review, never by policy.
 
-Instead, a successful `consume()` (§5.3) yields a **distinct review-admitted execution evaluation** — an
-outcome that `permitsExecution()` for the downstream boundaries — while the **recorded decision stays
-`RequireReview`**, carrying the review-request id. Evidence therefore reads "policy required review; a
+Instead, a successful `consume()` (§5.3) yields a **distinct review-admitted execution evaluation** — a
+`ReviewAdmitted` outcome that `permitsExecution()` for the downstream boundaries — while the **recorded decision
+stays `RequireReview`**, carrying the review-request id (durably as a fingerprint; the raw id is returned only
+to the immediate caller). Evidence therefore reads "policy required review; a
 consumed review admitted this execution," never a rewritten `Permit`. Three `permitsExecution()` boundaries
 consult the admitted outcome rather than the policy result: the post-refresh execution-stage gate
 (`src/VerdictManager.php:274`), the execution-claim admission in `executeAfterRateLimit()`, and

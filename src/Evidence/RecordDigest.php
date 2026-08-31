@@ -78,7 +78,7 @@ final class RecordDigest
      */
     public static function stableFields(DecisionEvidence $evidence): array
     {
-        return [
+        $fields = [
             'envelope_id' => $evidence->envelopeId,
             'capability' => $evidence->capability,
             'stage' => $evidence->stage,
@@ -117,6 +117,12 @@ final class RecordDigest
             'invocation_tool_description_fingerprint' => $evidence->invocationToolDescriptionFingerprint,
             'tool_description_matched' => $evidence->toolDescriptionMatched,
         ];
+
+        if ($evidence->stage === 'review' && $evidence->reviewOutcome !== null) {
+            $fields['review_outcome'] = $evidence->reviewOutcome;
+        }
+
+        return $fields;
     }
 
     /**
