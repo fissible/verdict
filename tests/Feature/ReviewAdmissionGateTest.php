@@ -15,6 +15,7 @@ use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Disposition;
+use Fissible\Verdict\Evidence\ClaimType;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Exceptions\RequireReviewNotImplemented;
@@ -146,7 +147,9 @@ function admissionCapability(
     )->executionTarget(acceptTestSnapshot('admission-target'))
         ->executeUsing(function (AuthorizedAction $action) use (&$executed, &$statusAtExecution): string {
             $executed = true;
-            $requests = array_values(app(ReviewRequestStore::class)->all());
+            // Tolerate an unbound lane: a forge/relaxation test that wrongly reaches execution must fail on a
+            // clean assertion (executed === true), not a container BindingResolutionException.
+            $requests = app()->bound(ReviewRequestStore::class) ? array_values(app(ReviewRequestStore::class)->all()) : [];
             $statusAtExecution = $requests === [] ? null : $requests[0]->status;
 
             return 'cancelled';
@@ -550,4 +553,183 @@ it('still admits a permitted bound action normally with a review lane configured
         ->and($executed)->toBeTrue()
         ->and($result->evaluation->decision->disposition)->toBe(Disposition::Permit)
         ->and(admissionStore()->all())->toBe([]);
+});
+
+// ── ReviewAdmitted is gate-derived authority ONLY — never forgeable by a policy (ADR §5) ──────────
+
+it('run() rejects a ReviewAdmitted decision minted by the authorizer — a definite denial, no bypass', function (): void {
+    // permitsExecution() is true for ReviewAdmitted, but only a consumed review may produce it. An
+    // authorizer that returns it directly is an illegal policy output: Verdict denies it outright.
+    $ran = false;
+    bindAdmissionAuthorizer(fn (): Decision => Decision::reviewAdmitted('forged standing grant'));
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(admissionCapability(withBinder: false));
+
+    $result = $verdict->run(admissionEnvelope(), function () use (&$ran): string {
+        $ran = true;
+
+        return 'x';
+    });
+
+    expect($result->executed)->toBeFalse()
+        ->and($ran)->toBeFalse()
+        ->and($result->evaluation->decision->disposition)->toBe(Disposition::Deny); // rejected, not recorded as ReviewAdmitted
+});
+
+it('runBound() rejects a ReviewAdmitted decision surfacing from the authorizer at execution — a definite denial', function (): void {
+    // Proposal permits; the execution re-decision returns a forged ReviewAdmitted. It must not ride the
+    // downstream boundaries — the admitted outcome is derived from a consumed review, never from policy.
+    $policy = new class
+    {
+        public int $calls = 0;
+
+        public function decide(): Decision
+        {
+            return $this->calls++ === 0
+                ? Decision::permit()
+                : Decision::reviewAdmitted('forged at execution');
+        }
+    };
+    $executed = false;
+    bindAdmissionAuthorizer(fn (): Decision => $policy->decide());
+    $verdict = app(VerdictManager::class);
+    $verdict->capability(admissionCapability($executed, withBinder: false));
+
+    $result = $verdict->runBound(admissionEnvelope());
+
+    expect($result->executed)->toBeFalse()
+        ->and($executed)->toBeFalse()
+        ->and($policy->calls)->toBe(2) // the execution re-decision WAS reached — the forged branch was exercised
+        ->and($result->evaluation->decision->disposition)->toBe(Disposition::Deny);
+});
+
+it('rejects a ReviewAdmitted forged at execution on the reviewed path — no execution, the approval unspent', function (): void {
+    // The most dangerous forge: a legitimately review-gated action (approved out of band) whose execution
+    // re-decision forges ReviewAdmitted to skip consume(). It must neither execute nor spend the approval.
+    $policy = new class
+    {
+        public bool $forge = false;
+
+        public int $callsThisAttempt = 0;
+
+        public function decide(): Decision
+        {
+            if (! $this->forge) {
+                return Decision::requireReview('A human must review this cancellation.');
+            }
+
+            return ++$this->callsThisAttempt === 1
+                ? Decision::requireReview('Still review at proposal.')
+                : Decision::reviewAdmitted('forged at execution');
+        }
+    };
+    $executed = false;
+    $verdict = bootReviewAdmission($executed, fn (): Decision => $policy->decide());
+
+    $requestId = issueViaBound($verdict, admissionEnvelope());
+    approveOutOfBand($requestId);
+    $policy->forge = true;
+    $policy->callsThisAttempt = 0;
+
+    $result = $verdict->runBound(admissionEnvelope());
+
+    expect($result->executed)->toBeFalse()
+        ->and($executed)->toBeFalse()
+        ->and($policy->callsThisAttempt)->toBe(2) // the execution re-decision WAS reached — the forged branch was exercised
+        ->and($result->evaluation->decision->disposition)->not->toBe(Disposition::ReviewAdmitted)
+        ->and(admissionStore()->find($requestId)?->status)->toBe(ReviewStatus::Approved); // consume never ran
+});
+
+// ── §5.2 the fresh execution decision must STILL require review — no relaxation admits ─────────────
+
+it('does not admit when the fresh execution policy relaxes below RequireReview — never executes on a downgraded Permit', function (): void {
+    // §5.2: "the action inherently requires review, and Verdict never overrides that decision." A policy
+    // that stays RequireReview at proposal but relaxes to Permit at execution must NOT execute on that
+    // Permit, and must not spend the approval. (Deny is the separate hardening case, covered above.)
+    $policy = new class
+    {
+        public bool $relax = false;
+
+        public int $callsThisAttempt = 0;
+
+        public function decide(): Decision
+        {
+            if (! $this->relax) {
+                return Decision::requireReview('A human must review this cancellation.');
+            }
+
+            // On the relaxed attempt: still RequireReview at the proposal call, Permit at the execution call.
+            return ++$this->callsThisAttempt === 1
+                ? Decision::requireReview('Still review at proposal.')
+                : Decision::permit('Relaxed at execution.');
+        }
+    };
+    $executed = false;
+    $verdict = bootReviewAdmission($executed, fn (): Decision => $policy->decide());
+
+    $requestId = issueViaBound($verdict, admissionEnvelope());
+    approveOutOfBand($requestId);
+    $policy->relax = true;
+    $policy->callsThisAttempt = 0;
+
+    $result = $verdict->runBound(admissionEnvelope());
+
+    expect($result->executed)->toBeFalse()
+        ->and($executed)->toBeFalse()
+        ->and($policy->callsThisAttempt)->toBe(2) // the execution re-decision WAS reached (not a vacuous early-out)
+        // the fresh execution decision really did relax to Permit, and it was recorded as such…
+        ->and(collect(admissionEvidence('execution'))->pluck('disposition')->all())->toContain('permit')
+        ->and($result->evaluation->decision->disposition)->toBe(Disposition::RequireReview) // …yet the action stays review-gated
+        ->and(admissionStore()->find($requestId)?->status)->toBe(ReviewStatus::Approved); // approval not spent
+});
+
+// ── evidence integrity: issuance vs refusal vs admission are distinct, truthful records (ADR §5) ──
+
+it('does not record a false issuance when a review-gated action is refused without issuing', function (): void {
+    // reviewPending refusals (pending/rejected/expired/…) must NOT be logged as request-issued: the only
+    // genuine ReviewRequestIssued claim is the first §7 issuance.
+    $executed = false;
+    $verdict = bootReviewAdmission($executed);
+
+    $requestId = issueViaBound($verdict, admissionEnvelope());              // the ONE genuine issuance
+    admissionStore()->reject($requestId, 'reviewer-9', admissionClock()->now());
+    $verdict->runBound(admissionEnvelope());                                // rejected → refuse, issues nothing
+
+    $issuedClaims = array_filter(
+        admissionEvidence('review'),
+        fn (DecisionEvidence $e): bool => $e->claimType === ClaimType::ReviewRequestIssued,
+    );
+
+    expect($issuedClaims)->toHaveCount(1); // exactly the first issuance — the refusal added no false issuance
+});
+
+it('records the admission durably against the consumed review, fingerprint-only, and correlates the raw id to the caller', function (): void {
+    // ADR §5: the recorded result carries the review-request identity — durably as the fingerprint (the
+    // privacy model), and the raw id only in the caller-facing result metadata. The admission record is a
+    // DISTINCT review event from the issuance, not another ReviewRequestIssued.
+    $executed = false;
+    $verdict = bootReviewAdmission($executed);
+
+    $requestId = issueViaBound($verdict, admissionEnvelope());
+    approveOutOfBand($requestId);
+    $fingerprint = admissionStore()->find($requestId)?->bindingFingerprint;
+
+    $result = $verdict->runBound(admissionEnvelope());
+
+    $admissionRecords = array_filter(
+        admissionEvidence('review'),
+        fn (DecisionEvidence $e): bool => $e->reviewRequestFingerprint === $fingerprint
+            && $e->claimType !== ClaimType::ReviewRequestIssued,
+    );
+    $allEvidence = app(EvidenceWriter::class);
+    assert($allEvidence instanceof InMemoryEvidenceRecorder);
+
+    expect($result->executed)->toBeTrue()
+        ->and(admissionStore()->find($requestId)?->status)->toBe(ReviewStatus::Consumed) // the review really was consumed
+        // durable: a distinct admission record correlates to the consumed request by fingerprint only…
+        ->and($admissionRecords)->not->toBeEmpty()
+        // …and NO durable record anywhere retains the raw request id (the whole evidence collection)…
+        ->and(json_encode($allEvidence->all()))->not->toContain($requestId)
+        // …while the caller gets the raw request id back on the result for immediate correlation.
+        ->and($result->evaluation->decision->metadata['review_request_id'] ?? null)->toBe($requestId);
 });
