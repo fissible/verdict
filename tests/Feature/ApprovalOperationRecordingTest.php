@@ -133,6 +133,7 @@ it('the attest recorder appends an operational event to the chain, keyed on the 
         ->and($tail->envelope->type)->toBe('verdict.approval_operation')
         // The identity anchor correlates the operational events for one receipt/request in the chain.
         ->and($tail->envelope->correlation)->toBe(str_repeat('a', 64))
-        // The chained payload is EXACTLY the value's serialisation — no missing fields, no extras, no raw content.
-        ->and($tail->envelope->payload)->toBe($operation->toArray());
+        // The chained payload is the value's serialisation — every field, no extras, no raw content. Attest
+        // canonicalises key order (RFC 8785) on readback, so this is a set equality, not an ordered one.
+        ->and($tail->envelope->payload)->toEqualCanonicalizing($operation->toArray());
 });
