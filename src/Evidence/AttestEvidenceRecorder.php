@@ -74,6 +74,7 @@ final class AttestEvidenceRecorder implements DurableEvidenceRecorder, EvidenceR
                 'idempotency_key_fingerprint' => $evidence->idempotencyKey === null ? null : hash('sha256', $evidence->idempotencyKey),
                 'approval_receipt_fingerprint' => $evidence->approvalReceiptFingerprint,
                 'review_request_fingerprint' => $evidence->reviewRequestFingerprint,
+                'review_outcome' => $evidence->reviewOutcome,
                 'approval_phase' => $evidence->approvalPhase,
                 'approval_outcome' => $evidence->approvalOutcome,
                 'target_policy' => $evidence->targetPolicy,

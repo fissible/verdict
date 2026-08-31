@@ -87,16 +87,19 @@ final readonly class DecisionEvidence
          * identity, and the intent row's own integrity lives in the layer that gates on it.
          */
         public ?string $intentId = null,
+        /** @internal A ClaimType discriminator projected from review decision metadata. */
+        public ?string $reviewOutcome = null,
     ) {
         if ($this->invocationId !== null) {
             ProvenanceEntry::assertIdentifier($this->invocationId, 'Invocation');
         }
 
-        // Both are derived from fields already assigned above. The approval phase and execution-claim
-        // status are passed to the vocabulary because two stages record several distinct events
+        // Both are derived from fields already assigned above. The approval phase, review outcome, and
+        // execution-claim status are passed to the vocabulary because those stages record distinct events
         // behind one stage/disposition pair — see ClaimType::discriminatorFor().
         $this->claimType = ClaimType::for($this->stage, $this->disposition, match ($this->stage) {
             'approval' => $this->approvalPhase,
+            'review' => $this->reviewOutcome,
             'execution_claim' => $this->executionClaimStatus,
             default => null,
         });
@@ -171,6 +174,13 @@ final readonly class DecisionEvidence
                 : null,
             executionClaimAttempt: is_int($evaluation->decision->metadata['execution_claim_attempt'] ?? null)
                 ? $evaluation->decision->metadata['execution_claim_attempt']
+                : null,
+            reviewOutcome: $evaluation->stage->value === 'review'
+                ? (($evaluation->decision->metadata['review_admitted'] ?? false) === true
+                    ? 'admitted'
+                    : (is_string($evaluation->decision->metadata['review_request_fingerprint'] ?? null)
+                        ? 'issued'
+                        : 'not_admitted'))
                 : null,
             // This timezone-naive column is formatted in the object's zone by Laravel bindings, so mint UTC.
             recordedAt: new DateTimeImmutable('now', new DateTimeZone('UTC')),

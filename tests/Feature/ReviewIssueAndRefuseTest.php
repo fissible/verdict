@@ -300,9 +300,9 @@ it('run() still throws the loud reserve when no review lane is configured', func
         ->toThrow(RequireReviewNotImplemented::class);
 });
 
-it('runBound() still throws the loud reserve even with a lane configured — its issuance is a later slice', function (): void {
-    // 6a-2 wires only run(); runBound()'s issuance-at-execution + admission is 6b, so it must still throw.
-    enableReviewLane();
+it('runBound() still throws the loud reserve when NO review lane is configured', function (): void {
+    // The loud reserve is preserved only while UNCONFIGURED. With a lane configured, runBound() now
+    // issues-at-execution and admits an approved review (6b, ReviewAdmissionGateTest); it no longer throws.
     bindRequireReviewAuthorizer();
     $verdict = app(VerdictManager::class);
     $verdict->capability(refuseCapability());

@@ -30,7 +30,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(19)
+    expect($migrations)->toHaveCount(20)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -41,7 +41,9 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(11)
+    expect($migrations)->toHaveCount(12)
+        ->and(collect(array_keys($migrations))->contains(fn (string $k): bool => str_ends_with($k, 'add_review_outcome_to_verdict_evidence_table.php.stub')))->toBeTrue()
+        ->and(collect(array_values($migrations))->contains(fn (string $v): bool => str_ends_with($v, 'add_review_outcome_to_verdict_evidence_table.php')))->toBeTrue()
         ->and(array_keys($migrations)[0])->toEndWith('create_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php.stub')
@@ -103,6 +105,43 @@ it('adds provenance columns without replacing existing evidence rows', function 
         ->and($connection->table('verdict_evidence')->count())->toBe(1)
         ->and($connection->table('verdict_evidence')->value('correlation_id'))
         ->toBe('invocation-before-upgrade');
+
+    $schema->dropIfExists('verdict_evidence');
+});
+
+it('adds review_outcome to a populated evidence table without disturbing existing rows, and rolls back cleanly', function (): void {
+    $connection = app(DatabaseManager::class)->connection();
+    $schema = $connection->getSchemaBuilder();
+    $schema->dropIfExists('verdict_evidence');
+    $create = require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub';
+    $addReviewOutcome = require __DIR__.'/../../database/migrations/add_review_outcome_to_verdict_evidence_table.php.stub';
+
+    $create->up();
+    // A legacy row written before the column existed.
+    $connection->table('verdict_evidence')->insert([
+        'id' => '019894b2-7af0-7000-8000-0000000000aa',
+        'record_type' => 'decision',
+        'correlation_id' => 'invocation-before-review-outcome',
+        'stage' => 'proposal',
+        'disposition' => 'deny',
+        'transformation_count' => 0,
+        'recorded_at' => '2026-08-01 12:00:00',
+    ]);
+
+    $addReviewOutcome->up();
+
+    // The nullable column lands; the pre-existing row survives unchanged with a null outcome.
+    expect($schema->hasColumn('verdict_evidence', 'review_outcome'))->toBeTrue()
+        ->and($connection->table('verdict_evidence')->count())->toBe(1)
+        ->and($connection->table('verdict_evidence')->value('correlation_id'))->toBe('invocation-before-review-outcome')
+        ->and($connection->table('verdict_evidence')->value('review_outcome'))->toBeNull();
+
+    // down() drops only the column; the row and table remain.
+    $addReviewOutcome->down();
+
+    expect($schema->hasColumn('verdict_evidence', 'review_outcome'))->toBeFalse()
+        ->and($connection->table('verdict_evidence')->count())->toBe(1)
+        ->and($connection->table('verdict_evidence')->value('correlation_id'))->toBe('invocation-before-review-outcome');
 
     $schema->dropIfExists('verdict_evidence');
 });

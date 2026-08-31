@@ -50,6 +50,14 @@ final readonly class Decision
     /**
      * @param  array<string, mixed>  $metadata
      */
+    public static function reviewAdmitted(?string $reason = null, array $metadata = []): self
+    {
+        return new self(Disposition::ReviewAdmitted, $reason, $metadata);
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
     public static function throttle(?string $reason = null, array $metadata = []): self
     {
         return new self(Disposition::Throttle, $reason, $metadata);
@@ -57,6 +65,6 @@ final readonly class Decision
 
     public function permitsExecution(): bool
     {
-        return $this->disposition === Disposition::Permit;
+        return in_array($this->disposition, [Disposition::Permit, Disposition::ReviewAdmitted], true);
     }
 }
