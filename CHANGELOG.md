@@ -36,6 +36,29 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **An approver can be shown what an action will do — the approver summary (#306, #300).** A capability may
+  register `describeForApprover(fn (ActionEnvelope $envelope, mixed $target, array $binding): string)`, a
+  binding-informed closure that returns a short plain-text "proposed action" line — *which* order, *which*
+  destination — the argument-level signal the approval gate never carried. ADR 0026 deferred this question;
+  [ADR 0038](docs/adr/0038-what-an-approver-is-shown-about-the-action.md) takes it up. The summary is
+  materialised at issuance, inside the invocation frame, and persisted on the receipt. `ApprovalChallenge`
+  also gains an immutable `issuedAt` (#300), sourced from the receipt's issuance instant, so a consumer can
+  compute how long a challenge has waited.
+
+  Authoring a candidate and releasing it are separate acts. The candidate travels the same ADR 0008
+  approver-audience release path a provenance disclosure does, and the outcome is a **typed release state**,
+  not a bare nullable: `Released` — a valid candidate a policy permitted, its content and `sha256` fingerprint
+  present; `NotReleased` — none authored, or one that failed the display contract; or `ReleaseDenied` — a
+  valid candidate a policy withheld, and **policy is the sole driver of that state**. A `null` release marks a
+  pre-feature record, a storage era rather than a disclosure state. Verdict never interprets arguments and
+  never makes the summary *trustworthy*: it snapshots faithfully what the application chose to show, and the
+  binding fingerprint remains the proof of what is bound.
+
+  The candidate is untrusted display content. It is stored as **plain text**, escaped by each renderer at
+  render time, **byte-bounded**, and rejected if it carries control characters — never transformed, so an
+  over-long or control-bearing candidate is `NotReleased`, never silently truncated or sanitised. Absence
+  stores no content, and a withheld candidate's raw text is never retained anywhere.
+
 - **Approval receipt transitions now notify consumers after commit (#299).**
   `ApprovalReceiptTransitioned` announces each committed issuance, approval, rejection, and
   consumption with only receipt identity, capability, resulting status, and the caller-supplied
