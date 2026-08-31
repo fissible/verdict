@@ -14,7 +14,7 @@ used by an implementation part of Verdict's public API.
 | Contract | Stability | Built-in adapters | Application use |
 | --- | --- | --- | --- |
 | `ActionIntentStore` | Experimental | `DatabaseActionIntentStore`, `InMemoryActionIntentStore` | Store write-ahead intent records for the fail-closed lever (#160): write-once `record()` plus `find()`, no update or delete by design. A custom store must treat a write failure as a throw — the pipeline converts it into a denial with nothing consumed. |
-| `ApprovalReceiptStore` | Stable | `DatabaseApprovalReceiptStore`, `InMemoryApprovalReceiptStore` | Store approval receipts in a durable or external backend. |
+| `ApprovalReceiptStore` | Stable | `DatabaseApprovalReceiptStore`, `InMemoryApprovalReceiptStore` | Store approval receipts in a durable or external backend. A custom store must refuse `approve()`/`reject()` for any receipt that is not call-matching, `Pending`, and unexpired at the supplied instant: `ApprovalManager` consults the decision authorizer only for a receipt that predicate admits, so a store that finalizes a terminal or expired one finalizes it without authorization (ADR 0036). |
 | `ApprovalStatusReader` | Experimental | `DatabaseApprovalStatusReader`, `InMemoryApprovalStatusReader`, `StoreBackedApprovalStatusReader` | Observational reads of approval-receipt status (ADR 0031): per-receipt status plus pending enumeration scoped by `approval_context`, for reviewer queues and dashboards. A custom receipt store adds enumeration by implementing this contract for its backend. |
 | `AttackPack` | Experimental | `AccountRecoveryAttackPack`, `RagBorneInjectionAttackPack`, `StorefrontAttackPack`, `ToolIntegrityAttackPack`, `DelegationConfusionAttackPack` | Define deterministic evaluation cases for a capability. |
 | `AttestChainResolver` | Stable | None; applications configure the resolver class | Resolve a tenant- or deployment-specific attestation chain at runtime. |
@@ -34,6 +34,23 @@ used by an implementation part of Verdict's public API.
 | `RegistersSecrets` | Experimental | `StorefrontAttackPack` | Declare the canary tokens an attack pack plants, so an argument scan can be armed with them (ADR 0032). Labels are persisted; values never are. |
 | `PrunableRateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Opt a `RateLimitStore` into expired-bucket cleanup. |
 | `RateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Store rate-limit consumption in a durable or external backend. |
+
+## Stable contract changes before 1.0
+
+`ApprovalReceiptStore::findForToolCall()` changed return type in
+[#425](https://github.com/fissible/verdict/issues/425), from `?ApprovalReceipt` to
+`ApprovalReceiptLookup`. This is an incompatible change to a `Stable` contract, made deliberately
+and recorded here rather than left to a release note: the old signature could not express its own
+result. `null` meant both "no receipt exists" and "two or more receipts share this tool-call id" —
+a legal state, since tool-call ids are provider-supplied and receipts are unique on
+`(tool_call_id, capability, binding_fingerprint)` — so a reviewer queue rendered a collision as
+absence. No compatible signature distinguishes three outcomes, and leaving it would have kept a
+security-relevant read lying to every adapter. `ApprovalStatusReader::statusForToolCall()` changed
+with it; that contract is `Experimental`, so it carries no such promise.
+
+A custom store implements the new return by naming one of three outcomes through
+`ApprovalReceiptLookup::absent()`, `::single()`, or `::multiple()`. Nothing else on either
+contract changed.
 
 ## Experimental contract follow-ups
 
