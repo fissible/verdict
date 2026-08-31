@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Reviews;
 
 use Closure;
 use DateInterval;
+use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\ReviewDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
@@ -92,7 +93,7 @@ final readonly class ReviewManager
             return $stateFailure;
         }
 
-        /** @var \Fissible\Verdict\Capabilities\Capability $capability */
+        /** @var Capability $capability */
         $capability = $evaluation->capability;
 
         return $this->reviews->validate($capability->name, $this->fingerprint($evaluation), $this->clock->now());
@@ -106,7 +107,7 @@ final readonly class ReviewManager
             return $stateFailure;
         }
 
-        /** @var \Fissible\Verdict\Capabilities\Capability $capability */
+        /** @var Capability $capability */
         $capability = $evaluation->capability;
 
         return $this->reviews->consume($capability->name, $this->fingerprint($evaluation), $this->clock->now());
