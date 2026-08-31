@@ -161,6 +161,19 @@ guarantee is already pinned rather than assumed.
 New surface Verdict neither consumes nor asserts: `Events\StartingStep`, `Events\StepCompleted`,
 `Events\StepFailed`, and the run-context objects behind them.
 
+**The raw provider HTTP response is available and deliberately unused.**
+[#714](https://github.com/laravel/ai/pull/714) added `Responses\Concerns\HasRawResponse`, putting the
+provider's `Illuminate\Http\Client\Response` on `Responses\TextResponse`, `Responses\Data\Step`, and
+`Gateway\StepResponse` as `$response->raw`. It merged 2026-08-05 and rides this tag, so it has been
+reachable for as long as Verdict has required `0.11.0`. Verdict records none of it — not the provider
+request id, not rate-limit headers, not status codes — and
+[ADR 0037](adr/0037-provider-request-identity-is-not-verdict-evidence.md) records that as a decision
+rather than an omission. Three facts from the surface drove it and belong in this inventory: `raw` is
+absent from `AgentResponse` and `StreamableAgentResponse`, which are the types Verdict's middlewares
+hold; `HasRawResponse::__serialize()` unsets it, so it never survives a queue; and the top-level `raw`
+is the last step's response, `TextGenerationLoop` building it as
+`->withSteps($steps)->withRawResponse($lastResult?->raw)`.
+
 ## Cross-reference: composer.json and the existing compatibility watch
 
 `MILESTONES.md`'s "Upstream dependency watch" section already documents the one *known* incompatibility in play, and this audit defers to it rather than duplicating it:
