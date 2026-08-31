@@ -726,6 +726,9 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_16_000012_add_proposal_provenance_to_verdict_approval_receipts_table.php'),
             __DIR__.'/../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_24_000013_add_approval_context_to_verdict_approval_receipts_table.php'),
         ];
+        $reviewMigration = [
+            __DIR__.'/../database/migrations/create_verdict_review_requests_table.php.stub' => database_path('migrations/2026_08_30_000017_create_verdict_review_requests_table.php'),
+        ];
         $evidenceMigration = [
             __DIR__.'/../database/migrations/create_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000001_create_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/add_provenance_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_01_000004_add_provenance_to_verdict_evidence_table.php'),
@@ -753,10 +756,11 @@ final class VerdictServiceProvider extends ServiceProvider
         ];
 
         $this->publishesMigrations(
-            [...$approvalMigration, ...$evidenceMigration, ...$rateLimitMigration, ...$executionClaimMigration, ...$capabilityConfigurationMigration, ...$intentMigration],
+            [...$approvalMigration, ...$reviewMigration, ...$evidenceMigration, ...$rateLimitMigration, ...$executionClaimMigration, ...$capabilityConfigurationMigration, ...$intentMigration],
             ['verdict', 'verdict-migrations'],
         );
         $this->publishesMigrations($approvalMigration, 'verdict-approval-migrations');
+        $this->publishesMigrations($reviewMigration, 'verdict-review-migrations');
         $this->publishesMigrations($evidenceMigration, 'verdict-evidence-migrations');
         $this->publishesMigrations($rateLimitMigration, 'verdict-rate-limit-migrations');
         $this->publishesMigrations($executionClaimMigration, 'verdict-execution-claim-migrations');

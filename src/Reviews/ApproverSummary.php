@@ -10,4 +10,19 @@ final readonly class ApproverSummary
         public string $content,
         public string $fingerprint,
     ) {}
+
+    /** @return array{content: string, fingerprint: string} */
+    public function toArray(): array
+    {
+        return [
+            'content' => $this->content,
+            'fingerprint' => $this->fingerprint,
+        ];
+    }
+
+    /** @param array<string, mixed> $data */
+    public static function fromArray(array $data): self
+    {
+        return new self($data['content'], $data['fingerprint']);
+    }
 }
