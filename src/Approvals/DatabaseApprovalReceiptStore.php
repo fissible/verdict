@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Approvals;
 use DateTimeImmutable;
 use DateTimeZone;
 use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
+use Fissible\Verdict\Approvals\Events\ApprovalReceiptTransitioned;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
@@ -82,9 +83,12 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
     {
         $openReceipt = null;
+        $transitionedReceipt = null;
 
         try {
-            $transition = SecurityStateTransaction::run($this->connection, 'issue an approval receipt', function () use ($receipt, &$openReceipt): ApprovalTransition {
+            $transition = SecurityStateTransaction::run($this->connection, 'issue an approval receipt', function () use ($receipt, &$transitionedReceipt, &$openReceipt): ApprovalTransition {
+                // A retried closure must discard a rolled-back attempt's receipt; otherwise it could be announced after the successful attempt.
+                $transitionedReceipt = null;
                 $existing = $this->lockedReceiptForBinding(
                     $receipt->toolCallId,
                     $receipt->capability,
@@ -97,6 +101,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
 
                 $openReceipt = $this->lockedOpenReceiptForChangedProposal($receipt);
                 $this->connection->table($this->table)->insert($this->attributes($receipt));
+                $transitionedReceipt = $receipt;
 
                 return ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
             });
@@ -112,7 +117,16 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                 : $this->existingIssue($existing, $receipt);
         }
 
-        if ($transition->outcome === ApprovalOutcome::Issued && $openReceipt !== null) {
+        if ($transitionedReceipt !== null) {
+            $this->events?->dispatch(ApprovalReceiptTransitioned::from(
+                $transitionedReceipt,
+                ApprovalReceiptStatus::Pending,
+                $transitionedReceipt->createdAt,
+            ));
+        }
+
+        // Once the transaction returns, a captured receipt means the write occurred, which is equivalent here to an Issued outcome.
+        if ($transitionedReceipt !== null && $openReceipt !== null) {
             $this->events?->dispatch(new ApprovalProposalChangedUnderOpenReceipt(
                 toolCallId: $receipt->toolCallId,
                 capability: $receipt->capability,
@@ -179,7 +193,10 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         string $approvedBy,
         DateTimeImmutable $at,
     ): ApprovalTransition {
-        return SecurityStateTransaction::run($this->connection, 'approve an approval receipt', function () use ($receiptId, $toolCallId, $approvedBy, $at): ApprovalTransition {
+        $transitionedReceipt = null;
+
+        $transition = SecurityStateTransaction::run($this->connection, 'approve an approval receipt', function () use ($receiptId, $toolCallId, $approvedBy, $at, &$transitionedReceipt): ApprovalTransition {
+            $transitionedReceipt = null;
             $receipt = $this->findLocked($receiptId);
             $failure = $this->decisionFailure($receipt, $toolCallId, $at);
 
@@ -196,9 +213,20 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                     'approved_at' => $at,
                     'updated_at' => $at,
                 ]);
+            $transitionedReceipt = $receipt;
 
             return ApprovalTransition::to(ApprovalOutcome::Approved, $this->findLocked($receipt->id));
         });
+
+        if ($transitionedReceipt !== null) {
+            $this->events?->dispatch(ApprovalReceiptTransitioned::from(
+                $transitionedReceipt,
+                ApprovalReceiptStatus::Approved,
+                $at,
+            ));
+        }
+
+        return $transition;
     }
 
     public function reject(
@@ -207,7 +235,10 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         string $rejectedBy,
         DateTimeImmutable $at,
     ): ApprovalTransition {
-        return SecurityStateTransaction::run($this->connection, 'reject an approval receipt', function () use ($receiptId, $toolCallId, $rejectedBy, $at): ApprovalTransition {
+        $transitionedReceipt = null;
+
+        $transition = SecurityStateTransaction::run($this->connection, 'reject an approval receipt', function () use ($receiptId, $toolCallId, $rejectedBy, $at, &$transitionedReceipt): ApprovalTransition {
+            $transitionedReceipt = null;
             $receipt = $this->findLocked($receiptId);
             $failure = $this->decisionFailure($receipt, $toolCallId, $at);
 
@@ -224,9 +255,20 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                     'rejected_at' => $at,
                     'updated_at' => $at,
                 ]);
+            $transitionedReceipt = $receipt;
 
             return ApprovalTransition::to(ApprovalOutcome::Rejected, $this->findLocked($receipt->id));
         });
+
+        if ($transitionedReceipt !== null) {
+            $this->events?->dispatch(ApprovalReceiptTransitioned::from(
+                $transitionedReceipt,
+                ApprovalReceiptStatus::Rejected,
+                $at,
+            ));
+        }
+
+        return $transition;
     }
 
     public function consume(
@@ -234,7 +276,10 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         string $bindingFingerprint,
         DateTimeImmutable $at,
     ): ApprovalTransition {
-        return SecurityStateTransaction::run($this->connection, 'consume an approval receipt', function () use ($toolCallId, $bindingFingerprint, $at): ApprovalTransition {
+        $transitionedReceipt = null;
+
+        $transition = SecurityStateTransaction::run($this->connection, 'consume an approval receipt', function () use ($toolCallId, $bindingFingerprint, $at, &$transitionedReceipt): ApprovalTransition {
+            $transitionedReceipt = null;
             $receipt = $this->lockedReceiptForBindingFingerprint($toolCallId, $bindingFingerprint);
             $validation = $this->validateReceipt($receipt, $bindingFingerprint, $at);
 
@@ -250,9 +295,20 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                     'consumed_at' => $at,
                     'updated_at' => $at,
                 ]);
+            $transitionedReceipt = $receipt;
 
             return ApprovalTransition::to(ApprovalOutcome::Consumed, $this->findLocked($receipt->id));
         });
+
+        if ($transitionedReceipt !== null) {
+            $this->events?->dispatch(ApprovalReceiptTransitioned::from(
+                $transitionedReceipt,
+                ApprovalReceiptStatus::Consumed,
+                $at,
+            ));
+        }
+
+        return $transition;
     }
 
     public function validate(

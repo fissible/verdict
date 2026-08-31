@@ -36,6 +36,12 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **Approval receipt transitions now notify consumers after commit (#299).**
+  `ApprovalReceiptTransitioned` announces each committed issuance, approval, rejection, and
+  consumption with only receipt identity, capability, resulting status, and the caller-supplied
+  transition instant. It is an invalidation hint for pending-approval UIs, not a disclosure path:
+  listeners needing further state read through `ApprovalStatusReader::statusFor()`.
+
 - **A tool-call collision can be told from an absent receipt, through an opt-in seam (#425).**
   `ApprovalReceiptStore::findForToolCall()` returns `null` for two different states — no receipt
   exists, and two or more receipts share this tool-call id — so a caller cannot tell absence from

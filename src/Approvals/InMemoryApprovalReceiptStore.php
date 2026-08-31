@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Approvals;
 
 use DateTimeImmutable;
 use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
+use Fissible\Verdict\Approvals\Events\ApprovalReceiptTransitioned;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
@@ -34,6 +35,12 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
             $this->receipts[$receipt->id] = $receipt;
 
             $transition = ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
+
+            $this->events?->dispatch(ApprovalReceiptTransitioned::from(
+                $receipt,
+                ApprovalReceiptStatus::Pending,
+                $receipt->createdAt,
+            ));
 
             if ($openReceipt !== null) {
                 $this->events?->dispatch(new ApprovalProposalChangedUnderOpenReceipt(
@@ -123,6 +130,12 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
             updatedAt: $at,
         );
 
+        $this->events?->dispatch(ApprovalReceiptTransitioned::from(
+            $updated,
+            ApprovalReceiptStatus::Approved,
+            $at,
+        ));
+
         return ApprovalTransition::to(ApprovalOutcome::Approved, $updated);
     }
 
@@ -148,6 +161,12 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
             updatedAt: $at,
         );
 
+        $this->events?->dispatch(ApprovalReceiptTransitioned::from(
+            $updated,
+            ApprovalReceiptStatus::Rejected,
+            $at,
+        ));
+
         return ApprovalTransition::to(ApprovalOutcome::Rejected, $updated);
     }
 
@@ -171,6 +190,12 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
             consumedAt: $at,
             updatedAt: $at,
         );
+
+        $this->events?->dispatch(ApprovalReceiptTransitioned::from(
+            $updated,
+            ApprovalReceiptStatus::Consumed,
+            $at,
+        ));
 
         return ApprovalTransition::to(ApprovalOutcome::Consumed, $updated);
     }
