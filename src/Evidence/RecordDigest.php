@@ -95,6 +95,7 @@ final class RecordDigest
                 ? null
                 : hash('sha256', $evidence->idempotencyKey),
             'approval_receipt_fingerprint' => $evidence->approvalReceiptFingerprint,
+            'review_request_fingerprint' => $evidence->reviewRequestFingerprint,
             'approval_phase' => $evidence->approvalPhase,
             'approval_outcome' => $evidence->approvalOutcome,
             'target_policy' => $evidence->targetPolicy,

@@ -29,6 +29,7 @@ function renamedTablesEvidence(): DecisionEvidence
         argumentFingerprint: str_repeat('a', 64),
         idempotencyKey: 'idem-renamed',
         approvalReceiptFingerprint: null,
+        reviewRequestFingerprint: null,
         approvalPhase: null,
         approvalOutcome: null,
         targetPolicy: 'orders-target',

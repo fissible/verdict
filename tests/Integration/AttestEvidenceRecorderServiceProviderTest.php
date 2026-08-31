@@ -51,6 +51,7 @@ function attestDecisionEvidence(string $envelopeId): DecisionEvidence
         argumentFingerprint: hash('sha256', 'args'),
         idempotencyKey: null,
         approvalReceiptFingerprint: null,
+        reviewRequestFingerprint: null,
         approvalPhase: null,
         approvalOutcome: null,
         targetPolicy: null,

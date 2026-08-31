@@ -64,6 +64,9 @@ enum ClaimType: string
     /** A receipt could not be spent — the signal a replay of an already-consumed receipt produces. */
     case ApprovalConsumptionFailed = 'verdict.approval.consumption-failed';
 
+    /** A human-review request was issued and the action remains pending a decision. */
+    case ReviewRequestIssued = 'verdict.review.request-issued';
+
     /** The execution-time target identity was compared against the proposal's. `disposition` carries whether they matched. */
     case TargetRefresh = 'verdict.target.refresh';
 
@@ -151,6 +154,9 @@ enum ClaimType: string
                 default => null,
             },
             EvaluationStage::Approval => self::approval($resolvedDisposition, $discriminator),
+            EvaluationStage::Review => $resolvedDisposition === Disposition::RequireReview
+                ? self::ReviewRequestIssued
+                : null,
             EvaluationStage::ExecutionClaim => self::executionClaim($resolvedDisposition, $discriminator),
         };
     }
@@ -230,6 +236,9 @@ enum ClaimType: string
             EvaluationStage::Approval => $discriminator === null
                 || ! in_array($disposition, [Disposition::Permit, Disposition::RequireConfirmation], true),
 
+            // VerdictManager::issueReviewOrReserve() records only a pending review request.
+            EvaluationStage::Review => $disposition !== Disposition::RequireReview,
+
             EvaluationStage::ExecutionClaim => self::executionClaimUnreachable($disposition, $discriminator),
         };
     }
@@ -246,6 +255,7 @@ enum ClaimType: string
             self::ApprovalProposalValidationFailed => 'Proposal-gate validation did not accept the receipt; a human confirmation is required.',
             self::ApprovalExecutionValidationFailed => 'Execution-gate re-validation did not accept the receipt.',
             self::ApprovalConsumptionFailed => 'A receipt could not be spent — the signal a replay of a consumed receipt produces.',
+            self::ReviewRequestIssued => 'A human-review request was issued and the action remains pending a decision.',
             self::TargetRefresh => 'The execution-time target identity was compared against the proposal target.',
             self::RateLimitConsumption => 'A semantic rate-limit budget was consumed by this attempt.',
             self::RateLimitRefusal => 'A semantic rate limit refused this attempt.',

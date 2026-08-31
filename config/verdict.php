@@ -69,6 +69,14 @@ return [
         'strict_provenance' => false,
     ],
 
+    'reviews' => [
+        'store' => null,
+        'connection' => null,
+        'table' => 'verdict_review_requests',
+        'ttl_seconds' => 900,
+        'authorizer' => null,
+    ],
+
     'evidence' => [
         // InMemoryEvidenceRecorder is only for tests and local development. Its unbounded,
         // process-local state is unsafe for production, Octane, and queue workers.
