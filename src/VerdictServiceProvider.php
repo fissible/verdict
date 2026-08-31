@@ -206,6 +206,8 @@ final class VerdictServiceProvider extends ServiceProvider
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
                 authorizer: fn (): ?ApprovalDecisionAuthorizer => $this->approvalDecisionAuthorizer($app),
                 summaries: $app->make(ApproverSummaryMaterializer::class),
+                evidence: $app->make(EvidenceWriter::class),
+                events: $app->make(Dispatcher::class),
             );
         });
 
@@ -235,6 +237,9 @@ final class VerdictServiceProvider extends ServiceProvider
                 clock: $app->make(Clock::class),
                 authorizer: fn (): ?ReviewDecisionAuthorizer => $this->reviewDecisionAuthorizer($app),
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
+                evidence: $app->make(EvidenceWriter::class),
+                invocations: $app->make(InvocationContext::class),
+                events: $app->make(Dispatcher::class),
             );
         });
 
@@ -343,6 +348,7 @@ final class VerdictServiceProvider extends ServiceProvider
                         connection: $connection,
                         table: is_string($fallbackTable) ? $fallbackTable : 'verdict_evidence',
                         derivationsTable: is_string($fallbackDerivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations')) ? $fallbackDerivations : 'verdict_provenance_derivations',
+                        operationsTable: is_string($fallbackOperations = config('verdict.evidence.operations_table', 'verdict_approval_operations')) ? $fallbackOperations : 'verdict_approval_operations',
                     ),
                     connection: $connection,
                     events: $app->make(Dispatcher::class),
@@ -597,11 +603,13 @@ final class VerdictServiceProvider extends ServiceProvider
         $connection = config('verdict.evidence.connection');
         $table = config('verdict.evidence.table', 'verdict_evidence');
         $derivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations');
+        $operations = config('verdict.evidence.operations_table', 'verdict_approval_operations');
 
         return new DatabaseEvidenceRecorder(
             connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
             table: is_string($table) ? $table : 'verdict_evidence',
             derivationsTable: is_string($derivations) ? $derivations : 'verdict_provenance_derivations',
+            operationsTable: is_string($operations) ? $operations : 'verdict_approval_operations',
         );
     }
 
@@ -748,6 +756,7 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations/add_record_identity_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_19_000014_add_record_identity_to_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/add_intent_id_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_25_000015_add_intent_id_to_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/add_review_outcome_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_31_000018_add_review_outcome_to_verdict_evidence_table.php'),
+            __DIR__.'/../database/migrations/create_verdict_approval_operations_table.php.stub' => database_path('migrations/2026_08_31_000020_create_verdict_approval_operations_table.php'),
         ];
         $rateLimitMigration = [
             __DIR__.'/../database/migrations/create_verdict_rate_limit_buckets_table.php.stub' => database_path('migrations/2026_08_01_000002_create_verdict_rate_limit_buckets_table.php'),

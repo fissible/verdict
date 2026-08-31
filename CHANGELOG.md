@@ -36,6 +36,20 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **Approval and review lifecycle moments are recorded as durable operational evidence (#306).** Issuance, the
+  human approve/reject, and successful consumption now emit an `ApprovalOperationEvidence` through the new
+  first-class `EvidenceWriter::recordApprovalOperation()` — a stream distinct from the execution-side decision
+  records (ADR 0038 §4). Each event anchors on an `identityFingerprint`: `sha256` of the receipt id on the
+  confirmation lane, or the request id on the review lane. It is always present and deliberately **distinct from the
+  binding fingerprint** — a binding is not an identity, and two requests may share one — which also reconciles the
+  review evidence that previously correlated on the binding fingerprint as the request identifier. The event carries
+  a `summaryFingerprint` only when the approver summary was released. The stream is observational (ADR 0038 §5):
+  delivered after the store commits, and a write failure — the record or its own `EvidenceWriteFailed` alert — is
+  contained and never undoes the operation. All four recorders handle it: the default `NullEvidenceRecorder` drops
+  it (durability stays opt-in), `InMemoryEvidenceRecorder` exposes it for inspection, `DatabaseEvidenceRecorder`
+  persists it to a configurable `verdict_approval_operations` table, and `AttestEvidenceRecorder` appends it to the
+  tamper-evident chain.
+
 - **An approver can be shown what an action will do — the approver summary (#306, #300).** A capability may
   register `describeForApprover(fn (ActionEnvelope $envelope, mixed $target, array $binding): string)`, a
   binding-informed closure that returns a short plain-text "proposed action" line — *which* order, *which*

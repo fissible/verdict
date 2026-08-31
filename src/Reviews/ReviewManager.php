@@ -6,16 +6,24 @@ namespace Fissible\Verdict\Reviews;
 
 use Closure;
 use DateInterval;
+use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\ReviewDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Decisions\Evaluation;
+use Fissible\Verdict\Evidence\ApprovalLane;
+use Fissible\Verdict\Evidence\ApprovalOperation;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
 use Fissible\Verdict\Exceptions\ReviewAuthorizerMissing;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Throwable;
 
 final readonly class ReviewManager
 {
@@ -24,6 +32,9 @@ final readonly class ReviewManager
         private Clock $clock,
         private ReviewDecisionAuthorizer|Closure|null $authorizer = null,
         private int $defaultTtlSeconds = 900,
+        private ?EvidenceWriter $evidence = null,
+        private ?InvocationContext $invocations = null,
+        private ?Dispatcher $events = null,
     ) {
         if ($this->defaultTtlSeconds < 1) {
             throw new InvalidArgumentException('The default review request TTL must be at least one second.');
@@ -56,7 +67,7 @@ final readonly class ReviewManager
             approverSummary: null,
         );
 
-        return $this->reviews->issue($request);
+        return $this->recordOperation($this->reviews->issue($request), ReviewOutcome::Issued, ApprovalOperation::Issued);
     }
 
     public function approve(string $requestId, string $resolvedBy): ReviewTransition
@@ -69,7 +80,7 @@ final readonly class ReviewManager
             return $unauthorized;
         }
 
-        return $this->reviews->approve($requestId, $resolvedBy, $this->clock->now());
+        return $this->recordOperation($this->reviews->approve($requestId, $resolvedBy, $this->clock->now()), ReviewOutcome::Approved, ApprovalOperation::Approved);
     }
 
     public function reject(string $requestId, string $resolvedBy): ReviewTransition
@@ -82,7 +93,7 @@ final readonly class ReviewManager
             return $unauthorized;
         }
 
-        return $this->reviews->reject($requestId, $resolvedBy, $this->clock->now());
+        return $this->recordOperation($this->reviews->reject($requestId, $resolvedBy, $this->clock->now()), ReviewOutcome::Rejected, ApprovalOperation::Rejected);
     }
 
     public function validate(Evaluation $evaluation): ReviewTransition
@@ -110,7 +121,7 @@ final readonly class ReviewManager
         /** @var Capability $capability */
         $capability = $evaluation->capability;
 
-        return $this->reviews->consume($capability->name, $this->fingerprint($evaluation), $this->clock->now());
+        return $this->recordOperation($this->reviews->consume($capability->name, $this->fingerprint($evaluation), $this->clock->now()), ReviewOutcome::Consumed, ApprovalOperation::Consumed);
     }
 
     private function executionStateFailure(Evaluation $evaluation): ?ReviewTransition
@@ -179,5 +190,42 @@ final readonly class ReviewManager
         }
 
         return ArgumentFingerprint::make($payload);
+    }
+
+    private function recordOperation(
+        ReviewTransition $transition,
+        ReviewOutcome $successOutcome,
+        ApprovalOperation $operation,
+    ): ReviewTransition {
+        $request = $transition->request;
+
+        if ($this->evidence === null || $transition->outcome !== $successOutcome || $request === null) {
+            return $transition;
+        }
+
+        try {
+            $this->evidence->recordApprovalOperation(new ApprovalOperationEvidence(
+                lane: ApprovalLane::Review,
+                operation: $operation,
+                capability: $request->capability,
+                identityFingerprint: hash('sha256', $request->id),
+                summaryFingerprint: $request->approverSummary?->fingerprint,
+                occurredAt: $this->clock->now(),
+                invocationId: $this->invocations?->current(),
+            ));
+        } catch (Throwable $e) {
+            try {
+                $this->events?->dispatch(new EvidenceWriteFailed(
+                    $request->capability,
+                    $operation->value,
+                    $this->invocations?->current(),
+                    $e->getMessage(),
+                ));
+            } catch (Throwable) {
+                // An alert listener failing must not block the caller either.
+            }
+        }
+
+        return $transition;
     }
 }

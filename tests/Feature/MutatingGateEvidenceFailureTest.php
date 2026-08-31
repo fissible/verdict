@@ -10,6 +10,7 @@ use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Decisions\Decision;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
@@ -65,6 +66,8 @@ function failEvidenceAtStage(string $stage): void
         }
 
         public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+        public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
         public function recordProvenance(ProvenanceEntry $entry): void {}
 

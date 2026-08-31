@@ -11,11 +11,18 @@ use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
+use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Decisions\Evaluation;
+use Fissible\Verdict\Evidence\ApprovalLane;
+use Fissible\Verdict\Evidence\ApprovalOperation;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
 use Fissible\Verdict\Exceptions\ApprovalAuthorizerMissing;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Throwable;
 
 final readonly class ApprovalManager
 {
@@ -33,6 +40,8 @@ final readonly class ApprovalManager
         private int $defaultTtlSeconds,
         private ApprovalDecisionAuthorizer|Closure|null $authorizer,
         private ApproverSummaryMaterializer $summaries,
+        private ?EvidenceWriter $evidence = null,
+        private ?Dispatcher $events = null,
     ) {
         if ($this->defaultTtlSeconds < 1) {
             throw new InvalidArgumentException('The default approval receipt TTL must be at least one second.');
@@ -75,7 +84,7 @@ final readonly class ApprovalManager
             approverSummaryRelease: $materialization->release,
         );
 
-        return $this->receipts->issue($receipt);
+        return $this->recordOperation($this->receipts->issue($receipt), ApprovalOutcome::Issued, ApprovalOperation::Issued);
     }
 
     /**
@@ -108,12 +117,12 @@ final readonly class ApprovalManager
             return $unauthorized;
         }
 
-        return $this->receipts->approve(
+        return $this->recordOperation($this->receipts->approve(
             receiptId: $receiptId,
             toolCallId: $toolCallId,
             approvedBy: $approvedBy,
             at: $this->clock->now(),
-        );
+        ), ApprovalOutcome::Approved, ApprovalOperation::Approved);
     }
 
     public function reject(string $receiptId, string $toolCallId, string $rejectedBy): ApprovalTransition
@@ -126,12 +135,12 @@ final readonly class ApprovalManager
             return $unauthorized;
         }
 
-        return $this->receipts->reject(
+        return $this->recordOperation($this->receipts->reject(
             receiptId: $receiptId,
             toolCallId: $toolCallId,
             rejectedBy: $rejectedBy,
             at: $this->clock->now(),
-        );
+        ), ApprovalOutcome::Rejected, ApprovalOperation::Rejected);
     }
 
     /**
@@ -153,11 +162,11 @@ final readonly class ApprovalManager
         /** @var string $toolCallId */
         $toolCallId = $evaluation->envelope->proposal->idempotencyKey;
 
-        return $this->receipts->consume(
+        return $this->recordOperation($this->receipts->consume(
             toolCallId: $toolCallId,
             bindingFingerprint: $this->fingerprint($evaluation),
             at: $this->clock->now(),
-        );
+        ), ApprovalOutcome::Consumed, ApprovalOperation::Consumed);
     }
 
     public function validate(Evaluation $evaluation): ApprovalTransition
@@ -302,5 +311,42 @@ final readonly class ApprovalManager
         if (blank($receiptId) || blank($toolCallId) || blank($decidedBy)) {
             throw new InvalidArgumentException('Approval receipt, tool call, and decision-maker identifiers are required.');
         }
+    }
+
+    private function recordOperation(
+        ApprovalTransition $transition,
+        ApprovalOutcome $successOutcome,
+        ApprovalOperation $operation,
+    ): ApprovalTransition {
+        $receipt = $transition->receipt;
+
+        if ($this->evidence === null || $transition->outcome !== $successOutcome || $receipt === null) {
+            return $transition;
+        }
+
+        try {
+            $this->evidence->recordApprovalOperation(new ApprovalOperationEvidence(
+                lane: ApprovalLane::Confirmation,
+                operation: $operation,
+                capability: $receipt->capability,
+                identityFingerprint: hash('sha256', $receipt->id),
+                summaryFingerprint: $receipt->approverSummary?->fingerprint,
+                occurredAt: $this->clock->now(),
+                invocationId: $this->invocations->current(),
+            ));
+        } catch (Throwable $e) {
+            try {
+                $this->events?->dispatch(new EvidenceWriteFailed(
+                    $receipt->capability,
+                    $operation->value,
+                    $this->invocations->current(),
+                    $e->getMessage(),
+                ));
+            } catch (Throwable) {
+                // An alert listener failing must not block the caller either.
+            }
+        }
+
+        return $transition;
     }
 }

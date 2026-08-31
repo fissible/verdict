@@ -100,6 +100,7 @@ return [
         // by both the recorder and the published migration stub, so renaming it — like every table
         // here — is a config change only (#290).
         'derivations_table' => 'verdict_provenance_derivations',
+        'operations_table' => 'verdict_approval_operations',
 
         // Only consulted when 'recorder' is AttestEvidenceRecorder::class. Requires
         // fissible/attest-laravel (composer require fissible/attest-laravel) — see

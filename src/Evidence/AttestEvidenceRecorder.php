@@ -171,6 +171,16 @@ final class AttestEvidenceRecorder implements DurableEvidenceRecorder, EvidenceR
         );
     }
 
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void
+    {
+        $this->writeChained(
+            correlationId: $evidence->identityFingerprint,
+            recordType: 'approval_operation',
+            type: 'verdict.approval_operation',
+            payload: $evidence->toArray(),
+        );
+    }
+
     /** @return list<ProvenanceEntry> */
     public function provenanceFor(string $correlationId): array
     {

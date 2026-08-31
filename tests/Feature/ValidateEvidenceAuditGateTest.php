@@ -9,6 +9,7 @@ use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
@@ -58,6 +59,8 @@ final class AuditGateProbeWriter implements EvidenceWriter, ProvenanceLedgerStor
     public function record(DecisionEvidence $evidence): void {}
 
     public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
     public function recordProvenance(ProvenanceEntry $entry): void {}
 
