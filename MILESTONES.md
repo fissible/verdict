@@ -670,7 +670,8 @@ verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
 | [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design`; moved from v0.14.0 |
 | [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` is a disposition with no runtime | L–XL | none | open — `scope: design`, the keystone; design rounds can proceed on the issue any time |
 | [#357](https://github.com/fissible/verdict/issues/357) `pendingWithin()` is an unbounded scan + N+1 with no expiry filter | S–M | none | open — reader-queue scale; a pre-1.0 must-fix the v0.14.0 review named |
-| [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) + S (impl) | none | shipped (PR #431) — **contract correction in flight**, see below; row not final |
+| [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) + S (impl) | none | ✅ Shipped — PRs #431 and #435 |
+| [#436](https://github.com/fissible/verdict/issues/436) #320 placed a new behavioural obligation on the Stable `ApprovalReceiptStore` contract | S (round) + S (impl) | #320 ✅ | open — the silent half of the same Stable-contract question #425 raised loudly |
 
 **Cluster membership, settled.** #230 stays on v1.0.0 — it is a boundary decision on the 1.0 bar, and it
 was already scheduled there when the cluster was cut. #201 stays deliberately unscheduled with its recorded
@@ -681,23 +682,47 @@ aesthetic.
 **The two reader-queue defects ride this milestone.** #357 (`pendingWithin()` scan + N+1) and #425
 (`findForToolCall()` ambiguity → `null`) are the two the v0.14.0 external review named as most likely to
 bite an adopter's approval queue at scale, and asked to see fixed before 1.0. Both are independent of the
-design keystone and drivable any time. #357 is still open; #425 shipped, with a correction outstanding.
+design keystone and drivable any time. #357 is still open; #425 is shipped and settled.
 
-**#425 shipped, and the contract change it carried is being reshaped.** PR #431 gave the tool-call lookup
-three outcomes — absent, single, collision — because `null` could not express the third, and a reviewer
-queue therefore rendered a receipt collision as absence. That part is right and stands. What shipped with
-it was an incompatible change to the return type of `ApprovalReceiptStore::findForToolCall()` — a contract
-this repository labels **Stable** in [`docs/extension-contract-stability.md`](docs/extension-contract-stability.md),
+**#425 shipped in two parts, and the second one is the point.** PR #431 gave the tool-call lookup three
+outcomes — absent, single, collision — because `null` could not express the third, and a reviewer queue
+therefore rendered a receipt collision as absence. That part was right and stands. What shipped with it was
+an incompatible change to the return type of `ApprovalReceiptStore::findForToolCall()` — a contract this
+repository labels **Stable** in [`docs/extension-contract-stability.md`](docs/extension-contract-stability.md),
 meaning "intended to remain compatible through Verdict 1.0". The break was *recorded* in that document
 rather than reversed, which is the wrong order: a Stable-through-1.0 promise is not something to normalize
 after the fact, and the window to reshape it closes the moment an adopter writes a custom store against it.
 
-The correction, decided 2026-08-31: restore `findForToolCall(): ?ApprovalReceipt` for existing custom
-stores, and add the three-outcome lookup as a **new opt-in read seam**. The shipped stores implement the
-richer seam; a custom store that has not adopted it keeps the old ambiguous behaviour until it does. That
-preserves compatibility without pretending absence and collision are distinguishable through the old
-method. `ApprovalStatusReader::statusForToolCall()` changed alongside it and needs no reversal — that
-contract is `Experimental` and carries no such promise.
+PR #435 reshaped it. `findForToolCall()` and `statusForToolCall()` are restored verbatim, ambiguity
+included — `git diff` against pre-#425 `main` touches docblock lines only — and the three-outcome read
+moved to two opt-in interfaces: `DistinguishesReceiptCollisions` on the store side and
+`DistinguishesStatusCollisions` on the read side. Both shipped stores and both paired readers implement
+them; a custom store written against v0.14.0 needs no edit. The section recording the break is gone from
+the stability document, because there is no longer a break to record.
+
+`statusForToolCall()` did not strictly need reversing — `ApprovalStatusReader` is `Experimental` — but it
+was reversed anyway, so the seam is opt-in symmetrically on both sides rather than opt-in on one and
+mandatory on the other.
+
+Two things the reshape settled that are worth keeping. A reader carries the collision interface **only**
+when it can honour it: the container pairs a custom store with `DistinguishingStoreBackedApprovalStatusReader`
+when the store adopted the store seam and with the untouched `StoreBackedApprovalStatusReader` when it did
+not, because `instanceof` is the probe consumers are told to trust and a capability that throws for half
+its instances is a false positive on it. And `ApprovalManager::challengeForToolCall()` is deliberately left
+on the ambiguous read — a collision yields no challenge either way, so wiring it to the seam would make
+every custom store's support of the seam load-bearing for no behavioural gain.
+
+**#436 is the same question asked quietly.** Reviewing PR #435 surfaced that #320 put a new *behavioural*
+obligation on the same Stable contract: a custom store must now refuse decisions on terminal or expired
+receipts, or it finalizes them with no authorization check at all — because the manager no longer consults
+the authorizer for a receipt it already knows is undecidable. Before #320 a lax store was still covered.
+This is worse than #425's break in one respect: a signature change fails loudly at load time, and this one
+compiles clean and fails as a missing authorization check. Filed on this milestone with three options and a
+recommendation; it is not a proposal to revert #320, whose outcome semantics are correct.
+
+**Cross-repo consumer.** verdict-console tracks adoption of the opt-in seam at
+[fissible/verdict-console#96](https://github.com/fissible/verdict-console/issues/96) (milestone
+`verdict-gated`), which also carries the `fissible/verdict` constraint bump from `^0.14`.
 
 **The row above is deliberately not final.** It records what shipped and what is being changed, not a
 settled outcome. It is rewritten when the correction lands, together with the "Stable contract changes
