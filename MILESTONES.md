@@ -668,9 +668,9 @@ verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
 | [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()` | S | watches laravel/ai #932 | open |
 | [#299](https://github.com/fissible/verdict/issues/299) Receipt transitions dispatch no events | S–M | #327 | open — gated on the read contract |
 | [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design`; moved from v0.14.0 |
-| [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` is a disposition with no runtime | L–XL | none | open — `scope: design`, the keystone; design rounds can proceed on the issue any time |
+| [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` is a disposition with no runtime | L–XL | none | open — `scope: ready`, building; [ADR 0035](docs/adr/0035-the-asynchronous-review-lane.md) (#428), the loud reserve (#429) and the value layer (#434) have landed |
 | [#357](https://github.com/fissible/verdict/issues/357) `pendingWithin()` is an unbounded scan + N+1 with no expiry filter | S–M | none | open — reader-queue scale; a pre-1.0 must-fix the v0.14.0 review named |
-| [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) + S (impl) | none | shipped (PR #431) — **contract correction in flight**, see below; row not final |
+| [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) + M (impl) | none | ✅ shipped (PRs #431, #435) — collision is an opt-in seam; the `Stable` contract is intact |
 
 **Cluster membership, settled.** #230 stays on v1.0.0 — it is a boundary decision on the 1.0 bar, and it
 was already scheduled there when the cluster was cut. #201 stays deliberately unscheduled with its recorded
@@ -681,27 +681,32 @@ aesthetic.
 **The two reader-queue defects ride this milestone.** #357 (`pendingWithin()` scan + N+1) and #425
 (`findForToolCall()` ambiguity → `null`) are the two the v0.14.0 external review named as most likely to
 bite an adopter's approval queue at scale, and asked to see fixed before 1.0. Both are independent of the
-design keystone and drivable any time. #357 is still open; #425 shipped, with a correction outstanding.
+design keystone and drivable any time. #425 is closed; #357 is still open.
 
-**#425 shipped, and the contract change it carried is being reshaped.** PR #431 gave the tool-call lookup
-three outcomes — absent, single, collision — because `null` could not express the third, and a reviewer
-queue therefore rendered a receipt collision as absence. That part is right and stands. What shipped with
-it was an incompatible change to the return type of `ApprovalReceiptStore::findForToolCall()` — a contract
-this repository labels **Stable** in [`docs/extension-contract-stability.md`](docs/extension-contract-stability.md),
-meaning "intended to remain compatible through Verdict 1.0". The break was *recorded* in that document
-rather than reversed, which is the wrong order: a Stable-through-1.0 promise is not something to normalize
-after the fact, and the window to reshape it closes the moment an adopter writes a custom store against it.
+**#425 shipped in two passes, and the second one is the point.** PR #431 gave the tool-call lookup three
+outcomes — absent, single, collision — because `null` could not express the third, and a reviewer queue
+therefore rendered a receipt collision as absence. That reading is right and stands. What shipped with it
+was an incompatible change to the return type of `ApprovalReceiptStore::findForToolCall()`, a contract
+this repository labels **Stable** in [`docs/extension-contract-stability.md`](docs/extension-contract-stability.md)
+— "intended to remain compatible through Verdict 1.0". The break was *recorded* in that document rather
+than reversed, and recording it is what made it wrong: a Stable-through-1.0 promise normalized after the
+fact is not a promise, and the window to reshape one closes the moment an adopter writes a custom store
+against it.
 
-The correction, decided 2026-08-31: restore `findForToolCall(): ?ApprovalReceipt` for existing custom
-stores, and add the three-outcome lookup as a **new opt-in read seam**. The shipped stores implement the
-richer seam; a custom store that has not adopted it keeps the old ambiguous behaviour until it does. That
-preserves compatibility without pretending absence and collision are distinguishable through the old
-method. `ApprovalStatusReader::statusForToolCall()` changed alongside it and needs no reversal — that
-contract is `Experimental` and carries no such promise.
+PR #435 reshaped it rather than documenting it. `findForToolCall(): ?ApprovalReceipt` is restored and the
+`Stable` contract is intact; the collision read moved to two **`Experimental`** opt-in interfaces,
+`DistinguishesReceiptCollisions` on the store side and `DistinguishesStatusCollisions` on the read side.
+A custom store that adopts neither keeps the old ambiguous `null` and needs no change. One consequence
+worth recording, because it is a design property and not an implementation detail: a reader may only carry
+the read-side interface when it can actually answer, so the container pairs a custom store with
+`DistinguishingStoreBackedApprovalStatusReader` when that store adopted the write-side interface and with
+the plain `StoreBackedApprovalStatusReader` when it did not — which is what makes `instanceof` an honest
+probe rather than a claim. The "Stable contract changes before 1.0" section #431 added is gone, having
+described a break that no longer exists.
 
-**The row above is deliberately not final.** It records what shipped and what is being changed, not a
-settled outcome. It is rewritten when the correction lands, together with the "Stable contract changes
-before 1.0" section #431 added to the extension-contract inventory.
+**The precedent this sets.** A `Stable` label is a constraint on how a fix may be shaped, not a note to be
+amended when a fix is inconvenient. The three-outcome read was the right diagnosis both times; what
+changed is that the second version does not charge existing adapters for it.
 
 ---
 
