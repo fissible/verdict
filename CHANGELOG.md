@@ -36,6 +36,15 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **The review lane now produces the approver summary at issuance (#306).** `ReviewManager::issue()` materialises
+  the binding-informed summary through the same `ApproverSummaryMaterializer` the confirmation lane uses — resolving
+  the application binding once and feeding it to both the binding fingerprint and the approver-facing description,
+  routing the candidate through the approver-audience release policy, and persisting a `Released` summary on the
+  `ReviewRequest` (ADR 0038 §1/§6). This brings the asynchronous review lane to parity with the confirmation lane:
+  an approver reviewing an action out of band now sees the same "which order, which destination" signal, under the
+  same release contract. It also completes the operational-evidence picture from the previous change — a review
+  issuance's summary fingerprint is now present whenever the summary was released.
+
 - **Approval and review lifecycle moments are recorded as durable operational evidence (#306).** Issuance, the
   human approve/reject, and successful consumption now emit an `ApprovalOperationEvidence` through the new
   first-class `EvidenceWriter::recordApprovalOperation()` — a stream distinct from the execution-side decision
