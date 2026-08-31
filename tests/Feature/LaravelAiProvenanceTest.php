@@ -14,6 +14,7 @@ use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\ClassifiesToolResult;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
@@ -558,6 +559,8 @@ it('propagates recorder failure and does not call the next middleware', function
 
             public function recordRelease(ContextReleaseEvidence $evidence): void {}
 
+            public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
+
             public function recordProvenance(ProvenanceEntry $entry): void
             {
                 throw new RuntimeException('Recorder unavailable.');
@@ -580,6 +583,8 @@ it('propagates recorder failure and does not call the next middleware', function
             public function record(DecisionEvidence $evidence): void {}
 
             public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+            public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
             public function recordProvenance(ProvenanceEntry $entry): void {}
 

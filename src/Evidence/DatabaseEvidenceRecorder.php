@@ -30,6 +30,7 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
         private ConnectionInterface $connection,
         private string $table = 'verdict_evidence',
         private string $derivationsTable = 'verdict_provenance_derivations',
+        private string $operationsTable = 'verdict_approval_operations',
     ) {
         $this->schemaMemo = new stdClass;
     }
@@ -215,6 +216,25 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
             'parent_content_fingerprint' => $derivation->parentContentFingerprint,
             'kind' => $derivation->kind->value,
             'recorded_at' => $derivation->recordedAt,
+        ], $columns);
+    }
+
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void
+    {
+        $columns = $this->columns($this->operationsTable);
+        $this->assertRequiredColumns($this->operationsTable, [
+            'lane', 'operation', 'capability', 'identity_fingerprint', 'occurred_at',
+        ], $columns);
+
+        $this->insert($this->operationsTable, [
+            'id' => Str::uuid()->toString(),
+            'lane' => $evidence->lane->value,
+            'operation' => $evidence->operation->value,
+            'capability' => $evidence->capability,
+            'identity_fingerprint' => $evidence->identityFingerprint,
+            'summary_fingerprint' => $evidence->summaryFingerprint,
+            'invocation_id' => $evidence->invocationId,
+            'occurred_at' => $evidence->occurredAt,
         ], $columns);
     }
 

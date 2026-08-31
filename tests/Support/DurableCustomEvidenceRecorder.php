@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Tests\Support;
 
 use Fissible\Verdict\Contracts\DurableEvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\ProvenanceDerivation;
@@ -21,6 +22,8 @@ final class DurableCustomEvidenceRecorder implements DurableEvidenceRecorder, Ev
     public function record(DecisionEvidence $evidence): void {}
 
     public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
     public function recordProvenance(ProvenanceEntry $entry): void {}
 

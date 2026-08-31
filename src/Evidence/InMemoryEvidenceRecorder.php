@@ -28,6 +28,9 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
     /** @var list<ProvenanceDerivation> */
     private array $derivations = [];
 
+    /** @var list<ApprovalOperationEvidence> */
+    private array $operations = [];
+
     public function record(DecisionEvidence $evidence): void
     {
         $this->records[] = $evidence;
@@ -55,6 +58,11 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
         }
 
         $this->derivations[] = $derivation;
+    }
+
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void
+    {
+        $this->operations[] = $evidence;
     }
 
     /** @return list<ProvenanceEntry> */
@@ -104,5 +112,11 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
     public function releases(): array
     {
         return $this->releaseRecords;
+    }
+
+    /** @return list<ApprovalOperationEvidence> */
+    public function operations(): array
+    {
+        return $this->operations;
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\EvidenceWriter;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
@@ -28,6 +29,8 @@ final class VolatileCustomEvidenceRecorder implements EvidenceWriter
     public function record(DecisionEvidence $evidence): void {}
 
     public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
     public function recordProvenance(ProvenanceEntry $entry): void {}
 

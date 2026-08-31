@@ -8,6 +8,7 @@ use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ContentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
@@ -196,6 +197,8 @@ it('propagates recorder failures instead of reporting provenance success', funct
         public function record(DecisionEvidence $evidence): void {}
 
         public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+        public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
         public function recordProvenance(ProvenanceEntry $entry): void
         {

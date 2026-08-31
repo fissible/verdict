@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Contracts;
 
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\ProvenanceDerivation;
@@ -19,4 +20,6 @@ interface EvidenceWriter
     public function recordProvenance(ProvenanceEntry $entry): void;
 
     public function recordDerivation(ProvenanceDerivation $derivation): void;
+
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void;
 }

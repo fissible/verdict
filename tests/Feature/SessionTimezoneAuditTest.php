@@ -8,6 +8,7 @@ use Fissible\Verdict\Capabilities\DatabaseCapabilityConfigurationStore;
 use Fissible\Verdict\Console\SessionTimezoneAudit;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
@@ -34,6 +35,8 @@ final class SessionTimezoneProbeWriter implements EvidenceWriter, ProvenanceLedg
     public function record(DecisionEvidence $evidence): void {}
 
     public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
     public function recordProvenance(ProvenanceEntry $entry): void {}
 

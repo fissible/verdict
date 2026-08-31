@@ -29,6 +29,7 @@ use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Decisions\Decision as VerdictDecision;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\DerivationKind;
@@ -900,6 +901,8 @@ it('executes when the approval consumption gate records no evidence', function (
         }
 
         public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+        public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
         public function recordProvenance(ProvenanceEntry $entry): void {}
 

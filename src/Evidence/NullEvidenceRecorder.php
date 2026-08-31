@@ -28,6 +28,11 @@ final class NullEvidenceRecorder implements EvidenceRecorder
         // Applications opt in to an evidence destination explicitly.
     }
 
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void
+    {
+        // Applications opt in to an evidence destination explicitly.
+    }
+
     /** @return list<ProvenanceEntry> */
     public function provenanceFor(string $correlationId): array
     {

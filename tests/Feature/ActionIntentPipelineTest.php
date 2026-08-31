@@ -11,6 +11,7 @@ use Fissible\Verdict\Contracts\ActionIntentStore;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Decisions\Decision;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
@@ -245,6 +246,8 @@ it('keeps the intent mirror fail-open: a mirror evidence failure never stops the
         }
 
         public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+        public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
         public function recordProvenance(ProvenanceEntry $entry): void {}
 

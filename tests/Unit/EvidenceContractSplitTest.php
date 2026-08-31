@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
@@ -30,6 +31,8 @@ it('allows write and query adapters to be implemented independently', function (
         public function record(DecisionEvidence $evidence): void {}
 
         public function recordRelease(ContextReleaseEvidence $evidence): void {}
+
+        public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
         public function recordProvenance(ProvenanceEntry $entry): void {}
 
