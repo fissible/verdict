@@ -15,8 +15,8 @@ Status: Accepted
   contracts; this ADR follows that pattern in a different layer, not that seam.
 - [#297](https://github.com/fissible/verdict/issues/297) (open) is the `RequireReview` substrate;
   its records are reserved to ride this contract when they exist (§6).
-- [#299](https://github.com/fissible/verdict/issues/299) (open) is gated on this ADR: a
-  transition-event stream is only meaningful against a defined status-read contract.
+- [#299](https://github.com/fissible/verdict/issues/299) shipped the transition-event stream
+  gated on this ADR; it is meaningful only against a defined status-read contract.
 - [#425](https://github.com/fissible/verdict/issues/425) adds a collision-distinguishing read
   *beside* the contracts this ADR defines rather than changing them: this ADR's nullable tool-call
   ambiguity still stands on `statusForToolCall()`.
@@ -147,8 +147,9 @@ lapsed-but-undecided receipt is still returned, with its `expiresAt` (§5).
 ### 4. Freshness: poll-consistency, and reads carry no authority
 
 The guarantee, stated: **a read reflects every transition committed before the read began; nothing
-pushes.** A receipt resolved elsewhere may read stale until the consumer's next poll; #299 exists
-to shrink that window, and is only meaningful against this statement.
+pushes.** A receipt resolved elsewhere may read stale until the consumer's next poll. #299 now
+dispatches an identity-and-status transition hint after each committed issuance, approval,
+rejection, or consumption to shrink that window; it is only meaningful against this statement.
 
 Reads carry no authority. `approve()`, `reject()`, and `consume()` each re-validate status and
 expiry inside their locked transaction (#106 Q4), so a stale read can never cause a wrong
@@ -223,8 +224,8 @@ narrow reader, not a projection pipeline. `ApprovalStatusReader` matches the exi
   expired, non-pending, and colliding receipts; #425 exposes the collision to a consumer that opts
   in, and `challengeForToolCall()` is deliberately not moved onto it — a collision yields no
   challenge either way.
-- #299's event stream now has the status-read contract it is defined against, and inherits §4's
-  framing: events shrink the stale window; they do not change the consistency statement.
+- #299's shipped event stream has the status-read contract it is defined against, and inherits
+  §4's framing: events shrink the stale window; they do not change the consistency statement.
 - The contract, DTO, store-backed default, and paired database and in-memory readers are shipped.
   `findForToolCall()` keeps its nullable ambiguity — `ApprovalReceiptStore` is Stable through 1.0 —
   and #425's absence/single/multiple outcomes arrive on the opt-in seam instead, so an existing

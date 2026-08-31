@@ -108,6 +108,11 @@ Refreshing reduces the window between authorization and execution, but no in-pro
 
 `requiresConfirmation()` creates a human-approval gate. Its binding resolver produces canonical, application-defined facts such as an account ID, amount, or destination. Approval is for that binding—not for a broad conversational intent—and it is consumed before execution.
 
+`ApprovalReceiptTransitioned` is dispatched after a receipt is committed as pending, approved,
+rejected, or consumed. It lets an approval UI retire a stale row sooner, but is an invalidation
+hint rather than authority: it carries only receipt identity, capability, resulting status, and
+transition time. Read any further status through `ApprovalStatusReader::statusFor()`.
+
 The application decides which facts are material. Include every fact whose change would require a new human decision. Streaming approval resumption is supported: a streamed run pauses at the confirmation gate, the executor does not run before approval, and an approved, specifically-decided resume executes the capability exactly once — verified deterministically by `StreamedApprovalResumptionTest`. See [ADR 0006](adr/0006-streaming-approval-resumption-deferred.md) and [architecture](architecture.md).
 
 ### Who may decide a receipt
