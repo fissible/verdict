@@ -145,6 +145,49 @@ esac
 new_version="${major}.${minor}.${patch}"
 new_tag="v${new_version}"
 
+# --- remaining guards: nothing past the Proceed prompt may refuse before the suite gate ---
+#
+# Every read-check that can die runs before the changelog preparer touches a file: a refusal after
+# mutation leaves a dirty tree, and the retry then dies on "Working tree is dirty" with no hint the
+# script itself dirtied it (fissible/verdict-console#98). The suite gate below stays after the
+# edits by design — it tests the state about to be tagged, and its failure names the reset command.
+#
+# Composer's caret pins the leftmost non-zero component, so on a 0.x line ^0.5
+# means >=0.5.0 <0.6.0. A minor bump therefore leaves a README that still says
+# ^0.4 documenting a range that excludes the release it ships with — readers
+# following it install the previous minor and silently miss every fix in this
+# one. Derive the constraint here rather than hand-editing it each release.
+
+package=""
+constraint=""
+if [[ -f README.md && -f composer.json ]]; then
+    package=$(php -r 'echo json_decode(file_get_contents("composer.json"), true)["name"] ?? "";')
+    [[ -n "$package" ]] || die "composer.json has no package name — cannot update the README constraint"
+
+    if (( major == 0 )); then
+        constraint="^0.${minor}"      # pre-1.0: the minor is the compatibility boundary
+    else
+        constraint="^${major}.0"      # post-1.0: the major is
+    fi
+
+    # A silent no-op here would reintroduce exactly the drift this guards against,
+    # so a README that no longer carries the line stops the release.
+    grep -q "composer require ${package}:" README.md \
+        || die "no 'composer require ${package}:' line in README.md — refusing to release with an unverifiable install constraint"
+fi
+
+# RELEASES.md marks exactly one line "current", and tests/Feature/DocumentationConsistencyTest.php
+# asserts that line matches VERSION. Bumping VERSION without moving the matrix therefore leaves the
+# release commit itself red — the tag would point at a failing tree. Move them together; an
+# unrecognisable matrix stops the release here, before anything is written.
+matrix_line=""
+if [[ -f RELEASES.md ]]; then
+    matrix_line="${major}.${minor}.x"
+
+    grep -q 'current |$' RELEASES.md \
+        || die "no line marked current in RELEASES.md's platform matrix — refusing to release with a matrix that cannot be verified"
+fi
+
 printf '\nNew version: %s → %s\n\n' "$current" "$new_version"
 confirm "Proceed?" || { printf 'Aborted.\n'; exit 0; }
 
@@ -168,48 +211,19 @@ if [[ -f package.json ]]; then
 fi
 
 # --- update the documented install constraint ---
-#
-# Composer's caret pins the leftmost non-zero component, so on a 0.x line ^0.5
-# means >=0.5.0 <0.6.0. A minor bump therefore leaves a README that still says
-# ^0.4 documenting a range that excludes the release it ships with — readers
-# following it install the previous minor and silently miss every fix in this
-# one. Derive the constraint here rather than hand-editing it each release.
 
-if [[ -f README.md && -f composer.json ]]; then
-    package=$(php -r 'echo json_decode(file_get_contents("composer.json"), true)["name"] ?? "";')
-    [[ -n "$package" ]] || die "composer.json has no package name — cannot update the README constraint"
-
-    if (( major == 0 )); then
-        constraint="^0.${minor}"      # pre-1.0: the minor is the compatibility boundary
-    else
-        constraint="^${major}.0"      # post-1.0: the major is
-    fi
-
-    # A silent no-op here would reintroduce exactly the drift this guards against,
-    # so a README that no longer carries the line stops the release.
-    grep -q "composer require ${package}:" README.md \
-        || die "no 'composer require ${package}:' line in README.md — refusing to release with an unverifiable install constraint"
-
+if [[ -n "$package" ]]; then
     replace_in_file README.md "s|composer require ${package}:[^[:space:]]*|composer require ${package}:${constraint}|g"
     printf 'README install constraint: %s\n' "$constraint"
 fi
 
 # --- update the supported platform matrix ---
-#
-# RELEASES.md marks exactly one line "current", and tests/Feature/DocumentationConsistencyTest.php
-# asserts that line matches VERSION. Bumping VERSION without moving the matrix therefore leaves the
-# release commit itself red — the tag would point at a failing tree. Move them together.
 
-if [[ -f RELEASES.md ]]; then
-    matrix_line="${major}.${minor}.x"
-
-    # A silent no-op here would tag a commit whose own suite fails, so an unrecognisable matrix
-    # stops the release rather than being skipped.
-    grep -q 'current |$' RELEASES.md \
-        || die "no line marked current in RELEASES.md's platform matrix — refusing to release with a matrix that cannot be verified"
-
+if [[ -n "$matrix_line" ]]; then
     replace_in_file RELEASES.md "/current |\$/s/\`[0-9][0-9]*\.[0-9][0-9]*\.x\`/\`${matrix_line}\`/"
 
+    # Verifies this script's own sed landed — it can only fail on a script bug, and unlike the
+    # read-guards above it has nothing to check until the write has happened.
     grep -q "\`${matrix_line}\`.*current |\$" RELEASES.md \
         || die "could not set RELEASES.md's current platform line to ${matrix_line}"
 
