@@ -15,6 +15,7 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
+use Fissible\Verdict\Approvals\ApproverSummaryMaterializer;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Approvals\ProposalAnchor;
 use Fissible\Verdict\Capabilities\Capability;
@@ -240,6 +241,8 @@ final class RagBorneInjectionReference
             new ApproverProvenanceRelease($ledger, $releases, $policies),
             $invocations,
             900,
+            null,
+            new ApproverSummaryMaterializer($releases),
         );
 
         $capability = Capability::usingPolicy($config->consequentialCapability, 'update', fn (ActionEnvelope $envelope): array => $envelope->proposal->arguments)

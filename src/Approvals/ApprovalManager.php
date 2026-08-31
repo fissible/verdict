@@ -14,7 +14,6 @@ use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Exceptions\ApprovalAuthorizerMissing;
-use Fissible\Verdict\Support\ApproverSummary;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -32,7 +31,8 @@ final readonly class ApprovalManager
         private ApproverProvenanceRelease $approverProvenance,
         private InvocationContext $invocations,
         private int $defaultTtlSeconds,
-        private ApprovalDecisionAuthorizer|Closure|null $authorizer = null,
+        private ApprovalDecisionAuthorizer|Closure|null $authorizer,
+        private ApproverSummaryMaterializer $summaries,
     ) {
         if ($this->defaultTtlSeconds < 1) {
             throw new InvalidArgumentException('The default approval receipt TTL must be at least one second.');
@@ -49,10 +49,9 @@ final readonly class ApprovalManager
         }
 
         $binding = $capability->approvalBinding($evaluation->envelope, $evaluation->target);
-        $content = $capability->approverDescription($evaluation->envelope, $evaluation->target, $binding);
-        $approverSummary = $content === null
-            ? null
-            : new ApproverSummary($content, hash('sha256', $content));
+        $materialization = $this->summaries->materialize(
+            $capability->approverDescription($evaluation->envelope, $evaluation->target, $binding),
+        );
         $now = $this->clock->now();
         $ttl = $capability->confirmationTtlSeconds() ?? $this->defaultTtlSeconds;
         $receipt = new ApprovalReceipt(
@@ -72,10 +71,8 @@ final readonly class ApprovalManager
             consumedAt: null,
             createdAt: $now,
             updatedAt: $now,
-            approverSummary: $approverSummary,
-            approverSummaryRelease: $approverSummary === null
-                ? ApproverSummaryRelease::NotReleased
-                : ApproverSummaryRelease::Released,
+            approverSummary: $materialization->summary,
+            approverSummaryRelease: $materialization->release,
         );
 
         return $this->receipts->issue($receipt);

@@ -9,6 +9,7 @@ use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
+use Fissible\Verdict\Approvals\ApproverSummaryMaterializer;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\DatabaseApprovalStatusReader;
 use Fissible\Verdict\Approvals\DistinguishingStoreBackedApprovalStatusReader;
@@ -204,6 +205,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 invocations: $app->make(InvocationContext::class),
                 defaultTtlSeconds: is_int($ttl) ? $ttl : 900,
                 authorizer: fn (): ?ApprovalDecisionAuthorizer => $this->approvalDecisionAuthorizer($app),
+                summaries: $app->make(ApproverSummaryMaterializer::class),
             );
         });
 
@@ -240,6 +242,9 @@ final class VerdictServiceProvider extends ServiceProvider
             provenance: $app->make(ProvenanceLedger::class),
             releases: $app->make(ContextReleaseManager::class),
             policies: $app->make(ReleasePolicyRegistry::class),
+        ));
+        $this->app->scoped(ApproverSummaryMaterializer::class, fn (Container $app): ApproverSummaryMaterializer => new ApproverSummaryMaterializer(
+            releases: $app->make(ContextReleaseManager::class),
         ));
 
         $this->app->singleton(EvidenceRecorder::class, function (Container $app): EvidenceRecorder {
