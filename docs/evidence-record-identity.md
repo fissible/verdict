@@ -167,3 +167,23 @@ reference than the label states overclaims Verdict's boundary, which no field he
 
 None of this asks anything of Verdict beyond the two fields already on every record: the reference
 lives on the *citing* system. Verdict's obligation ends at exposing a stable, honestly scoped identity.
+
+### Joining a Verdict record to a provider request
+
+The reverse direction — starting from a Verdict decision and reaching the provider's own record of the
+HTTP call — is the application's join, and Verdict deliberately records no provider-transport field to
+make it for you. [ADR 0037](adr/0037-provider-request-identity-is-not-verdict-evidence.md) records why,
+including the reason it would misreport if it did: `laravel/ai`'s `$response->raw` carries the *last*
+step's HTTP response, and on a tool-calling turn that is generally not the round-trip that produced the
+proposal Verdict adjudicated.
+
+Both ends of the join already exist. Verdict's evidence carries Laravel AI's `invocation_id`, and the
+application holds the response object — with `raw`, and the provider request id inside it — in its own
+middleware or calling code. One application-owned table keyed on `invocation_id` closes the gap, and the
+application is the party that knows which provider account, environment, and retention policy that
+identifier belongs to.
+
+Two properties of `raw` to design around, both from `Responses\Concerns\HasRawResponse`: it is unset by
+`__serialize()`, so it is gone by the time a queued job runs and must be read before dispatch; and it is
+nullable per provider, so an application recording it needs its own "not captured" value rather than
+treating null as "no provider call".
