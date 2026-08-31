@@ -35,6 +35,23 @@ used by an implementation part of Verdict's public API.
 | `PrunableRateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Opt a `RateLimitStore` into expired-bucket cleanup. |
 | `RateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Store rate-limit consumption in a durable or external backend. |
 
+## Stable contract changes before 1.0
+
+`ApprovalReceiptStore::findForToolCall()` changed return type in
+[#425](https://github.com/fissible/verdict/issues/425), from `?ApprovalReceipt` to
+`ApprovalReceiptLookup`. This is an incompatible change to a `Stable` contract, made deliberately
+and recorded here rather than left to a release note: the old signature could not express its own
+result. `null` meant both "no receipt exists" and "two or more receipts share this tool-call id" —
+a legal state, since tool-call ids are provider-supplied and receipts are unique on
+`(tool_call_id, capability, binding_fingerprint)` — so a reviewer queue rendered a collision as
+absence. No compatible signature distinguishes three outcomes, and leaving it would have kept a
+security-relevant read lying to every adapter. `ApprovalStatusReader::statusForToolCall()` changed
+with it; that contract is `Experimental`, so it carries no such promise.
+
+A custom store implements the new return by naming one of three outcomes through
+`ApprovalReceiptLookup::absent()`, `::single()`, or `::multiple()`. Nothing else on either
+contract changed.
+
 ## Experimental contract follow-ups
 
 `EvidenceRecorder` was split by [#90](https://github.com/fissible/verdict/issues/90) into narrower

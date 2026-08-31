@@ -33,9 +33,9 @@ final readonly class DatabaseApprovalStatusReader implements ApprovalStatusReade
         return ApprovalStatusView::fromNullableReceipt($this->store->find($receiptId));
     }
 
-    public function statusForToolCall(string $toolCallId): ?ApprovalStatusView
+    public function statusForToolCall(string $toolCallId): ApprovalStatusLookup
     {
-        return ApprovalStatusView::fromNullableReceipt($this->store->findForToolCall($toolCallId));
+        return ApprovalStatusLookup::fromReceiptLookup($this->store->findForToolCall($toolCallId));
     }
 
     public function pendingWithin(array $scope): array

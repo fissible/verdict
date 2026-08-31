@@ -160,7 +160,7 @@ it('makes the issued receipt and payload visible to the preflight at hook time',
     // Payload equality with what was persisted at issuance: the challenge is rebuilt from
     // the stored receipt, so stored-vs-challenge equality is what fromReceipt() guarantees;
     // assert it explicitly against the raw store row.
-    $receipt = app(ApprovalReceiptStore::class)->findForToolCall('call-ordering-1');
+    $receipt = app(ApprovalReceiptStore::class)->findForToolCall('call-ordering-1')->receipt;
     expect($receipt?->status)->toBe(ApprovalReceiptStatus::Pending)
         ->and($receipt?->provenance?->toArray())->toBe($challenge->provenance?->toArray());
 

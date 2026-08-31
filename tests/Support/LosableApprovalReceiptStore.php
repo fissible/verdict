@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Tests\Support;
 
 use DateTimeImmutable;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
+use Fissible\Verdict\Approvals\ApprovalReceiptLookup;
 use Fissible\Verdict\Approvals\ApprovalTransition;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
@@ -66,7 +67,7 @@ final class LosableApprovalReceiptStore implements ApprovalReceiptStore
         return $this->inner->issue($receipt);
     }
 
-    public function findForToolCall(string $toolCallId): ?ApprovalReceipt
+    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
     {
         return $this->inner->findForToolCall($toolCallId);
     }

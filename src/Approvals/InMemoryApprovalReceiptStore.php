@@ -58,14 +58,27 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
         return ApprovalTransition::to(ApprovalOutcome::Existing, $existing);
     }
 
-    public function findForToolCall(string $toolCallId): ?ApprovalReceipt
+    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
     {
-        $matches = array_values(array_filter(
+        $receipts = array_values(array_filter(
             $this->receipts,
             static fn (ApprovalReceipt $receipt): bool => $receipt->toolCallId === $toolCallId,
         ));
 
-        return count($matches) === 1 ? $matches[0] : null;
+        usort(
+            $receipts,
+            static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => [$a->createdAt->format('Y-m-d H:i:s'), $a->id]
+                <=> [$b->createdAt->format('Y-m-d H:i:s'), $b->id],
+        );
+
+        return match (count($receipts)) {
+            0 => ApprovalReceiptLookup::absent(),
+            1 => ApprovalReceiptLookup::single($receipts[0]),
+            default => ApprovalReceiptLookup::multiple(array_map(
+                static fn (ApprovalReceipt $receipt): string => $receipt->id,
+                $receipts,
+            )),
+        };
     }
 
     public function find(string $receiptId): ?ApprovalReceipt
