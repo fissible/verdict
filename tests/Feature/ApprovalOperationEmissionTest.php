@@ -236,6 +236,35 @@ it('catches an evidence-write failure on approval and keeps the approved receipt
     Event::assertDispatched(EvidenceWriteFailed::class);
 });
 
+it('does not propagate even when the EvidenceWriteFailed listener itself throws', function (): void {
+    // The observational guarantee must survive a failing ALERT path too: the record throws, and the failure
+    // event's own listener throws. Neither may escape after the store has committed. (Mirrors AttestEvidence
+    // Recorder, which contains its ChainWriteFailed dispatch for the same reason.)
+    app('events')->listen(EvidenceWriteFailed::class, function (): void {
+        throw new RuntimeException('alert listener is down');
+    });
+    $store = new InMemoryApprovalReceiptStore;
+
+    $transition = opConfirmationManager($store, new ThrowingApprovalOperationWriter, app(Dispatcher::class))
+        ->issue(opConfirmationEvaluation(opConfirmationCapability(), 999));
+
+    expect($transition->succeeded())->toBeTrue()
+        ->and($store->find($transition->receipt->id))->not->toBeNull();
+});
+
+it('does not propagate a throwing review EvidenceWriteFailed listener', function (): void {
+    app('events')->listen(EvidenceWriteFailed::class, function (): void {
+        throw new RuntimeException('alert listener is down');
+    });
+    $store = new InMemoryReviewRequestStore;
+
+    $transition = opReviewManager($store, new ThrowingApprovalOperationWriter, app(Dispatcher::class))
+        ->issue(opReviewEvaluation());
+
+    expect($transition->succeeded())->toBeTrue()
+        ->and($transition->request)->not->toBeNull();
+});
+
 // ── no event for a non-happening operation: failed transitions and idempotent re-issue ─────────────────
 
 it('does not emit an operational event for a failed transition', function (): void {
