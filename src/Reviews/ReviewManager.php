@@ -6,6 +6,7 @@ namespace Fissible\Verdict\Reviews;
 
 use Closure;
 use DateInterval;
+use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\ReviewDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
@@ -82,6 +83,47 @@ final readonly class ReviewManager
         }
 
         return $this->reviews->reject($requestId, $resolvedBy, $this->clock->now());
+    }
+
+    public function validate(Evaluation $evaluation): ReviewTransition
+    {
+        $stateFailure = $this->executionStateFailure($evaluation);
+
+        if ($stateFailure !== null) {
+            return $stateFailure;
+        }
+
+        /** @var Capability $capability */
+        $capability = $evaluation->capability;
+
+        return $this->reviews->validate($capability->name, $this->fingerprint($evaluation), $this->clock->now());
+    }
+
+    public function consume(Evaluation $evaluation): ReviewTransition
+    {
+        $stateFailure = $this->executionStateFailure($evaluation);
+
+        if ($stateFailure !== null) {
+            return $stateFailure;
+        }
+
+        /** @var Capability $capability */
+        $capability = $evaluation->capability;
+
+        return $this->reviews->consume($capability->name, $this->fingerprint($evaluation), $this->clock->now());
+    }
+
+    private function executionStateFailure(Evaluation $evaluation): ?ReviewTransition
+    {
+        $capability = $evaluation->capability;
+
+        if ($evaluation->decision->disposition !== Disposition::RequireReview
+            || $capability === null
+            || ! $capability->confirmationRequired()) {
+            return ReviewTransition::to(ReviewOutcome::InvalidState);
+        }
+
+        return null;
     }
 
     private function unauthorized(
