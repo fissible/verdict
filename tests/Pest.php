@@ -33,6 +33,7 @@ function verdictTable(string $area): string
         'approvals' => ['verdict.approvals.table', 'verdict_approval_receipts'],
         'evidence' => ['verdict.evidence.table', 'verdict_evidence'],
         'derivations' => ['verdict.evidence.derivations_table', 'verdict_provenance_derivations'],
+        'operations' => ['verdict.evidence.operations_table', 'verdict_approval_operations'],
         'rate_limits' => ['verdict.rate_limits.table', 'verdict_rate_limit_buckets'],
         'execution_claims' => ['verdict.execution_claims.table', 'verdict_execution_claims'],
         'intents' => ['verdict.intents.table', 'verdict_action_intents'],

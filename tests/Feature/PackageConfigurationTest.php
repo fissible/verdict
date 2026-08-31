@@ -30,7 +30,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(21)
+    expect($migrations)->toHaveCount(22)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -41,9 +41,13 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(12)
+    expect($migrations)->toHaveCount(13)
         ->and(collect(array_keys($migrations))->contains(fn (string $k): bool => str_ends_with($k, 'add_review_outcome_to_verdict_evidence_table.php.stub')))->toBeTrue()
         ->and(collect(array_values($migrations))->contains(fn (string $v): bool => str_ends_with($v, 'add_review_outcome_to_verdict_evidence_table.php')))->toBeTrue()
+        // The new operational-events table stub is published (ADR 0038 §4) — asserted by name so a wrong-length
+        // list cannot pass on the count alone.
+        ->and(collect(array_keys($migrations))->contains(fn (string $k): bool => str_ends_with($k, 'create_verdict_approval_operations_table.php.stub')))->toBeTrue()
+        ->and(collect(array_values($migrations))->contains(fn (string $v): bool => str_ends_with($v, 'create_verdict_approval_operations_table.php')))->toBeTrue()
         ->and(array_keys($migrations)[0])->toEndWith('create_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php.stub')

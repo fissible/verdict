@@ -233,6 +233,21 @@ final class EvidenceTableSchema
             ->dropIfExists(verdictTable('derivations'));
     }
 
+    /** Runs the create migration for the approval-operations table (ADR 0038 §4). */
+    public static function createOperations(): void
+    {
+        app(DatabaseManager::class)->connection()->getSchemaBuilder()
+            ->dropIfExists(verdictTable('operations'));
+
+        self::run('create_verdict_approval_operations_table');
+    }
+
+    public static function dropOperations(): void
+    {
+        app(DatabaseManager::class)->connection()->getSchemaBuilder()
+            ->dropIfExists(verdictTable('operations'));
+    }
+
     public static function drop(?string $table = null): void
     {
         app(DatabaseManager::class)->connection()->getSchemaBuilder()
