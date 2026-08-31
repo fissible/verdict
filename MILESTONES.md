@@ -666,12 +666,24 @@ verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
 | [#327](https://github.com/fissible/verdict/issues/327) Implement the `ApprovalStatusReader` read contract | S | ADR 0031 ✅ | ✅ shipped (ApprovalStatusReader) |
 | [#320](https://github.com/fissible/verdict/issues/320) Does authorization precede receipt-state resolution — `Unauthorized` can mask expired/consumed | S (round) | #305 ✅ | ✅ shipped ([ADR 0036](docs/adr/0036-receipt-state-precedes-authorization.md), PR #430) |
 | [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()` | S | watches laravel/ai #932 | open |
-| [#299](https://github.com/fissible/verdict/issues/299) Receipt transitions dispatch no events | S–M | #327 | open — gated on the read contract |
+| [#299](https://github.com/fissible/verdict/issues/299) Receipt transitions dispatch no events | S–M | #327 ✅ | ✅ shipped (PR #451) — announced after commit |
 | [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design`; moved from v0.14.0 |
-| [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` substrate (the keystone) | L–XL | none | open — `scope: ready`; substrate build underway, dependency-ordered: ADR 0035 (#428), the loud reserve (#429), the value layer (#434), the review-request store (#439), the fail-closed decision authorizer (#440), and the status read surface (#441) have landed, and the execution gate is underway — `ReviewManager::issue` (#442) and `run()`'s issue-and-refuse (retiring #429's throw for the unbound path, with a fingerprint-only durable audit trail), and the durable database store have landed; only `runBound()`'s issuance-at-execution and the admission gate remain |
+| [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` substrate (the keystone) | L–XL | none | ✅ shipped — the substrate landed dependency-ordered across PRs #428 (ADR 0035), #429, #434, #439, #440, #441, #442, #443, #444, #445 and #450 |
 | [#357](https://github.com/fissible/verdict/issues/357) `pendingWithin()` is an unbounded scan + N+1 with no expiry filter | S–M | none | open — reader-queue scale; a pre-1.0 must-fix the v0.14.0 review named |
 | [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) + M (impl) | none | ✅ shipped (PRs #431, #435) — collision is an opt-in seam; the `Stable` contract is intact |
-| [#436](https://github.com/fissible/verdict/issues/436) #320 placed a new behavioural obligation on the Stable `ApprovalReceiptStore` contract | S (round) + S (impl) | #320 ✅ | open — the silent half of the same Stable-contract question #425 raised loudly |
+| [#436](https://github.com/fissible/verdict/issues/436) #320 placed a new behavioural obligation on the Stable `ApprovalReceiptStore` contract | S (round) + S (impl) | #320 ✅ | ✅ shipped (PR #452) — `EnforcesDecisionAdmissibility`, the same opt-in shape as #425 |
+
+**Where the cluster stands.** Six of the ten are closed: the keystone #297, the read contract #327, the
+transition events #299, and the three Stable-contract corrections #320, #425 and #436. What remains is
+#306 and #300 (in flight together), #357 (reader-queue scale), and #265 (watching laravel/ai #932).
+
+**Both Stable-contract corrections took the same shape, and that is now the pattern.** #425 broke
+`findForToolCall()`'s signature and #436 broke nothing visible at all — it moved a *behavioural*
+obligation onto `ApprovalReceiptStore`, so an unchanged custom store kept compiling and silently lost
+its authorization check. Each was fixed the same way rather than recorded: an `Experimental` opt-in
+interface beside the `Stable` contract (`DistinguishesReceiptCollisions`, `EnforcesDecisionAdmissibility`),
+the shipped implementations adopting it, and existing adapters unchanged and safe. The reusable rule:
+a `Stable` label constrains how a fix may be shaped, and documenting a break is not shaping it.
 
 **Cluster membership, settled.** #230 stays on v1.0.0 — it is a boundary decision on the 1.0 bar, and it
 was already scheduled there when the cluster was cut. #201 stays deliberately unscheduled with its recorded
