@@ -9,7 +9,6 @@ use Fissible\Verdict\Approvals\ApproverSummaryRelease;
 use Fissible\Verdict\Context\ContextReleaseManager;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\ReleasePolicy;
-use Fissible\Verdict\Context\ReleasePolicyRegistry;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
