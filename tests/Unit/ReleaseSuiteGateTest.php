@@ -78,7 +78,7 @@ it('runs the suite after the release edits and before the commit and the tag', f
     // The first write and the last edit block, both at column zero — the indented edits inside
     // those blocks cannot serve as anchors here, and the block boundaries bound them anyway.
     $versionWrite = releaseGateLine('/> VERSION$/');
-    $lastEditBlock = releaseGateLine('/^if \[\[ -f RELEASES\.md \]\]/');
+    $lastEditBlock = releaseGateLine('/^if \[\[ -n "\$matrix_line" \]\]/');
     $commit = releaseGateLine('/^git commit\b/');
     $tag = releaseGateLine('/^git tag\b/');
 
@@ -122,4 +122,47 @@ it('names the command that resets the working tree', function (): void {
     // An operator reading this is mid-release and should not have to work out what release.sh
     // wrote before it stopped.
     expect(releaseGateStatement())->toContain('git checkout -- .');
+});
+
+/** Every line number in release.sh whose comment-stripped text matches $pattern, indented or not. */
+function releaseGateAllLines(string $pattern): array
+{
+    $found = [];
+
+    foreach (explode("\n", releaseGateScript()) as $number => $line) {
+        $stripped = ltrim(releaseGateWithoutComment($line));
+
+        if ($stripped !== '' && preg_match($pattern, $stripped) === 1) {
+            $found[] = $number;
+        }
+    }
+
+    return $found;
+}
+
+/**
+ * fissible/verdict-console#98, ported: every guard that can refuse runs before the Proceed prompt,
+ * so a refused release leaves the tree exactly as it found it. The suite gate is the one deliberate
+ * exception — it tests the state about to be tagged and names the reset command — and the audit
+ * already runs before the preparer writes. What must not exist is a read-check that dies between
+ * the first file write and the last: the retry then dies on "Working tree is dirty" with no hint
+ * the script itself dirtied it.
+ */
+it('refuses an unverifiable install constraint or platform matrix before the Proceed prompt', function (): void {
+    $proceed = releaseGateLine('/^confirm "Proceed\?"/');
+    $preparer = releaseGateLine('/^php scripts\/prepare-release-changelog\.php/');
+    $readmeGuard = releaseGateAllLines('/^grep -q "composer require /');
+    $matrixGuard = releaseGateAllLines('/^grep -q .current .\$. RELEASES\.md/');
+    $readmeWrite = releaseGateAllLines('/^replace_in_file README\.md /');
+    $matrixWrite = releaseGateAllLines('/^replace_in_file RELEASES\.md /');
+
+    expect($readmeGuard)->toHaveCount(1)
+        ->and($readmeGuard[0])->toBeLessThan($proceed)
+        ->and($matrixGuard)->toHaveCount(1)
+        ->and($matrixGuard[0])->toBeLessThan($proceed)
+        ->and($preparer)->toBeGreaterThan($proceed)
+        ->and($readmeWrite)->toHaveCount(1)
+        ->and($readmeWrite[0])->toBeGreaterThan($preparer)
+        ->and($matrixWrite)->toHaveCount(1)
+        ->and($matrixWrite[0])->toBeGreaterThan($preparer);
 });
