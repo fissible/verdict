@@ -10,6 +10,7 @@ use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\Clock;
+use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Exceptions\ApprovalAuthorizerMissing;
@@ -240,14 +241,17 @@ final readonly class ApprovalManager
     /**
      * Runs the required authorizer against the receipt this decision names — approval decisions
      * are fail-closed, so no configured authorizer means no decision. The store remains the single
-     * authority on receipt state: after a read establishes that the receipt is pending and
-     * unexpired, the authorizer may decide whether the caller can make the decision. Every other
-     * receipt is delegated to the store untouched so it produces the canonical
-     * NotFound/Mismatch/Expired/InvalidState outcome. The receipt is addressed by id — never by
-     * findForToolCall(), whose null is ambiguous (absent OR a colliding tool-call id) and would
-     * let a second receipt on the same call bypass the authorizer while the store still finalized
-     * by id. The fetch-then-transition race is benign: a terminal receipt cannot become pending,
-     * and the store re-validates state atomically, so a decidable pre-read is only optimistic.
+     * authority on receipt state. A store declaring EnforcesDecisionAdmissibility may receive a
+     * found, call-matching terminal or expired receipt untouched, so it produces the canonical
+     * Expired/InvalidState outcome. For every other store, every found, call-matching receipt
+     * reaches the authorizer before delegation, whatever its state; a denial is Unauthorized and
+     * no decision method is called. Null or call-mismatched receipts are always delegated
+     * untouched. The receipt is addressed by id — never by findForToolCall(), whose null is
+     * ambiguous (absent OR a colliding tool-call id) and would let a second receipt on the same
+     * call bypass the authorizer while the store still finalized by id. The fetch-then-transition
+     * race is benign: a terminal receipt cannot become pending, and every store re-validates state
+     * atomically under ApprovalReceiptStore's contract, so a decidable pre-read is only
+     * optimistic. The marker permits the authorization shortcut; it adds no atomicity guarantee.
      * Apart from Unauthorized, the manager originates no state outcome and returns the store's
      * transition unaltered.
      */
@@ -268,11 +272,15 @@ final readonly class ApprovalManager
 
         $receipt = $this->receipts->find($receiptId);
 
-        // This is delegation, not approval: only a currently decidable receipt reaches the authorizer.
-        if ($receipt === null
-            || $receipt->toolCallId !== $toolCallId
-            || $receipt->status !== ApprovalReceiptStatus::Pending
-            || $receipt->isExpiredAt($this->clock->now())) {
+        // A missing or call-mismatched receipt is always delegated. Only a store that promises to
+        // enforce decision admissibility may also receive an inadmissible matching receipt without
+        // authorization; all other stores retain the pre-#320 authorization order.
+        if ($receipt === null || $receipt->toolCallId !== $toolCallId) {
+            return null;
+        }
+
+        if ($this->receipts instanceof EnforcesDecisionAdmissibility
+            && ($receipt->status !== ApprovalReceiptStatus::Pending || $receipt->isExpiredAt($this->clock->now()))) {
             return null;
         }
 

@@ -4,6 +4,34 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **The authorization shortcut #320 introduced is now taken only for a store that declares it
+  refuses an inadmissible decision (#436).** #320 stopped consulting the required
+  `ApprovalDecisionAuthorizer` for a receipt the manager reads as terminal or expired, delegating to
+  the receipt store on the understanding that the store would refuse it. That understanding was
+  recorded as a new obligation on `ApprovalReceiptStore` — which is a **Stable** contract, "intended
+  to remain compatible through Verdict 1.0". A custom store written against v0.14.0, unchanged and
+  still compiling, therefore acquired an authorization hole on upgrade: if it finalized a terminal or
+  expired receipt, it now did so with no authorization check at all. Unlike a signature change, that
+  fails silently.
+
+  A store now opts in by declaring `Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility`.
+  Both shipped stores declare it, so **a default install behaves exactly as it did** — an
+  inadmissible receipt bypasses the authorizer and the store reports `expired` or `invalid_state`.
+
+  A store that has not declared it gets the pre-#320 order back: every found, call-matching receipt
+  reaches the authorizer first, whatever its state, and a denial returns `unauthorized` without
+  anything being delegated. Such a store gives up #320's reporting fidelity — a denying authorizer
+  masks `expired` and `invalid_state` again — which is the deliberate price of not having an
+  authorization hole. Both properties return together when the store declares the marker.
+
+  Two things worth knowing before you write a custom store. The marker is a claim Verdict cannot
+  verify, so declaring it moves the consequence of being wrong onto the store rather than proving
+  anything. And a decorator that wraps a declaring store without re-declaring falls back to the
+  stricter path — the safe direction, and the likeliest way a real deployment reaches it. See
+  [ADR 0036](docs/adr/0036-receipt-state-precedes-authorization.md), Update (#436).
+
 ### Added
 
 - **A tool-call collision can be told from an absent receipt, through an opt-in seam (#425).**
