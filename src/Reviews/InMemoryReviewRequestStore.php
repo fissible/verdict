@@ -45,6 +45,12 @@ final class InMemoryReviewRequestStore implements ReviewRequestStore
         return $this->requests[$requestId] ?? null;
     }
 
+    /** @return array<string, ReviewRequest> */
+    public function all(): array
+    {
+        return $this->requests;
+    }
+
     public function approve(string $requestId, string $resolvedBy, DateTimeImmutable $at): ReviewTransition
     {
         $request = $this->requests[$requestId] ?? null;
