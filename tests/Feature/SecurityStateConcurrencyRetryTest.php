@@ -339,7 +339,7 @@ it('consumes an approved receipt exactly once when real database connections rac
 
     assertRaceOutcome($decoded, $consumed, 1);
 
-    expect($store->findForToolCall($receipt->toolCallId)->receipt?->status)->toBe(ApprovalReceiptStatus::Consumed);
+    expect($store->findForToolCall($receipt->toolCallId)?->status)->toBe(ApprovalReceiptStatus::Consumed);
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
 it('keeps one terminal decision when approve and reject race on separate real database connections', function (): void {
@@ -365,7 +365,7 @@ it('keeps one terminal decision when approve and reject race on separate real da
 
     assertRaceOutcome($decoded, $decisions, 1);
 
-    expect($store->findForToolCall($receipt->toolCallId)->receipt?->status)
+    expect($store->findForToolCall($receipt->toolCallId)?->status)
         ->toBeIn([ApprovalReceiptStatus::Approved, ApprovalReceiptStatus::Rejected]);
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 

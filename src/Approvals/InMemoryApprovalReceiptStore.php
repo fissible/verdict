@@ -7,12 +7,13 @@ namespace Fissible\Verdict\Approvals;
 use DateTimeImmutable;
 use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Illuminate\Contracts\Events\Dispatcher;
 
 /**
  * Process-local test store. It is not safe for production, Octane, or queue workers.
  */
-final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
+final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, DistinguishesReceiptCollisions
 {
     /** @var array<string, ApprovalReceipt> */
     private array $receipts = [];
@@ -58,13 +59,26 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore
         return ApprovalTransition::to(ApprovalOutcome::Existing, $existing);
     }
 
-    public function findForToolCall(string $toolCallId): ApprovalReceiptLookup
+    public function findForToolCall(string $toolCallId): ?ApprovalReceipt
+    {
+        $matches = array_values(array_filter(
+            $this->receipts,
+            static fn (ApprovalReceipt $receipt): bool => $receipt->toolCallId === $toolCallId,
+        ));
+
+        return count($matches) === 1 ? $matches[0] : null;
+    }
+
+    /** The #425 collision seam, ordered exactly as the database store orders it. */
+    public function lookupForToolCall(string $toolCallId): ApprovalReceiptLookup
     {
         $receipts = array_values(array_filter(
             $this->receipts,
             static fn (ApprovalReceipt $receipt): bool => $receipt->toolCallId === $toolCallId,
         ));
 
+        // Second-precision createdAt, matching what the database store inherits from the column's
+        // stored 'Y-m-d H:i:s' — the two shipped stores order identically.
         usort(
             $receipts,
             static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => [$a->createdAt->format('Y-m-d H:i:s'), $a->id]

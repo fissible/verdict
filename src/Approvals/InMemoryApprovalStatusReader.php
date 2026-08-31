@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Approvals;
 
 use Fissible\Verdict\Contracts\ApprovalStatusReader;
+use Fissible\Verdict\Contracts\DistinguishesStatusCollisions;
 
 /**
  * The reader paired with InMemoryApprovalReceiptStore (ADR 0031 §2): status reads ride the
  * store's own lookups; enumeration reads the same process-local state the store holds, filtered
  * by the shared containment semantics. Test-scoped like its store — not for production.
  */
-final readonly class InMemoryApprovalStatusReader implements ApprovalStatusReader
+final readonly class InMemoryApprovalStatusReader implements ApprovalStatusReader, DistinguishesStatusCollisions
 {
     public function __construct(
         private InMemoryApprovalReceiptStore $store,
@@ -22,9 +23,14 @@ final readonly class InMemoryApprovalStatusReader implements ApprovalStatusReade
         return ApprovalStatusView::fromNullableReceipt($this->store->find($receiptId));
     }
 
-    public function statusForToolCall(string $toolCallId): ApprovalStatusLookup
+    public function statusForToolCall(string $toolCallId): ?ApprovalStatusView
     {
-        return ApprovalStatusLookup::fromReceiptLookup($this->store->findForToolCall($toolCallId));
+        return ApprovalStatusView::fromNullableReceipt($this->store->findForToolCall($toolCallId));
+    }
+
+    public function statusLookupForToolCall(string $toolCallId): ApprovalStatusLookup
+    {
+        return ApprovalStatusLookup::fromReceiptLookup($this->store->lookupForToolCall($toolCallId));
     }
 
     public function pendingWithin(array $scope): array

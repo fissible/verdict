@@ -24,6 +24,8 @@ used by an implementation part of Verdict's public API.
 | `Clock` | Stable | `SystemClock` | Supply deterministic or deployment-specific time. |
 | `ContextTransformer` | Stable | `StructuredRedactor` | Transform data before a release or other context-sensitive operation. |
 | `DeclaresExpressibleToolShapes` | Experimental | `AccountRecoveryAttackPack`, `RagBorneInjectionAttackPack`, `StorefrontAttackPack`, `ToolIntegrityAttackPack`, `DelegationConfusionAttackPack` | Declare the tool shapes an attack pack can express — the coverage manifest surfaced in run output beside coverage reporting. |
+| `DistinguishesReceiptCollisions` | Experimental | `DatabaseApprovalReceiptStore`, `InMemoryApprovalReceiptStore` | Opt-in beside `ApprovalReceiptStore` (#425): tell "no receipt for this tool call" from "more than one". A tool-call id is provider-supplied and receipts are unique on `(tool_call_id, capability, binding_fingerprint)`, so a collision is legal and real; `findForToolCall()`'s null means both and stays that way, because that contract is `Stable`. Adopting this changes nothing else about a store. |
+| `DistinguishesStatusCollisions` | Experimental | `DatabaseApprovalStatusReader`, `InMemoryApprovalStatusReader`, `DistinguishingStoreBackedApprovalStatusReader` | The read-side half of the same seam: status by tool call as absent, single, or a named collision. An implementation must never report absence for a tool call it cannot resolve, so a reader only carries this interface when it can answer: the container pairs a custom store with `DistinguishingStoreBackedApprovalStatusReader` when the store adopted `DistinguishesReceiptCollisions`, and with the plain `StoreBackedApprovalStatusReader`, which does not declare this, when it has not. `instanceof` is therefore an honest probe. |
 | `DurableEvidenceRecorder` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder` | Marker, no methods: declare that a recorder retains evidence, so an unset `verdict.capability_configurations.store` falls through to the durable configuration store instead of the no-op one (#310). |
 | `EvidenceWriter` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Send Verdict evidence to a project-specific durable, attestable, or external backend. |
 | `ProvenanceLedgerStore` | Experimental | `AttestEvidenceRecorder`, `DatabaseEvidenceRecorder`, `InMemoryEvidenceRecorder`, `NullEvidenceRecorder` | Query a provenance and derivation ledger without taking on evidence writes. |
@@ -34,23 +36,6 @@ used by an implementation part of Verdict's public API.
 | `RegistersSecrets` | Experimental | `StorefrontAttackPack` | Declare the canary tokens an attack pack plants, so an argument scan can be armed with them (ADR 0032). Labels are persisted; values never are. |
 | `PrunableRateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Opt a `RateLimitStore` into expired-bucket cleanup. |
 | `RateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Store rate-limit consumption in a durable or external backend. |
-
-## Stable contract changes before 1.0
-
-`ApprovalReceiptStore::findForToolCall()` changed return type in
-[#425](https://github.com/fissible/verdict/issues/425), from `?ApprovalReceipt` to
-`ApprovalReceiptLookup`. This is an incompatible change to a `Stable` contract, made deliberately
-and recorded here rather than left to a release note: the old signature could not express its own
-result. `null` meant both "no receipt exists" and "two or more receipts share this tool-call id" —
-a legal state, since tool-call ids are provider-supplied and receipts are unique on
-`(tool_call_id, capability, binding_fingerprint)` — so a reviewer queue rendered a collision as
-absence. No compatible signature distinguishes three outcomes, and leaving it would have kept a
-security-relevant read lying to every adapter. `ApprovalStatusReader::statusForToolCall()` changed
-with it; that contract is `Experimental`, so it carries no such promise.
-
-A custom store implements the new return by naming one of three outcomes through
-`ApprovalReceiptLookup::absent()`, `::single()`, or `::multiple()`. Nothing else on either
-contract changed.
 
 ## Experimental contract follow-ups
 

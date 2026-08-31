@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Contracts;
 
-use Fissible\Verdict\Approvals\ApprovalStatusLookup;
 use Fissible\Verdict\Approvals\ApprovalStatusView;
 
 /**
@@ -28,12 +27,14 @@ interface ApprovalStatusReader
     public function statusFor(string $receiptId): ?ApprovalStatusView;
 
     /**
-     * Looks up status by a provider-supplied tool-call id. The result explicitly distinguishes
-     * absence, one receipt with its status view, and a collision of multiple receipts. A multiple
-     * result carries every matching receipt id and no status, so consumers never act on a silently
-     * canonicalized receipt. Consumers that hold a receiptId should prefer statusFor().
+     * The status view of the single receipt for this tool call. Inherits
+     * ApprovalReceiptStore::findForToolCall()'s documented ambiguity: null when there is none OR
+     * when more than one receipt shares the tool call id, so null never proves absence.
+     * Consumers that hold a receiptId should prefer statusFor(); a consumer that must see the
+     * collision itself reads DistinguishesStatusCollisions (#425), which readers implement beside
+     * this contract rather than by changing it.
      */
-    public function statusForToolCall(string $toolCallId): ApprovalStatusLookup;
+    public function statusForToolCall(string $toolCallId): ?ApprovalStatusView;
 
     /**
      * The receipts whose persisted lifecycle status is Pending and whose approval_context

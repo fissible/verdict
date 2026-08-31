@@ -18,7 +18,7 @@ it('captures the action context approval context onto the receipt at issue time'
 
     expect($transition->outcome)->toBe(ApprovalOutcome::Issued);
 
-    $receipt = app(ApprovalReceiptStore::class)->findForToolCall('call-binding-context-1')->receipt;
+    $receipt = app(ApprovalReceiptStore::class)->findForToolCall('call-binding-context-1');
 
     expect($receipt)->not->toBeNull()
         ->and($receipt->approvalContext)->toBe(['tenant_id' => 'tenant-9', 'conversation_id' => 'conv-41']);
@@ -52,6 +52,6 @@ it('keeps the pre-capture binding fingerprint when no approval context is suppli
         'binding' => ['order_id' => 1001],
     ]);
 
-    expect(app(ApprovalReceiptStore::class)->findForToolCall('call-precapture-shape')->receipt?->bindingFingerprint)
+    expect(app(ApprovalReceiptStore::class)->findForToolCall('call-precapture-shape')?->bindingFingerprint)
         ->toBe($preCaptureShape);
 });
