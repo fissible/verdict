@@ -8,17 +8,19 @@ use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
 use Fissible\AttestLaravel\Support\AttestRegistry;
+use Fissible\Verdict\Contracts\AttestsIssuance;
 use Fissible\Verdict\Contracts\DurableEvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
 use Fissible\Verdict\Evidence\Events\ChainWriteFailed;
 use Fissible\Verdict\Exceptions\EvidenceChainWriteFailed;
+use Fissible\Verdict\Support\ApproverSummary;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Throwable;
 
-final class AttestEvidenceRecorder implements DurableEvidenceRecorder, EvidenceRecorder
+final class AttestEvidenceRecorder implements AttestsIssuance, DurableEvidenceRecorder, EvidenceRecorder
 {
     public function __construct(
         private readonly AttestRegistry $attest,
@@ -179,6 +181,44 @@ final class AttestEvidenceRecorder implements DurableEvidenceRecorder, EvidenceR
             type: 'verdict.approval_operation',
             payload: $evidence->toArray(),
         );
+    }
+
+    public function attestIssuedSummary(ApprovalLane $lane, string $identityFingerprint, ApproverSummary $summary): void
+    {
+        $attempt = 0;
+        $lastError = null;
+
+        try {
+            $chainId = ($this->chainIdUsing)();
+        } catch (Throwable $e) {
+            throw EvidenceChainWriteFailed::fromFailure('unknown', 'attested_issuance', $attempt, $e);
+        }
+
+        while ($attempt < $this->maxAttempts) {
+            $attempt++;
+
+            try {
+                $this->attest->chain($chainId)->record(
+                    type: 'verdict.attested_issuance',
+                    payload: [
+                        'lane' => $lane->value,
+                        'identity_fingerprint' => $identityFingerprint,
+                        'summary_fingerprint' => $summary->fingerprint,
+                    ],
+                    correlation: $identityFingerprint,
+                );
+
+                return;
+            } catch (Throwable $e) {
+                $lastError = $e;
+
+                if ($attempt < $this->maxAttempts) {
+                    usleep($this->baseDelayMs * 1000 * (2 ** ($attempt - 1)));
+                }
+            }
+        }
+
+        throw EvidenceChainWriteFailed::fromFailure($chainId, 'attested_issuance', $attempt, $lastError);
     }
 
     /** @return list<ProvenanceEntry> */

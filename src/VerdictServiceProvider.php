@@ -55,6 +55,7 @@ use Fissible\Verdict\Contracts\ReviewRequestStore;
 use Fissible\Verdict\Evaluation\EvaluationReadPredicateSuppression;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
+use Fissible\Verdict\Evidence\AttestedIssuanceResolver;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\EffectiveEvidenceClass;
@@ -208,6 +209,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 summaries: $app->make(ApproverSummaryMaterializer::class),
                 evidence: $app->make(EvidenceWriter::class),
                 events: $app->make(Dispatcher::class),
+                attestedIssuance: $app->make(AttestedIssuanceResolver::class)->resolve(),
             );
         });
 
@@ -241,6 +243,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 invocations: $app->make(InvocationContext::class),
                 events: $app->make(Dispatcher::class),
                 summaries: $app->make(ApproverSummaryMaterializer::class),
+                attestedIssuance: $app->make(AttestedIssuanceResolver::class)->resolve(),
             );
         });
 

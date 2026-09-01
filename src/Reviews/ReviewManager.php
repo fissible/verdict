@@ -8,7 +8,10 @@ use Closure;
 use DateInterval;
 use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Approvals\ApproverSummaryMaterializer;
+use Fissible\Verdict\Approvals\ApproverSummaryRelease;
+use Fissible\Verdict\Approvals\IssuanceRefusalReason;
 use Fissible\Verdict\Capabilities\Capability;
+use Fissible\Verdict\Contracts\AttestsIssuance;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\ReviewDecisionAuthorizer;
@@ -37,6 +40,7 @@ final readonly class ReviewManager
         private ?InvocationContext $invocations = null,
         private ?Dispatcher $events = null,
         private ?ApproverSummaryMaterializer $summaries = null,
+        private ?AttestsIssuance $attestedIssuance = null,
     ) {
         if ($this->defaultTtlSeconds < 1) {
             throw new InvalidArgumentException('The default review request TTL must be at least one second.');
@@ -56,13 +60,45 @@ final readonly class ReviewManager
         }
 
         $binding = $capability->approvalBinding($evaluation->envelope, $evaluation->target);
-        $summary = $this->summaries?->materialize(
+        $materialization = $this->summaries?->materialize(
             $capability->approverDescription($evaluation->envelope, $evaluation->target, $binding),
-        )?->summary;
+        );
+        $id = Str::random(64);
+
+        if ($capability->attestedIssuanceRequirement()) {
+            if ($materialization?->release !== ApproverSummaryRelease::Released || $materialization->summary === null) {
+                return ReviewTransition::to(
+                    ReviewOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::SummaryNotReleased,
+                );
+            }
+
+            if ($this->attestedIssuance === null) {
+                return ReviewTransition::to(
+                    ReviewOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::AttestNotConfigured,
+                );
+            }
+
+            try {
+                $this->attestedIssuance->attestIssuedSummary(
+                    ApprovalLane::Review,
+                    hash('sha256', $id),
+                    $materialization->summary,
+                );
+            } catch (Throwable) {
+                return ReviewTransition::to(
+                    ReviewOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::AttestAppendFailed,
+                );
+            }
+        }
+
+        $summary = $materialization?->summary;
         $now = $this->clock->now();
         $ttl = $capability->confirmationTtlSeconds() ?? $this->defaultTtlSeconds;
         $request = ReviewRequest::pending(
-            id: Str::random(64),
+            id: $id,
             capability: $capability->name,
             bindingFingerprint: $this->fingerprint($evaluation, $binding),
             approvalContext: $evaluation->envelope->context->approvalContext,

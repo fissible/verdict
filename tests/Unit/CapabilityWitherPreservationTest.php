@@ -37,7 +37,8 @@ function fullyComposedCapability(): Capability
         ->executionTarget(ExecutionTargetPolicy::acceptStaleSnapshot('refund-snapshot', fn (): array => ['k' => 'v']))
         ->resourceProjection(ResourceProjection::declared('refund-order/v1', fn (): array => ['k' => 'v']))
         ->configurationVersion('2026-08-26.1')
-        ->requiresIntentRecord();
+        ->requiresIntentRecord()
+        ->requiresAttestedIssuance();
 }
 
 /** @return array<string, mixed> */
@@ -99,6 +100,10 @@ function capabilityWithers(): array
             fn (Capability $c): Capability => $c->requiresIntentRecord(false),
             ['requiresIntentRecord'],
         ],
+        'requiresAttestedIssuance' => [
+            fn (Capability $c): Capability => $c->requiresAttestedIssuance(false),
+            ['requiresAttestedIssuance'],
+        ],
     ];
 }
 
@@ -112,7 +117,7 @@ it('builds a fixture in which every field is actually populated', function (): v
     $unset = array_keys(array_filter($state, static fn (mixed $value): bool => $value === null));
 
     expect($unset)->toBe([], 'The fixture must set every field: '.implode(', ', $unset).' came back null.')
-        ->and($state)->toHaveCount(15)
+        ->and($state)->toHaveCount(16)
         ->and($state['targetSource'])->toBe(TargetSource::Context);
 });
 
