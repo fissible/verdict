@@ -8,6 +8,7 @@ use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\Exceptions\EvidenceChainWriteFailed;
 use Fissible\Verdict\Support\ApproverSummary;
 use Fissible\Verdict\Tests\Support\AttestFixture;
 use Fissible\Verdict\Tests\Support\FlakyChainStore;
@@ -90,5 +91,5 @@ it('throws when the chain append fails, regardless of the global alert posture',
 
     expect(fn () => makeAttestIssuanceRecorder($flaky, onFailure: 'alert')
         ->attestIssuedSummary(ApprovalLane::Review, str_repeat('b', 64), issuanceSummary()))
-        ->toThrow(Throwable::class);
+        ->toThrow(EvidenceChainWriteFailed::class);
 });
