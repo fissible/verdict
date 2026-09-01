@@ -24,6 +24,7 @@ use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Evidence\AttestedIssuanceResolver;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\EffectiveEvidenceClass;
@@ -79,6 +80,11 @@ final class ValidateVerdictCommand extends Command
             $needsRateLimits = $needsRateLimits || $capability->rateLimitPolicy() !== null;
             $needsExecutionClaims = $needsExecutionClaims || $capability->executionClaimPolicy() !== null;
             $needsIntents = $needsIntents || $intents->required($capability);
+
+            if ($capability->attestedIssuanceRequirement()
+                && $container->make(AttestedIssuanceResolver::class)->resolve() === null) {
+                $errors[] = "Capability [{$capability->name}] requires attested issuance but no Attest backend is configured.";
+            }
 
             // Advisory (#230): requestConfirmation() returns null without an execution-target policy, so
             // this capability asks for confirmation and never pauses — no human is ever shown the

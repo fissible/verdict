@@ -52,6 +52,7 @@ it('locks the complete transition-outcome vocabulary and its persisted values', 
         'Approved' => 'approved',
         'Rejected' => 'rejected',
         'Consumed' => 'consumed',
+        'IssuanceRefused' => 'issuance_refused',
         'NotFound' => 'not_found',
         'Mismatch' => 'mismatch',
         'Expired' => 'expired',
@@ -69,6 +70,7 @@ it('treats every completed transition as succeeded and every refusal as not', fu
         ->and(ReviewOutcome::Approved->succeeded())->toBeTrue()
         ->and(ReviewOutcome::Rejected->succeeded())->toBeTrue()
         ->and(ReviewOutcome::Consumed->succeeded())->toBeTrue()
+        ->and(ReviewOutcome::IssuanceRefused->succeeded())->toBeFalse()
         ->and(ReviewOutcome::NotFound->succeeded())->toBeFalse()
         ->and(ReviewOutcome::Mismatch->succeeded())->toBeFalse()
         ->and(ReviewOutcome::Expired->succeeded())->toBeFalse()

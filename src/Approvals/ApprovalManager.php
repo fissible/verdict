@@ -9,6 +9,7 @@ use DateInterval;
 use Fissible\Verdict\Actions\InvocationContext;
 use Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\AttestsIssuance;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Contracts\EvidenceWriter;
@@ -42,6 +43,7 @@ final readonly class ApprovalManager
         private ApproverSummaryMaterializer $summaries,
         private ?EvidenceWriter $evidence = null,
         private ?Dispatcher $events = null,
+        private ?AttestsIssuance $attestedIssuance = null,
     ) {
         if ($this->defaultTtlSeconds < 1) {
             throw new InvalidArgumentException('The default approval receipt TTL must be at least one second.');
@@ -61,10 +63,41 @@ final readonly class ApprovalManager
         $materialization = $this->summaries->materialize(
             $capability->approverDescription($evaluation->envelope, $evaluation->target, $binding),
         );
+        $id = Str::random(64);
+
+        if ($capability->attestedIssuanceRequirement()) {
+            if ($materialization->release !== ApproverSummaryRelease::Released || $materialization->summary === null) {
+                return ApprovalTransition::to(
+                    ApprovalOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::SummaryNotReleased,
+                );
+            }
+
+            if ($this->attestedIssuance === null) {
+                return ApprovalTransition::to(
+                    ApprovalOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::AttestNotConfigured,
+                );
+            }
+
+            try {
+                $this->attestedIssuance->attestIssuedSummary(
+                    ApprovalLane::Confirmation,
+                    hash('sha256', $id),
+                    $materialization->summary,
+                );
+            } catch (Throwable) {
+                return ApprovalTransition::to(
+                    ApprovalOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::AttestAppendFailed,
+                );
+            }
+        }
+
         $now = $this->clock->now();
         $ttl = $capability->confirmationTtlSeconds() ?? $this->defaultTtlSeconds;
         $receipt = new ApprovalReceipt(
-            id: Str::random(64),
+            id: $id,
             toolCallId: $toolCallId,
             capability: $capability->name,
             bindingFingerprint: $this->fingerprint($evaluation, $binding),

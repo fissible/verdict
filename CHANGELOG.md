@@ -36,6 +36,19 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **A capability can require strict, attested, issuance-blocking approval (#306).** A high-consequence capability
+  opts in with `->requiresAttestedIssuance()`. At issuance Verdict generates the receipt/request id, attests the
+  released approver summary synchronously through the new `AttestsIssuance` seam, and persists that same id **only
+  after** the attestation succeeds — an attested-but-unminted record is preferable to an approvable one without its
+  anchor. If the summary was not released, no Attest backend is configured, or the append fails, issuance is
+  **refused**: no receipt or request is minted, and a single `IssuanceRefused` outcome carries a typed reason
+  (`summary_not_released`, `attest_not_configured`, `attest_append_failed`). This is the ADR 0038 §5 Strict tier — a
+  synchronous guarantee, distinct from the observational operational-evidence stream: the attest append throws on
+  failure regardless of the recorder's global `on_failure` posture, and only an attest-capable recorder carries the
+  seam. The strict posture is security material and enters the capability's configuration fingerprint (ADR 0017), and
+  `verdict:validate` reports a strict capability with no configured Attest backend as a deployment error. Both the
+  confirmation and review lanes enforce it; non-strict capabilities are untouched.
+
 - **The review lane now produces the approver summary at issuance (#306).** `ReviewManager::issue()` materialises
   the binding-informed summary through the same `ApproverSummaryMaterializer` the confirmation lane uses — resolving
   the application binding once and feeding it to both the binding fingerprint and the approver-facing description,

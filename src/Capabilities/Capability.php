@@ -73,6 +73,7 @@ final readonly class Capability
         private ?bool $requiresIntentRecord = null,
         public TargetSource $targetSource = TargetSource::Proposal,
         private ?Closure $approverSummaryDescriber = null,
+        private bool $requiresAttestedIssuance = false,
     ) {
         if (trim($this->name) === '') {
             throw new InvalidArgumentException('A capability must have a name.');
@@ -127,6 +128,9 @@ final readonly class Capability
             ...($this->requiresIntentRecord === null
                 ? []
                 : ['requires_intent_record' => $this->requiresIntentRecord]),
+            ...($this->requiresAttestedIssuance
+                ? ['requires_attested_issuance' => true]
+                : []),
         ];
     }
 
@@ -186,6 +190,7 @@ final readonly class Capability
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
             approverSummaryDescriber: $this->approverSummaryDescriber,
+            requiresAttestedIssuance: $this->requiresAttestedIssuance,
         );
     }
 
@@ -219,6 +224,7 @@ final readonly class Capability
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
             approverSummaryDescriber: $this->approverSummaryDescriber,
+            requiresAttestedIssuance: $this->requiresAttestedIssuance,
         );
     }
 
@@ -240,6 +246,7 @@ final readonly class Capability
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
             approverSummaryDescriber: $this->approverSummaryDescriber,
+            requiresAttestedIssuance: $this->requiresAttestedIssuance,
         );
     }
 
@@ -266,6 +273,7 @@ final readonly class Capability
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
             approverSummaryDescriber: $this->approverSummaryDescriber,
+            requiresAttestedIssuance: $this->requiresAttestedIssuance,
         );
     }
 
@@ -292,6 +300,7 @@ final readonly class Capability
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
             approverSummaryDescriber: $this->approverSummaryDescriber,
+            requiresAttestedIssuance: $this->requiresAttestedIssuance,
         );
     }
 
@@ -318,6 +327,7 @@ final readonly class Capability
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
             approverSummaryDescriber: $this->approverSummaryDescriber,
+            requiresAttestedIssuance: $this->requiresAttestedIssuance,
         );
     }
 
@@ -349,6 +359,7 @@ final readonly class Capability
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
             approverSummaryDescriber: $this->approverSummaryDescriber,
+            requiresAttestedIssuance: $this->requiresAttestedIssuance,
         );
     }
 
@@ -378,6 +389,7 @@ final readonly class Capability
             requiresIntentRecord: $required,
             targetSource: $this->targetSource,
             approverSummaryDescriber: $this->approverSummaryDescriber,
+            requiresAttestedIssuance: $this->requiresAttestedIssuance,
         );
     }
 
@@ -388,6 +400,37 @@ final readonly class Capability
     public function intentRecordRequirement(): ?bool
     {
         return $this->requiresIntentRecord;
+    }
+
+    /**
+     * Require a synchronous, tamper-evident attestation of the released approver summary before
+     * Verdict persists a confirmation receipt or review request.
+     */
+    public function requiresAttestedIssuance(bool $required = true): self
+    {
+        return new self(
+            name: $this->name,
+            ability: $this->ability,
+            resolveTarget: $this->targetResolver,
+            executor: $this->executor,
+            approvalBindingResolver: $this->approvalBindingResolver,
+            confirmationReason: $this->confirmationReason,
+            confirmationTtlSeconds: $this->confirmationTtlSeconds,
+            rateLimitPolicy: $this->rateLimitPolicy,
+            executionClaimPolicy: $this->executionClaimPolicy,
+            executionTargetPolicy: $this->executionTargetPolicy,
+            resourceProjection: $this->resourceProjection,
+            configurationVersion: $this->configurationVersion,
+            requiresIntentRecord: $this->requiresIntentRecord,
+            targetSource: $this->targetSource,
+            approverSummaryDescriber: $this->approverSummaryDescriber,
+            requiresAttestedIssuance: $required,
+        );
+    }
+
+    public function attestedIssuanceRequirement(): bool
+    {
+        return $this->requiresAttestedIssuance;
     }
 
     /**
@@ -411,6 +454,7 @@ final readonly class Capability
             requiresIntentRecord: $this->requiresIntentRecord,
             targetSource: $this->targetSource,
             approverSummaryDescriber: Closure::fromCallable($describe),
+            requiresAttestedIssuance: $this->requiresAttestedIssuance,
         );
     }
 
