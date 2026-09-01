@@ -662,20 +662,24 @@ verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#300](https://github.com/fissible/verdict/issues/300) `ApprovalChallenge` has no `issuedAt` | XS | none | open — ungated, contributor-drivable; design with #306 |
+| [#300](https://github.com/fissible/verdict/issues/300) `ApprovalChallenge` has no `issuedAt` | XS | none | ✅ shipped (PR #454) — `issuedAt` sourced from the receipt's issuance instant, designed with #306 |
 | [#327](https://github.com/fissible/verdict/issues/327) Implement the `ApprovalStatusReader` read contract | S | ADR 0031 ✅ | ✅ shipped (ApprovalStatusReader) |
 | [#320](https://github.com/fissible/verdict/issues/320) Does authorization precede receipt-state resolution — `Unauthorized` can mask expired/consumed | S (round) | #305 ✅ | ✅ shipped ([ADR 0036](docs/adr/0036-receipt-state-precedes-authorization.md), PR #430) |
-| [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()` | S | watches laravel/ai #932 | open |
+| [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()` | S | none | ➡️ moved to v0.16.0 — a Verdict-owned reference fix; upstream laravel/ai #932 is a compatibility improvement, not a gate |
 | [#299](https://github.com/fissible/verdict/issues/299) Receipt transitions dispatch no events | S–M | #327 ✅ | ✅ shipped (PR #451) — announced after commit |
-| [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | open — `scope: design`; moved from v0.14.0 |
+| [#306](https://github.com/fissible/verdict/issues/306) The approver cannot see what they approve — revisit ADR 0026's challenge contents | M (round) + M (impl) | ADR 0026 | ✅ shipped ([ADR 0038](docs/adr/0038-what-an-approver-is-shown-about-the-action.md)) across PRs #454, #455, #456, #457, #458 — value/materialisation → release routing → operational evidence → review-lane parity → strict attested issuance |
 | [#297](https://github.com/fissible/verdict/issues/297) `RequireReview` substrate (the keystone) | L–XL | none | ✅ shipped — the substrate landed dependency-ordered across PRs #428 (ADR 0035), #429, #434, #439, #440, #441, #442, #443, #444, #445 and #450 |
 | [#357](https://github.com/fissible/verdict/issues/357) `pendingWithin()` is an unbounded scan + N+1 with no expiry filter | S–M | none | open — reader-queue scale; a pre-1.0 must-fix the v0.14.0 review named |
 | [#425](https://github.com/fissible/verdict/issues/425) `findForToolCall()` collapses 2+ receipts to `null`, indistinguishable from absent | S (round) + M (impl) | none | ✅ shipped (PRs #431, #435) — collision is an opt-in seam; the `Stable` contract is intact |
 | [#436](https://github.com/fissible/verdict/issues/436) #320 placed a new behavioural obligation on the Stable `ApprovalReceiptStore` contract | S (round) + S (impl) | #320 ✅ | ✅ shipped (PR #452) — `EnforcesDecisionAdmissibility`, the same opt-in shape as #425 |
 
-**Where the cluster stands.** Six of the ten are closed: the keystone #297, the read contract #327, the
-transition events #299, and the three Stable-contract corrections #320, #425 and #436. What remains is
-#306 and #300 (in flight together), #357 (reader-queue scale), and #265 (watching laravel/ai #932).
+**Where the cluster stands.** Eight of the ten are closed: the keystone #297, the read contract #327, the
+transition events #299, the three Stable-contract corrections #320, #425 and #436, the approver-summary
+work #306 (the full ADR 0038 build, across PRs #454–#458) and #300 (`issuedAt`, shipped with it in #454).
+#265 moved to v0.16.0 as a Verdict-owned reference fix that need not wait on upstream, and #357
+(reader-queue scale) shipped in PR #459 — which also gave approvals a retention contract and surfaced one
+follow-up, #460 (consumed receipts accumulate without bound), recorded there rather than fixed and moved to
+v0.16.0 as its own design round. The cluster is complete.
 
 **Both Stable-contract corrections took the same shape, and that is now the pattern.** #425 broke
 `findForToolCall()`'s signature and #436 broke nothing visible at all — it moved a *behavioural*
@@ -741,6 +745,44 @@ amended when a fix is inconvenient. The three-outcome read was the right diagnos
 changed is that the second version does not charge existing adapters for it.
 
 ---
+
+## v0.16.0 — Approvals: safe edits and correct resumption
+
+**Theme.** The approver-decision path, resumed where the v0.15.0 approval-surface cluster left it. Two issues
+that were drivable but never part of that settled cluster: an approver who wants to *edit* a proposal before
+approving it, and a reference test that teaches the wrong resumption call. Both carry `scope: design`, so this
+milestone carries their design rounds the way v0.14.0 did — the round precedes the build. A third
+round, #460, joined from v0.15.0's tail: a security-state retention decision, not something to settle at a
+finished cluster's edge.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#419](https://github.com/fissible/verdict/issues/419) Safely support approve-with-edits by re-evaluating the edited proposal (not a fingerprint rebind) | M (round) + M (impl) | none | open — `scope: design` |
+| [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()`, which resumes the wrong conversation under concurrency | S (round) + S (impl) | none — upstream is a compatibility improvement, not a gate | open — `scope: design`; moved from v0.15.0 |
+| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | M (round) + S–M (impl) | none | open — `scope: design`; moved from v0.15.0 (a follow-up #357/#459 recorded rather than fixed) |
+
+**#265 is Verdict-owned and does not gate on upstream.** It moved off v0.15.0 so that release could cut on
+#357 alone. The fix is to Verdict's own reference test and documentation: teach resumption of the *specific*
+paused conversation rather than `continueLastConversation()`, which resumes the participant's
+most-recently-updated conversation and so selects the wrong one under concurrency. laravel/ai #931/#932
+(validate an approval resumption before executing the approved tools) would make the framework enforce this,
+but Verdict's correct reference behaviour must not wait on it — upstream support is a compatibility layer on
+top, not a release gate.
+
+**#460 is a design round, not a fast-follow.** #357/#459 bounded the reviewer queue and prunes the receipts
+that never admitted an execution — lapsed `Pending`, `Approved`-but-unconsumed, `Rejected` — which is the bulk
+of the growth. What #459 deliberately left is the long tail: `Consumed` receipts, retained for the life of the
+deployment. Reclaiming them has a genuine security tradeoff — most of the obvious options reopen a replay
+window, and tombstoning wants a schema migration — so it earns a proper round rather than a rushed patch at the
+close of the cluster that already carried the #297 keystone. Waiting is safe: the retained rows accumulate at
+roughly the rate of approved-and-executed actions, current retain-everything behaviour is the safe one, and a
+deployment notices table size long before anything misbehaves. (v1.0.0 was the alternative — it parks a peer
+schema decision in #415 — but unbounded growth on a security-state table is a pilot-stage pain, so it rides here.)
+
+**#201 is deliberately not here.** ADR 0038 §8 names cross-invocation lineage as the next extension point of
+the approver surface, *not* as work whose prerequisite uncertainty has been resolved. It stays unscheduled
+with its recorded reason until a design round retires that uncertainty; thematic adjacency to the shipped
+summary work is not readiness.
 
 ## Contributor-ready
 
