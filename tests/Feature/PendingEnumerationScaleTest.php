@@ -11,8 +11,10 @@ use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalStatusReader;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalStatusReader;
+use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
 use Fissible\Verdict\Tests\Support\CustomStatusReaderTestStore;
+use Fissible\Verdict\Tests\Support\FrozenClock;
 use Fissible\Verdict\VerdictServiceProvider;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
@@ -438,6 +440,7 @@ it('reads a pruned receipt back as absent, so retention changes history', functi
 // ---------------------------------------------------------------------------------------------
 
 it('refuses to prune when no retention has been chosen', function (): void {
+    app()->instance(Clock::class, new FrozenClock);
     config()->set('verdict.approvals.store', DatabaseApprovalReceiptStore::class);
     config()->set('verdict.approvals.retention_days', null);
     app()->forgetInstance(ApprovalReceiptStore::class);
@@ -453,6 +456,10 @@ it('refuses to prune when no retention has been chosen', function (): void {
 });
 
 it('prunes against the configured retention window, and against an explicit override', function (): void {
+    // The command reads the Clock, and Feature tests otherwise run on the system clock — against
+    // which every fixture timestamp here is already ancient, so a 30-day window would sweep the
+    // receipt this test needs to survive and the assertion would pass or fail by the calendar.
+    app()->instance(Clock::class, new FrozenClock);
     config()->set('verdict.approvals.store', DatabaseApprovalReceiptStore::class);
     config()->set('verdict.approvals.retention_days', 30);
     app()->forgetInstance(ApprovalReceiptStore::class);
