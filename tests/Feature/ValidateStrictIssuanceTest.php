@@ -8,6 +8,7 @@ use Fissible\Verdict\Capabilities\CapabilityRegistry;
 use Fissible\Verdict\Contracts\AttestsIssuance;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Evidence\ApprovalLane;
+use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\ProvenanceDerivation;
@@ -25,7 +26,7 @@ final class AttestCapableProbeWriter implements AttestsIssuance, EvidenceWriter
 
     public function recordDerivation(ProvenanceDerivation $derivation): void {}
 
-    public function recordApprovalOperation(\Fissible\Verdict\Evidence\ApprovalOperationEvidence $evidence): void {}
+    public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void {}
 
     public function attestIssuedSummary(ApprovalLane $lane, string $identityFingerprint, ApproverSummary $summary): void {}
 }
