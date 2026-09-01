@@ -30,6 +30,7 @@ beforeEach(function (): void {
             'create_verdict_approval_receipts_table.php.stub',
             'add_proposal_provenance_to_verdict_approval_receipts_table.php.stub',
             'add_approval_context_to_verdict_approval_receipts_table.php.stub',
+            'add_pending_enumeration_index_to_verdict_approval_receipts_table.php.stub',
             'create_verdict_action_intents_table.php.stub',
             'create_verdict_capability_configurations_table.php.stub',
         ] as $stub
@@ -126,13 +127,21 @@ it('creates the verdict_approval_receipts table with expected columns, unique co
     $toolCallStatusIndex = collect($indexes)->first(
         fn (array $index): bool => $index['columns'] === ['tool_call_id', 'status']
     );
+    // #357: the reviewer-queue candidate query filters on status and orders by created_at then
+    // id. Neither shipped index covers that sort, so it was an unindexed filesort over every
+    // pending receipt. The tie-break column is part of the index because the order is contractual.
+    $pendingEnumerationIndex = collect($indexes)->first(
+        fn (array $index): bool => $index['columns'] === ['status', 'created_at', 'id']
+    );
+
     $statusExpiresIndex = collect($indexes)->first(
         fn (array $index): bool => $index['columns'] === ['status', 'expires_at']
     );
 
     expect($bindingUnique)->not->toBeNull()
         ->and($toolCallStatusIndex)->not->toBeNull()
-        ->and($statusExpiresIndex)->not->toBeNull();
+        ->and($statusExpiresIndex)->not->toBeNull()
+        ->and($pendingEnumerationIndex)->not->toBeNull();
 })->skip(fn (): bool => concurrencyTestDriver() === null, concurrencyTestSkipReason());
 
 it('creates the verdict_rate_limit_buckets table with expected columns, unique constraint, and index', function (): void {
