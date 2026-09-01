@@ -6,6 +6,15 @@ All notable changes to Verdict will be documented in this file.
 
 ### Added
 
+- **An asynchronous review lane for actions a human approves out of band (#297).** Alongside the synchronous
+  confirmation gate, a capability's decision can now resolve to `RequireReview`: the action is halted and a durable
+  `ReviewRequest` is minted for a reviewer to approve or reject later, outside the request that proposed it
+  ([ADR 0035](docs/adr/0035-the-asynchronous-review-lane.md)). `ReviewManager` issues, validates, and consumes review
+  requests through a fail-closed `ReviewDecisionAuthorizer` and a durable request store, and `runBound()` admits an
+  approved review exactly once — on the same binding fingerprint the confirmation lane commits to, recording a
+  durable audit trail. Until a review store is configured the lane holds a loud reserve rather than silently allowing
+  the action, and a review read surface (`ReviewStatusReader`) exposes request status for a reviewer queue.
+
 - **Approval-queue enumeration now bulk-hydrates scoped candidates, with a supporting index and
   opt-in receipt retention (#357).** Database queues select ordered pending candidates and hydrate
   them through the receipt store's mapper in bounded batches rather than doing one lookup per row.
