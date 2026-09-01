@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Reviews;
 use Closure;
 use DateInterval;
 use Fissible\Verdict\Actions\InvocationContext;
+use Fissible\Verdict\Approvals\ApproverSummaryMaterializer;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EvidenceWriter;
@@ -35,6 +36,7 @@ final readonly class ReviewManager
         private ?EvidenceWriter $evidence = null,
         private ?InvocationContext $invocations = null,
         private ?Dispatcher $events = null,
+        private ?ApproverSummaryMaterializer $summaries = null,
     ) {
         if ($this->defaultTtlSeconds < 1) {
             throw new InvalidArgumentException('The default review request TTL must be at least one second.');
@@ -53,18 +55,22 @@ final readonly class ReviewManager
             return ReviewTransition::to(ReviewOutcome::InvalidState);
         }
 
+        $binding = $capability->approvalBinding($evaluation->envelope, $evaluation->target);
+        $summary = $this->summaries?->materialize(
+            $capability->approverDescription($evaluation->envelope, $evaluation->target, $binding),
+        )?->summary;
         $now = $this->clock->now();
         $ttl = $capability->confirmationTtlSeconds() ?? $this->defaultTtlSeconds;
         $request = ReviewRequest::pending(
             id: Str::random(64),
             capability: $capability->name,
-            bindingFingerprint: $this->fingerprint($evaluation),
+            bindingFingerprint: $this->fingerprint($evaluation, $binding),
             approvalContext: $evaluation->envelope->context->approvalContext,
             createdAt: $now,
             expiresAt: $now->add(new DateInterval("PT{$ttl}S")),
             reason: $evaluation->decision->reason,
             provenance: null,
-            approverSummary: null,
+            approverSummary: $summary,
         );
 
         return $this->recordOperation($this->reviews->issue($request), ReviewOutcome::Issued, ApprovalOperation::Issued);
@@ -168,7 +174,8 @@ final readonly class ReviewManager
         }
     }
 
-    private function fingerprint(Evaluation $evaluation): string
+    /** @param ?array<string, mixed> $binding */
+    private function fingerprint(Evaluation $evaluation, ?array $binding = null): string
     {
         $capability = $evaluation->capability;
 
@@ -180,7 +187,7 @@ final readonly class ReviewManager
             'capability' => $capability->name,
             'execution_target_policy' => $capability->executionTargetPolicy()?->name,
             'arguments' => $evaluation->envelope->proposal->arguments,
-            'binding' => $capability->approvalBinding($evaluation->envelope, $evaluation->target),
+            'binding' => $binding ?? $capability->approvalBinding($evaluation->envelope, $evaluation->target),
         ];
 
         $approvalContext = $evaluation->envelope->context->approvalContext;

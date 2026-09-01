@@ -240,6 +240,7 @@ final class VerdictServiceProvider extends ServiceProvider
                 evidence: $app->make(EvidenceWriter::class),
                 invocations: $app->make(InvocationContext::class),
                 events: $app->make(Dispatcher::class),
+                summaries: $app->make(ApproverSummaryMaterializer::class),
             );
         });
 
