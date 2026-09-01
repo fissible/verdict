@@ -352,8 +352,17 @@ function queuedApprovalWork(): void
     expect(app('db')->table('jobs')->count())->toBe(0, 'The worker must consume the job.');
 }
 
-/** Dispatch the opening turn and run it, returning the tool-call id the worker paused on. */
-function queuedApprovalPause(): string
+/**
+ * Dispatch the opening turn and run it, returning the tool-call id the worker paused on and the id
+ * of the conversation it paused.
+ *
+ * The conversation id is captured *now*, at pause time, because a correct resume must reach the
+ * conversation that actually paused — not "the participant's latest", which diverges the moment one
+ * participant has more than one conversation (#265).
+ *
+ * @return array{toolCallId: string, conversationId: string}
+ */
+function queuedApprovalPause(): array
 {
     (new QueuedApprovalAgent)
         ->forParticipant(new QueuedApprovalCustomer(7))
@@ -366,16 +375,25 @@ function queuedApprovalPause(): string
     expect($pending)->toHaveCount(1, 'A confirmation-gated capability must leave one pending receipt behind.')
         ->and(app(QueuedApprovalState::class)->executions)->toBe(0, 'The executor must not run before approval.');
 
-    return $pending->first()->tool_call_id;
+    $conversations = app('db')->table('agent_conversations')->pluck('id');
+
+    expect($conversations)->toHaveCount(1, 'The opening turn must leave exactly one conversation to capture.');
+
+    return [
+        'toolCallId' => $pending->first()->tool_call_id,
+        'conversationId' => (string) $conversations->first(),
+    ];
 }
 
-/** Dispatch the resuming turn with the given decisions and run it. */
-function queuedApprovalResume(Decisions $decisions): void
+/** Dispatch the resuming turn against the specifically paused conversation and run it. */
+function queuedApprovalResume(string $conversationId, Decisions $decisions): void
 {
     // The paused turn lives in the durable conversation store, not in the first job's response; a
-    // resume reconstructs the pending call from conversation history.
+    // resume reconstructs the pending call from conversation history. Resume *that* conversation by
+    // the id captured at pause time — continueLastConversation() would resume the participant's
+    // most-recently-updated conversation, which is the paused one only until a second exists (#265).
     (new QueuedApprovalAgent)
-        ->continueLastConversation(new QueuedApprovalCustomer(7))
+        ->continue($conversationId, new QueuedApprovalCustomer(7))
         ->queue($decisions);
 
     queuedApprovalWork();
@@ -401,7 +419,7 @@ function expectQueuedApprovalWasEvaluatedOnResume(): void
  * retain the first job's response — but a resume never reads it, so the gap was only coverage.
  */
 it('executes a queued confirmation-gated capability once when an approved receipt is resumed with a specific decision', function (): void {
-    $toolCallId = queuedApprovalPause();
+    ['toolCallId' => $toolCallId, 'conversationId' => $conversationId] = queuedApprovalPause();
 
     // Requirement 1: a human approves in Verdict, through the application's own authenticated flow.
     // Decision::approve() below is the agent framework's approval, and cannot stand in for this.
@@ -413,11 +431,88 @@ it('executes a queued confirmation-gated capability once when an approved receip
     $approvals->approve($challenge->receiptId, $challenge->toolCallId, 'test-human');
 
     // Requirement 2: a specific tool-call decision. approveAll()'s wildcard is deliberately skipped.
-    queuedApprovalResume(Decisions::from([$toolCallId => AiDecision::approve()]));
+    queuedApprovalResume($conversationId, Decisions::from([$toolCallId => AiDecision::approve()]));
 
     expect(app(QueuedApprovalState::class)->executions)->toBe(1, 'An approved, specifically-decided queued resume must execute the capability once.')
         ->and(app('db')->table(verdictTable('evidence'))->where('stage', 'execution')->where('disposition', 'permit')->count())
         ->toBe(1, 'The worker must leave durable execution evidence behind.');
+});
+
+/**
+ * The reference resume must reach the conversation that actually paused — not the participant's most
+ * recently updated one. With one conversation per participant the two coincide, which is why the
+ * happy-path case above cannot tell them apart. Here the same participant has a second, concurrent
+ * conversation touched *after* the pause, so `continueLastConversation()` resumes the wrong run:
+ * conversation B, whose pending call is a different tool-call id than the one the human approved.
+ *
+ * Resuming by the id captured at pause time reaches A: the approved decision executes once, A's
+ * receipt is consumed, and B is left untouched. Reverting `queuedApprovalResume()` to
+ * `continueLastConversation()` makes this case fail while the three above still pass — the whole
+ * point of adding it. The failure is not silent in this fixture: the misdirected resume carries A's
+ * decision into B, whose pending call does not match it, so the resume job dies with
+ * `Laravel\Ai\Exceptions\ApprovalMismatchException` and A's approved action never runs. (Verdict's
+ * binding gate would in any case refuse to execute B's unapproved receipt — this is a lost/derailed
+ * approval, not an authorization bypass, exactly as #265 frames it.)
+ */
+it('resumes the specifically paused conversation, not the participant\'s most recently updated one', function (): void {
+    // Conversation A: the paused run whose receipt the human will approve.
+    ['toolCallId' => $toolCallIdA, 'conversationId' => $conversationIdA] = queuedApprovalPause();
+
+    // Conversation B: a second, concurrent run for the SAME participant, paused on a DIFFERENT tool
+    // call so that A's decision cannot match it, then touched so it is the most-recently-updated one.
+    Ai::textProvider('openai')->useTextGateway(new QueuedApprovalGateway(
+        new ToolCall('queued-approval-call-b', 'QueuedApprovalCancelTool', ['order_id' => 2002]),
+    ));
+
+    (new QueuedApprovalAgent)
+        ->forParticipant(new QueuedApprovalCustomer(7))
+        ->queue('Please cancel order 2002.');
+
+    queuedApprovalWork();
+
+    $conversationIdB = (string) app('db')->table('agent_conversations')
+        ->where('id', '!=', $conversationIdA)
+        ->value('id');
+
+    expect($conversationIdB)->not->toBe('')->not->toBe($conversationIdA);
+
+    // Touch B after the pause so it wins "most recently updated" — the exact condition under which
+    // continueLastConversation() diverges from the paused conversation.
+    app('db')->table('agent_conversations')
+        ->where('id', $conversationIdB)
+        ->update(['updated_at' => now()->addMinute()]);
+
+    $mostRecent = (string) app('db')->table('agent_conversations')
+        ->orderBy('updated_at', 'desc')
+        ->orderBy('id', 'desc')
+        ->value('id');
+
+    expect($mostRecent)->toBe($conversationIdB, 'Setup guard: B, not the paused A, must be the participant\'s latest conversation.');
+
+    // The human approves conversation A's receipt in Verdict.
+    $approvals = app(VerdictManager::class)->approvals();
+    $challenge = $approvals->challengeForToolCall($toolCallIdA);
+    $approvals->approve($challenge->receiptId, $challenge->toolCallId, 'test-human');
+
+    // Restore A's gateway config. Cosmetic: A's persisted history already shows the tool was called,
+    // so on resume the gateway takes its Stop branch and never reads the configured ToolCall. Kept
+    // only so the active fixture matches the conversation being resumed.
+    Ai::textProvider('openai')->useTextGateway(new QueuedApprovalGateway(
+        new ToolCall('queued-approval-call', 'QueuedApprovalCancelTool', ['order_id' => 1001]),
+    ));
+
+    queuedApprovalResume($conversationIdA, Decisions::from([$toolCallIdA => AiDecision::approve()]));
+
+    $statuses = app('db')->table(verdictTable('approvals'))->pluck('status', 'tool_call_id');
+
+    expect(app(QueuedApprovalState::class)->executions)
+        ->toBe(1, 'The approved decision must execute on the paused conversation A, not the most-recent B.')
+        ->and($statuses['queued-approval-call'])
+        ->toBe('consumed', 'Conversation A\'s receipt must be consumed by resuming A specifically.')
+        ->and($statuses['queued-approval-call-b'])
+        ->toBe('pending', 'The concurrent conversation B must be left untouched.')
+        ->and(app('db')->table(verdictTable('evidence'))->where('stage', 'execution')->where('disposition', 'permit')->count())
+        ->toBe(1, 'Exactly one execution must have landed — A\'s.');
 });
 
 /**
@@ -427,13 +522,13 @@ it('executes a queued confirmation-gated capability once when an approved receip
  * silently does not run.
  */
 it('does not execute a queued resume that carries only a wildcard approval', function (): void {
-    $toolCallId = queuedApprovalPause();
+    ['toolCallId' => $toolCallId, 'conversationId' => $conversationId] = queuedApprovalPause();
 
     $approvals = app(VerdictManager::class)->approvals();
     $challenge = $approvals->challengeForToolCall($toolCallId);
     $approvals->approve($challenge->receiptId, $challenge->toolCallId, 'test-human');
 
-    queuedApprovalResume(AiDecision::approveAll());
+    queuedApprovalResume($conversationId, AiDecision::approveAll());
 
     expectQueuedApprovalWasEvaluatedOnResume();
 
@@ -445,9 +540,9 @@ it('does not execute a queued resume that carries only a wildcard approval', fun
  * approving Verdict's receipt, and the difference is the whole point of the gate.
  */
 it('does not execute a queued resume whose receipt was never approved in Verdict', function (): void {
-    $toolCallId = queuedApprovalPause();
+    ['toolCallId' => $toolCallId, 'conversationId' => $conversationId] = queuedApprovalPause();
 
-    queuedApprovalResume(Decisions::from([$toolCallId => AiDecision::approve()]));
+    queuedApprovalResume($conversationId, Decisions::from([$toolCallId => AiDecision::approve()]));
 
     expectQueuedApprovalWasEvaluatedOnResume();
 
