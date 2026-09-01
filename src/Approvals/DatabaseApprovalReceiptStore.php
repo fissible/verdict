@@ -12,6 +12,7 @@ use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
+use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
 use Fissible\Verdict\Support\ApproverSummary;
 use Fissible\Verdict\Support\SecurityStateTransaction;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -21,8 +22,15 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use LogicException;
 use stdClass;
 
-final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility
+final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, PrunableApprovalReceiptStore
 {
+    /**
+     * This caps a single hydration statement at 1,000 ids. PostgreSQL permits 65,535 bound
+     * parameters, older SQLite builds only 999, and MySQL is constrained by packet size; do not
+     * raise this without checking every supported driver and its configured limits.
+     */
+    private const int FIND_MANY_CHUNK_SIZE = 1000;
+
     /**
      * Mutable memo inside a readonly class: holds the lazily-checked presence of the
      * approval_context column so the schema is inspected at most once per store instance,
@@ -212,6 +220,50 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             ->first();
 
         return $row instanceof stdClass ? $this->receiptFromRow($row) : null;
+    }
+
+    /**
+     * Hydrate receipt ids through this store's row mapper. Callers must impose any required
+     * order themselves: SQL does not promise that a whereIn() result follows the input ids.
+     *
+     * @param  list<string>  $receiptIds
+     * @return array<string, ApprovalReceipt> keyed by receipt id
+     *
+     * @internal
+     */
+    public function findMany(array $receiptIds): array
+    {
+        if ($receiptIds === []) {
+            return [];
+        }
+
+        $receipts = [];
+
+        foreach (array_chunk($receiptIds, self::FIND_MANY_CHUNK_SIZE) as $receiptIdChunk) {
+            $rows = $this->connection->table($this->table)
+                ->whereIn('id', $receiptIdChunk)
+                ->get();
+
+            foreach ($rows as $row) {
+                $receipt = $this->receiptFromRow($row);
+                $receipts[$receipt->id] = $receipt;
+            }
+        }
+
+        return $receipts;
+    }
+
+    /**
+     * Remove only expired receipts that never admitted an execution. A consumed receipt is the
+     * single-use execution gate; deleting it would free its unique binding and could admit a
+     * second human-approved execution. The expiry boundary is inclusive.
+     */
+    public function pruneExpired(DateTimeImmutable $before): int
+    {
+        return $this->connection->table($this->table)
+            ->where('expires_at', '<=', $before)
+            ->where('status', '!=', ApprovalReceiptStatus::Consumed->value)
+            ->delete();
     }
 
     public function approve(

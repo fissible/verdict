@@ -4,6 +4,16 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Approval-queue enumeration now bulk-hydrates scoped candidates, with a supporting index and
+  opt-in receipt retention (#357).** Database queues select ordered pending candidates and hydrate
+  them through the receipt store's mapper in bounded batches rather than doing one lookup per row.
+  The published approval migration adds the `(status, created_at, id)` index. Applications may
+  configure `verdict.approvals.retention_days` and schedule `verdict:prune-approvals`; only expired
+  receipts that never admitted execution are removed. Consumed receipts are retained as the
+  single-use execution gate, while a pruned historical receipt reads back as absent.
+
 ### Changed
 
 - **The authorization shortcut #320 introduced is now taken only for a store that declares it

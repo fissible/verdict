@@ -50,6 +50,11 @@ return [
         'connection' => null,
         'table' => 'verdict_approval_receipts',
         'ttl_seconds' => 900,
+        // Retention is opt-in: choosing no schedule is safer than deleting security state on an
+        // operator's behalf. Do not set this to zero merely to prune at "now"; lapsed but
+        // undecided Pending receipts remain visible to the reviewer queue by design. Choose a
+        // window after which the historical read becoming absent is acceptable instead.
+        'retention_days' => null,
         // Class implementing Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer, consulted by
         // ApprovalManager::approve()/reject() before any receipt is finalized. REQUIRED for
         // deciding receipts: approval decisions are fail-closed, so with this unset approve() and

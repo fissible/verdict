@@ -141,9 +141,21 @@ it('applies the add_* stubs to the configured table name', function (): void {
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_pending_enumeration_index_to_verdict_approval_receipts_table.php.stub')->up();
 
     expect($schema->hasColumn('renamed_approval_receipts', 'provenance'))->toBeTrue()
-        ->and($schema->hasColumn('renamed_approval_receipts', 'approval_context'))->toBeTrue();
+        ->and($schema->hasColumn('renamed_approval_receipts', 'approval_context'))->toBeTrue()
+        // An index stub gets the table name wrong just as easily as a column stub does, and fails
+        // later and more quietly — nothing breaks, the queue is just slow again.
+        ->and(collect($schema->getIndexes('renamed_approval_receipts'))
+            ->contains(fn (array $index): bool => $index['columns'] === ['status', 'created_at', 'id']))
+        ->toBeTrue();
+
+    (require __DIR__.'/../../database/migrations/add_pending_enumeration_index_to_verdict_approval_receipts_table.php.stub')->down();
+
+    expect(collect($schema->getIndexes('renamed_approval_receipts'))
+        ->contains(fn (array $index): bool => $index['columns'] === ['status', 'created_at', 'id']))
+        ->toBeFalse();
 
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->down();
 });

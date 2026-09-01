@@ -17,7 +17,10 @@ Complete and record each item before exposing a protected capability to pilot us
   identifiers you capture at issuance, and `statusFor()` reads one receipt back — including after it
   is decided, which is what tells "already decided" apart from "lapsed, undecided". Applications
   that do not capture `approvalContext` keep the application-owned `tool_call_id` join for listing;
-  the reader's status reads work either way.
+  the reader's status reads work either way. Approval-receipt retention is separately opt-in:
+  configure `verdict.approvals.retention_days` and schedule `verdict:prune-approvals` only after
+  choosing how long lapsed, unconsumed receipts should remain available. A pruned receipt reads
+  back as absent; consumed receipts are never pruned because they remain the single-use gate.
 - [ ] **Explicitly configure evidence.** `NullEvidenceRecorder` is the default and records nothing. Select a durable recorder, give the application a retention and access policy, and verify it records the pilot's expected decisions and context releases. Do not call a mutable database evidence table cryptographic proof. See [evidence limitations](limitations.md#tamper-evident-evidence-is-opt-in-partial-and-bounded-by-key-custody). Before the pilot ends, walk one real decision end to end with the [incident-response guide](incident-response.md) — an evidence store nobody has queried is an assumption, not a control.
 - [ ] **Exercise failure and recovery.** Test denied authorization, expired/rejected approval, duplicate admission, exhausted limits, an executor with an indeterminate external outcome, and the application's reconciliation path. The application owns domain idempotency keys, transactional outboxes, reconciliation, and compensating operations. See [downstream-side-effect limits](limitations.md#no-guarantee-of-downstream-side-effects).
 - [ ] **Set operational ownership.** Name owners for authentication and tenancy, policy/domain-rule changes, evidence access and retention, provider/data governance, incident response, and alerts. Protect controller, scheduler, queue, and service paths that can bypass Verdict with their own equivalent controls.

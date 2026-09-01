@@ -36,6 +36,7 @@ used by an implementation part of Verdict's public API.
 | `ObservationAssertion` | Experimental | `CallbackAssertion` | Define an assertion for a capability evaluation observation. |
 | `RegistersSecrets` | Experimental | `StorefrontAttackPack` | Declare the canary tokens an attack pack plants, so an argument scan can be armed with them (ADR 0032). Labels are persisted; values never are. |
 | `PrunableRateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Opt a `RateLimitStore` into expired-bucket cleanup. |
+| `PrunableApprovalReceiptStore` | Stable | `DatabaseApprovalReceiptStore`, `InMemoryApprovalReceiptStore` | Opt an `ApprovalReceiptStore` into retention of expired receipts that never admitted execution; consumed receipts remain the single-use gate. |
 | `RateLimitStore` | Stable | `DatabaseRateLimitStore`, `InMemoryRateLimitStore` | Store rate-limit consumption in a durable or external backend. |
 
 ## Experimental contract follow-ups
