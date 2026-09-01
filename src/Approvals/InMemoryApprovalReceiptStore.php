@@ -10,12 +10,13 @@ use Fissible\Verdict\Approvals\Events\ApprovalReceiptTransitioned;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
+use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
 use Illuminate\Contracts\Events\Dispatcher;
 
 /**
  * Process-local test store. It is not safe for production, Octane, or queue workers.
  */
-final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility
+final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, PrunableApprovalReceiptStore
 {
     /** @var array<string, ApprovalReceipt> */
     private array $receipts = [];
@@ -106,6 +107,25 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
     public function find(string $receiptId): ?ApprovalReceipt
     {
         return $this->receipts[$receiptId] ?? null;
+    }
+
+    /**
+     * Remove only expired receipts that never admitted an execution. A consumed receipt is the
+     * single-use execution gate; deleting it would free its binding and could admit a second
+     * human-approved execution. The expiry boundary is inclusive.
+     */
+    public function pruneExpired(DateTimeImmutable $before): int
+    {
+        $count = 0;
+
+        foreach ($this->receipts as $id => $receipt) {
+            if ($receipt->expiresAt <= $before && $receipt->status !== ApprovalReceiptStatus::Consumed) {
+                unset($this->receipts[$id]);
+                $count++;
+            }
+        }
+
+        return $count;
     }
 
     public function approve(

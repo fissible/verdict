@@ -137,9 +137,13 @@ application-owned join path, which remains documented and legal. How each backen
 containment over its JSON column (SQLite, MySQL, PostgreSQL) is an implementation concern; the
 semantics are fixed here.
 
-Results are returned in deterministic order: `createdAt` ascending, `receiptId` as tiebreak. No
-pagination in v1 — a scoped pending list is structurally small (it is bounded by the scope's live,
-unexpired proposals), and keeping scopes bounded is an application responsibility.
+Results are returned in deterministic order: `createdAt` ascending, `receiptId` as tiebreak. The
+database reader discovers ordered candidate ids and contexts, applies typed scope containment, then
+bulk-hydrates the matching ids through the receipt store's own mapper; it restores candidate order
+after hydration rather than relying on a database `whereIn` return order. Hydration batches ids to
+the portable parameter budget. No pagination in v1 — a scoped pending list is structurally small
+(it is bounded by the scope's live, unexpired proposals), and keeping scopes bounded is an
+application responsibility.
 
 `pendingWithin()` returns only receipts whose **persisted** lifecycle status is `Pending`. A
 lapsed-but-undecided receipt is still returned, with its `expiresAt` (§5).

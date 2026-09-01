@@ -27,6 +27,7 @@ use Fissible\Verdict\Console\Commands\CreateEvaluationBaselineCommand;
 use Fissible\Verdict\Console\Commands\ListExecutionClaimsCommand;
 use Fissible\Verdict\Console\Commands\MakeApprovalFlowCommand;
 use Fissible\Verdict\Console\Commands\MakeCapabilityCommand;
+use Fissible\Verdict\Console\Commands\PruneApprovalReceiptsCommand;
 use Fissible\Verdict\Console\Commands\PruneRateLimitBucketsCommand;
 use Fissible\Verdict\Console\Commands\ResolveExecutionClaimCommand;
 use Fissible\Verdict\Console\Commands\RunLiveEvaluationCommand;
@@ -727,6 +728,7 @@ final class VerdictServiceProvider extends ServiceProvider
             ListExecutionClaimsCommand::class,
             MakeApprovalFlowCommand::class,
             MakeCapabilityCommand::class,
+            PruneApprovalReceiptsCommand::class,
             PruneRateLimitBucketsCommand::class,
             ResolveExecutionClaimCommand::class,
             RunLiveEvaluationCommand::class,
@@ -743,6 +745,7 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_16_000012_add_proposal_provenance_to_verdict_approval_receipts_table.php'),
             __DIR__.'/../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_24_000013_add_approval_context_to_verdict_approval_receipts_table.php'),
             __DIR__.'/../database/migrations/add_approver_summary_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_31_000019_add_approver_summary_to_verdict_approval_receipts_table.php'),
+            __DIR__.'/../database/migrations/add_pending_enumeration_index_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_31_000020_add_pending_enumeration_index_to_verdict_approval_receipts_table.php'),
         ];
         $reviewMigration = [
             __DIR__.'/../database/migrations/create_verdict_review_requests_table.php.stub' => database_path('migrations/2026_08_30_000017_create_verdict_review_requests_table.php'),

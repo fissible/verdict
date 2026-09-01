@@ -12,10 +12,9 @@ use Fissible\Verdict\Contracts\DistinguishesStatusCollisions;
  * connection. Status reads ride the store's lookups. Enumeration discovers candidates with a
  * portable query — persisted status Pending, a non-empty stored approval_context, ordered by
  * created_at then id — applies the typed containment of ADR 0031 §3 in PHP on the decoded
- * context, and hydrates only the matches through the store's find(), so the store stays the
- * single row-mapping authority and the per-row reads are bounded by the scoped match set. No
- * backend JSON containment operator, and none of any backend's number/string coercion, is
- * involved (#327's portability decision).
+ * context, and hydrates only the matches through the store's bulk findMany() in one read per
+ * 1,000 matches. The store remains the single row-mapping authority; no backend JSON containment
+ * operator, or any backend's number/string coercion, is involved (#327's portability decision).
  *
  * On an install that has not run the add_approval_context migration, no receipt has a context,
  * so enumeration honestly returns nothing; verdict:validate reports the missing column. The
@@ -62,7 +61,7 @@ final readonly class DatabaseApprovalStatusReader implements ApprovalStatusReade
             ->orderBy('id')
             ->get(['id', 'approval_context']);
 
-        $views = [];
+        $matchedIds = [];
 
         foreach ($candidates as $row) {
             if (! is_string($row->id) || ! is_string($row->approval_context)) {
@@ -75,7 +74,16 @@ final readonly class DatabaseApprovalStatusReader implements ApprovalStatusReade
                 continue;
             }
 
-            $receipt = $this->store->find($row->id);
+            $matchedIds[] = $row->id;
+        }
+
+        $receipts = $this->store->findMany($matchedIds);
+        $views = [];
+
+        // Candidate order is contractual. Hydration deliberately does not rely on whereIn()
+        // return order, which varies by database and query plan.
+        foreach ($matchedIds as $receiptId) {
+            $receipt = $receipts[$receiptId] ?? null;
 
             // Re-checked after hydration: a transition committed between the candidate query and
             // the find() is poll-consistency at work, not an error — the resolved receipt simply
