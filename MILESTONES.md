@@ -676,8 +676,10 @@ verdict-console's three workaround deletions (VC-10, VC-43, VC-45) wait on.
 **Where the cluster stands.** Eight of the ten are closed: the keystone #297, the read contract #327, the
 transition events #299, the three Stable-contract corrections #320, #425 and #436, the approver-summary
 work #306 (the full ADR 0038 build, across PRs #454–#458) and #300 (`issuedAt`, shipped with it in #454).
-#265 moved to v0.16.0 as a Verdict-owned reference fix that need not wait on upstream, so this milestone
-now cuts on #357 (reader-queue scale) alone.
+#265 moved to v0.16.0 as a Verdict-owned reference fix that need not wait on upstream, and #357
+(reader-queue scale) shipped in PR #459 — which also gave approvals a retention contract and surfaced one
+follow-up, #460 (consumed receipts accumulate without bound), recorded there rather than fixed and moved to
+v0.16.0 as its own design round. The cluster is complete.
 
 **Both Stable-contract corrections took the same shape, and that is now the pattern.** #425 broke
 `findForToolCall()`'s signature and #436 broke nothing visible at all — it moved a *behavioural*
@@ -749,12 +751,15 @@ changed is that the second version does not charge existing adapters for it.
 **Theme.** The approver-decision path, resumed where the v0.15.0 approval-surface cluster left it. Two issues
 that were drivable but never part of that settled cluster: an approver who wants to *edit* a proposal before
 approving it, and a reference test that teaches the wrong resumption call. Both carry `scope: design`, so this
-milestone carries their design rounds the way v0.14.0 did — the round precedes the build.
+milestone carries their design rounds the way v0.14.0 did — the round precedes the build. A third
+round, #460, joined from v0.15.0's tail: a security-state retention decision, not something to settle at a
+finished cluster's edge.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#419](https://github.com/fissible/verdict/issues/419) Safely support approve-with-edits by re-evaluating the edited proposal (not a fingerprint rebind) | M (round) + M (impl) | none | open — `scope: design` |
 | [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()`, which resumes the wrong conversation under concurrency | S (round) + S (impl) | none — upstream is a compatibility improvement, not a gate | open — `scope: design`; moved from v0.15.0 |
+| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | M (round) + S–M (impl) | none | open — `scope: design`; moved from v0.15.0 (a follow-up #357/#459 recorded rather than fixed) |
 
 **#265 is Verdict-owned and does not gate on upstream.** It moved off v0.15.0 so that release could cut on
 #357 alone. The fix is to Verdict's own reference test and documentation: teach resumption of the *specific*
@@ -763,6 +768,16 @@ most-recently-updated conversation and so selects the wrong one under concurrenc
 (validate an approval resumption before executing the approved tools) would make the framework enforce this,
 but Verdict's correct reference behaviour must not wait on it — upstream support is a compatibility layer on
 top, not a release gate.
+
+**#460 is a design round, not a fast-follow.** #357/#459 bounded the reviewer queue and prunes the receipts
+that never admitted an execution — lapsed `Pending`, `Approved`-but-unconsumed, `Rejected` — which is the bulk
+of the growth. What #459 deliberately left is the long tail: `Consumed` receipts, retained for the life of the
+deployment. Reclaiming them has a genuine security tradeoff — most of the obvious options reopen a replay
+window, and tombstoning wants a schema migration — so it earns a proper round rather than a rushed patch at the
+close of the cluster that already carried the #297 keystone. Waiting is safe: the retained rows accumulate at
+roughly the rate of approved-and-executed actions, current retain-everything behaviour is the safe one, and a
+deployment notices table size long before anything misbehaves. (v1.0.0 was the alternative — it parks a peer
+schema decision in #415 — but unbounded growth on a security-state table is a pilot-stage pain, so it rides here.)
 
 **#201 is deliberately not here.** ADR 0038 §8 names cross-invocation lineage as the next extension point of
 the approver surface, *not* as work whose prerequisite uncertainty has been resolved. It stays unscheduled
