@@ -109,6 +109,14 @@ jobs:
           tools: composer:v2
           coverage: none
 
+      # Verdict requires a UTC session time zone; the MySQL/MariaDB service defaults to SYSTEM, which
+      # fails verdict:validate's session-zone audit. The default lane (tests.yml) never notices because
+      # its MySQL job runs a curated subset that excludes ValidateVerdictCommandTest. Set it globally so
+      # every connection this run opens inherits UTC (#463).
+      - name: Force a UTC session time zone
+        run: |
+          php -r "(new PDO('mysql:host=127.0.0.1;port=3306', 'root', 'root'))->exec(\"SET GLOBAL time_zone = '+00:00'\");"
+
       - run: |
           composer require "laravel/framework:12.*" "orchestra/testbench:10.*" --no-interaction --no-update
           composer update --prefer-stable --prefer-dist --no-interaction --no-progress --no-scripts
@@ -159,6 +167,14 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, fileinfo, sqlite, pdo_sqlite, pdo_mysql, bcmath, intl, sodium
           tools: composer:v2
           coverage: none
+
+      # Verdict requires a UTC session time zone; the MySQL/MariaDB service defaults to SYSTEM, which
+      # fails verdict:validate's session-zone audit. The default lane (tests.yml) never notices because
+      # its MySQL job runs a curated subset that excludes ValidateVerdictCommandTest. Set it globally so
+      # every connection this run opens inherits UTC (#463).
+      - name: Force a UTC session time zone
+        run: |
+          php -r "(new PDO('mysql:host=127.0.0.1;port=3306', 'root', 'root'))->exec(\"SET GLOBAL time_zone = '+00:00'\");"
 
       - run: |
           composer require "laravel/framework:12.*" "orchestra/testbench:10.*" --no-interaction --no-update
