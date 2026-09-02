@@ -43,6 +43,7 @@ use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Contracts\AttestChainResolver;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
+use Fissible\Verdict\Contracts\ChainGapReader;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
@@ -58,6 +59,7 @@ use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
 use Fissible\Verdict\Evidence\AttestedIssuanceResolver;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
+use Fissible\Verdict\Evidence\DatabaseChainGapReader;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\EffectiveEvidenceClass;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
@@ -195,6 +197,18 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->singleton(ApprovalStatusReader::class, fn (Container $app): ApprovalStatusReader => $this->approvalStatusReader(
             $app->make(ApprovalReceiptStore::class),
         ));
+
+        // Scoped because the concrete reader captures a connection. This keeps it from surviving
+        // the connection scope that supplied it (ADR 0020/#183), while remaining a stateless read seam.
+        $this->app->scoped(ChainGapReader::class, function (Container $app): ChainGapReader {
+            $connection = config('verdict.evidence.attest.fallback_connection');
+            $table = config('verdict.evidence.attest.fallback_table', 'verdict_evidence');
+
+            return new DatabaseChainGapReader(
+                connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                table: is_string($table) ? $table : 'verdict_evidence',
+            );
+        });
 
         $this->app->scoped(ApprovalManager::class, function (Container $app): ApprovalManager {
             $ttl = config('verdict.approvals.ttl_seconds', 900);
