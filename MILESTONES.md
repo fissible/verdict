@@ -753,13 +753,18 @@ that were drivable but never part of that settled cluster: an approver who wants
 approving it, and a reference test that teaches the wrong resumption call. Both carry `scope: design`, so this
 milestone carries their design rounds the way v0.14.0 did — the round precedes the build. A third
 round, #460, joined from v0.15.0's tail: a security-state retention decision, not something to settle at a
-finished cluster's edge.
+finished cluster's edge. A fourth item, #471, joined late as a small read-contract handoff from
+verdict-console (ADR 0002 §8) — an implementation, not a design round.
+
+**Status.** The three design rounds are resolved: #419 and #265 shipped and closed (#470, #467), #460's
+design of record shipped (ADR 0039) with its implementation still to schedule, and #471 shipped (#472).
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#419](https://github.com/fissible/verdict/issues/419) Safely support approve-with-edits by re-evaluating the edited proposal (not a fingerprint rebind) | M (round) + M (impl) | none | open — `scope: design` |
-| [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()`, which resumes the wrong conversation under concurrency | S (round) + S (impl) | none — upstream is a compatibility improvement, not a gate | open — `scope: design`; moved from v0.15.0 |
-| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | M (round) + S–M (impl) | none | open — `scope: design`; moved from v0.15.0 (a follow-up #357/#459 recorded rather than fixed) |
+| [#419](https://github.com/fissible/verdict/issues/419) Safely support approve-with-edits by re-evaluating the edited proposal (not a fingerprint rebind) | M (round) | none | ✅ closed — ADR 0040 (PR #470). Design of record: refuse the edited decision and re-propose the action; no inline rebind/re-challenge (unrepresentable in the resume model) and no impl needed |
+| [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()`, which resumes the wrong conversation under concurrency | S (round) + S (impl) | none — upstream is a compatibility improvement, not a gate | ✅ closed (PR #467) — reference resumes the specific paused conversation via `continue($conversationId, …)`; moved from v0.15.0 |
+| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | M (round) + S–M (impl) | none | 🟡 design shipped — ADR 0039 (PR #465); implementation a separate scheduled unit (issue open); moved from v0.15.0 (a follow-up #357/#459 recorded rather than fixed) |
+| [#471](https://github.com/fissible/verdict/issues/471) A read contract for `chain_gap` marks | S | none | ✅ closed (PR #472) — `ChainGapReader` seam over persisted gap marks; the verdict-console-attest bridge that consumes it stays gated on attest-laravel#9 |
 
 **#265 is Verdict-owned and does not gate on upstream.** It moved off v0.15.0 so that release could cut on
 #357 alone. The fix is to Verdict's own reference test and documentation: teach resumption of the *specific*
