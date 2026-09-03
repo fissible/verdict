@@ -26,7 +26,6 @@ return new class extends Migration
             $table->char('argument_fingerprint', 64)->nullable();
             $table->char('idempotency_key_fingerprint', 64)->nullable();
             $table->char('approval_receipt_fingerprint', 64)->nullable();
-            $table->char('review_request_fingerprint', 64)->nullable();
             $table->string('approval_phase', 32)->nullable();
             $table->string('approval_outcome', 32)->nullable();
             $table->string('target_policy')->nullable();

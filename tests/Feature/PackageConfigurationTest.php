@@ -30,7 +30,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(23)
+    expect($migrations)->toHaveCount(24)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -41,9 +41,14 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(13)
+    expect($migrations)->toHaveCount(14)
         ->and(collect(array_keys($migrations))->contains(fn (string $k): bool => str_ends_with($k, 'add_review_outcome_to_verdict_evidence_table.php.stub')))->toBeTrue()
         ->and(collect(array_values($migrations))->contains(fn (string $v): bool => str_ends_with($v, 'add_review_outcome_to_verdict_evidence_table.php')))->toBeTrue()
+        // #466: published alongside the create migration it was wrongly folded into, so an install
+        // that predates v0.15.0 has a migration it can actually run. Asserted by name for the same
+        // reason as the row above — a count alone cannot tell which stub is missing.
+        ->and(collect(array_keys($migrations))->contains(fn (string $k): bool => str_ends_with($k, 'add_review_request_fingerprint_to_verdict_evidence_table.php.stub')))->toBeTrue()
+        ->and(collect(array_values($migrations))->contains(fn (string $v): bool => str_ends_with($v, 'add_review_request_fingerprint_to_verdict_evidence_table.php')))->toBeTrue()
         // The new operational-events table stub is published (ADR 0038 §4) — asserted by name so a wrong-length
         // list cannot pass on the count alone.
         ->and(collect(array_keys($migrations))->contains(fn (string $k): bool => str_ends_with($k, 'create_verdict_approval_operations_table.php.stub')))->toBeTrue()

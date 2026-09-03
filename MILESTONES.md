@@ -758,6 +758,8 @@ verdict-console (ADR 0002 §8) — an implementation, not a design round.
 
 **Status.** The three design rounds are resolved: #419 and #265 shipped and closed (#470, #467), #460's
 design of record shipped (ADR 0039) with its implementation still to schedule, and #471 shipped (#472).
+A fifth item, #466, joined from the field: an upgrade defect in v0.15.0's own evidence schema, which has to
+ship in the next tag rather than wait for one.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
@@ -765,6 +767,7 @@ design of record shipped (ADR 0039) with its implementation still to schedule, a
 | [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()`, which resumes the wrong conversation under concurrency | S (round) + S (impl) | none — upstream is a compatibility improvement, not a gate | ✅ closed (PR #467) — reference resumes the specific paused conversation via `continue($conversationId, …)`; moved from v0.15.0 |
 | [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | M (round) + S–M (impl) | none | 🟡 design shipped — ADR 0039 (PR #465); implementation a separate scheduled unit (issue open); moved from v0.15.0 (a follow-up #357/#459 recorded rather than fixed) |
 | [#471](https://github.com/fissible/verdict/issues/471) A read contract for `chain_gap` marks | S | none | ✅ closed (PR #472) — `ChainGapReader` seam over persisted gap marks; the verdict-console-attest bridge that consumes it stays gated on attest-laravel#9 |
+| [#466](https://github.com/fissible/verdict/issues/466) v0.15.0 ships no upgrade migration for `review_request_fingerprint` | XS | none | ✅ closed — the column moves out of the create migration into an `add_*` one every existing install can run |
 
 **#265 is Verdict-owned and does not gate on upstream.** It moved off v0.15.0 so that release could cut on
 #357 alone. The fix is to Verdict's own reference test and documentation: teach resumption of the *specific*
@@ -783,6 +786,15 @@ close of the cluster that already carried the #297 keystone. Waiting is safe: th
 roughly the rate of approved-and-executed actions, current retain-everything behaviour is the safe one, and a
 deployment notices table size long before anything misbehaves. (v1.0.0 was the alternative — it parks a peer
 schema decision in #415 — but unbounded growth on a security-state table is a pilot-stage pain, so it rides here.)
+
+**#466 is a released-schema defect, not a feature.** v0.15.0 added `review_request_fingerprint` to the
+evidence *create* migration in place and shipped no `add_*` migration for it. A create migration runs once per
+install, so fresh v0.15.0 installs got the column and every install created before it did not — with nothing
+published that could give it one. `verdict:validate` reported a column the operator could not add, and the
+recorder's degradation path dropped the review-request correlation from every durable decision record on the
+way in. The fix restores the create migration to the schema every release published and moves the column into
+an additive migration, which is the only kind an existing install will ever run. It reached the milestone the
+way #240 and #256 did: verdict-storefront's pin-bump probe, doing its integration-fixture job.
 
 **#201 is deliberately not here.** ADR 0038 §8 names cross-invocation lineage as the next extension point of
 the approver surface, *not* as work whose prerequisite uncertainty has been resolved. It stays unscheduled
