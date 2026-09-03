@@ -2993,3 +2993,170 @@ and the composition target the paper names (SCITT) is covered in section 7.
 stand on their own terms. Its experimental results are cited as reported, and should be
 attributed that way in any Verdict document rather than restated as settled findings — the
 same standard section 8's chain-of-custody finding sets for every source in this log.
+
+## 15. Research sweep 2026-09 — attack surfaces, injection realism, over-refusal, evaluation
+
+A sweep of recent agent-security literature and neighbouring systems, read for its bearing on the
+attack packs, the injection-realism program, the over-restriction facet, and the live harness. As
+elsewhere in this log, experimental figures are cited as reported, not restated as settled findings.
+
+### Capability Gates Are Not Authorization: Confused-Deputy Failures in LLM Agent Frameworks — paper (arXiv)
+
+**Primitive — per-call argument-value authorization vs. capability gating.** Exposing a tool (capability
+gating) is not the same as authorizing *this* call's concrete arguments; a confused deputy runs the
+identical call the gate admits. The paper reports auditing several mainstream agent frameworks and
+finding they gate capability exposure but do not re-authorize each model-emitted call against its
+argument values, and that an argument-level gate it implements denies the calls they admit.
+
+**Verdict:** `already implements`. This is the founding structural-vs-semantic split (§1): Verdict
+authorizes a *resolved target* derived from the call's arguments on every protected execution
+(`VerdictManager::evaluate()` → `CapabilityAuthorizer::decide()` against the refreshed target), not tool
+exposure. The finding is valuable as *external* corroboration of a claim Verdict otherwise self-asserts.
+Attribute it as reported, and — if any Verdict document draws the framework contrast — cite each
+comparator's own primary documentation for what it does, not this paper's cross-framework inference.
+No "the differentiator" language: state what Verdict authorizes, and let the comparison rest on cited
+primary sources.
+
+### CaMeL: Defeating Prompt Injections by Design — paper
+
+**Primitive — capabilities attached to values (provenance as an authorization input).** Track where a
+value came from (taint from untrusted tool output) and let policy predicate on that origin, not only on
+the value's shape.
+
+**Verdict:** `should investigate`. Verdict's argument predicates see a value, not its provenance, so
+they cannot distinguish a user-supplied id from one lifted out of an injected search result. Distinct
+from #201 (which *discloses* cross-invocation lineage to approvers): this would make provenance a
+policy *input*, with privacy, completeness, spoofing, and fail-closed semantics to settle first.
+
+**Candidate:** `provenance-as-policy-input` (filed as #476).
+
+### LLMail-Inject, and CommandSans — datasets/paper (arXiv)
+
+**Primitive — argument-level breach observables over realistic injected content.** A realistic corpus
+places injections in tool *results* synthesized from real tool schemas with annotated user-controlled
+slots (CommandSans), and grades the breach at the *argument* level — a legitimate call with an
+attacker-chosen recipient/body is the breach (LLMail-Inject), with per-stage labels only where each
+stage is observable.
+
+**Verdict:** `should adopt`. The shipped `search-argument-exfiltration` case proves the argument-predicate
+mechanism on a narrow canary; these give the realism and the exfil shapes to broaden it into a proper
+pack, recording *unmeasured* rather than inventing a `detected` stage the boundary cannot see.
+
+**Candidate:** `realistic-injection-exfil-pack` (filed as #474).
+
+### Semantic / rate abuse — sweep-promoted coverage gap
+
+**Primitive — a sequence of individually-permitted calls that breaches an aggregate limit.** Each call
+is fine; the volume is the abuse.
+
+**Verdict:** `should adopt`. Verdict ships the rate-limit / Throttle / filtered-permit machinery
+(`docs/evaluation.md`) but no pack case drives an abuse sequence through it — the clearest current
+"mechanism exists, coverage absent" gap. Two-sided oracle: the abusive sequence stops at the boundary
+and a benign burst within the limit still completes.
+
+**Candidate:** `semantic-rate-abuse-case` (filed as #475).
+
+### Mind the Gap: Time-of-Check to Time-of-Use, and Atomicity for Agents — papers
+
+**Primitive — a resource can change between the checked call and the used call behind an unchanged
+argument.** A swapped resource is invisible to per-call argument inspection alone.
+
+**Verdict:** `already implements` (detection) / `should adopt` (enforcement). Check-to-use digest binding
+is detected today (#295, shipped, v0.13.0); turning a detected mismatch into a fail-closed decision is
+the open enforcement work (#386).
+
+### AgentHarm — benchmark
+
+**Primitive — a matched benign twin of equivalent tool-use complexity per attack.** The utility arm is
+structural per-case, not a separate pack-wide measurement.
+
+**Verdict:** `already implements` (two-sided harness) / `should adopt` (as a per-case coverage rule). The
+harness already separates `CasePurpose::Security` from `Utility` with a paired unguarded control and a
+two-sided filtered-permit oracle (`docs/evaluation.md`); the transferable discipline is requiring the
+benign twin *per case*.
+
+**Candidate:** `benign-twin-per-case` (checklist on #213).
+
+### Establishing Best Practices for Building Rigorous Agentic Benchmarks (ABC), and abliterated-model instruments — papers
+
+**Primitive — outcome validity: an "attack failed" arm must not pass on a model that does nothing, and a
+zero-breach result must not be an artifact of a degraded attacker.** ABC documents the TAU-bench flaw
+(an empty response scored as success); the abliterated-instrument work documents attacker-competence
+confounds.
+
+**Verdict:** `already implements`. Filtered-permit declarations require both inclusion *and* exclusion
+assertions, so an empty result cannot pass; the 2×2 classifies a do-nothing guarded arm as
+`over_restricted`, never a breach-prevented. The live methodology already runs an abliterated,
+tool-capable instrument and reports the alignment confound (#170). Recorded so the guarantee is
+attributed to these external standards rather than asserted.
+
+### AI Agents That Matter — paper
+
+**Primitive — model-developer vs. downstream-developer evaluation.** Benchmarking a model's capability is
+not the same question as whether a specific application's boundary holds.
+
+**Verdict:** `should adopt` (positioning). Verdict's packs are downstream-developer evaluation —
+does *my* application's authorization boundary hold — not model benchmarking. This framing is not yet
+a shipped statement; it is worth stating in
+`docs/evaluation.md` to preempt "why not just use AgentDojo": AgentDojo measures a model/defense against
+attacks; a Verdict pack measures whether one application's declared capabilities deny what they should.
+No claim that it replaces model benchmarking.
+
+### ETDI: Tool Squatting and Rug-Pull in MCP — paper
+
+**Primitive — versioned tool identity as an authorization input.** A tool whose definition changes between
+registration and invocation should be treated as a new, unapproved tool.
+
+**Verdict:** `already implements` (forensic detection) / `should investigate` (enforcement, in #386's
+scope only). Verdict records configured-vs-invocation tool-description fingerprints and their match result
+in evidence (`add_tool_description_fingerprints_to_verdict_evidence_table`). Deny-until-reapproved on a
+mismatch is a materially new enforcement proposal; it belongs to #386 if deliberately added there, not as
+its own item.
+
+### Multi-Agent Systems Execute Arbitrary Malicious Code — paper
+
+**Primitive — a delegated sub-agent call's principal and scope at the boundary.** Does a delegated call
+inherit the orchestrator's authorization or carry its own narrower scope, and how is call provenance
+attributed?
+
+**Verdict:** `should investigate`. The same seam as the laravel/ai invocation-id defect (PR #53); the
+shipped `DelegationConfusionAttackPack` already has the sub-agent case pending on #201. No standalone
+principal model until Laravel AI can preserve the invocation/provenance boundary the pack needs.
+
+**Candidate:** `subagent-principal-scope` (checklist on #213).
+
+### Surveyed, no hook
+
+- **Measuring Security Without Fooling Ourselves** (temporal staleness) — Verdict already versions attack
+  cases and suites, commits baselines, and compares in CI; a corpus "decay policy" is a dated docs
+  convention, not new machinery.
+- **Indirect Prompt Injection in the Wild** and **LlamaFirewall / AgentDojo variant** — measured
+  in-the-wild prevalence and a technique×threat-category matrix are an external empirical program; kept as
+  a dated taxonomy crosswalk in this log, not restated as weighted facts.
+- **Measuring Real-World Prompt Injection in Resume Screening** — in that study, most observed "injection"
+  was fabricated *content with no instructions* that corrupts model judgment without producing an
+  unauthorized tool call. That class is outside Verdict's authorization boundary by construction: Verdict
+  decides tool calls, not model belief (the boundary `docs/limitations.md` records). Verdict's
+  context-release controls address the disclosure subset, so the harm is not uniformly unobservable —
+  avoid calling it "invisible" without that qualifier.
+- **WASP** (partial-hijack observable), **PHTest / FalseReject / MobileSafetyBench** (benign-side
+  generation and taxonomies), **Adding Error Bars / If Nothing Goes Wrong** (clustered SEs, zero-numerator
+  bound wording) — real but foundational refinements to the live harness; recorded as #213 checklist
+  items, added once each observable/metric is defined rather than asserted early.
+- **Progent** (dynamic mid-run policy narrowing) — `intentionally defers`: a different planning/control
+  problem, not smuggled into this sweep.
+- **MCP Authorization specification** — `out of repo` until Laravel AI grows an MCP tool transport seam;
+  the coarse-scope-vs-fine-policy gap only becomes executable then.
+- **ToolApprovalGuard** — the decide-before-vs-after-the-approval-pause ordering is a core approval
+  lifecycle question for the existing approval/resumption design, not a new issue unless a concrete
+  contradictory behaviour is found.
+- **Laravel Tackle** — a plausible adopter/case study; a coding-agent pack (protected-path write,
+  out-of-allowlist Artisan, spend-cap) waits on a Verdict-owned capability and reusable oracle (#213).
+- **Authenticated Delegation and Authorized AI Agents** — positioning only; folds into the
+  downstream-developer framing above.
+
+**Citation scope.** Every experimental figure above (bypass/unauthorized-execution counts, prevalence
+percentages, hijack rates) is the cited source's reported result and must be attributed to it, never
+restated as a Verdict measurement. Where an entry reads `already implements`, the verdict is grounded in
+the cited `src/` path, ADR, or shipped doc; where it cannot be, it is recorded as `should adopt` or
+`should investigate` and carries a candidate slug, per this log's standard.
