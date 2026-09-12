@@ -84,8 +84,10 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
         ));
 
         usort($derivations, static function (ProvenanceDerivation $left, ProvenanceDerivation $right): int {
-            return [$left->recordedAt, $left->parentContentFingerprint, $left->kind->value]
-                <=> [$right->recordedAt, $right->parentContentFingerprint, $right->kind->value];
+            // Match the database write path's wall-clock precision without changing stored instants.
+            return strcmp($left->recordedAt->format('Y-m-d H:i:s'), $right->recordedAt->format('Y-m-d H:i:s'))
+                ?: strcmp($left->parentContentFingerprint, $right->parentContentFingerprint)
+                ?: strcmp($left->kind->value, $right->kind->value);
         });
 
         return $derivations;
