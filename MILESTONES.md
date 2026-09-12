@@ -807,22 +807,66 @@ the approver surface, *not* as work whose prerequisite uncertainty has been reso
 with its recorded reason until a design round retires that uncertainty; thematic adjacency to the shipped
 summary work is not readiness.
 
-## v0.17.0 — Approvals: retention
+## v0.17.0 — Approvals: retention and review reads
 
-**Theme.** One build, carried over from v0.16.0 with its design of record already published. v0.16.0 held
-the round; this holds the implementation.
+**Theme.** One build carried over from v0.16.0 with its design of record already published, plus the two
+bounded corrections that finish the review lane's *read* surface. v0.16.0 held #460's round; this holds
+its implementation. The review-read pair joined in triage: both are handoffs from verdict-console#48,
+both concern the same DTO/reader boundary, and neither depends on the retention work — doing them
+together is one pass over that boundary rather than two.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | S–M (impl) | ✅ ADR 0039 | open — the build against [ADR 0039](docs/adr/0039-replay-refusal-outlives-the-consumed-receipt.md)'s 15-item parity spec, which is the implementation contract |
+| [#468](https://github.com/fissible/verdict/issues/468) `DatabaseReviewRequestStore` has no paired enumerating `ReviewStatusReader` | S | none | open — Verdict ships the store without a reader that can enumerate it, so every consumer writes one; verdict-console carries a copy it deletes when this lands |
+| [#469](https://github.com/fissible/verdict/issues/469) `ReviewStatusView` exposes no provenance, so a reviewer surface cannot render ADR 0026's states | S (decision) + S (impl) | ADR 0026, ADR 0035 §4 | open — either the view grows the display-safe projection or the omission becomes citable; a surface cannot query around the reader without breaking ADR 0031's discipline |
 
-**Why it is a milestone of its own rather than a v0.16.0 straggler.** v0.16.0's scope closed with a
+**#468 and #469 are the review lane's read surface, not new scope.** ADR 0035 §4 defines the read DTO and
+the reader contract; what shipped satisfies neither completely. #468 is a store Verdict ships without the
+reader its own contract asks for, so the read semantics this package owns are being written downstream.
+#469 is the same shape one field over: ADR 0035 §3 records that a review request carries ADR 0026's
+provenance disclosure and the record persists it, while the read DTO omits it — so a reviewer queue can
+render the reason and the summary fingerprint but not the declared/unknown/unreleased states ADR 0026
+requires be *visible*, silence there implying an assurance the system does not have. Both were recorded
+by verdict-console rather than fabricated around, which is the behaviour the contract discipline is for.
+
+**Why v0.17.0 is a milestone of its own rather than a v0.16.0 straggler.** v0.16.0's scope closed with a
 released-schema defect fix in it (#466), which upgrading installs need and which should not wait on a
 retention build. Splitting the round from the build is what ADR 0039 was for: the design is settled and
 reviewable now, the implementation is schedulable independently, and current retain-everything behaviour is
 the safe state to sit in while it waits. ADR 0039's parity spec — the digest guard that makes a receipt
 payload prunable, the check→attest→persist ordering, the self-guarding prune, and the
 keyless-default/keyed-opt-in decision — is the contract the build satisfies, not a starting sketch.
+
+## v0.18.0 — Attack coverage: realism and abuse
+
+**Theme.** #213's two P0 evaluation gaps, as their own unit. Both are coverage against mechanisms that
+already ship — neither adds a detection mechanism — and both have their own acceptance criteria, which is
+why they are a milestone rather than an addition to the 1.0 bar.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#475](https://github.com/fissible/verdict/issues/475) Semantic / rate-abuse attack case | S–M | none | open — **first in this milestone**; the one 🔴 cell in #213's coverage matrix |
+| [#474](https://github.com/fissible/verdict/issues/474) Realistic retrieved-content injection + exfiltration pack | M–L | none | open — broadens the narrow `search-argument-exfiltration` case onto published corpora with an argument-level oracle |
+
+**Why not v1.0.0.** The 1.0 section exists on the argument that inventing 1.0 work "would produce a
+backlog that measures imagination rather than adoption," and it holds only work that produced itself.
+These two produced themselves — the coverage matrix named them — but their completion criterion is
+*honest measurement*, including failures and unmeasured outcomes, which is open-ended in a way the 1.0
+bar's other items are not. Loading them onto 1.0 would make the release depend on an evaluation corpus
+whose end state is a judgement call. They get a tag instead.
+
+**#475's scope was corrected in triage, and the correction is load-bearing.** The issue's example —
+"repeated small refunds under a cap" — implies summing amounts. The shipped limiter does not: a
+`RateLimitPolicy` carries an integer limit and a window, and the store consumes one unit per call, with
+no amount summation anywhere in `src/RateLimits/`. An attack case written against a monetary cap would
+therefore specify a *new* mechanism rather than exercise the shipped one — and that mechanism is #259's,
+which is deliberately unscheduled pending a real adopter. The case drives a count/window sequence
+instead. Recorded on the issue.
+
+The 🔴 cell also means missing *pack* coverage, not untested enforcement: `SemanticRateLimitTest` already
+covers the mechanism. What is absent is an abuse sequence driven through the real boundary, which is what
+makes the guarantee executable rather than asserted.
 
 ## Contributor-ready
 
@@ -907,6 +951,17 @@ same array-comparison hazard on unreachable ids).
 - [#259](https://github.com/fissible/verdict/issues/259) — a design-first governance/cost gate (external
   budget facts at the action boundary); it becomes scheduled work when an adopter demonstrates the
   metered-tenant requirement, the same argument that holds #201. Added to this list 2026-08-25.
+- [#476](https://github.com/fissible/verdict/issues/476) — a design round to make value provenance
+  (taint from untrusted tool output) an authorization input for argument predicates. It activates when
+  #474 or an adopter supplies a reproducible supported-integration scenario, with a benign counterpart,
+  in which the same argument *value* requires a different authorization decision depending on where it
+  came from, and a value-only predicate cannot express the distinction. The trigger is that finding, not
+  #474 closing — an early corpus slice can supply it. Until then the round would be designing against
+  imagination, and the design questions it lists (fail-closed completeness, spoofing, the capture point,
+  and whether runtime provenance can be trusted at all where derivation tracking is documented as
+  deliberately incomplete) cannot be settled without a case that says which distinction is needed. A
+  proposed defence that is absent is not a known bypass of a guarantee Verdict makes, so it is also not
+  a 1.0 obligation. Added to this list 2026-09-12.
 
 ---
 
