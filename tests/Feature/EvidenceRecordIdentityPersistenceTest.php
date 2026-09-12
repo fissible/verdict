@@ -7,6 +7,7 @@ use Fissible\Verdict\Evidence\ClaimType;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\RecordDigest;
+use Fissible\Verdict\Tests\Support\EvidenceTableSchema;
 use Illuminate\Database\DatabaseManager;
 
 function recordIdentityEvidence(string $stage, string $disposition, ?string $claimStatus = null): DecisionEvidence
@@ -52,16 +53,10 @@ beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('evidence'));
 
-    (require __DIR__.'/../../database/migrations/create_verdict_evidence_table.php.stub')->up();
-    (require __DIR__.'/../../database/migrations/add_provenance_to_verdict_evidence_table.php.stub')->up();
-    (require __DIR__.'/../../database/migrations/add_invocation_id_to_verdict_evidence_table.php.stub')->up();
-    (require __DIR__.'/../../database/migrations/add_tool_kind_to_verdict_evidence_table.php.stub')->up();
-    (require __DIR__.'/../../database/migrations/add_configuration_fingerprint_to_verdict_evidence_table.php.stub')->up();
-    (require __DIR__.'/../../database/migrations/add_actor_and_subject_fingerprints_to_verdict_evidence_table.php.stub')->up();
-    (require __DIR__.'/../../database/migrations/add_target_source_to_verdict_evidence_table.php.stub')->up();
-    (require __DIR__.'/../../database/migrations/add_tool_description_fingerprints_to_verdict_evidence_table.php.stub')->up();
-    (require __DIR__.'/../../database/migrations/add_record_identity_to_verdict_evidence_table.php.stub')->up();
-    (require __DIR__.'/../../database/migrations/add_intent_id_to_verdict_evidence_table.php.stub')->up();
+    // The evidence table at its current schema, built by running the shipped stubs rather than by
+    // naming them here. The hand-written list this replaces went stale the moment #466's migration
+    // landed — which is the same failure the fixture exists to prevent one layer up.
+    EvidenceTableSchema::createComplete();
 });
 
 afterEach(function (): void {

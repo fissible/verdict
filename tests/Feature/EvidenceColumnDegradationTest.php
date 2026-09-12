@@ -47,6 +47,7 @@ const ADDITIVE_COLUMN_WRITERS = [
     'claim_type' => ['decision'],
     'record_digest' => ['decision'],
     'review_outcome' => ['decision'],
+    'review_request_fingerprint' => ['decision'],
     'channel' => ['provenance'],
     'component_label' => ['provenance'],
     'component_fingerprint' => ['provenance'],
@@ -94,7 +95,7 @@ function degradationEvidence(): DecisionEvidence
         argumentFingerprint: str_repeat('a', 64),
         idempotencyKey: 'tool-call-356',
         approvalReceiptFingerprint: str_repeat('9', 64),
-        reviewRequestFingerprint: null,
+        reviewRequestFingerprint: str_repeat('4', 64),
         approvalPhase: 'execution_validation',
         approvalOutcome: 'approved',
         targetPolicy: 'order-primary-key',
@@ -146,6 +147,7 @@ function expectedDecisionValues(DecisionEvidence $evidence): array
         'argument_fingerprint' => str_repeat('a', 64),
         'idempotency_key_fingerprint' => hash('sha256', 'tool-call-356'),
         'approval_receipt_fingerprint' => str_repeat('9', 64),
+        'review_request_fingerprint' => str_repeat('4', 64),
         'approval_phase' => 'execution_validation',
         'approval_outcome' => 'approved',
         'target_policy' => 'order-primary-key',
@@ -354,11 +356,12 @@ it('writes every surviving column when the table lags a migration', function (ar
     'target source' => [['target_source']],
     'tool description fingerprints' => [['tool_description_fingerprint']],
     'review outcome' => [['review_outcome']],
+    'review request fingerprint' => [['review_request_fingerprint']],
     'provenance columns' => [['content_fingerprint']],
     'every additive migration' => [[
         'intent_id', 'actor_fingerprint', 'configuration_fingerprint', 'invocation_id',
         'record_digest', 'tool_kind', 'target_source', 'tool_description_fingerprint',
-        'review_outcome', 'content_fingerprint',
+        'review_outcome', 'review_request_fingerprint', 'content_fingerprint',
     ]],
 ]);
 
