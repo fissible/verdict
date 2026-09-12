@@ -251,6 +251,13 @@ Verdict records a derivation edge only when it observed a transformation directl
 
 The evidence store may also contain highly sensitive information. Configurable evidence levels, retention, tenant isolation, access authorization, pruning, and encryption remain application responsibilities.
 
+<!-- @verdict-claim limitation.provenance-read-order follow-up:#480 -->
+### Provenance entries recorded in the same second have no cross-recorder read order
+
+`derivationsFor()` returns a deterministic total order, identical across the shipped recorders. `provenanceFor()` does not. The database recorder breaks a same-second tie on the row's generated id, which is random — stable for repeated reads of the same rows, but not reproducible from the entries, so two installs fed identical provenance can read it back in different orders. The in-memory recorder does not sort at all and returns insertion order.
+
+Sub-second times cannot separate them: `recorded_at` is written at `Y-m-d H:i:s`, so entries recorded within one second always reach the tiebreaker. Do not build a surface that depends on provenance read order being reproducible, and do not read position as chronology within a second. Giving the two recorders a shared, data-derived order is tracked in [#480](https://github.com/fissible/verdict/issues/480); it changes a published read contract, so it is a decision rather than a patch.
+
 <!-- @verdict-claim limitation.cross-invocation-lineage follow-up:#201 -->
 ### Lineage declared in another invocation does not reach an approver
 

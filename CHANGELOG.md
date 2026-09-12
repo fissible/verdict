@@ -4,6 +4,73 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **A read contract for `chain_gap` marks (#471).** `Fissible\Verdict\Contracts\ChainGapReader` is a
+  narrow, container-resolved read seam over persisted chain-gap marks, returning a
+  `ChainGapSummary` (`persistedCount`, `latestMarkAt`, `hasGaps()`) for one chain identity. It is
+  observational and deliberately separate from the attested evidence write path, so a consumer can
+  surface chain health without taking a dependency on the evidence table's schema. `verdict-console`
+  is the first consumer.
+
+  **The persisted count is a floor, never a total.** `AttestEvidenceRecorder::recordGap()` is
+  best-effort and swallows an insert failure, so no persisted marks is not proof that a chain has
+  had no gaps. A surface built on this must not claim otherwise. Note also that gap marks live on
+  the connection and table named by `verdict.evidence.attest.fallback_connection` and
+  `fallback_table`, which are not necessarily `verdict.evidence.table`.
+
+### Fixed
+
+- **An upgrade migration for `review_request_fingerprint`, which v0.15.0 shipped without (#466).**
+  v0.15.0 added the column to the evidence **create** migration in place. A create migration runs
+  once per install, so fresh v0.15.0 installs got the column and **every install created before
+  v0.15.0 did not** — with no published migration able to add one. `php artisan verdict:validate`
+  reported a missing column the operator could not clear, and the database recorder's
+  column-degradation path silently dropped the review-request correlation from every durable
+  decision record on the way in.
+
+  The column now ships in `add_review_request_fingerprint_to_verdict_evidence_table`, and the create
+  migration is restored to the column set every release from `0.1.0` to `0.15.0` published.
+
+  **Upgrading: publish and run migrations** (`vendor:publish --tag=verdict-migrations`, then
+  `migrate`). The new migration is safe in both directions and needs no manual intervention: it adds
+  the column only when absent, so an install created under v0.15.0 — which already has it from the
+  create migration — is unaffected rather than meeting a duplicate-column failure. Its `down()`
+  deliberately does not drop the column, because it cannot tell whether the column is its own or
+  v0.15.0's, and a rollback means downgrading to a release that still reads and writes it.
+
+  Applications that added their own interim migration for this column can delete it; ordering
+  between the two does not matter.
+
+- **In-memory and database recorders returned derivations in different orders below one-second
+  precision (#424).** `derivationsFor()` is contractually identical across the two recorders and was
+  not. `recorded_at` reaches the database through Laravel's query grammar, whose date format is
+  `Y-m-d H:i:s`, so microseconds are discarded before any SQL runs and two edges recorded in the
+  same second tie on `recorded_at` and fall through to the parent-fingerprint and kind tiebreakers.
+  `InMemoryEvidenceRecorder` compared the full-microsecond instant, never reached those tiebreakers,
+  and could return a different order for the same edges — so a provenance audit rendered differently
+  depending on which recorder was wired.
+
+  The in-memory comparator now orders on the same wall-clock projection the write path persists, and
+  compares that, the parent fingerprint and the kind with `strcmp()` rather than through PHP's array
+  comparison — which compares two *numeric* strings numerically, and a sha256 digest can be numeric
+  (`'0e'` followed by 62 digits is a valid fingerprint that PHP called equal to another of that
+  form, where SQL orders them lexically). What the recorder stores is unchanged: it still returns the
+  instant it was handed, microseconds and timezone intact.
+
+  **`provenanceFor()` is not covered by this fix.** It has a divergence of its own — the database
+  orders by a random UUID tiebreak, the in-memory recorder does not sort at all — tracked as
+  [#480](https://github.com/fissible/verdict/issues/480). Do not rely on `provenanceFor()` returning
+  the same order across the two recorders for entries recorded in the same second.
+
+### Changed
+
+- **The reference test for queued approval resumption now resumes the specific paused conversation
+  (#265).** It taught `continueLastConversation()`, which resumes the participant's
+  most-recently-updated conversation and therefore selects the wrong one under concurrency. It now
+  resumes by conversation id. No shipped code changed; if you copied the previous pattern into an
+  application, resume the conversation you paused rather than the latest one.
+
 ## [0.15.0] - 2026-08-31
 
 ### Added
