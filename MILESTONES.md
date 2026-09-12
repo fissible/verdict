@@ -756,18 +756,22 @@ round, #460, joined from v0.15.0's tail: a security-state retention decision, no
 finished cluster's edge. A fourth item, #471, joined late as a small read-contract handoff from
 verdict-console (ADR 0002 §8) — an implementation, not a design round.
 
-**Status.** The three design rounds are resolved: #419 and #265 shipped and closed (#470, #467), #460's
-design of record shipped (ADR 0039) with its implementation still to schedule, and #471 shipped (#472).
-A fifth item, #466, joined from the field: an upgrade defect in v0.15.0's own evidence schema, which has to
-ship in the next tag rather than wait for one.
+**Status — scope complete, ready to cut.** The three design rounds are resolved: #419 and #265 shipped
+and closed (#470, #467), #471 shipped (#472), and #460's design of record shipped (ADR 0039). Two items
+joined from the field rather than from the plan — #466, an upgrade defect in v0.15.0's own evidence schema,
+and #483, the migration-filename guards it exposed — and both shipped. **#460's implementation moved to
+v0.17.0**: its design of record is published, the current retain-everything behaviour is the safe one, and
+holding a released-schema defect fix for a retention feature inverts the priority. Everything else here is
+closed.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
 | [#419](https://github.com/fissible/verdict/issues/419) Safely support approve-with-edits by re-evaluating the edited proposal (not a fingerprint rebind) | M (round) | none | ✅ closed — ADR 0040 (PR #470). Design of record: refuse the edited decision and re-propose the action; no inline rebind/re-challenge (unrepresentable in the resume model) and no impl needed |
 | [#265](https://github.com/fissible/verdict/issues/265) Queued-resumption reference test teaches `continueLastConversation()`, which resumes the wrong conversation under concurrency | S (round) + S (impl) | none — upstream is a compatibility improvement, not a gate | ✅ closed (PR #467) — reference resumes the specific paused conversation via `continue($conversationId, …)`; moved from v0.15.0 |
-| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | M (round) + S–M (impl) | none | 🟡 design shipped — ADR 0039 (PR #465); implementation a separate scheduled unit (issue open); moved from v0.15.0 (a follow-up #357/#459 recorded rather than fixed) |
+| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | M (round) + S–M (impl) | none | ✅ round closed — ADR 0039 (PR #465); ➡️ **implementation moved to v0.17.0**; moved here from v0.15.0 (a follow-up #357/#459 recorded rather than fixed) |
 | [#471](https://github.com/fissible/verdict/issues/471) A read contract for `chain_gap` marks | S | none | ✅ closed (PR #472) — `ChainGapReader` seam over persisted gap marks; the verdict-console-attest bridge that consumes it stays gated on attest-laravel#9 |
 | [#466](https://github.com/fissible/verdict/issues/466) v0.15.0 ships no upgrade migration for `review_request_fingerprint` | XS | none | ✅ closed — the column moves out of the create migration into an `add_*` one every existing install can run |
+| [#483](https://github.com/fissible/verdict/issues/483) Two stubs publish at the same timestamp, and nothing stops the next pair that shares a table | XS | #466 | ✅ closed (PR #484) — the shipped pair is grandfathered because it cannot be renamed; three guards pin the invariants around it |
 
 **#265 is Verdict-owned and does not gate on upstream.** It moved off v0.15.0 so that release could cut on
 #357 alone. The fix is to Verdict's own reference test and documentation: teach resumption of the *specific*
@@ -777,29 +781,48 @@ most-recently-updated conversation and so selects the wrong one under concurrenc
 but Verdict's correct reference behaviour must not wait on it — upstream support is a compatibility layer on
 top, not a release gate.
 
-**#460 is a design round, not a fast-follow.** #357/#459 bounded the reviewer queue and prunes the receipts
-that never admitted an execution — lapsed `Pending`, `Approved`-but-unconsumed, `Rejected` — which is the bulk
-of the growth. What #459 deliberately left is the long tail: `Consumed` receipts, retained for the life of the
-deployment. Reclaiming them has a genuine security tradeoff — most of the obvious options reopen a replay
-window, and tombstoning wants a schema migration — so it earns a proper round rather than a rushed patch at the
-close of the cluster that already carried the #297 keystone. Waiting is safe: the retained rows accumulate at
-roughly the rate of approved-and-executed actions, current retain-everything behaviour is the safe one, and a
-deployment notices table size long before anything misbehaves. (v1.0.0 was the alternative — it parks a peer
-schema decision in #415 — but unbounded growth on a security-state table is a pilot-stage pain, so it rides here.)
+**#460's round is done; its implementation is not, and that is the deliberate split.** #357/#459 bounded
+the reviewer queue and prunes the receipts that never admitted an execution — lapsed `Pending`,
+`Approved`-but-unconsumed, `Rejected` — which is the bulk of the growth. What #459 left is the long tail:
+`Consumed` receipts, retained for the life of the deployment. Reclaiming them has a genuine security
+tradeoff — most of the obvious options reopen a replay window, and tombstoning wants a schema migration —
+so it earned a proper round, which ADR 0039 delivered. The build is a separate scheduled unit and rides
+v0.17.0. Waiting stays safe for the same reason it always was: the retained rows accumulate at roughly the
+rate of approved-and-executed actions, current retain-everything behaviour is the safe one, and a
+deployment notices table size long before anything misbehaves. It does not ride v1.0.0 — that parks a
+pilot-stage pain behind the 1.0 bar, which is the one thing the earlier revision of this section
+explicitly argued against.
 
-**#466 is a released-schema defect, not a feature.** v0.15.0 added `review_request_fingerprint` to the
-evidence *create* migration in place and shipped no `add_*` migration for it. A create migration runs once per
-install, so fresh v0.15.0 installs got the column and every install created before it did not — with nothing
-published that could give it one. `verdict:validate` reported a column the operator could not add, and the
-recorder's degradation path dropped the review-request correlation from every durable decision record on the
-way in. The fix restores the create migration to the schema every release published and moves the column into
-an additive migration, which is the only kind an existing install will ever run. It reached the milestone the
-way #240 and #256 did: verdict-storefront's pin-bump probe, doing its integration-fixture job.
+**#466 and #483 are the same lesson one layer apart, and both came from the field.** #466: a column added
+to the evidence *create* migration in place reaches only installs created after the edit, so every
+pre-v0.15.0 install had a `verdict:validate` error it could not clear. #483: the published *filename* is
+the same kind of historical artifact, which is why the timestamp collision it exposed is grandfathered
+rather than renamed — `vendor:publish` keys on the exact destination path, so renaming writes a second,
+unrun file into every existing install and `migrate` then runs it against a table that exists. Both are now
+guarded by frozen records of what is already in the field. Found by verdict-storefront's pin-bump probe,
+the same integration fixture that caught #240 and #256.
 
 **#201 is deliberately not here.** ADR 0038 §8 names cross-invocation lineage as the next extension point of
 the approver surface, *not* as work whose prerequisite uncertainty has been resolved. It stays unscheduled
 with its recorded reason until a design round retires that uncertainty; thematic adjacency to the shipped
 summary work is not readiness.
+
+## v0.17.0 — Approvals: retention
+
+**Theme.** One build, carried over from v0.16.0 with its design of record already published. v0.16.0 held
+the round; this holds the implementation.
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | S–M (impl) | ✅ ADR 0039 | open — the build against [ADR 0039](docs/adr/0039-replay-refusal-outlives-the-consumed-receipt.md)'s 15-item parity spec, which is the implementation contract |
+
+**Why it is a milestone of its own rather than a v0.16.0 straggler.** v0.16.0's scope closed with a
+released-schema defect fix in it (#466), which upgrading installs need and which should not wait on a
+retention build. Splitting the round from the build is what ADR 0039 was for: the design is settled and
+reviewable now, the implementation is schedulable independently, and current retain-everything behaviour is
+the safe state to sit in while it waits. ADR 0039's parity spec — the digest guard that makes a receipt
+payload prunable, the check→attest→persist ordering, the self-guarding prune, and the
+keyless-default/keyed-opt-in decision — is the contract the build satisfies, not a starting sketch.
 
 ## Contributor-ready
 
@@ -826,7 +849,7 @@ Ordered by suggested pickup order: defects first, then self-contained work with 
 | [#151](https://github.com/fissible/verdict/issues/151) Harden field-path handling in the release path | M | `help wanted` | none — #150 shipped in v0.5.0 |
 | [#164](https://github.com/fissible/verdict/issues/164) Cover rate-limit window boundary, expiry, and cross-window leakage | M | `scope: ready` | none |
 | [#141](https://github.com/fissible/verdict/issues/141) Hydrate the attest evidence configuration into a typed value object | S | `scope: ready` | none — precedent in #91 |
-| [#424](https://github.com/fissible/verdict/issues/424) Make the cross-recorder derivation order contract true below one-second precision | S | `scope: ready` | none — in-memory precision + a same-second fixture |
+| [#424](https://github.com/fissible/verdict/issues/424) Make the cross-recorder derivation order contract true below one-second precision | S | `scope: ready` | ✅ shipped (PR #481) — landed early, in whichever tag is open, exactly as this section says unclaimed work may |
 
 **#151 is the hardening that remains open after the same audit.** #149 and #150 were fixed in v0.5.0:
 neither was an authorization bypass, but both were asymmetries that were cheap to fix and expensive to
@@ -859,11 +882,19 @@ covers SQLite and MySQL only.
 **#142 and #141 must not collide.** #141 owns the `evidence.attest` block, which has real invariants; #142
 owns the four repeated store sections, which have none. Whoever takes the second should rebase on the first.
 
-**#424 is the pinning pool's exact shape.** The v0.14.0 review's degradation audit found the
-"identical derivation order across both recorders" contract pinned but false below one-second precision:
-the database column stores whole seconds while the in-memory recorder sorts on microseconds, and every
-fixture is whole-second, so the suite cannot see the divergence. A guarantee true in appearance but not in
-fact, with the fixture that would catch it missing.
+**#424 is the pinning pool's exact shape, and it shipped.** The v0.14.0 review's degradation audit found
+the "identical derivation order across both recorders" contract pinned but false below one-second precision:
+every fixture was whole-second, so the suite could not see the divergence. A guarantee true in appearance
+but not in fact, with the fixture that would catch it missing.
+
+The build (PR #481) corrected the stated mechanism as well as the defect — microseconds are discarded by
+Laravel's query grammar before any SQL runs, not by the column type, so widening the column would have
+fixed nothing — and closed a second, unrelated tie in the same comparator: PHP compares two *numeric*
+strings numerically, and a sha256 digest can be numeric. Two follow-ups were recorded rather than absorbed:
+[#480](https://github.com/fissible/verdict/issues/480) (`provenanceFor()` has its own, larger divergence —
+a random-UUID tiebreak against insertion order — which needs a contract decision and re-bases positional
+callers) and [#482](https://github.com/fissible/verdict/issues/482) (three more comparators carrying the
+same array-comparison hazard on unreachable ids).
 
 **Deliberately unscheduled**, each for its own reason rather than by the old blanket rule:
 
