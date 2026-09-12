@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-09-12
+
 ### Added
 
 - **A read contract for `chain_gap` marks (#471).** `Fissible\Verdict\Contracts\ChainGapReader` is a
@@ -2095,7 +2097,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/fissible/verdict/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/fissible/verdict/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/fissible/verdict/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/fissible/verdict/compare/v0.13.0...v0.13.1
