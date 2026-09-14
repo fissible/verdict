@@ -458,14 +458,24 @@ it('orders ids by their bytes even when the column collates case-insensitively',
     // while a byte comparison — what the in-memory reader does, and what the contract means — puts
     // 'Zx…' first. Both are ordinary Str::random(64) output.
     //
-    // SQLite defaults to BINARY, where the two agree, so the column is declared NOCASE here to
-    // reproduce the engine this would actually break on. Without that, this guard could only fail on
-    // the MySQL matrix and would pass locally however the reader sorted.
+    // SQLite defaults to BINARY, where the two agree, so its column is declared NOCASE to reproduce
+    // the hazard locally — otherwise this guard could only fail on the matrix and would pass here
+    // however the reader sorted. The other engines need no help: MySQL's default collation is
+    // case-insensitive already, and PostgreSQL's follows the database locale, which for the usual
+    // en_US.UTF-8 orders 'a' before 'Z' too. NOCASE is SQLite's spelling and exists nowhere else.
     $name = reviewReaderTable();
-    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+    $connection = app(DatabaseManager::class)->connection();
+    $collation = $connection->getDriverName() === 'sqlite' ? 'nocase' : null;
+    $schema = $connection->getSchemaBuilder();
     $schema->dropIfExists($name);
-    $schema->create($name, function (Blueprint $table) use ($name): void {
-        $table->string('id', 64)->collation('nocase')->primary();
+    $schema->create($name, function (Blueprint $table) use ($name, $collation): void {
+        $id = $table->string('id', 64);
+
+        if ($collation !== null) {
+            $id->collation($collation);
+        }
+
+        $id->primary();
         $table->string('capability');
         $table->char('binding_fingerprint', 64);
         $table->string('status', 24);
