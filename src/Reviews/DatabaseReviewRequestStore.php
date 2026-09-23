@@ -20,6 +20,8 @@ use Throwable;
 
 final readonly class DatabaseReviewRequestStore implements DatabaseTableStore, ReviewRequestStore
 {
+    private const int FIND_MANY_CHUNK_SIZE = 1000;
+
     /** Mutable memo inside a readonly class for lazily inspected optional columns. */
     private stdClass $schemaMemo;
 
@@ -238,6 +240,37 @@ final readonly class DatabaseReviewRequestStore implements DatabaseTableStore, R
         $row = $this->connection->table($this->table)->where('id', $requestId)->lockForUpdate()->first();
 
         return $row instanceof stdClass ? $this->requestFromRow($row) : null;
+    }
+
+    /**
+     * Hydrate request ids through this store's row mapper. Callers must impose any required order
+     * themselves: SQL does not promise that a whereIn() result follows the input ids.
+     *
+     * @param  list<string>  $requestIds
+     * @return array<string, ReviewRequest> keyed by request id
+     *
+     * @internal
+     */
+    public function findMany(array $requestIds): array
+    {
+        if ($requestIds === []) {
+            return [];
+        }
+
+        $requests = [];
+
+        foreach (array_chunk($requestIds, self::FIND_MANY_CHUNK_SIZE) as $requestIdChunk) {
+            $rows = $this->connection->table($this->table)
+                ->whereIn('id', $requestIdChunk)
+                ->get();
+
+            foreach ($rows as $row) {
+                $request = $this->requestFromRow($row);
+                $requests[$request->id] = $request;
+            }
+        }
+
+        return $requests;
     }
 
     /** @return array<string, mixed> */
