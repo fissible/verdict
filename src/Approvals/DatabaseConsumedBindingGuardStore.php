@@ -20,7 +20,12 @@ final readonly class DatabaseConsumedBindingGuardStore implements ConsumedBindin
 
     public function has(string $digest): bool
     {
-        $binary = $this->binaryBinding($digest);
+        // Illuminate binds streams as PDO::PARAM_LOB; the stream contains the raw bytes.
+        $binary = fopen('data://text/plain;base64,'.base64_encode($digest), 'rb');
+
+        if ($binary === false) {
+            throw new RuntimeException('Unable to open the consumed-binding digest stream.');
+        }
 
         try {
             return $this->connection->table($this->table)->where('digest', $binary)->exists();
@@ -31,7 +36,12 @@ final readonly class DatabaseConsumedBindingGuardStore implements ConsumedBindin
 
     public function remember(string $digest, DateTimeInterface $consumedAt): void
     {
-        $binary = $this->binaryBinding($digest);
+        // Illuminate binds streams as PDO::PARAM_LOB; the stream contains the raw bytes.
+        $binary = fopen('data://text/plain;base64,'.base64_encode($digest), 'rb');
+
+        if ($binary === false) {
+            throw new RuntimeException('Unable to open the consumed-binding digest stream.');
+        }
 
         try {
             $this->connection->table($this->table)->insertOrIgnore([
@@ -43,18 +53,5 @@ final readonly class DatabaseConsumedBindingGuardStore implements ConsumedBindin
         } finally {
             fclose($binary);
         }
-    }
-
-    /** @return resource */
-    private function binaryBinding(string $digest)
-    {
-        // Illuminate binds streams as PDO::PARAM_LOB; the stream contains the raw bytes.
-        $binary = fopen('data://text/plain;base64,'.base64_encode($digest), 'rb');
-
-        if ($binary === false) {
-            throw new RuntimeException('Unable to open the consumed-binding digest stream.');
-        }
-
-        return $binary;
     }
 }
