@@ -54,6 +54,7 @@ use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Contracts\ReviewDecisionAuthorizer;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
+use Fissible\Verdict\Contracts\ReviewStatusReader;
 use Fissible\Verdict\Evaluation\EvaluationReadPredicateSuppression;
 use Fissible\Verdict\Evaluation\LiveEvaluationRunner;
 use Fissible\Verdict\Evaluation\ResourceCheckpointCapture;
@@ -76,7 +77,12 @@ use Fissible\Verdict\LaravelAi\VerdictRunIntegration;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitManager;
+use Fissible\Verdict\Reviews\DatabaseReviewRequestStore;
+use Fissible\Verdict\Reviews\DatabaseReviewStatusReader;
+use Fissible\Verdict\Reviews\InMemoryReviewRequestStore;
+use Fissible\Verdict\Reviews\InMemoryReviewStatusReader;
 use Fissible\Verdict\Reviews\ReviewManager;
+use Fissible\Verdict\Reviews\StoreBackedReviewStatusReader;
 use Fissible\Verdict\Support\SystemClock;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -238,6 +244,21 @@ final class VerdictServiceProvider extends ServiceProvider
                     throw new LogicException('The Verdict review request store configuration must contain a class name.');
                 }
 
+                // Built explicitly rather than resolved from the container, for the same reason the
+                // approval store is: container resolution gives the constructor's defaults, so the
+                // configured connection and table are silently ignored — while the migration stub
+                // reads that same table name (#290) and creates it. The store would then read a
+                // table nothing writes, and a reader over it would report an empty queue.
+                if ($store === DatabaseReviewRequestStore::class) {
+                    $connection = config('verdict.reviews.connection');
+                    $table = config('verdict.reviews.table', 'verdict_review_requests');
+
+                    return new DatabaseReviewRequestStore(
+                        connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                        table: is_string($table) ? $table : 'verdict_review_requests',
+                    );
+                }
+
                 $instance = $app->make($store);
 
                 if (! $instance instanceof ReviewRequestStore) {
@@ -246,6 +267,14 @@ final class VerdictServiceProvider extends ServiceProvider
 
                 return $instance;
             });
+
+            // Bound under the same condition as the store it reads, never more widely: an
+            // application with no review lane must keep resolving an optional
+            // `?ReviewStatusReader $reader = null` dependency to null, as it did before this
+            // binding existed, rather than acquiring a binding that throws on the missing store.
+            $this->app->singleton(ReviewStatusReader::class, fn (Container $app): ReviewStatusReader => $this->reviewStatusReader(
+                $app->make(ReviewRequestStore::class),
+            ));
         }
 
         $this->app->scoped(ReviewManager::class, function (Container $app): ReviewManager {
@@ -641,6 +670,29 @@ final class VerdictServiceProvider extends ServiceProvider
      * reads, and its owner adds enumeration by implementing the contract (or binding
      * ApprovalStatusReader directly). verdict:validate names the enumeration-less pairing.
      */
+    /**
+     * The reader paired with the configured review store (#468). A store that reads for itself is
+     * used as-is; the two shipped stores get their paired readers; anything else keeps the
+     * store-backed reader, whose pendingWithin() refuses and names what to implement. Pairing the
+     * shipped stores must not quietly promise enumeration for a store that cannot answer it.
+     */
+    private function reviewStatusReader(ReviewRequestStore $store): ReviewStatusReader
+    {
+        if ($store instanceof ReviewStatusReader) {
+            return $store;
+        }
+
+        if ($store instanceof DatabaseReviewRequestStore) {
+            return new DatabaseReviewStatusReader($store);
+        }
+
+        if ($store instanceof InMemoryReviewRequestStore) {
+            return new InMemoryReviewStatusReader($store);
+        }
+
+        return new StoreBackedReviewStatusReader($store);
+    }
+
     private function approvalStatusReader(ApprovalReceiptStore $store): ApprovalStatusReader
     {
         if ($store instanceof ApprovalStatusReader) {

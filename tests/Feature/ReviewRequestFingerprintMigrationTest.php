@@ -254,15 +254,21 @@ it('gives the column the same storage shape as the fingerprint columns beside it
     /** @var array<string, mixed> $sibling */
     $sibling = $columns->get('approval_receipt_fingerprint');
 
-    // Compared against the sibling rather than asserted as a literal type name, because every
-    // engine in the matrix reports its own: SQLite calls a char(64) a varchar, so a `string()`
-    // column would be indistinguishable from a `char(64)` there. Measured against the column it
-    // mirrors, a widened or renamed type fails on MySQL and PostgreSQL where it is visible.
+    // Compared against the sibling rather than asserted as a literal, because every engine in the
+    // matrix reports its own: SQLite calls a char(64) a varchar, so a `string()` column would be
+    // indistinguishable from a `char(64)` there. Measured against the column it mirrors, a widened
+    // or renamed type fails on MySQL and PostgreSQL where it is visible.
+    //
+    // The default is compared the same way for the same reason, and this one is measured rather
+    // than assumed: MariaDB reports a nullable column's absent default as the *string* 'NULL', so
+    // asserting PHP null here passed on SQLite, MySQL and PostgreSQL and failed on MariaDB alone.
+    // The sibling reports it identically, which is the property that actually matters — the added
+    // column has no default the column it mirrors does not have.
     expect($added)->not->toBeNull()
         ->and($added['type'])->toBe($sibling['type'])
         ->and($added['type_name'])->toBe($sibling['type_name'])
         ->and($added['nullable'])->toBeTrue()
-        ->and($added['default'])->toBeNull();
+        ->and($added['default'])->toBe($sibling['default']);
 });
 
 it('publishes the migration to a filename that runs after the create migration it upgrades', function (): void {
