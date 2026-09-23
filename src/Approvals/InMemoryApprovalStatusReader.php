@@ -43,13 +43,11 @@ final readonly class InMemoryApprovalStatusReader implements ApprovalStatusReade
                 && ApprovalScopeMatch::matches($receipt->approvalContext, $scope),
         ));
 
-        // Second-precision createdAt, matching what the database reader inherits from the
-        // column's stored 'Y-m-d H:i:s' — the two shipped readers order identically.
-        usort(
-            $matching,
-            static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => [$a->createdAt->format('Y-m-d H:i:s'), $a->id]
-                <=> [$b->createdAt->format('Y-m-d H:i:s'), $b->id],
-        );
+        // Same second-precision, textual comparison as the database reader, including numeric ids.
+        usort($matching, static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => strcmp(
+            $a->createdAt->format('Y-m-d H:i:s'),
+            $b->createdAt->format('Y-m-d H:i:s'),
+        ) ?: strcmp($a->id, $b->id));
 
         return array_map(
             static fn (ApprovalReceipt $receipt): ApprovalStatusView => ApprovalStatusView::fromReceipt($receipt),
