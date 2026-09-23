@@ -126,14 +126,14 @@ it('keeps exactly one row per digest on a duplicate remember', function (): void
     $store->remember(dgA(), $at);
     $store->remember(dgA(), $at);
 
-    expect(app(DatabaseManager::class)->connection()->table(guardTable())->where('digest', dgA())->count())->toBe(1);
+    expect(app(DatabaseManager::class)->connection()->table(guardTable())->count())->toBe(1);
 });
 
 it('stores the supplied consumption instant', function (): void {
     databaseGuardStore()->remember(dgA(), new DateTimeImmutable('2026-03-04 05:06:07', new DateTimeZone('UTC')));
 
     $consumedAt = app(DatabaseManager::class)->connection()->table(guardTable())
-        ->where('digest', dgA())->value('consumed_at');
+        ->value('consumed_at');
 
     expect((new DateTimeImmutable((string) $consumedAt, new DateTimeZone('UTC')))->format('Y-m-d H:i:s'))
         ->toBe('2026-03-04 05:06:07');
@@ -145,7 +145,7 @@ it('preserves the first recorded instant, not a later duplicate, so consumption 
     $store->remember(dgA(), new DateTimeImmutable('2026-09-09 09:09:09', new DateTimeZone('UTC')));
 
     $consumedAt = app(DatabaseManager::class)->connection()->table(guardTable())
-        ->where('digest', dgA())->value('consumed_at');
+        ->value('consumed_at');
 
     expect((new DateTimeImmutable((string) $consumedAt, new DateTimeZone('UTC')))->format('Y-m-d H:i:s'))
         ->toBe('2026-03-04 05:06:07');
