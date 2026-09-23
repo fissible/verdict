@@ -17,8 +17,11 @@ than it appears, and a claim like that has to be checkable rather than asserted.
   [#218](https://github.com/fissible/verdict/issues/218) pinned the invocation-id and resume
   behaviours a contract test must document.
 - [#265](https://github.com/fissible/verdict/issues/265) and
-  [laravel/ai#932](https://github.com/laravel/ai/pull/932) are the live fault line: participant
-  identity for approval resumption, changing in a 0.x minor, in Verdict's approval path.
+  [laravel/ai#932](https://github.com/laravel/ai/pull/932) were the live fault line: participant
+  identity for approval resumption, in Verdict's approval path. Resolved upstream in laravel/ai 1.0
+  ([#1046](https://github.com/laravel/ai/pull/1046) superseded #932) — and the 1.0 upgrade itself
+  (#493) is the case study this boundary was built for: it broke only these two adapter zones, not
+  the kernel.
 
 ## Context
 

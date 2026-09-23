@@ -537,8 +537,8 @@ anti-corruption boundary so a 0.x upstream refactor touches only the adapter, na
 contract tests wired into the existing canary, and a published verdict × console × laravel/ai matrix. Its
 *defensive* half is unilateral (no upstream coordination needed); the coordination asks are a flagged
 follow-on. This was named the one **gating** condition in the external "would Laravel endorse this" review,
-and it is the surface [laravel/ai#932](https://github.com/laravel/ai/pull/932) is actively churning (see
-#265) — so within this milestone it can lead the design work rather than wait behind the attack-surface
+and it is the surface [laravel/ai#932](https://github.com/laravel/ai/pull/932) was churning (since resolved
+in laravel/ai 1.0 via #1046; see #265) — so within this milestone it can lead the design work rather than wait behind the attack-surface
 track. Builds on #18 (dependency audit) and #131 (the 0.x-dev canary).
 
 **The design gate has lifted.** ADR 0033 settled the boundary, and the audit behind it shrank the work:
@@ -777,8 +777,9 @@ closed.
 #357 alone. The fix is to Verdict's own reference test and documentation: teach resumption of the *specific*
 paused conversation rather than `continueLastConversation()`, which resumes the participant's
 most-recently-updated conversation and so selects the wrong one under concurrency. laravel/ai #931/#932
-(validate an approval resumption before executing the approved tools) would make the framework enforce this,
-but Verdict's correct reference behaviour must not wait on it — upstream support is a compatibility layer on
+(validate an approval resumption before executing the approved tools) was the upstream track; laravel/ai 1.0
+resolved it differently (#1046 removed the store-level participant check and delegates approver authorization
+to the application), and Verdict's correct reference behaviour did not wait on it — upstream support is a compatibility layer on
 top, not a release gate.
 
 **#460's round is done; its implementation is not, and that is the deliberate split.** #357/#459 bounded

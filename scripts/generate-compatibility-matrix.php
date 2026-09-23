@@ -24,8 +24,12 @@ function factsFrom(string $path): array
 
     $facts = json_decode((string) file_get_contents($path), true);
 
-    if (! is_array($facts) || ($facts['schema'] ?? null) !== 1 || ! isset($facts['rows']) || ! is_array($facts['rows']) || $facts['rows'] === []) {
+    if (! is_array($facts) || ($facts['schema'] ?? null) !== 1 || ! isset($facts['rows']) || ! is_array($facts['rows'])) {
         fail("Facts file has an invalid compatibility-matrix schema: {$path}");
+    }
+
+    if ($facts['rows'] === [] && (! is_string($facts['unverified_reason'] ?? null) || trim($facts['unverified_reason']) === '')) {
+        fail('An empty matrix must state why no compatibility observation is available.');
     }
 
     foreach ($facts['rows'] as $index => $row) {
@@ -81,4 +85,8 @@ echo '|'.str_repeat('---|', count(MATRIX_COLUMNS))."\n";
 
 foreach ($facts['rows'] as $row) {
     echo '| '.implode(' | ', array_map(static fn (string $column): string => $row[$column], MATRIX_COLUMNS))." |\n";
+}
+
+if ($facts['rows'] === []) {
+    echo "\n".$facts['unverified_reason']."\n";
 }

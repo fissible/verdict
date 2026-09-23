@@ -73,6 +73,7 @@ use Fissible\Verdict\Intents\DatabaseActionIntentStore;
 use Fissible\Verdict\LaravelAi\PromptProvenanceRegistry;
 use Fissible\Verdict\LaravelAi\RecordAgentPromptProvenance;
 use Fissible\Verdict\LaravelAi\RecordToolResultProvenance;
+use Fissible\Verdict\LaravelAi\VerdictRunIntegration;
 use Fissible\Verdict\Policies\LaravelPolicyAuthorizer;
 use Fissible\Verdict\RateLimits\DatabaseRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitManager;
@@ -165,6 +166,7 @@ final class VerdictServiceProvider extends ServiceProvider
         $this->app->singleton(FieldProjector::class);
         $this->app->singleton(CapabilityAuthorizer::class, LaravelPolicyAuthorizer::class);
         $this->app->singleton(Clock::class, SystemClock::class);
+        VerdictRunIntegration::register($this->app);
         $this->app->scoped(ApprovalExecutionContext::class);
         $this->app->scoped(InvocationContext::class);
         $this->app->scoped(PromptProvenanceRegistry::class);

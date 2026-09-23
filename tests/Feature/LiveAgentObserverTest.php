@@ -33,16 +33,18 @@ use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Illuminate\JsonSchema\Types\Type;
 use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\AgentInput;
 use Laravel\Ai\Contracts\HasStructuredOutput;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Exceptions\ApprovalNotResumableException;
+use Laravel\Ai\Messages\UserMessage;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Responses\AgentResponse;
 use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\ToolCall;
-use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Responses\QueuedAgentResponse;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Tools\Request;
@@ -137,17 +139,17 @@ final class LiveObserverBareAgent implements Agent
     }
 
     public function prompt(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         array $attachments = [],
         Lab|array|string|null $provider = null,
         ?string $model = null,
         ?int $timeout = null,
     ): AgentResponse {
-        return new AgentResponse('', 'No invocation id accompanies this response.', new Usage, new Meta('test', 'test-model'));
+        return new AgentResponse('', 'No invocation id accompanies this response.', new TextUsage, new Meta('test', 'test-model'));
     }
 
     public function stream(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         array $attachments = [],
         Lab|array|string|null $provider = null,
         ?string $model = null,
@@ -157,7 +159,7 @@ final class LiveObserverBareAgent implements Agent
     }
 
     public function queue(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         array $attachments = [],
         Lab|array|string|null $provider = null,
         ?string $model = null,
@@ -166,7 +168,7 @@ final class LiveObserverBareAgent implements Agent
     }
 
     public function broadcast(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         Channel|array $channels,
         array $attachments = [],
         bool $now = false,
@@ -177,7 +179,7 @@ final class LiveObserverBareAgent implements Agent
     }
 
     public function broadcastNow(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         Channel|array $channels,
         array $attachments = [],
         Lab|array|string|null $provider = null,
@@ -187,7 +189,7 @@ final class LiveObserverBareAgent implements Agent
     }
 
     public function broadcastOnQueue(
-        Decisions|string $prompt,
+        AgentInput|UserMessage|Decisions|string $prompt,
         Channel|array $channels,
         array $attachments = [],
         Lab|array|string|null $provider = null,
@@ -645,7 +647,7 @@ it('folds executed from the terminal tool observation, not the disjunction of al
                 executed: false,
             );
 
-            return new AgentResponse('invocation-terminal-1', 'I could not cancel that order.', new Usage, new Meta('test', 'test-model'));
+            return new AgentResponse('invocation-terminal-1', 'I could not cancel that order.', new TextUsage, new Meta('test', 'test-model'));
         },
         $capture,
     );

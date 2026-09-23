@@ -232,3 +232,56 @@ Do not treat pilot success as this gate. Require a separate security and operati
 - [ ] The team has reviewed the current [limitations](limitations.md), [open security-relevant issues](https://github.com/fissible/verdict/issues?q=is%3Aissue%20is%3Aopen%20label%3Asecurity), and [ADR 0018](adr/0018-repeatable-read-and-serializable-require-a-conflict-retry.md)'s measured concurrency findings (the [#97](https://github.com/fissible/verdict/issues/97) and [#112](https://github.com/fissible/verdict/issues/112) retry gaps closed in v0.4.0). Follow their current state; this guide does not represent open items as resolved.
 
 Completing this list is evidence of an application decision, not a Verdict production certification. Re-run it when a capability, execution mode, provider, security-state topology, evidence configuration, or downstream effect changes.
+
+
+## Laravel AI 1.0 run gates
+
+VerdictServiceProvider automatically installs native text-provider subclasses for Anthropic, Azure,
+Bedrock, DeepSeek, Gemini, Groq, Mistral, Ollama, OpenAI, OpenAI-compatible, OpenRouter, and xAI.
+Keep your normal agent and `ai.providers` configuration. The subclasses preserve provider-specific
+interfaces and prepend Verdict's gates to `parent::gatherMiddlewareFor()`, retaining SDK conversation
+persistence and fake-prompt recording. Contexts are resolved per run, not captured by cached providers.
+
+Remove `VerdictApprovalMiddleware` from agent `middleware()`: the approval gate is installed automatically.
+Move provenance registration to `HasVerdictRunMiddleware::verdictRunMiddleware()`, retaining your existing
+trust, data classification, and source. Keep ordinary SDK step middleware in `middleware()`.
+
+```php
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Trust;
+use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\LaravelAi\HasVerdictRunMiddleware;
+use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
+use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Promptable;
+
+class SupportAgent implements Agent, HasVerdictRunMiddleware
+{
+    use Promptable;
+
+    public function instructions(): string { return 'Assist the customer.'; }
+
+    public function verdictRunMiddleware(): array
+    {
+        return [new VerdictProvenanceMiddleware(
+            app(ProvenanceLedger::class), Trust::Untrusted, DataClass::Internal,
+        )];
+    }
+}
+```
+
+For an application-owned custom provider or an `Ai::extend()` replacement, subclass that provider and
+use `Fissible\Verdict\LaravelAi\RunsVerdictMiddleware` on the subclass. Register it through your existing
+custom driver factory before resolving providers. Directly constructing an upstream provider bypasses
+the automatic installation. The shared trait requires the parent's `gatherMiddlewareFor(Agent)` seam.
+
+Approval resumption still requires both a valid Verdict receipt and a specific approved tool-call ID.
+Wildcard approvals grant no blanket permission; edited arguments are refused and must be re-proposed.
+The response's generator is wrapped so streaming tools run inside the frames only during iteration;
+an unconsumed response leaves no approval or invocation frame active.
+
+Use the Laravel AI 1.0 conversation schema when persisting resumable agents. Its message rows store
+`steps` (including replay blocks) and `status`. Fresh databases can use the SDK's shipped conversation
+migration; existing installations need their SDK schema/data migration before resumption. The test
+harness runs that shipped 1.0 migration, including queued resumption. Hand-built response fixtures
+must supply `TextUsage`, and agent input overrides must accept `AgentInput|UserMessage|Decisions|string`.

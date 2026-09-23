@@ -233,9 +233,8 @@ function compatibilityMatrixTable(): ?array
 }
 
 /**
- * Shared non-empty guard. Every looping rule runs through this, because a loop over an empty table
- * asserts nothing and Pest reports it RISKY rather than failed — an absent matrix would otherwise
- * satisfy every rule that describes one.
+ * An absent matrix fails. An intentionally empty matrix must match empty source facts and
+ * explicitly state that no observation exists; a dependency migration cannot fabricate release evidence.
  *
  * @return array{header: list<string>, rows: list<list<string>>}
  */
@@ -244,7 +243,12 @@ function compatibilityMatrixTableOrFail(): array
     $table = compatibilityMatrixTable();
 
     expect($table)->not->toBeNull(COMPATIBILITY_DOC.' has no generated compatibility-matrix block containing a table.');
-    expect($table['rows'])->not->toBeEmpty('The compatibility matrix has a header but no rows.');
+    if ($table['rows'] === []) {
+        $facts = json_decode((string) file_get_contents(compatibilityRepositoryRoot().'/compatibility/laravel-ai-matrix-facts.json'), true);
+        expect($facts['rows'])->toBe([]);
+        expect($facts['unverified_reason'] ?? '')->not->toBeEmpty();
+        expect(compatibilityGeneratedBlock()['content'])->toContain($facts['unverified_reason']);
+    }
 
     return $table;
 }
@@ -547,6 +551,18 @@ it('reproduces the generated block exactly, from a facts input rather than from 
 
     expect(is_array($facts))->toBeTrue('The facts input is not JSON, so it cannot be mutated safely for this check.');
 
+    $canonicalOutput = $process->getOutput();
+
+    // After retiring every observation at a major-version boundary, retain the discriminating
+    // generator test using archived facts as input. They are not current compatibility claims.
+    if ($facts['rows'] === []) {
+        $archive = 'compatibility/laravel-ai-matrix-retired-0.x.json';
+        $facts = json_decode((string) file_get_contents(compatibilityRepositoryRoot().'/'.$archive), true);
+        $process = new Process(['php', COMPATIBILITY_GENERATOR, '--facts='.$archive], compatibilityRepositoryRoot());
+        $process->run();
+        expect($process->getExitCode())->toBe(0);
+    }
+
     // Mutate a date the canonical output actually RENDERS. Mutating the first date found anywhere
     // in the JSON would fail a generator that legitimately ignores an unrendered field — the check
     // would then be measuring the wrong thing while looking like it caught something.
@@ -585,7 +601,7 @@ it('reproduces the generated block exactly, from a facts input rather than from 
 
     // Exact equality against the delimited block. Substring containment would pass for a generator
     // that printed a single common word.
-    expect(trim($process->getOutput()))->toBe(
+    expect(trim($canonicalOutput))->toBe(
         compatibilityGeneratedBlock()['content'],
         'The committed block is not what the generator currently produces. Regenerate it rather than editing the table by hand.'
     );

@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "rows": [
+        {
+            "verdict": "v0.12.0",
+            "verdict-console": "v0.2.0 (https://github.com/fissible/verdict-console/commit/f9e0848f1ca9118b6e0b194a67ee026b27db70d3)",
+            "laravel/ai": "v0.11.0",
+            "php": "8.4.24",
+            "laravel": "13.29.0",
+            "verified": "local",
+            "date": "2026-08-27",
+            "evidence": "https://github.com/fissible/verdict/blob/9469d46046b6b722446810f1d2970e4dba3900af/compatibility/evidence/v0.12.0.md"
+        }
+    ]
+}

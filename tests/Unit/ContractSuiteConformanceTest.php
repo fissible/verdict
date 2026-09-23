@@ -303,7 +303,7 @@ it('runs the contract suite in the canary against both the supported range and t
 
     // Exact values, not substrings: '0.11' would be satisfied by '^0.11.0-beta' or a comment, and
     // the supported cell has to be the range composer.json actually ships against.
-    expect($values)->toBe(['0.x-dev', '^0.11.0'], 'The canary matrix must hold exactly the supported range and the dev branch.');
+    expect($values)->toBe(['1.x-dev', '^1.0'], 'The canary matrix must hold exactly the supported range and the dev branch.');
 
     $steps = $parsed['jobs']['canary']['steps'] ?? [];
     $script = implode("\n", array_map(static fn (array $s): string => (string) ($s['run'] ?? ''), $steps));

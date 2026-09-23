@@ -17,6 +17,7 @@ use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\ExecutionClaims\ExecutionClaimPolicy;
 use Fissible\Verdict\LaravelAi\BoundTool;
+use Fissible\Verdict\LaravelAi\HasVerdictRunMiddleware;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
 use Fissible\Verdict\VerdictManager;
@@ -26,7 +27,6 @@ use Illuminate\Support\Facades\Event;
 use Laravel\Ai\Ai;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Gateway\StepTextGateway;
-use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Contracts\Tool;
@@ -38,8 +38,8 @@ use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Responses\Data\FinishReason;
 use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\ToolCall;
-use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Streaming\Events\StreamEvent;
 use Laravel\Ai\Streaming\Events\StreamStart;
 use Laravel\Ai\Streaming\Events\ToolCall as StreamToolCall;
@@ -142,7 +142,7 @@ final class StreamedGateTwoToolCallsGateway implements StepTextGateway
                 text: '',
                 toolCalls: $this->toolCalls,
                 finishReason: FinishReason::ToolCalls,
-                usage: new Usage,
+                usage: new TextUsage,
                 meta: new Meta('openai', $model),
             );
         }
@@ -152,7 +152,7 @@ final class StreamedGateTwoToolCallsGateway implements StepTextGateway
                 text: 'completed',
                 toolCalls: [],
                 finishReason: FinishReason::Stop,
-                usage: new Usage,
+                usage: new TextUsage,
                 meta: new Meta('openai', $model),
             );
         }
@@ -161,7 +161,7 @@ final class StreamedGateTwoToolCallsGateway implements StepTextGateway
     }
 }
 
-final class StreamedGateAgent implements Agent, HasMiddleware, HasTools
+final class StreamedGateAgent implements Agent, HasTools, HasVerdictRunMiddleware
 {
     use Promptable;
 
@@ -184,7 +184,7 @@ final class StreamedGateAgent implements Agent, HasMiddleware, HasTools
     }
 
     /** @return array<int, object> */
-    public function middleware(): array
+    public function verdictRunMiddleware(): array
     {
         return [new VerdictProvenanceMiddleware(
             provenance: app(ProvenanceLedger::class),

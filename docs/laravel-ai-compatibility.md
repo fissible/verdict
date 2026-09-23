@@ -1,6 +1,8 @@
 # Laravel AI dependency surface
 
-Verdict pins `laravel/ai: ^0.11.0` — pre-1.0, Composer-caret-pinned to `>=0.11.0 <0.12.0`. **`0.10.x` is no longer supported**, and the range is stated rather than widened by reflex: `0.11.0`'s [#874](https://github.com/laravel/ai/pull/874) made `float $time` a required seventh argument on `Events\ToolInvoked`, so one test construction cannot satisfy both floors. Supporting both would mean version-conditional test code for no adopter benefit. This document inventories every place Verdict's `src/` depends on that package's surface, classifies each dependency by how likely it is to change without warning, and — for the dependencies that could break silently — names the test that would catch it.
+Verdict pins `laravel/ai: ^1.0`. The 1.0 run-gate migration uses native provider subclasses installed through `AiManager::extend()`. `RunsVerdictMiddleware::gatherMiddlewareFor()` prepends the approval gate and the agent's `HasVerdictRunMiddleware` registrations to the SDK's own run middleware. Agent `HasMiddleware` is now step-scoped. Both Verdict wrappers retain their lazy response-generator wrapping. See the [adoption guide](adoption-guide.md#laravel-ai-10-run-gates) and `LaravelAiRunGatesCompatibilityTest`.
+
+The inventory below is the historical 0.11 audit unless explicitly updated for 1.0; it is not a fresh audit of every SDK surface.
 
 ## Methodology and its limit
 
@@ -26,15 +28,13 @@ it whenever the `laravel/ai` constraint changes or when adding a newly observed 
 or pruned when their concrete Laravel AI version no longer satisfies the composer.json constraint;
 this keeps Verdict, not another repository's release cadence, responsible for the boundary.
 
-The verdict-console facts below are reported by its manifest and VERSION at the linked revision, not
-verified here: Verdict's CI does not run the console suite. That manifest declares
-`fissible/verdict: ^0.12` and `laravel/ai: ^0.11.0`; the console's own 24-cell workflow resolves
-both packages per cell rather than pinning either one.
+The 0.11 observation is retired to `compatibility/laravel-ai-matrix-retired-0.x.json`, retaining its original evidence link. Local migration tests do not establish compatibility for a released Verdict / verdict-console pair.
 
 <!-- generated:compatibility-matrix -->
 | verdict | verdict-console | laravel/ai | php | laravel | verified | date | evidence |
 |---|---|---|---|---|---|---|---|
-| v0.12.0 | v0.2.0 (https://github.com/fissible/verdict-console/commit/f9e0848f1ca9118b6e0b194a67ee026b27db70d3) | v0.11.0 | 8.4.24 | 13.29.0 | local | 2026-08-27 | https://github.com/fissible/verdict/blob/9469d46046b6b722446810f1d2970e4dba3900af/compatibility/evidence/v0.12.0.md |
+
+No released Verdict / Laravel AI 1.0 compatibility observation is recorded yet.
 <!-- /generated:compatibility-matrix -->
 
 ## Symbol inventory

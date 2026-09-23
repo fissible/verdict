@@ -8,7 +8,6 @@ use Fissible\Verdict\Actions\AuthorizedAction;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Contracts\CapabilityAuthorizer;
 use Fissible\Verdict\Decisions\Decision;
-use Fissible\Verdict\LaravelAi\VerdictApprovalMiddleware;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -20,7 +19,6 @@ use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Concerns\RemembersConversations as RemembersConversationsTrait;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Gateway\StepTextGateway;
-use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Contracts\RemembersConversations as RemembersConversationsContract;
@@ -32,8 +30,8 @@ use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Responses\Data\FinishReason;
 use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\ToolCall;
-use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Streaming\Events\StreamStart;
 use Laravel\Ai\Streaming\Events\ToolCall as StreamToolCall;
 use Laravel\Ai\Tools\Request;
@@ -221,7 +219,7 @@ it('does not request approval when a confirmation-gated capability has no execut
     );
 });
 
-final class StreamedApprovalCompletionAgent implements Agent, HasMiddleware, HasTools, RemembersConversationsContract
+final class StreamedApprovalCompletionAgent implements Agent, HasTools, RemembersConversationsContract
 {
     use Promptable;
     use RemembersConversationsTrait;
@@ -237,12 +235,6 @@ final class StreamedApprovalCompletionAgent implements Agent, HasMiddleware, Has
     public function tools(): array
     {
         return [$this->tool];
-    }
-
-    /** @return array<int, object> */
-    public function middleware(): array
-    {
-        return [app(VerdictApprovalMiddleware::class)];
     }
 
     public function provider(): string
@@ -312,7 +304,7 @@ final class StreamedApprovalCompletionGateway implements StepTextGateway
                 text: '',
                 toolCalls: [$this->toolCall],
                 finishReason: FinishReason::ToolCalls,
-                usage: new Usage,
+                usage: new TextUsage,
                 meta: new Meta('openai', $model),
             );
         }
@@ -323,7 +315,7 @@ final class StreamedApprovalCompletionGateway implements StepTextGateway
             text: 'Order cancelled.',
             toolCalls: [],
             finishReason: FinishReason::Stop,
-            usage: new Usage,
+            usage: new TextUsage,
             meta: new Meta('openai', $model),
         );
     }
