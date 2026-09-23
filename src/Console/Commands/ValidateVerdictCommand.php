@@ -24,6 +24,7 @@ use Fissible\Verdict\Contracts\ApprovalStatusReader;
 use Fissible\Verdict\Contracts\CapabilityConfigurationStore;
 use Fissible\Verdict\Contracts\ExecutionClaimStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
+use Fissible\Verdict\Contracts\ReviewRequestStore;
 use Fissible\Verdict\Evidence\AttestedIssuanceResolver;
 use Fissible\Verdict\Evidence\AttestEvidenceRecorder;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
@@ -34,6 +35,7 @@ use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\Intents\ActionIntentManager;
 use Fissible\Verdict\Intents\InMemoryActionIntentStore;
 use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
+use Fissible\Verdict\Reviews\DatabaseReviewRequestStore;
 use Fissible\Verdict\Targets\ExecutionTargetStrategy;
 use Fissible\Verdict\Testing\AllowAllApprovalAuthorizer;
 use Illuminate\Console\Command;
@@ -118,6 +120,11 @@ final class ValidateVerdictCommand extends Command
                 'needed' => $needsApprovals,
                 'contract' => ApprovalReceiptStore::class,
                 'label' => 'approval receipt',
+            ],
+            [
+                'needed' => config('verdict.reviews.store') === DatabaseReviewRequestStore::class,
+                'contract' => ReviewRequestStore::class,
+                'label' => 'review request',
             ],
             [
                 'needed' => $needsRateLimits,
@@ -452,6 +459,11 @@ final class ValidateVerdictCommand extends Command
                 $warnings[] = "The [{$store->table()}] table predates the approval_context column, so new receipts record no binding "
                     .'context and a fail-closed authorizer will refuse them. Publish and run the '
                     .'add_approval_context_to_verdict_approval_receipts_table migration.';
+            } elseif ($store instanceof DatabaseReviewRequestStore && ! $store->hasApprovalContextColumn()) {
+                $errors[] = "The [{$store->table()}] table predates the approval_context column, so pendingWithin() "
+                    .'cannot enumerate pending review requests. Publish and run the '
+                    .'create_verdict_review_requests_table migration; for an existing table, add the nullable '
+                    .'approval_context text column in a new migration.';
             }
         } catch (Throwable) {
             $errors[] = "Configured {$label} store could not inspect its table.";

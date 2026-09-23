@@ -33,11 +33,14 @@ use Fissible\Verdict\RateLimits\InMemoryRateLimitStore;
 use Fissible\Verdict\RateLimits\RateLimitConsumption;
 use Fissible\Verdict\RateLimits\RateLimitOutcome;
 use Fissible\Verdict\RateLimits\RateLimitPolicy;
+use Fissible\Verdict\Reviews\DatabaseReviewRequestStore;
+use Fissible\Verdict\Reviews\InMemoryReviewRequestStore;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\Tests\Support\CustomStatusReaderTestStore;
 use Fissible\Verdict\Tests\Support\DurableCustomEvidenceRecorder;
 use Fissible\Verdict\Tests\Support\EvidenceTableSchema;
 use Fissible\Verdict\Tests\Support\VolatileCustomEvidenceRecorder;
+use Fissible\Verdict\VerdictServiceProvider;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
@@ -238,6 +241,61 @@ it('warns when the approval receipts table predates the approval_context column'
 
     $schema->dropIfExists(verdictTable('approvals'));
 });
+
+it('audits the configured review table for approval_context', function (bool $hasApprovalContext): void {
+    config()->set('verdict.reviews.store', DatabaseReviewRequestStore::class);
+    config()->set('verdict.reviews.table', 'custom_review_requests');
+    (new VerdictServiceProvider(app()))->register();
+
+    $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
+    $schema->dropIfExists('custom_review_requests');
+    $schema->create('custom_review_requests', function (Blueprint $table) use ($hasApprovalContext): void {
+        $table->string('id', 64)->primary();
+        $table->text('provenance')->nullable();
+
+        if ($hasApprovalContext) {
+            $table->text('approval_context')->nullable();
+        }
+    });
+
+    $exitCode = Artisan::call('verdict:validate');
+    $output = Artisan::output();
+
+    if ($hasApprovalContext) {
+        expect($output)->not->toContain('approval_context')
+            ->and($output)->not->toContain('custom_review_requests')
+            ->and($exitCode)->toBe(0);
+    } else {
+        expect($output)->toContain('[custom_review_requests]', 'approval_context', 'Publish and run')
+            ->and($exitCode)->toBe(1);
+    }
+
+    $schema->dropIfExists('custom_review_requests');
+})->with([
+    'missing column errors' => false,
+    'present column passes' => true,
+]);
+
+it('errors when the configured review table is missing', function (): void {
+    config()->set('verdict.reviews.store', DatabaseReviewRequestStore::class);
+    config()->set('verdict.reviews.table', 'missing_review_requests');
+    (new VerdictServiceProvider(app()))->register();
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('Configured review request store requires missing table [missing_review_requests]')
+        ->assertExitCode(1);
+});
+
+it('does not audit the review table without a configured database review store', function (?string $store): void {
+    config()->set('verdict.reviews.store', $store);
+    config()->set('verdict.reviews.table', 'missing_review_requests');
+    (new VerdictServiceProvider(app()))->register();
+
+    $this->artisan('verdict:validate')
+        ->doesntExpectOutputToContain('missing_review_requests')
+        ->doesntExpectOutputToContain('approval_context')
+        ->assertExitCode(0);
+})->with([null, InMemoryReviewRequestStore::class, 'App\\CustomReviewRequestStore']);
 
 it('warns when the test-only allow-all authorizer is configured outside local and testing', function (): void {
     $this->app->detectEnvironment(fn (): string => 'production');
