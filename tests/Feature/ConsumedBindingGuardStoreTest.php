@@ -107,7 +107,9 @@ it('stores the digest bytes faithfully, without stripping NUL or re-encoding', f
     databaseGuardStore()->remember(dgBinary(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')));
 
     // Read the raw column, not has(): symmetric mangling in remember()/has() would hide it.
+    // Postgres returns a bytea column as a stream resource, not a string; normalise before comparing.
     $stored = app(DatabaseManager::class)->connection()->table(guardTable())->value('digest');
+    $stored = is_resource($stored) ? stream_get_contents($stored) : $stored;
 
     expect($stored)->toBe(dgBinary())
         ->and(strlen((string) $stored))->toBe(32);
