@@ -1,20 +1,45 @@
 name: concurrency-matrix
 
 on:
+  # No path filters: docs, configuration, and fixtures can affect engine results, and an
+  # excluded PR would leave a required workflow check pending.
+  pull_request:
   schedule:
     - cron: '0 6 * * 1' # Monday 06:00 UTC
   push:
+    branches: [main]
     tags:
       - 'v*'
-  # This workflow runs on no pull request, so a change to it — or to a test only it exercises —
-  # is otherwise unverifiable until the next tag or the Monday cron. Both defects fixed in this
-  # commit reached a release for exactly that reason.
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
+  # Making these checks REQUIRED and governing v* tag creation are repository admin /
+  # branch-protection settings outside this repo. This gate supplies PR/main evidence;
+  # verifying the later release commit before tagging awaits the two-phase-release follow-up.
+  database-matrix-success:
+    name: Database matrix success
+    runs-on: ubuntu-latest
+    needs: [postgres, mysql-repeatable-read, mariadb]
+    if: always()
+    steps:
+      - name: Require every database job to succeed
+        env:
+          POSTGRES_RESULT: ${{ needs.postgres.result }}
+          MYSQL_RESULT: ${{ needs.mysql-repeatable-read.result }}
+          MARIADB_RESULT: ${{ needs.mariadb.result }}
+        run: |
+          if [[ "$POSTGRES_RESULT" != "success" || "$MYSQL_RESULT" != "success" || "$MARIADB_RESULT" != "success" ]]; then
+            echo "Every database job must succeed (postgres=$POSTGRES_RESULT, mysql=$MYSQL_RESULT, mariadb=$MARIADB_RESULT)."
+            exit 1
+          fi
+
   postgres:
     runs-on: ubuntu-latest
     name: PostgreSQL
