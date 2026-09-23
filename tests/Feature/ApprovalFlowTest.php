@@ -57,8 +57,10 @@ use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Prompts\AgentPrompt;
+use Laravel\Ai\Responses\Data\FinishReason;
 use Laravel\Ai\Responses\Data\Meta;
-use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\Data\Step;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Responses\StreamedAgentResponse;
 use Laravel\Ai\Streaming\Events\StreamEnd;
@@ -553,7 +555,7 @@ it('keeps an approved tool call approved through a streamed response, not just t
             generator: function () use ($tool, $request): Generator {
                 $tool->handle($request);
 
-                yield new StreamEnd('evt-streamed-approval', 'stop', new Usage, time());
+                yield new StreamEnd('evt-streamed-approval', 'stop', new TextUsage, time());
             },
             meta: new Meta,
         ),
@@ -604,14 +606,23 @@ it('produces pending approvals and replay blocks when the stream pauses again af
             generator: function () use ($tool, $request, $pendingApproval, $providerContentBlocks): Generator {
                 $tool->handle($request);
 
-                yield new ToolApprovalRequest(
+                yield $pause = new ToolApprovalRequest(
                     id: 'evt-nested-pause',
                     pendingApprovals: new Collection([$pendingApproval]),
                     timestamp: time(),
-                    providerContentBlocks: $providerContentBlocks,
+                    steps: new Collection([new Step(
+                        text: '',
+                        toolCalls: [],
+                        toolResults: [],
+                        finishReason: FinishReason::ToolCalls,
+                        usage: new TextUsage,
+                        meta: new Meta,
+                        reasoning: '',
+                        replayBlocks: $providerContentBlocks,
+                    )]),
                 );
 
-                yield new StreamEnd('evt-nested-pause-end', 'pause_for_approval', new Usage, time());
+                yield new StreamEnd('evt-nested-pause-end', 'pause_for_approval', new TextUsage, time(), steps: $pause->steps);
             },
             meta: new Meta,
         ),
@@ -630,13 +641,13 @@ it('produces pending approvals and replay blocks when the stream pauses again af
     // or the other in isolation. ToolApprovalRequest events pass through this middleware's
     // generator wrapper untouched (it only pushes/pops around iteration, never inspects or
     // filters what's yielded), so Laravel AI's own StreamedAgentResponse construction
-    // — pendingApprovals and pausedProviderContentBlocks() — sees exactly what the
+    // — pendingApprovals and steps — sees exactly what the
     // underlying stream produced.
     expect($executions)->toBe(1)
         ->and($captured)->toBeInstanceOf(StreamedAgentResponse::class)
         ->and($captured->pendingApprovals)->toHaveCount(1)
         ->and($captured->pendingApprovals->first()->id)->toBe('call-nested-followup')
-        ->and($captured->pausedProviderContentBlocks())->toBe($providerContentBlocks);
+        ->and($captured->steps->last()->replayBlocks)->toBe($providerContentBlocks);
 });
 
 it('does not leave the approval frame active if the streamed response is never iterated', function (): void {
@@ -647,7 +658,7 @@ it('does not leave the approval frame active if the streamed response is never i
         fn (): StreamableAgentResponse => new StreamableAgentResponse(
             invocationId: 'inv-unconsumed',
             generator: function (): Generator {
-                yield new StreamEnd('evt-unconsumed', 'stop', new Usage, time());
+                yield new StreamEnd('evt-unconsumed', 'stop', new TextUsage, time());
             },
             meta: new Meta,
         ),
@@ -666,7 +677,7 @@ it('pops the approval frame even when the stream throws partway through iteratio
         fn (): StreamableAgentResponse => new StreamableAgentResponse(
             invocationId: 'inv-interrupted',
             generator: function (): Generator {
-                yield new StreamEnd('evt-interrupted', 'stop', new Usage, time());
+                yield new StreamEnd('evt-interrupted', 'stop', new TextUsage, time());
 
                 throw new RuntimeException('simulated provider failure mid-stream');
             },
@@ -688,8 +699,8 @@ it('pops the approval frame when the caller stops iterating before the stream co
         fn (): StreamableAgentResponse => new StreamableAgentResponse(
             invocationId: 'inv-abandoned',
             generator: function (): Generator {
-                yield new StreamEnd('evt-abandoned-1', 'stop', new Usage, time());
-                yield new StreamEnd('evt-abandoned-2', 'stop', new Usage, time());
+                yield new StreamEnd('evt-abandoned-1', 'stop', new TextUsage, time());
+                yield new StreamEnd('evt-abandoned-2', 'stop', new TextUsage, time());
             },
             meta: new Meta,
         ),
@@ -713,7 +724,7 @@ it('returns the exact same response instance and preserves state registered befo
     $originalResponse = new StreamableAgentResponse(
         invocationId: 'inv-preserved',
         generator: function (): Generator {
-            yield new StreamEnd('evt-preserved', 'stop', new Usage, time());
+            yield new StreamEnd('evt-preserved', 'stop', new TextUsage, time());
         },
         meta: new Meta,
     );
@@ -1024,7 +1035,7 @@ it('keeps approval provenance through a streamed response whose invocation frame
                 approvalFlowDeclareInjectedUpstream('invocation-streamed-provenance', 1001);
                 $tool->shouldRequestApproval($request);
 
-                yield new StreamEnd('evt-streamed-provenance', 'stop', new Usage, time());
+                yield new StreamEnd('evt-streamed-provenance', 'stop', new TextUsage, time());
             },
             meta: new Meta,
         ),

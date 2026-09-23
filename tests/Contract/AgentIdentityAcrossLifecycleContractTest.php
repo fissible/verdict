@@ -9,20 +9,21 @@ declare(strict_types=1);
  *
  * @contract-consequence PromptProvenanceRegistry keys a WeakMap by the agent Laravel AI carries from middleware to its lifecycle events.
  */
-uses(TestCase::class);
 
+use Fissible\Verdict\LaravelAi\HasVerdictRunMiddleware;
 use Fissible\Verdict\Tests\TestCase;
 use Illuminate\Support\Facades\Event;
 use Laravel\Ai\Ai;
 use Laravel\Ai\Contracts\Agent;
-use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Events\PromptingAgent;
 use Laravel\Ai\Gateway\FakeTextGateway;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Prompts\AgentPrompt;
 
+uses(TestCase::class);
+
 it('preserves the same agent object from middleware to PromptingAgent', function (): void {
-    $agent = new class implements Agent, HasMiddleware
+    $agent = new class implements Agent, HasVerdictRunMiddleware
     {
         use Promptable;
 
@@ -33,7 +34,7 @@ it('preserves the same agent object from middleware to PromptingAgent', function
             return 'Answer plainly.';
         }
 
-        public function middleware(): array
+        public function verdictRunMiddleware(): array
         {
             return [function (AgentPrompt $prompt, Closure $next): mixed {
                 $this->seenByMiddleware = $prompt->agent;

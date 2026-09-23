@@ -9,24 +9,25 @@ declare(strict_types=1);
  *
  * @contract-consequence Verdict records prompt provenance only when Laravel AI's real prompt pipeline invokes its registered middleware.
  */
-uses(TestCase::class);
 
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\LaravelAi\HasVerdictRunMiddleware;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Fissible\Verdict\Tests\TestCase;
 use Illuminate\Support\Facades\Event;
 use Laravel\Ai\Ai;
 use Laravel\Ai\Contracts\Agent;
-use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Events\PromptingAgent;
 use Laravel\Ai\Gateway\FakeTextGateway;
 use Laravel\Ai\Promptable;
 
+uses(TestCase::class);
+
 it('invokes Verdict provenance middleware through Laravel AI real prompt pipeline', function (): void {
     $middleware = new VerdictProvenanceMiddleware(app(ProvenanceLedger::class), Trust::Untrusted, DataClass::Internal);
-    $agent = new class($middleware) implements Agent, HasMiddleware
+    $agent = new class($middleware) implements Agent, HasVerdictRunMiddleware
     {
         use Promptable;
 
@@ -37,7 +38,7 @@ it('invokes Verdict provenance middleware through Laravel AI real prompt pipelin
             return 'Answer plainly.';
         }
 
-        public function middleware(): array
+        public function verdictRunMiddleware(): array
         {
             return [$this->middleware];
         }

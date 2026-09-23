@@ -36,7 +36,7 @@ use Laravel\Ai\Events\StreamingAgent;
 use Laravel\Ai\Events\ToolInvoked;
 use Laravel\Ai\Prompts\AgentPrompt;
 use Laravel\Ai\Responses\Data\Meta;
-use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\StreamableAgentResponse;
 use Laravel\Ai\Streaming\Events\StreamEnd;
 use Laravel\Ai\Tools\Request;
@@ -188,7 +188,7 @@ it('keeps invocation correlation through lazy streamed tool execution', function
                     ->only(['email'])
                     ->to(Destination::connection('local-model', 'local-machine'));
 
-                yield new StreamEnd('event-streamed-evidence', 'stop', new Usage, time());
+                yield new StreamEnd('event-streamed-evidence', 'stop', new TextUsage, time());
             },
             meta: new Meta,
         ),
@@ -248,7 +248,7 @@ it('records prompt provenance when a fresh streamed prompt begins iterating', fu
             generator: function () use ($received): Generator {
                 event(new StreamingAgent('streamed-invocation', $received));
 
-                yield new StreamEnd('streamed-event', 'stop', new Usage, time());
+                yield new StreamEnd('streamed-event', 'stop', new TextUsage, time());
             },
             meta: new Meta,
         ),
@@ -282,7 +282,7 @@ it('does not leave a pending registration when a streamed response is never iter
         fn (): StreamableAgentResponse => new StreamableAgentResponse(
             invocationId: 'abandoned-streamed-invocation',
             generator: function (): Generator {
-                yield new StreamEnd('abandoned-streamed-event', 'stop', new Usage, time());
+                yield new StreamEnd('abandoned-streamed-event', 'stop', new TextUsage, time());
             },
             meta: new Meta,
         ),

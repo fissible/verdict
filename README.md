@@ -140,7 +140,7 @@ php artisan vendor:publish --provider="Fissible\Verdict\VerdictServiceProvider" 
 php artisan migrate
 ```
 
-Verdict requires PHP 8.3+, Laravel 12 or 13, and Laravel AI `^0.11.0`.
+Verdict requires PHP 8.3+, Laravel 12 or 13, and Laravel AI `^1.0`.
 
 See the [architecture guide](docs/architecture.md) for wiring tools into an agent and the [security model](docs/security-model.md) before protecting production-changing operations.
 

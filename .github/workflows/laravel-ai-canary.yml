@@ -9,8 +9,8 @@ name: laravel-ai-canary
 # When it fails, work the checklist in issue #130 (widen the supported laravel/ai range as one
 # reviewed change) rather than loosening the constraint in composer.json to make it green.
 #
-# The constraint is `0.x-dev`, not `dev-0.x`. Composer normalizes a branch whose name already
-# looks like a version, so `dev-0.x` does not resolve at all.
+# The constraint is `1.x-dev`, not `dev-1.x`. Composer normalizes a branch whose name already
+# looks like a version, so `dev-1.x` does not resolve at all.
 
 on:
   schedule:
@@ -23,14 +23,14 @@ permissions:
 jobs:
   canary:
     runs-on: ubuntu-latest
-    name: laravel/ai 0.x-dev (non-blocking)
+    name: laravel/ai 1.x-dev (non-blocking)
 
     # Never block a merge on upstream's development branch. The signal is the point, not the gate.
     continue-on-error: true
 
     strategy:
       matrix:
-        laravel_ai: ['^0.11.0', '0.x-dev']
+        laravel_ai: ['^1.0', '1.x-dev']
 
     steps:
       - name: Checkout code

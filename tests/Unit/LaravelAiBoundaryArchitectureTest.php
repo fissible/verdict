@@ -279,6 +279,8 @@ const KERNEL_ADAPTER_IMPORTS = [
         'PromptProvenanceRegistry',
         'RecordAgentPromptProvenance',
         'RecordToolResultProvenance',
+        // Composition-root installation of the 1.0 provider run seam; SDK types stay in the adapter.
+        'VerdictRunIntegration',
     ],
 ];
 

@@ -19,7 +19,6 @@ use Fissible\Verdict\Contracts\ProvenanceLedgerStore;
 use Fissible\Verdict\Contracts\RateLimitStore;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
-use Fissible\Verdict\LaravelAi\VerdictApprovalMiddleware;
 use Fissible\Verdict\Targets\ExecutionTargetPolicy;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -31,7 +30,6 @@ use Laravel\Ai\Approvals\Decisions;
 use Laravel\Ai\Concerns\RemembersConversations as RemembersConversationsTrait;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Gateway\StepTextGateway;
-use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Contracts\RemembersConversations as RemembersConversationsContract;
@@ -44,8 +42,8 @@ use Laravel\Ai\Messages\Message;
 use Laravel\Ai\Promptable;
 use Laravel\Ai\Responses\Data\FinishReason;
 use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\TextUsage;
 use Laravel\Ai\Responses\Data\ToolCall;
-use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Tools\Request;
 
 final class QueuedApprovalState
@@ -126,7 +124,7 @@ function queuedApprovalBoundTool(): Tool
     );
 }
 
-final class QueuedApprovalAgent implements Agent, HasMiddleware, HasTools, RemembersConversationsContract
+final class QueuedApprovalAgent implements Agent, HasTools, RemembersConversationsContract
 {
     use Promptable;
     use RemembersConversationsTrait;
@@ -140,18 +138,6 @@ final class QueuedApprovalAgent implements Agent, HasMiddleware, HasTools, Remem
     public function tools(): array
     {
         return [queuedApprovalBoundTool()];
-    }
-
-    /**
-     * Required: `VerdictApprovalMiddleware` is not auto-registered. Without it
-     * `ApprovalExecutionContext::allows()` is false for every tool call on the resume and an approved
-     * receipt fails proposal-validation with `invalid_state`.
-     *
-     * @return array<int, object>
-     */
-    public function middleware(): array
-    {
-        return [app(VerdictApprovalMiddleware::class)];
     }
 
     public function provider(): string
@@ -201,7 +187,7 @@ final class QueuedApprovalGateway implements StepTextGateway
                 text: 'Order cancelled.',
                 toolCalls: [],
                 finishReason: FinishReason::Stop,
-                usage: new Usage,
+                usage: new TextUsage,
                 meta: new Meta('openai', $model),
             );
         }
@@ -210,7 +196,7 @@ final class QueuedApprovalGateway implements StepTextGateway
             text: '',
             toolCalls: [$this->toolCall],
             finishReason: FinishReason::ToolCalls,
-            usage: new Usage,
+            usage: new TextUsage,
             meta: new Meta('openai', $model),
         );
     }

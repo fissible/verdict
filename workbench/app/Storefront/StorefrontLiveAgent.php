@@ -15,10 +15,10 @@ use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\UnguardedCapturingTool;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
+use Fissible\Verdict\LaravelAi\HasVerdictRunMiddleware;
 use Fissible\Verdict\LaravelAi\VerdictProvenanceMiddleware;
 use Fissible\Verdict\VerdictManager;
 use Laravel\Ai\Contracts\Agent;
-use Laravel\Ai\Contracts\HasMiddleware;
 use Laravel\Ai\Contracts\HasProviderOptions;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Contracts\Tool;
@@ -38,14 +38,14 @@ use Workbench\App\Storefront\Tools\UnguardedSearchOrders;
  * real local Ollama model — the package ships no agent, tool, provider, or model choice of its
  * own.
  *
- * `HasMiddleware` + `middleware()` returning `VerdictProvenanceMiddleware` is not optional here:
+ * `HasVerdictRunMiddleware` + `verdictRunMiddleware()` returning `VerdictProvenanceMiddleware` is not optional here:
  * without it, Verdict never binds an invocation-scoped `InvocationContext`, every decision
  * evidence record carries `invocationId: null`, and every captured tool call fails
  * `LiveAgentObserver`'s correlation check as `LiveObservationUnavailable`. Laravel AI itself
  * establishes `$prompt->invocationId` / `$response->invocationId` regardless of this middleware —
  * what is missing without it is Verdict's own binding of the invocation id into its evidence.
  */
-final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOptions, HasTools
+final class StorefrontLiveAgent implements Agent, HasProviderOptions, HasTools, HasVerdictRunMiddleware
 {
     use Promptable;
 
@@ -213,7 +213,7 @@ final class StorefrontLiveAgent implements Agent, HasMiddleware, HasProviderOpti
     }
 
     /** @return array<int, object> */
-    public function middleware(): array
+    public function verdictRunMiddleware(): array
     {
         return [new VerdictProvenanceMiddleware(
             provenance: app(ProvenanceLedger::class),
