@@ -208,6 +208,59 @@ it('orders enumeration by createdAt ascending with receiptId as the tiebreak', f
         ->toBe(['receipt-z-early', 'receipt-a-late', 'receipt-b-late']);
 })->with('paired readers');
 
+/** @return list<ApprovalReceipt> */
+function statusReaderOrderingReceipts(): array
+{
+    // Neither contractual order nor its reverse. Within one second, fractional timestamps
+    // oppose byte order; numeric-looking ids must also compare as text, not numbers.
+    return array_map(
+        static fn (array $row): ApprovalReceipt => statusReaderReceipt(
+            $row[0],
+            ['tenant_id' => 5],
+            createdAt: new DateTimeImmutable($row[1], new DateTimeZone('UTC')),
+        ),
+        [
+            ['ax'.str_repeat('x', 62), '2026-08-01 12:00:01.100000'],
+            ['Ay'.str_repeat('x', 62), '2026-08-01 12:00:02.000000'],
+            ['2', '2026-08-01 12:00:01.200000'],
+            ['Zx'.str_repeat('x', 62), '2026-08-01 12:00:01.900000'],
+            ['zy'.str_repeat('x', 62), '2026-08-01 12:00:00.000000'],
+            ['10', '2026-08-01 12:00:01.800000'],
+        ],
+    );
+}
+
+it('orders by createdAt at second precision, then by id', function (Closure $pair): void {
+    [$store, $reader] = $pair();
+
+    foreach (statusReaderOrderingReceipts() as $receipt) {
+        $store->issue($receipt);
+    }
+
+    // Chronology dominates; tied seconds use byte order even for mixed-case and numeric ids.
+    // SQLite's BINARY collation already agrees; MySQL's default collation exposes SQL ordering.
+    expect(array_map(fn (ApprovalStatusView $v): string => $v->receiptId, $reader->pendingWithin(['tenant_id' => 5])))
+        ->toBe(['zy'.str_repeat('x', 62), '10', '2', 'Zx'.str_repeat('x', 62), 'ax'.str_repeat('x', 62), 'Ay'.str_repeat('x', 62)]);
+})->with('paired readers');
+
+it('returns the same order as the in-memory reader for the same rows', function (): void {
+    [$databaseStore, $databaseReader] = databaseReaderPair();
+    [$memoryStore, $memoryReader] = inMemoryReaderPair();
+
+    foreach (statusReaderOrderingReceipts() as $receipt) {
+        $databaseStore->issue($receipt);
+        $memoryStore->issue($receipt);
+    }
+
+    $fromDatabase = array_map(fn (ApprovalStatusView $v): string => $v->receiptId, $databaseReader->pendingWithin(['tenant_id' => 5]));
+    $fromMemory = array_map(fn (ApprovalStatusView $v): string => $v->receiptId, $memoryReader->pendingWithin(['tenant_id' => 5]));
+
+    // One contract: anchor parity to the required order so shared comparator drift also fails.
+    expect($fromDatabase)
+        ->toBe(['zy'.str_repeat('x', 62), '10', '2', 'Zx'.str_repeat('x', 62), 'ax'.str_repeat('x', 62), 'Ay'.str_repeat('x', 62)])
+        ->and($fromMemory)->toBe($fromDatabase);
+});
+
 it('returns no enumeration matches from a database whose approval_context column is not migrated', function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
     $schema->dropColumns(verdictTable('approvals'), ['approval_context']);

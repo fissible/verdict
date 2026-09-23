@@ -10,11 +10,15 @@ use Fissible\Verdict\Contracts\DistinguishesStatusCollisions;
 /**
  * The reader paired with DatabaseApprovalReceiptStore (ADR 0031 §2), on the store's own
  * connection. Status reads ride the store's lookups. Enumeration discovers candidates with a
- * portable query — persisted status Pending, a non-empty stored approval_context, ordered by
- * created_at then id — applies the typed containment of ADR 0031 §3 in PHP on the decoded
+ * portable query — persisted status Pending and a non-empty stored approval_context —
+ * applies the typed containment of ADR 0031 §3 in PHP on the decoded
  * context, and hydrates only the matches through the store's bulk findMany() in one read per
  * 1,000 matches. The store remains the single row-mapping authority; no backend JSON containment
  * operator, or any backend's number/string coercion, is involved (#327's portability decision).
+ *
+ * The contractual order is imposed in PHP after hydration: second-precision createdAt, then
+ * byte-order id. SQL ORDER BY id would inherit the connection's collation, so mixed-case ids
+ * would enumerate differently under MySQL's default case-insensitive collation.
  *
  * On an install that has not run the add_approval_context migration, no receipt has a context,
  * so enumeration honestly returns nothing; verdict:validate reports the missing column. The
@@ -57,8 +61,6 @@ final readonly class DatabaseApprovalStatusReader implements ApprovalStatusReade
             ->where('status', ApprovalReceiptStatus::Pending->value)
             ->whereNotNull('approval_context')
             ->where('approval_context', '!=', '[]')
-            ->orderBy('created_at')
-            ->orderBy('id')
             ->get(['id', 'approval_context']);
 
         $matchedIds = [];
@@ -78,23 +80,31 @@ final readonly class DatabaseApprovalStatusReader implements ApprovalStatusReade
         }
 
         $receipts = $this->store->findMany($matchedIds);
-        $views = [];
+        $matches = [];
 
-        // Candidate order is contractual. Hydration deliberately does not rely on whereIn()
-        // return order, which varies by database and query plan.
         foreach ($matchedIds as $receiptId) {
             $receipt = $receipts[$receiptId] ?? null;
 
             // Re-checked after hydration: a transition committed between the candidate query and
-            // the find() is poll-consistency at work, not an error — the resolved receipt simply
+            // the hydration is poll-consistency at work, not an error — the resolved receipt simply
             // no longer enumerates.
             if ($receipt === null || $receipt->status !== ApprovalReceiptStatus::Pending) {
                 continue;
             }
 
-            $views[] = ApprovalStatusView::fromReceipt($receipt);
+            $matches[] = $receipt;
         }
 
-        return $views;
+        // createdAt at the precision the write path persists, then the receipt id, compared as text
+        // so neither a collation nor PHP's numeric-string comparison can reorder them.
+        usort($matches, static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => strcmp(
+            $a->createdAt->format('Y-m-d H:i:s'),
+            $b->createdAt->format('Y-m-d H:i:s'),
+        ) ?: strcmp($a->id, $b->id));
+
+        return array_map(
+            static fn (ApprovalReceipt $receipt): ApprovalStatusView => ApprovalStatusView::fromReceipt($receipt),
+            $matches,
+        );
     }
 }
