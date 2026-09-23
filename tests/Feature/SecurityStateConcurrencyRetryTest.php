@@ -21,7 +21,10 @@ use Illuminate\Database\DatabaseManager;
  * it cannot run meaningfully against SQLite, which has no REPEATABLE READ/SERIALIZABLE isolation
  * semantics and never raises SQLSTATE 40001. It self-skips when the configured connection isn't
  * one of those, so `composer test`'s default SQLite run is unaffected; the dedicated `postgres` CI
- * job and the `concurrency-matrix.yml` workflow (added in #87) are what actually exercise it.
+ * job, MySQL smoke lane, and full `concurrency-matrix.yml` workflow actually exercise it. Since
+ * #492 the matrix runs PostgreSQL/MySQL/MariaDB on every PR and main push, as well as weekly,
+ * on v* tags, and manually. This supplies pre-merge matrix evidence, not verification of the
+ * later release.sh commit before tagging; that awaits the two-phase-release follow-up.
  *
  * Adapted from spikes/0037-isolation-level-concurrency/ (#37) into a durable, permanent test, per
  * #86's acceptance criteria — the throwaway spike is not the last word on this; this is.

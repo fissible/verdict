@@ -239,10 +239,10 @@ fi
 # assert on the files edited above (DocumentationConsistencyTest, CompatibilityMatrixConformanceTest)
 # are exactly what this catches.
 #
-# The local suite is enough here and the reasoning is specific: this commit changes CHANGELOG.md,
-# VERSION, README.md and RELEASES.md and no src/, so there is no matrix-specific failure (PHP or
-# Laravel version, MySQL, PostgreSQL) it could introduce that CI would catch and this run would not.
-# That argument would NOT license skipping CI for a src/ change.
+# The local suite does not establish RELEASES.md criterion 3 for this release commit. The matrix
+# now gates PRs/main, but this script creates a subsequent commit that the pre-merge matrix never
+# saw; documentation, configuration, and fixtures can also affect engine results. Verifying the
+# exact tagged release commit before tagging awaits a separate two-phase-release follow-up.
 #
 # On failure the tree deliberately keeps the release edits rather than being reverted: the preflight
 # above already refused to start on a dirty tree, so nothing unrelated is at stake, and the edits are

@@ -7,8 +7,9 @@ use Symfony\Component\Yaml\Yaml;
 /**
  * The per-PR MySQL lane, and the bound on what it runs (#397).
  *
- * Engine-specific defects reached a release with no PR-time gate. The cross-engine matrix is
- * weekly and on-tag, and `release.yml` cuts the release regardless of its result.
+ * Engine-specific defects motivated this narrow PR-time lane. Since #492 the full cross-engine
+ * matrix also runs on PRs/main, as well as weekly and on-tag; its gate is pinned separately in
+ * ConcurrencyMatrixConformanceTest. Release-commit verification remains a separate follow-up.
  *
  * WHAT THE LANE IS ACTUALLY FOR, measured rather than assumed. #397 justifies it by the v0.13.0
  * derivations read-order defect (#383), and a mutation probe against real engines says otherwise:
@@ -17,7 +18,7 @@ use Symfony\Component\Yaml\Yaml;
  * already satisfies what the tiebreakers guarantee. #383 is held by the SQLite lane that already
  * runs on every pull request.
  *
- * The lane earns its place on ground no other per-PR lane holds: MySQL's identifier-length limit,
+ * The smoke lane gives focused feedback on MySQL's identifier-length limit,
  * InnoDB under REPEATABLE READ, and MySQL/MariaDB session-timezone conversion. #389's row-ordering
  * defect is MySQL-only too, but the probe caught it in six runs of eight — it depends on whether a
  * generated uuid happens to sort last — so it is a probe this lane can expose, not a regression it
@@ -325,14 +326,11 @@ it('blocks the merge through the aggregation check', function (): void {
     }
 });
 
-it('leaves the cross-engine matrix scheduled and unblocking', function (): void {
-    // #397 changes the PR gate, not the matrix. If the matrix became a PR check this lane would be
-    // pointless, and if it lost its schedule the broad coverage this slice is narrow *because of*
-    // would be gone.
+it('keeps the cross-engine matrix coverage alongside the smoke slice', function (): void {
+    // #492 adds full-suite PR/main evidence without changing #397's focused smoke slice.
+    // The matrix's trigger and aggregate contract lives in ConcurrencyMatrixConformanceTest.
     $matrix = (array) Yaml::parse((string) file_get_contents(dirname(__DIR__, 2).'/.github/workflows/concurrency-matrix.yml'));
     $on = (array) ($matrix['on'] ?? $matrix[true] ?? []);
-
-    expect(array_key_exists('pull_request', $on))->toBeFalse('The cross-engine matrix must not become a pull-request check.');
 
     // Non-empty, and still on tags: an empty `schedule:` key or a push trigger pointed at branches
     // rather than `v*` would satisfy mere presence while the broad coverage this slice is narrow
@@ -349,7 +347,7 @@ it('states the bound in the workflow, where the next person changing it will rea
     // workflow has to say what the lane is for and what it deliberately excludes.
     $source = mysqlLaneWorkflowSource();
 
-    // What the lane must state is the GROUND it holds that no other per-PR lane does. It must not be
+    // What the lane must state is the engine-specific ground its focused slice covers. It must not be
     // required to name #383: that requirement encoded a premise the mutation probe falsified —
     // removing #383's tiebreakers is caught by SQLite (3 failed) and missed by both MySQL and
     // PostgreSQL, because InnoDB clusters the derivations table on the composite primary key and

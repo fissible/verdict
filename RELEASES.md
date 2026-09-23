@@ -64,7 +64,11 @@ A release is cut only when:
 
 1. `composer validate --strict` passes.
 2. `composer test` passes locally.
-3. The complete GitHub Actions compatibility matrix passes.
+3. The complete GitHub Actions compatibility matrix passes. The database matrix now gates PRs
+   and `main`, establishing pre-merge matrix evidence. This does **not** establish criterion 3
+   for the tagged release commit: `release.sh` creates a subsequent commit that the pre-merge
+   matrix never saw. Verifying the matrix for that exact commit before tagging awaits a separate
+   two-phase-release follow-up; the release commit is not yet matrix-verified by this gate.
 4. Installation and package discovery succeed from a clean consumer project.
 5. The changelog describes every user-visible change.
 6. New configuration and migrations have publication tests and upgrade notes.
@@ -74,7 +78,9 @@ A release is cut only when:
    release's scope. A release never ships over a known defect in what it publishes — including a
    wrong evaluation result or a claim the code does not support.
 
-The release commit is tagged only after these checks pass. `VERSION`, `release.sh`, the curated
+The checklist is the release policy; criterion 3's release-commit verification remains the open
+gap described above. Making the matrix jobs required and governing `v*` tag creation are repository
+admin / branch-protection settings outside this repo. `VERSION`, `release.sh`, the curated
 `CHANGELOG.md`, and the tag-triggered GitHub release workflow follow the Fissible organization
 release convention. The release script promotes the existing Unreleased notes without regenerating
 prior release history. Run `bash release.sh patch`, `minor`, or `major` from a clean `main` branch
