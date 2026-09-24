@@ -37,6 +37,11 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
         );
 
         if ($existing === null) {
+            if ($this->guards !== null
+                && $this->guards->has(ConsumedBindingGuard::digest($receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint))) {
+                return ApprovalTransition::to(ApprovalOutcome::PreviouslyConsumed);
+            }
+
             $openReceipt = $this->mostRecentOpenReceiptForChangedProposal($receipt);
             $this->receipts[$receipt->id] = $receipt;
 

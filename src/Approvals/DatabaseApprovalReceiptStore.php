@@ -137,6 +137,11 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                     return $this->existingIssue($existing, $receipt);
                 }
 
+                if ($this->guards !== null
+                    && $this->guards->has(ConsumedBindingGuard::digest($receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint))) {
+                    return ApprovalTransition::to(ApprovalOutcome::PreviouslyConsumed);
+                }
+
                 $openReceipt = $this->lockedOpenReceiptForChangedProposal($receipt);
                 $this->connection->table($this->table)->insert($this->attributes($receipt));
                 $transitionedReceipt = $receipt;
