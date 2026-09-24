@@ -117,7 +117,16 @@ final readonly class ApprovalManager
             approverSummaryRelease: $materialization->release,
         );
 
-        return $this->recordOperation($this->receipts->issue($receipt), ApprovalOutcome::Issued, ApprovalOperation::Issued);
+        $transition = $this->receipts->issue($receipt);
+
+        if ($transition->outcome === ApprovalOutcome::PreviouslyConsumed) {
+            return ApprovalTransition::to(
+                ApprovalOutcome::IssuanceRefused,
+                refusalReason: IssuanceRefusalReason::PreviouslyConsumed,
+            );
+        }
+
+        return $this->recordOperation($transition, ApprovalOutcome::Issued, ApprovalOperation::Issued);
     }
 
     /**

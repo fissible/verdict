@@ -31,6 +31,11 @@ use Illuminate\Database\SQLiteConnection;
 function transitionEventSchema(Builder $schema): void
 {
     $schema->dropIfExists(verdictTable('approvals'));
+    $schema->dropIfExists('verdict_consumed_binding_guards');
+    $schema->create('verdict_consumed_binding_guards', function (Blueprint $table): void {
+        $table->binary('digest', length: 32, fixed: true)->primary();
+        $table->timestamp('consumed_at');
+    });
     $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
         $table->string('id', 64)->primary();
         $table->string('tool_call_id');
@@ -57,6 +62,7 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('approvals'));
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_consumed_binding_guards');
 });
 
 /**

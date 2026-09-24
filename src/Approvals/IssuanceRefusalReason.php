@@ -9,4 +9,5 @@ enum IssuanceRefusalReason: string
     case SummaryNotReleased = 'summary_not_released';
     case AttestNotConfigured = 'attest_not_configured';
     case AttestAppendFailed = 'attest_append_failed';
+    case PreviouslyConsumed = 'previously_consumed';
 }

@@ -12,6 +12,7 @@ enum ApprovalOutcome: string
     case Rejected = 'rejected';
     case Consumed = 'consumed';
     case IssuanceRefused = 'issuance_refused';
+    case PreviouslyConsumed = 'previously_consumed';
     case NotFound = 'not_found';
     case Mismatch = 'mismatch';
     case Expired = 'expired';
@@ -22,7 +23,7 @@ enum ApprovalOutcome: string
     {
         return match ($this) {
             self::Issued, self::Existing, self::Approved, self::Rejected, self::Consumed => true,
-            self::IssuanceRefused, self::NotFound, self::Mismatch, self::Expired, self::InvalidState, self::Unauthorized => false,
+            self::IssuanceRefused, self::PreviouslyConsumed, self::NotFound, self::Mismatch, self::Expired, self::InvalidState, self::Unauthorized => false,
         };
     }
 }
