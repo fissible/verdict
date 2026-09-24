@@ -8,9 +8,11 @@ use DateTimeImmutable;
 use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
 use Fissible\Verdict\Approvals\Events\ApprovalReceiptTransitioned;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
+use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
 use Illuminate\Contracts\Events\Dispatcher;
 
 /**
@@ -21,7 +23,10 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
     /** @var array<string, ApprovalReceipt> */
     private array $receipts = [];
 
-    public function __construct(private readonly ?Dispatcher $events = null) {}
+    public function __construct(
+        private readonly ?Dispatcher $events = null,
+        private readonly ?ConsumedBindingGuardStore $guards = null,
+    ) {}
 
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
     {
@@ -204,6 +209,16 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
         }
 
         /** @var ApprovalReceipt $receipt */
+        if ($this->guards !== null) {
+            $digest = ConsumedBindingGuard::digest($receipt->toolCallId, $receipt->capability, $bindingFingerprint);
+
+            if ($this->guards->has($digest)) {
+                throw new ConsumedBindingGuardCollision('The approval binding has already been consumed.');
+            }
+
+            $this->guards->remember($digest, $at);
+        }
+
         $updated = $this->replace(
             $receipt,
             status: ApprovalReceiptStatus::Consumed,

@@ -247,6 +247,7 @@ function queuedApprovalTables(): array
         verdictTable('capability_configurations'),
         verdictTable('approvals'),
         verdictTable('evidence'),
+        'verdict_consumed_binding_guards',
     ];
 }
 
@@ -278,6 +279,7 @@ beforeEach(function (): void {
     (require __DIR__.'/../../database/migrations/add_record_identity_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_intent_id_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_capability_configurations_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/create_verdict_consumed_binding_guards_table.php.stub')->up();
 
     $this->app->instance(QueuedApprovalState::class, new QueuedApprovalState);
     $this->app->instance(CapabilityAuthorizer::class, new class implements CapabilityAuthorizer
