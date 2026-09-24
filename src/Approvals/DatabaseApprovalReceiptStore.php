@@ -10,9 +10,11 @@ use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
 use Fissible\Verdict\Approvals\Events\ApprovalReceiptTransitioned;
 use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
+use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
 use Fissible\Verdict\Support\ApproverSummary;
 use Fissible\Verdict\Support\SecurityStateTransaction;
 use Illuminate\Contracts\Events\Dispatcher;
@@ -42,6 +44,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         private ConnectionInterface $connection,
         private string $table = 'verdict_approval_receipts',
         private ?Dispatcher $events = null,
+        private ?ConsumedBindingGuardStore $guards = null,
     ) {
         $this->schemaMemo = new stdClass;
     }
@@ -367,6 +370,16 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             }
 
             /** @var ApprovalReceipt $receipt */
+            if ($this->guards !== null) {
+                $digest = ConsumedBindingGuard::digest($receipt->toolCallId, $receipt->capability, $bindingFingerprint);
+
+                if ($this->guards->has($digest)) {
+                    throw new ConsumedBindingGuardCollision('The approval binding has already been consumed.');
+                }
+
+                $this->guards->remember($digest, $at);
+            }
+
             $this->connection->table($this->table)
                 ->where('id', $receipt->id)
                 ->update([

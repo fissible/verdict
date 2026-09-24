@@ -12,6 +12,7 @@ use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\ApproverSummaryMaterializer;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\DatabaseApprovalStatusReader;
+use Fissible\Verdict\Approvals\DatabaseConsumedBindingGuardStore;
 use Fissible\Verdict\Approvals\DistinguishingStoreBackedApprovalStatusReader;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalStatusReader;
@@ -185,11 +186,17 @@ final class VerdictServiceProvider extends ServiceProvider
             if ($store === DatabaseApprovalReceiptStore::class) {
                 $connection = config('verdict.approvals.connection');
                 $table = config('verdict.approvals.table', 'verdict_approval_receipts');
+                $guardTable = config('verdict.approvals.consumed_binding_guards_table', 'verdict_consumed_binding_guards');
+                $connection = $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null);
 
                 return new DatabaseApprovalReceiptStore(
-                    connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                    connection: $connection,
                     table: is_string($table) ? $table : 'verdict_approval_receipts',
                     events: $app->make(Dispatcher::class),
+                    guards: new DatabaseConsumedBindingGuardStore(
+                        $connection,
+                        is_string($guardTable) ? $guardTable : 'verdict_consumed_binding_guards',
+                    ),
                 );
             }
 
@@ -814,6 +821,7 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_24_000013_add_approval_context_to_verdict_approval_receipts_table.php'),
             __DIR__.'/../database/migrations/add_approver_summary_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_31_000019_add_approver_summary_to_verdict_approval_receipts_table.php'),
             __DIR__.'/../database/migrations/add_pending_enumeration_index_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_31_000020_add_pending_enumeration_index_to_verdict_approval_receipts_table.php'),
+            __DIR__.'/../database/migrations/create_verdict_consumed_binding_guards_table.php.stub' => database_path('migrations/2026_09_23_000021_create_verdict_consumed_binding_guards_table.php'),
         ];
         $reviewMigration = [
             __DIR__.'/../database/migrations/create_verdict_review_requests_table.php.stub' => database_path('migrations/2026_08_30_000017_create_verdict_review_requests_table.php'),
