@@ -17,10 +17,28 @@ use Fissible\Verdict\Tests\TestCase;
 use Fissible\Verdict\Tests\WorkbenchTestCase;
 use Fissible\Verdict\VerdictServiceProvider;
 use Illuminate\Database\DatabaseManager;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Database\Schema\Builder;
 
 uses(TestCase::class)->in('Feature');
 uses(WorkbenchTestCase::class)->in('Workbench');
 uses(AttestTestCase::class)->in('Integration');
+
+/**
+ * Create the binding-admission lock table on the given (or default) connection. Real-DB tests that
+ * issue()/consume() need it because those now acquire the coarse-pair admission lock, whose
+ * MySQL/MariaDB arm upserts this table (#460 slice 5); on SQLite acquire() is a no-op, so this is
+ * harmless there. Uses the passed schema builder so a fixture serving more than one connection
+ * installs it on the right one (the migration stub's Schema facade would target only the default).
+ */
+function verdictInstallBindingAdmissionLockTable(?Builder $schema = null): void
+{
+    $schema ??= app(DatabaseManager::class)->connection()->getSchemaBuilder();
+    $schema->dropIfExists('verdict_binding_admission_locks');
+    $schema->create('verdict_binding_admission_locks', function (Blueprint $table): void {
+        $table->bigInteger('lock_key')->primary();
+    });
+}
 
 /**
  * Resolve a Verdict table name through the config key the stubs and stores read (#290), so a test

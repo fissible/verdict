@@ -125,7 +125,7 @@ dataset('store drivers', ['database', 'in-memory']);
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
 
-    foreach ([verdictTable('approvals'), GUARD_TABLE] as $table) {
+    foreach ([verdictTable('approvals'), GUARD_TABLE, 'verdict_binding_admission_locks'] as $table) {
         $schema->dropIfExists($table);
     }
 
@@ -134,6 +134,7 @@ beforeEach(function (): void {
         'add_proposal_provenance_to_verdict_approval_receipts_table.php.stub',
         'add_approval_context_to_verdict_approval_receipts_table.php.stub',
         'create_verdict_consumed_binding_guards_table.php.stub',
+        'create_verdict_binding_admission_locks_table.php.stub',
     ] as $stub) {
         (require __DIR__.'/../../database/migrations/'.$stub)->up();
     }
@@ -142,7 +143,7 @@ beforeEach(function (): void {
 afterEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
 
-    foreach ([verdictTable('approvals'), GUARD_TABLE] as $table) {
+    foreach ([verdictTable('approvals'), GUARD_TABLE, 'verdict_binding_admission_locks'] as $table) {
         $schema->dropIfExists($table);
     }
 });
