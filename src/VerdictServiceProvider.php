@@ -822,6 +822,7 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations/add_approver_summary_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_31_000019_add_approver_summary_to_verdict_approval_receipts_table.php'),
             __DIR__.'/../database/migrations/add_pending_enumeration_index_to_verdict_approval_receipts_table.php.stub' => database_path('migrations/2026_08_31_000020_add_pending_enumeration_index_to_verdict_approval_receipts_table.php'),
             __DIR__.'/../database/migrations/create_verdict_consumed_binding_guards_table.php.stub' => database_path('migrations/2026_09_23_000021_create_verdict_consumed_binding_guards_table.php'),
+            __DIR__.'/../database/migrations/create_verdict_binding_admission_locks_table.php.stub' => database_path('migrations/2026_09_24_000022_create_verdict_binding_admission_locks_table.php'),
         ];
         $reviewMigration = [
             __DIR__.'/../database/migrations/create_verdict_review_requests_table.php.stub' => database_path('migrations/2026_08_30_000017_create_verdict_review_requests_table.php'),

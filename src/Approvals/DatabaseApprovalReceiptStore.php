@@ -16,6 +16,7 @@ use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
 use Fissible\Verdict\Support\ApproverSummary;
+use Fissible\Verdict\Support\BindingAdmission;
 use Fissible\Verdict\Support\SecurityStateTransaction;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Connection;
@@ -125,6 +126,8 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
 
         try {
             $transition = SecurityStateTransaction::run($this->connection, 'issue an approval receipt', function () use ($receipt, &$transitionedReceipt, &$openReceipt): ApprovalTransition {
+                BindingAdmission::acquire($this->connection, $receipt->toolCallId, $receipt->bindingFingerprint);
+
                 // A retried closure must discard a rolled-back attempt's receipt; otherwise it could be announced after the successful attempt.
                 $transitionedReceipt = null;
                 $existing = $this->lockedReceiptForBinding(
@@ -366,6 +369,8 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         $transitionedReceipt = null;
 
         $transition = SecurityStateTransaction::run($this->connection, 'consume an approval receipt', function () use ($toolCallId, $bindingFingerprint, $at, &$transitionedReceipt): ApprovalTransition {
+            BindingAdmission::acquire($this->connection, $toolCallId, $bindingFingerprint);
+
             $transitionedReceipt = null;
             $receipt = $this->lockedReceiptForBindingFingerprint($toolCallId, $bindingFingerprint);
             $validation = $this->validateReceipt($receipt, $bindingFingerprint, $at);
