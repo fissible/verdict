@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\Event;
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('approvals'));
+    verdictInstallBindingAdmissionLockTable($schema);
     $schema->dropIfExists('verdict_consumed_binding_guards');
     (require __DIR__.'/../../database/migrations/create_verdict_consumed_binding_guards_table.php.stub')->up();
     $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
@@ -52,6 +53,7 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('approvals'));
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_binding_admission_locks');
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_consumed_binding_guards');
 });
 

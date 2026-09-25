@@ -54,6 +54,7 @@ beforeEach(function (): void {
     // not merely presence in an in-memory array. Mirrors DatabaseApprovalReceiptStoreTest.
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('approvals'));
+    verdictInstallBindingAdmissionLockTable($schema);
     $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
         $table->string('id', 64)->primary();
         $table->string('tool_call_id');
@@ -100,6 +101,7 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('approvals'));
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_binding_admission_locks');
 });
 
 /**

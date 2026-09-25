@@ -4,6 +4,8 @@ declare(strict_types=1);
 use Fissible\Verdict\Approvals\ApprovalReceipt;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Illuminate\Config\Repository;
+use Illuminate\Container\Container;
 use Illuminate\Database\Capsule\Manager;
 use Illuminate\Database\QueryException;
 
@@ -15,6 +17,12 @@ $capsule = new Manager;
 $capsule->addConnection($payload['connection']);
 $capsule->setAsGlobal();
 $capsule->bootEloquent();
+
+// issue()/consume() acquire the binding-admission lock, whose table name the store reads from config();
+// this Capsule-only child must provide that config for the lookup to resolve.
+Container::getInstance()->instance('config', new Repository([
+    'verdict' => ['approvals' => ['binding_admission_locks_table' => 'verdict_binding_admission_locks']],
+]));
 
 $connection = Manager::connection();
 

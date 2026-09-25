@@ -40,6 +40,7 @@ use Illuminate\Database\Schema\Builder;
 function collisionSchema(Builder $schema): void
 {
     $schema->dropIfExists(verdictTable('approvals'));
+    verdictInstallBindingAdmissionLockTable($schema);
     $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
         $table->string('id', 64)->primary();
         $table->string('tool_call_id');
@@ -66,6 +67,7 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('approvals'));
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_binding_admission_locks');
 });
 
 function collisionReceipt(

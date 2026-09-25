@@ -125,7 +125,7 @@ dataset('store drivers', ['database', 'in-memory']);
 beforeEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
 
-    foreach ([verdictTable('approvals'), GUARD_TABLE] as $table) {
+    foreach ([verdictTable('approvals'), GUARD_TABLE, 'verdict_binding_admission_locks'] as $table) {
         $schema->dropIfExists($table);
     }
 
@@ -134,6 +134,7 @@ beforeEach(function (): void {
         'add_proposal_provenance_to_verdict_approval_receipts_table.php.stub',
         'add_approval_context_to_verdict_approval_receipts_table.php.stub',
         'create_verdict_consumed_binding_guards_table.php.stub',
+        'create_verdict_binding_admission_locks_table.php.stub',
     ] as $stub) {
         (require __DIR__.'/../../database/migrations/'.$stub)->up();
     }
@@ -142,7 +143,7 @@ beforeEach(function (): void {
 afterEach(function (): void {
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
 
-    foreach ([verdictTable('approvals'), GUARD_TABLE] as $table) {
+    foreach ([verdictTable('approvals'), GUARD_TABLE, 'verdict_binding_admission_locks'] as $table) {
         $schema->dropIfExists($table);
     }
 });
@@ -338,12 +339,11 @@ it('registers the consumed-binding-guard migration for real, fresh publication',
     // A real, dated migration destination under database/migrations.
     expect($destination)->toMatch('#[\\\\/]database[\\\\/]migrations[\\\\/]\d{4}_\d{2}_\d{2}_\d{6}_create_verdict_consumed_binding_guards_table\.php$#');
 
-    // Fresh: it sorts at or after every other published migration (no back-dated insertion, no
-    // collision with a released timestamp — enforced strictly by PublishedMigrationFilenamesTest).
-    $guardName = basename((string) $destination, '.php');
-    foreach ($paths as $to) {
-        expect($guardName >= basename((string) $to, '.php'))->toBeTrue('the guard migration is not the newest published migration');
-    }
+    // Sorts after a fixed released predecessor (chronological), not "newest forever" — two
+    // concurrently-developed migrations cannot both be newest, and timestamp uniqueness is enforced
+    // strictly by PublishedMigrationFilenamesTest.
+    expect(basename((string) $destination, '.php'))
+        ->toBeGreaterThan('2026_08_01_000000_create_verdict_approval_receipts_table');
 });
 
 it('rolls back a guard that WAS written when the consume transaction fails (Database shared transaction)', function (): void {

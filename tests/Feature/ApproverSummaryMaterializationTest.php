@@ -99,6 +99,7 @@ function migrateApprovalsWithSummary(object $connection): void
 {
     $schema = $connection->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('approvals'));
+    verdictInstallBindingAdmissionLockTable($schema);
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub')->up();
@@ -215,6 +216,7 @@ it('persists the approver summary and release state through the database store',
     $connection = app(DatabaseManager::class)->connection();
     $schema = $connection->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('approvals'));
+    verdictInstallBindingAdmissionLockTable($schema);
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub')->up();
@@ -227,6 +229,7 @@ it('persists the approver summary and release state through the database store',
     $hydrated = $store->find($issued->receipt->id);
 
     $schema->dropIfExists(verdictTable('approvals'));
+    verdictInstallBindingAdmissionLockTable($schema);
 
     expect($hydrated?->approverSummary?->content)->toBe('Cancel order #4242')
         ->and($hydrated?->approverSummary?->fingerprint)->toBe(hash('sha256', 'Cancel order #4242'))
@@ -273,6 +276,7 @@ it('degrades gracefully against a table lacking the approver-summary columns, hy
     $connection = app(DatabaseManager::class)->connection();
     $schema = $connection->getSchemaBuilder();
     $schema->dropIfExists(verdictTable('approvals'));
+    verdictInstallBindingAdmissionLockTable($schema);
     (require __DIR__.'/../../database/migrations/create_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_proposal_provenance_to_verdict_approval_receipts_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/add_approval_context_to_verdict_approval_receipts_table.php.stub')->up();
@@ -283,6 +287,7 @@ it('degrades gracefully against a table lacking the approver-summary columns, hy
     $hydrated = $store->find($issued->receipt->id);
 
     $schema->dropIfExists(verdictTable('approvals'));
+    verdictInstallBindingAdmissionLockTable($schema);
 
     // The summary is dropped (no column to keep it), and the release is NULL — a storage era, never NotReleased.
     expect($issued->receipt)->not->toBeNull()

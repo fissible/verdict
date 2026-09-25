@@ -31,6 +31,7 @@ use Illuminate\Database\SQLiteConnection;
 function transitionEventSchema(Builder $schema): void
 {
     $schema->dropIfExists(verdictTable('approvals'));
+    verdictInstallBindingAdmissionLockTable($schema);
     $schema->dropIfExists('verdict_consumed_binding_guards');
     $schema->create('verdict_consumed_binding_guards', function (Blueprint $table): void {
         $table->binary('digest', length: 32, fixed: true)->primary();
@@ -62,6 +63,7 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(verdictTable('approvals'));
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_binding_admission_locks');
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_consumed_binding_guards');
 });
 
