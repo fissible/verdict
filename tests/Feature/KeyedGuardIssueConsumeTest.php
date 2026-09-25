@@ -28,7 +28,7 @@ use Illuminate\Database\DatabaseManager;
 
 const KG_TC = 'call-1';
 const KG_CAP = 'orders.cancel';
-const KG_FP = 'fingerprint-abc';
+const KG_FP = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'; // 64-char fixed-width fingerprint: binding_fingerprint is CHAR(64), which Postgres space-pads
 const KG_GUARD_TABLE = 'verdict_consumed_binding_guards';
 
 function kgTime(string $at): DateTimeImmutable
