@@ -10,6 +10,7 @@ use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\ApproverSummaryMaterializer;
+use Fissible\Verdict\Approvals\ConsumedBindingGuardScheme;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\DatabaseApprovalStatusReader;
 use Fissible\Verdict\Approvals\DatabaseConsumedBindingGuardStore;
@@ -197,6 +198,7 @@ final class VerdictServiceProvider extends ServiceProvider
                         $connection,
                         is_string($guardTable) ? $guardTable : 'verdict_consumed_binding_guards',
                     ),
+                    scheme: $this->consumedBindingGuardScheme(),
                 );
             }
 
@@ -719,6 +721,39 @@ final class VerdictServiceProvider extends ServiceProvider
         return $store instanceof DistinguishesReceiptCollisions
             ? new DistinguishingStoreBackedApprovalStatusReader($store)
             : new StoreBackedApprovalStatusReader($store);
+    }
+
+    /**
+     * The keyed-digest scheme for the consumed-binding guard (ADR 0039). Null — keyless — unless
+     * the config block is present: then every retained key becomes a probe candidate and the active
+     * version (a string, else keyless) selects the write digest. Keys are coerced to strings; a
+     * retained key with no secret fails closed at issuance rather than skipping a candidate.
+     */
+    private function consumedBindingGuardScheme(): ?ConsumedBindingGuardScheme
+    {
+        $config = config('verdict.approvals.consumed_binding_guard');
+
+        if (! is_array($config)) {
+            return null;
+        }
+
+        $configuredKeys = $config['keys'] ?? [];
+        $keys = [];
+
+        if (is_array($configuredKeys)) {
+            foreach ($configuredKeys as $version => $secret) {
+                $keys[(string) $version] = is_string($secret)
+                    ? $secret
+                    : (is_scalar($secret) ? (string) $secret : '');
+            }
+        }
+
+        $activeKey = $config['active_key'] ?? null;
+
+        return new ConsumedBindingGuardScheme(
+            $keys,
+            is_string($activeKey) ? $activeKey : null,
+        );
     }
 
     /**

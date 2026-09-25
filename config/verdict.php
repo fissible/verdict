@@ -58,6 +58,19 @@ return [
         // Consumed-payload retention is opt-in. The guard survives pruning so replay stays refused;
         // leave unset to never prune consumed payloads.
         'consumed_retention_days' => null,
+        // Keyed consumed-binding-guard digests are opt-in (ADR 0039). Keyless by default: guards are
+        // an unsalted SHA-256 over the binding triple. Set 'active_key' to a version present in
+        // 'keys' to write keyed (HMAC) digests instead, for deployments whose threat model includes
+        // a long-lived database-read compromise. Every candidate is always probed on issue()/consume()
+        // — the keyless digest plus one per retained key — so legacy keyless and rotated-out guards
+        // stay checkable; retain every historical key still needed to check existing guards (the map
+        // is append-only). A retained key with no secret fails closed at issuance rather than letting
+        // a check skip a candidate. Keyed mode is not retroactive: existing guards keep their digest.
+        'consumed_binding_guard' => [
+            'active_key' => null,   // null = keyless; else a version present in 'keys'
+            // Retained (append-only) version => secret; e.g. 'v1' => env('VERDICT_CONSUMED_GUARD_KEY_V1').
+            'keys' => [],
+        ],
         // Class implementing Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer, consulted by
         // ApprovalManager::approve()/reject() before any receipt is finalized. REQUIRED for
         // deciding receipts: approval decisions are fail-closed, so with this unset approve() and
