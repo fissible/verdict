@@ -36,6 +36,19 @@ final class BindingAdmission
             return;
         }
 
+        if ($driver === 'sqlite') {
+            $table = (string) config('verdict.approvals.binding_admission_locks_table', 'verdict_binding_admission_locks');
+
+            // As the first security-state transaction statement, this write upgrades DEFERRED
+            // to a database-wide RESERVED lock before any read, even when the key exists.
+            // Concurrent writers fail with "database is locked" and TransactionRetry retries.
+            // This provides BEGIN IMMEDIATE semantics on PHP 8.3 too; Laravel's
+            // transaction_mode support requires PHP >= 8.4.
+            $connection->statement("INSERT OR REPLACE INTO {$table} (lock_key) VALUES (?)", [self::lockKey($toolCallId, $bindingFingerprint)]);
+
+            return;
+        }
+
         if ($driver === 'mysql' || $driver === 'mariadb') {
             $table = (string) config('verdict.approvals.binding_admission_locks_table', 'verdict_binding_admission_locks');
             $lockKey = self::lockKey($toolCallId, $bindingFingerprint);
