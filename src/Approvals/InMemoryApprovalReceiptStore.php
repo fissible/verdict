@@ -12,13 +12,15 @@ use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
+use Fissible\Verdict\Contracts\PrunesConsumedApprovalPayload;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
 use Illuminate\Contracts\Events\Dispatcher;
+use RuntimeException;
 
 /**
  * Process-local test store. It is not safe for production, Octane, or queue workers.
  */
-final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, PrunableApprovalReceiptStore
+final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, PrunableApprovalReceiptStore, PrunesConsumedApprovalPayload
 {
     /** @var array<string, ApprovalReceipt> */
     private array $receipts = [];
@@ -130,6 +132,31 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
 
         foreach ($this->receipts as $id => $receipt) {
             if ($receipt->expiresAt <= $before && $receipt->status !== ApprovalReceiptStatus::Consumed) {
+                unset($this->receipts[$id]);
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    public function pruneConsumedPayload(DateTimeImmutable $consumedBefore): int
+    {
+        if ($this->guards === null) {
+            throw new RuntimeException('Pruning consumed approval payloads requires a consumed-binding guard store.');
+        }
+
+        $count = 0;
+
+        foreach ($this->receipts as $id => $receipt) {
+            if ($receipt->status === ApprovalReceiptStatus::Consumed
+                && $receipt->consumedAt !== null
+                && $receipt->consumedAt <= $consumedBefore) {
+                $this->guards->remember(
+                    ConsumedBindingGuard::digest($receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint),
+                    $receipt->consumedAt,
+                );
+
                 unset($this->receipts[$id]);
                 $count++;
             }
