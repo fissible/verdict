@@ -55,6 +55,9 @@ return [
         // undecided Pending receipts remain visible to the reviewer queue by design. Choose a
         // window after which the historical read becoming absent is acceptable instead.
         'retention_days' => null,
+        // Consumed-payload retention is opt-in. The guard survives pruning so replay stays refused;
+        // leave unset to never prune consumed payloads.
+        'consumed_retention_days' => null,
         // Class implementing Fissible\Verdict\Contracts\ApprovalDecisionAuthorizer, consulted by
         // ApprovalManager::approve()/reject() before any receipt is finalized. REQUIRED for
         // deciding receipts: approval decisions are fail-closed, so with this unset approve() and
