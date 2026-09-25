@@ -14,6 +14,7 @@ use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
+use Fissible\Verdict\Contracts\PrunesConsumedApprovalPayload;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
 use Fissible\Verdict\Support\ApproverSummary;
 use Fissible\Verdict\Support\BindingAdmission;
@@ -23,9 +24,10 @@ use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\UniqueConstraintViolationException;
 use LogicException;
+use RuntimeException;
 use stdClass;
 
-final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, PrunableApprovalReceiptStore
+final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, PrunableApprovalReceiptStore, PrunesConsumedApprovalPayload
 {
     /**
      * This caps a single hydration statement at 1,000 ids. PostgreSQL permits 65,535 bound
@@ -275,6 +277,36 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             ->where('expires_at', '<=', $before)
             ->where('status', '!=', ApprovalReceiptStatus::Consumed->value)
             ->delete();
+    }
+
+    public function pruneConsumedPayload(DateTimeImmutable $consumedBefore): int
+    {
+        $guards = $this->guards;
+
+        if ($guards === null) {
+            throw new RuntimeException('Pruning consumed approval payloads requires a consumed-binding guard store.');
+        }
+
+        $rows = $this->connection->table($this->table)
+            ->where('status', ApprovalReceiptStatus::Consumed->value)
+            ->where('consumed_at', '<=', $consumedBefore)
+            ->get(['id', 'tool_call_id', 'capability', 'binding_fingerprint', 'consumed_at']);
+        $count = 0;
+
+        foreach ($rows as $row) {
+            $count += SecurityStateTransaction::run($this->connection, 'prune a consumed approval payload', function () use ($row, $guards): int {
+                BindingAdmission::acquire($this->connection, $row->tool_call_id, $row->binding_fingerprint);
+
+                $guards->remember(
+                    ConsumedBindingGuard::digest($row->tool_call_id, $row->capability, $row->binding_fingerprint),
+                    $this->dateFromDatabase($row->consumed_at),
+                );
+
+                return $this->connection->table($this->table)->where('id', $row->id)->delete();
+            });
+        }
+
+        return $count;
     }
 
     public function approve(
