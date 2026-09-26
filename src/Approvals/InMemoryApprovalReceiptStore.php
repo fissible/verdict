@@ -47,10 +47,10 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
      * The digest consume() records, under the active scheme (keyed when an active version is set,
      * else keyless). May throw MissingConsumedBindingGuardKey when the active key has no secret.
      */
-    private function activeGuardDigest(string $toolCallId, string $capability, string $bindingFingerprint): string
+    private function activeGuard(string $toolCallId, string $capability, string $bindingFingerprint): DerivedGuard
     {
-        return $this->scheme?->active($toolCallId, $capability, $bindingFingerprint)->digest
-            ?? ConsumedBindingGuard::digest($toolCallId, $capability, $bindingFingerprint);
+        return $this->scheme?->active($toolCallId, $capability, $bindingFingerprint)
+            ?? new DerivedGuard(ConsumedBindingGuard::digest($toolCallId, $capability, $bindingFingerprint), null, null);
     }
 
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
@@ -178,10 +178,8 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
             if ($receipt->status === ApprovalReceiptStatus::Consumed
                 && $receipt->consumedAt !== null
                 && $receipt->consumedAt <= $consumedBefore) {
-                $this->guards->remember(
-                    ConsumedBindingGuard::digest($receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint),
-                    $receipt->consumedAt,
-                );
+                $guard = $this->activeGuard($receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint);
+                $this->guards->remember($guard->digest, $receipt->consumedAt, $guard->algorithm, $guard->keyVersion);
 
                 unset($this->receipts[$id]);
                 $count++;
@@ -274,7 +272,8 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
                 }
             }
 
-            $this->guards->remember($this->activeGuardDigest($receipt->toolCallId, $receipt->capability, $bindingFingerprint), $at);
+            $guard = $this->activeGuard($receipt->toolCallId, $receipt->capability, $bindingFingerprint);
+            $this->guards->remember($guard->digest, $at, $guard->algorithm, $guard->keyVersion);
         }
 
         $updated = $this->replace(

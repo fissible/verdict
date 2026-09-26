@@ -45,6 +45,7 @@ function scaleSchema(Builder $schema): void
     verdictInstallBindingAdmissionLockTable($schema);
     $schema->dropIfExists('verdict_consumed_binding_guards');
     (require __DIR__.'/../../database/migrations/create_verdict_consumed_binding_guards_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_scheme_to_verdict_consumed_binding_guards_table.php.stub')->up();
     $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
         $table->string('id', 64)->primary();
         $table->string('tool_call_id');

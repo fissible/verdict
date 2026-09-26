@@ -18,7 +18,7 @@ final class InMemoryConsumedBindingGuardStore implements ConsumedBindingGuardSto
         return isset($this->guards[$digest]);
     }
 
-    public function remember(string $digest, DateTimeInterface $consumedAt): void
+    public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
     {
         $this->guards[$digest] ??= DateTimeImmutable::createFromInterface($consumedAt);
     }

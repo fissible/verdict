@@ -83,7 +83,7 @@ function recordingGuardStore(): ConsumedBindingGuardStore
             return in_array($digest, array_column($this->remembered, 'digest'), true);
         }
 
-        public function remember(string $digest, DateTimeInterface $consumedAt): void
+        public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
         {
             $this->remembered[] = ['digest' => $digest, 'at' => $consumedAt];
         }
@@ -106,7 +106,7 @@ function throwingGuardStore(): ConsumedBindingGuardStore
             return false;
         }
 
-        public function remember(string $digest, DateTimeInterface $consumedAt): void
+        public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
         {
             throw new ConsumeGuardWriteFailed('guard write failed');
         }
@@ -134,6 +134,7 @@ beforeEach(function (): void {
         'add_proposal_provenance_to_verdict_approval_receipts_table.php.stub',
         'add_approval_context_to_verdict_approval_receipts_table.php.stub',
         'create_verdict_consumed_binding_guards_table.php.stub',
+        'add_scheme_to_verdict_consumed_binding_guards_table.php.stub',
         'create_verdict_binding_admission_locks_table.php.stub',
     ] as $stub) {
         (require __DIR__.'/../../database/migrations/'.$stub)->up();
@@ -363,7 +364,7 @@ it('rolls back a guard that WAS written when the consume transaction fails (Data
             return $this->inner->has($digest);
         }
 
-        public function remember(string $digest, DateTimeInterface $consumedAt): void
+        public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
         {
             $this->inner->remember($digest, $consumedAt); // really inserts...
 
