@@ -392,3 +392,26 @@ it('does not attest a strict issuance that resolves to an existing open receipt'
         ->and($attest->calls)->toBe([])          // no attestation for a non-mint
         ->and($store->all())->toHaveCount(1);     // still only the original receipt
 });
+
+// ── #519: the review-lane analog of #513 — a refused/duplicate review request must not attest ─────────
+
+it('does not attest a strict review issuance that resolves to an existing open request', function (): void {
+    // ReviewManager attests before reviews->issue(); reviews have no consumed guard, so the refusal
+    // that must not attest is the duplicate (Existing) request. Paired with the review happy-path
+    // attest-before-persist probe, this forces the check -> attest -> persist reorder on the review lane.
+    strictPermitSummaries();
+    $store = new InMemoryReviewRequestStore;
+    $attest = new RecordingAttestsIssuance;
+    $manager = strictReviewManager($store, $attest);
+
+    $first = $manager->issue(strictReviewEvaluation());
+    expect($first->outcome)->toBe(ReviewOutcome::Issued);
+
+    // Re-issue the SAME binding while the request is still open.
+    $attest->calls = [];
+    $second = $manager->issue(strictReviewEvaluation());
+
+    expect($second->outcome)->toBe(ReviewOutcome::Existing)
+        ->and($attest->calls)->toBe([])          // no attestation for a non-mint
+        ->and($store->all())->toHaveCount(1);     // still only the original request
+});
