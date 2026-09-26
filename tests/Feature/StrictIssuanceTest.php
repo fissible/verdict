@@ -13,6 +13,7 @@ use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Approvals\ApproverProvenanceRelease;
 use Fissible\Verdict\Approvals\ApproverSummaryMaterializer;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
+use Fissible\Verdict\Approvals\InMemoryConsumedBindingGuardStore;
 use Fissible\Verdict\Approvals\IssuanceRefusalReason;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Context\ContextReleaseManager;
@@ -334,3 +335,60 @@ it('refuses a strict review issuance on attest failure or a missing backend', fu
     'append fails' => [fn () => new ThrowingAttestsIssuance, IssuanceRefusalReason::AttestAppendFailed],
     'no backend' => [fn () => null, IssuanceRefusalReason::AttestNotConfigured],
 ]);
+
+// ── #513: a refused replay must not append an attestation for an issuance that did not happen ──────────
+
+it('does not attest a strict issuance refused as a previously-consumed replay', function (): void {
+    strictPermitSummaries();
+    $store = new InMemoryApprovalReceiptStore(guards: new InMemoryConsumedBindingGuardStore);
+    $attest = new RecordingAttestsIssuance;
+    $manager = strictConfirmationManager($store, $attest);
+    $capability = strictConfirmationCapability();
+    $clock = app(Clock::class);
+
+    // Drive the binding through consume, then prune its payload — the post-prune state a replay is
+    // refused in via the permanent guard.
+    $first = $manager->issue(strictConfirmationEvaluation($capability));
+    expect($first->outcome)->toBe(ApprovalOutcome::Issued);
+    $receipt = $first->receipt;
+    $store->approve($receipt->id, $receipt->toolCallId, 'human', $clock->now());
+    $store->consume($receipt->toolCallId, $receipt->bindingFingerprint, $clock->now());
+    $store->pruneConsumedPayload(new DateTimeImmutable('2100-01-01 00:00:00', new DateTimeZone('UTC')));
+
+    // The attestation must come AFTER the admission check, so a refused replay never anchors a summary
+    // for an issuance that did not happen. Today the manager attests before store->issue(), so this
+    // replay appends a false attestation.
+    $attest->calls = [];
+    $replay = $manager->issue(strictConfirmationEvaluation($capability));
+
+    expect($replay->outcome)->toBe(ApprovalOutcome::IssuanceRefused)
+        ->and($replay->refusalReason)->toBe(IssuanceRefusalReason::PreviouslyConsumed)
+        ->and($replay->receipt)->toBeNull()
+        ->and($attest->calls)->toBe([]) // no attestation for the refused replay
+        ->and($store->all())->toBe([]); // and nothing minted
+});
+
+// ── #513: the decisive case — a duplicate issue of a still-open binding must not attest either ────────
+
+it('does not attest a strict issuance that resolves to an existing open receipt', function (): void {
+    // The refusal-does-not-attest contract is not specific to PreviouslyConsumed: ADR 0039 attests
+    // only when the admission check clears to mint, so every row-present outcome (Existing here) must
+    // also skip the attest. This forces the check -> attest -> persist reorder rather than a
+    // guard-only special case that still attests on the duplicate-open-issue path.
+    strictPermitSummaries();
+    $store = new InMemoryApprovalReceiptStore;
+    $attest = new RecordingAttestsIssuance;
+    $manager = strictConfirmationManager($store, $attest);
+    $capability = strictConfirmationCapability();
+
+    $first = $manager->issue(strictConfirmationEvaluation($capability));
+    expect($first->outcome)->toBe(ApprovalOutcome::Issued);
+
+    // Re-issue the SAME binding while the receipt is still open.
+    $attest->calls = [];
+    $second = $manager->issue(strictConfirmationEvaluation($capability));
+
+    expect($second->outcome)->toBe(ApprovalOutcome::Existing)
+        ->and($attest->calls)->toBe([])          // no attestation for a non-mint
+        ->and($store->all())->toHaveCount(1);     // still only the original receipt
+});

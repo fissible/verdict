@@ -13,6 +13,7 @@ use Fissible\Verdict\Contracts\AttestsIssuance;
 use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Contracts\EvidenceWriter;
+use Fissible\Verdict\Contracts\IssuesAdmittedReceipts;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Evidence\ApprovalLane;
 use Fissible\Verdict\Evidence\ApprovalOperation;
@@ -20,6 +21,8 @@ use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
 use Fissible\Verdict\Exceptions\ApprovalAuthorizerMissing;
+use Fissible\Verdict\Exceptions\AttestedIssuanceAppendFailed;
+use Fissible\Verdict\Support\ApproverSummary;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -64,36 +67,6 @@ final readonly class ApprovalManager
             $capability->approverDescription($evaluation->envelope, $evaluation->target, $binding),
         );
         $id = Str::random(64);
-
-        if ($capability->attestedIssuanceRequirement()) {
-            if ($materialization->release !== ApproverSummaryRelease::Released || $materialization->summary === null) {
-                return ApprovalTransition::to(
-                    ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::SummaryNotReleased,
-                );
-            }
-
-            if ($this->attestedIssuance === null) {
-                return ApprovalTransition::to(
-                    ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::AttestNotConfigured,
-                );
-            }
-
-            try {
-                $this->attestedIssuance->attestIssuedSummary(
-                    ApprovalLane::Confirmation,
-                    hash('sha256', $id),
-                    $materialization->summary,
-                );
-            } catch (Throwable) {
-                return ApprovalTransition::to(
-                    ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::AttestAppendFailed,
-                );
-            }
-        }
-
         $now = $this->clock->now();
         $ttl = $capability->confirmationTtlSeconds() ?? $this->defaultTtlSeconds;
         $receipt = new ApprovalReceipt(
@@ -117,7 +90,40 @@ final readonly class ApprovalManager
             approverSummaryRelease: $materialization->release,
         );
 
-        $transition = $this->receipts->issue($receipt);
+        if ($capability->attestedIssuanceRequirement()) {
+            // Cheap pre-conditions that refuse without touching admission and without attesting: a
+            // summary that was not released, and a missing attest backend. Ordering the attest after
+            // the admission check needs the opt-in seam; without it a custom store cannot honour
+            // check → attest → persist, so a strict issuance fails closed rather than reverting to
+            // the buggy attest-before-issue order.
+            if ($materialization->release !== ApproverSummaryRelease::Released || $materialization->summary === null) {
+                return ApprovalTransition::to(
+                    ApprovalOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::SummaryNotReleased,
+                );
+            }
+
+            if ($this->attestedIssuance === null) {
+                return ApprovalTransition::to(
+                    ApprovalOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::AttestNotConfigured,
+                );
+            }
+
+            if (! $this->receipts instanceof IssuesAdmittedReceipts) {
+                return ApprovalTransition::to(
+                    ApprovalOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::AttestOrderingUnsupported,
+                );
+            }
+
+            // The three values are narrowed non-null immediately above; the attested-issuance path
+            // takes them by non-nullable type so the in-transaction attest closure never depends on
+            // flow narrowing (ADR 0039 §"check → (attest) → persist, in that order").
+            $transition = $this->issueAttested($this->receipts, $receipt, $this->attestedIssuance, $id, $materialization->summary);
+        } else {
+            $transition = $this->receipts->issue($receipt);
+        }
 
         if ($transition->outcome === ApprovalOutcome::PreviouslyConsumed) {
             return ApprovalTransition::to(
@@ -127,6 +133,37 @@ final readonly class ApprovalManager
         }
 
         return $this->recordOperation($transition, ApprovalOutcome::Issued, ApprovalOperation::Issued);
+    }
+
+    /**
+     * Run a strict issuance with the attest anchored at the store's clear-to-mint point, inside the
+     * admission-locked transaction. Every value is non-null by type, so the attest closure never
+     * depends on flow narrowing. The receipt id is fixed, so a transaction retry re-runs the closure
+     * with the identical sha256($id); an attest failure is wrapped so a genuine store error out of
+     * the same transaction is not misclassified as AttestAppendFailed.
+     */
+    private function issueAttested(
+        IssuesAdmittedReceipts $receipts,
+        ApprovalReceipt $receipt,
+        AttestsIssuance $attester,
+        string $id,
+        ApproverSummary $summary,
+    ): ApprovalTransition {
+        try {
+            return $receipts->issueAdmitted($receipt, function () use ($attester, $id, $summary): void {
+                try {
+                    $attester->attestIssuedSummary(ApprovalLane::Confirmation, hash('sha256', $id), $summary);
+                } catch (Throwable $e) {
+                    throw AttestedIssuanceAppendFailed::from($e);
+                }
+            });
+        } catch (AttestedIssuanceAppendFailed) {
+            // The transaction rolled back — nothing was persisted.
+            return ApprovalTransition::to(
+                ApprovalOutcome::IssuanceRefused,
+                refusalReason: IssuanceRefusalReason::AttestAppendFailed,
+            );
+        }
     }
 
     /**
