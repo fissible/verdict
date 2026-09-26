@@ -245,7 +245,6 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
             ->where('record_type', 'provenance')
             ->where('correlation_id', $correlationId)
             ->orderBy('recorded_at')
-            ->orderBy('id')
             ->get();
         $entries = [];
 
@@ -262,6 +261,8 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
                 recordedAt: new DateTimeImmutable((string) $row->recorded_at, new \DateTimeZone('UTC')),
             );
         }
+
+        usort($entries, ProvenanceEntry::readOrder(...));
 
         return $entries;
     }

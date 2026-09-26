@@ -18,9 +18,9 @@ use Illuminate\Database\DatabaseManager;
  * #311 item 6 — DatabaseEvidenceRecorder::derivationsFor() ordered by `recorded_at` alone with no
  * tiebreaker, so edges recorded in the same second came back in whatever order the engine returned
  * them (rowid on SQLite, unspecified on MySQL/PostgreSQL) — audits render differently run-to-run.
- * (provenanceFor carries a (recorded_at, id) tiebreaker, which was not #311's defect. It has one of
- * its own — the id is a random UUID, so its same-second order is not reproducible from the entries,
- * and the in-memory recorder does not sort at all. That is #480, not this file's subject.)
+ * (provenanceFor's own same-second order — once a random-UUID tiebreak on the database side and
+ * insertion order in memory — is now a data-derived total order, recorded_at then the content and
+ * component fingerprints, fixed under #480 and covered by ProvenanceReadOrderTest.)
  *
  * The contract pinned here: derivationsFor returns edges in a deterministic total order —
  * recorded_at first (chronology dominates), then parent fingerprint, then kind — identically across
@@ -125,9 +125,9 @@ it('returns the same order however the same set of same-second edges was inserte
 })->with('orderingRecorders');
 
 it('keeps provenanceFor ordered by recorded_at, unaffected by the derivations change (regression)', function (): void {
-    // Chronological order only, across different seconds — all this test claims. provenanceFor's
-    // own cross-recorder divergence (a random-UUID tiebreak against insertion order, at any
-    // precision) is #480, deliberately not fixed here; do not read this as pinning it sound.
+    // Chronological order across different seconds — all this test claims. provenanceFor's
+    // same-second cross-recorder order is now data-derived (fixed under #480, ProvenanceReadOrderTest);
+    // this case pins only that recorded_at remains the primary key of the order.
     $recorder = new DatabaseEvidenceRecorder(
         app(DatabaseManager::class)->connection(),
         verdictTable('evidence'),

@@ -41,6 +41,24 @@ final readonly class ProvenanceEntry
         }
     }
 
+    /**
+     * A deterministic read order derived entirely from the entry, so the database and in-memory
+     * recorders agree and the order is reproducible from the data — never from a storage id or the
+     * insertion sequence (#480). Wall-clock second precision matches the stored recorded_at; every
+     * key is strcmp so two numeric-looking fingerprints never tie the way array <=> would (#482).
+     */
+    public static function readOrder(self $a, self $b): int
+    {
+        return strcmp($a->recordedAt->format('Y-m-d H:i:s'), $b->recordedAt->format('Y-m-d H:i:s'))
+            ?: strcmp($a->contentFingerprint, $b->contentFingerprint)
+            ?: strcmp($a->componentFingerprint ?? '', $b->componentFingerprint ?? '')
+            ?: strcmp($a->componentLabel ?? '', $b->componentLabel ?? '')
+            ?: strcmp($a->source->identity(), $b->source->identity())
+            ?: strcmp($a->channel->value, $b->channel->value)
+            ?: strcmp($a->trust->value, $b->trust->value)
+            ?: strcmp($a->dataClass->value, $b->dataClass->value);
+    }
+
     public static function assertIdentifier(string $value, string $label): void
     {
         if (trim($value) === '' || preg_match('/^[A-Za-z0-9._-]+$/', $value) !== 1) {
