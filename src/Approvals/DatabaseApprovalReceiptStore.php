@@ -48,8 +48,31 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         private string $table = 'verdict_approval_receipts',
         private ?Dispatcher $events = null,
         private ?ConsumedBindingGuardStore $guards = null,
+        private ?ConsumedBindingGuardScheme $scheme = null,
     ) {
         $this->schemaMemo = new stdClass;
+    }
+
+    /**
+     * The digests issue() and consume() probe for a prior guard: the keyless digest plus one per
+     * retained keyed version when a scheme is configured, else the single keyless digest.
+     *
+     * @return list<string>
+     */
+    private function guardCandidates(string $toolCallId, string $capability, string $bindingFingerprint): array
+    {
+        return $this->scheme?->candidates($toolCallId, $capability, $bindingFingerprint)
+            ?? [ConsumedBindingGuard::digest($toolCallId, $capability, $bindingFingerprint)];
+    }
+
+    /**
+     * The digest consume() records, under the active scheme (keyed when an active version is set,
+     * else keyless). May throw MissingConsumedBindingGuardKey when the active key has no secret.
+     */
+    private function activeGuardDigest(string $toolCallId, string $capability, string $bindingFingerprint): string
+    {
+        return $this->scheme?->active($toolCallId, $capability, $bindingFingerprint)->digest
+            ?? ConsumedBindingGuard::digest($toolCallId, $capability, $bindingFingerprint);
     }
 
     /**
@@ -142,9 +165,12 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                     return $this->existingIssue($existing, $receipt);
                 }
 
-                if ($this->guards !== null
-                    && $this->guards->has(ConsumedBindingGuard::digest($receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint))) {
-                    return ApprovalTransition::to(ApprovalOutcome::PreviouslyConsumed);
+                if ($this->guards !== null) {
+                    foreach ($this->guardCandidates($receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint) as $candidate) {
+                        if ($this->guards->has($candidate)) {
+                            return ApprovalTransition::to(ApprovalOutcome::PreviouslyConsumed);
+                        }
+                    }
                 }
 
                 $openReceipt = $this->lockedOpenReceiptForChangedProposal($receipt);
@@ -413,13 +439,13 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
 
             /** @var ApprovalReceipt $receipt */
             if ($this->guards !== null) {
-                $digest = ConsumedBindingGuard::digest($receipt->toolCallId, $receipt->capability, $bindingFingerprint);
-
-                if ($this->guards->has($digest)) {
-                    throw new ConsumedBindingGuardCollision('The approval binding has already been consumed.');
+                foreach ($this->guardCandidates($receipt->toolCallId, $receipt->capability, $bindingFingerprint) as $candidate) {
+                    if ($this->guards->has($candidate)) {
+                        throw new ConsumedBindingGuardCollision('The approval binding has already been consumed.');
+                    }
                 }
 
-                $this->guards->remember($digest, $at);
+                $this->guards->remember($this->activeGuardDigest($receipt->toolCallId, $receipt->capability, $bindingFingerprint), $at);
             }
 
             $this->connection->table($this->table)
