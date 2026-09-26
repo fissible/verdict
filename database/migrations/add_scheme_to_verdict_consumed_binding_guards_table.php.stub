@@ -27,7 +27,15 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('verdict_consumed_binding_guards', function (Blueprint $table): void {
-            $table->dropColumn(['algorithm', 'key_version']);
+            // Symmetric with up()'s hasColumn guards: only drop what exists, so a rollback when the
+            // columns are already absent is a no-op rather than a "no such column" error.
+            if (Schema::hasColumn('verdict_consumed_binding_guards', 'algorithm')) {
+                $table->dropColumn('algorithm');
+            }
+
+            if (Schema::hasColumn('verdict_consumed_binding_guards', 'key_version')) {
+                $table->dropColumn('key_version');
+            }
         });
     }
 };
