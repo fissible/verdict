@@ -34,7 +34,7 @@ final readonly class DatabaseConsumedBindingGuardStore implements ConsumedBindin
         }
     }
 
-    public function remember(string $digest, DateTimeInterface $consumedAt): void
+    public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
     {
         // Illuminate binds streams as PDO::PARAM_LOB; the stream contains the raw bytes.
         $binary = fopen('data://text/plain;base64,'.base64_encode($digest), 'rb');
@@ -49,6 +49,8 @@ final readonly class DatabaseConsumedBindingGuardStore implements ConsumedBindin
                 'consumed_at' => DateTimeImmutable::createFromInterface($consumedAt)
                     ->setTimezone(new DateTimeZone('UTC'))
                     ->format('Y-m-d H:i:s'),
+                'algorithm' => $algorithm,
+                'key_version' => $keyVersion,
             ]);
         } finally {
             fclose($binary);

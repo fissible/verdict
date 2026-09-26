@@ -69,10 +69,10 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
      * The digest consume() records, under the active scheme (keyed when an active version is set,
      * else keyless). May throw MissingConsumedBindingGuardKey when the active key has no secret.
      */
-    private function activeGuardDigest(string $toolCallId, string $capability, string $bindingFingerprint): string
+    private function activeGuard(string $toolCallId, string $capability, string $bindingFingerprint): DerivedGuard
     {
-        return $this->scheme?->active($toolCallId, $capability, $bindingFingerprint)->digest
-            ?? ConsumedBindingGuard::digest($toolCallId, $capability, $bindingFingerprint);
+        return $this->scheme?->active($toolCallId, $capability, $bindingFingerprint)
+            ?? new DerivedGuard(ConsumedBindingGuard::digest($toolCallId, $capability, $bindingFingerprint), null, null);
     }
 
     /**
@@ -323,9 +323,12 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
             $count += SecurityStateTransaction::run($this->connection, 'prune a consumed approval payload', function () use ($row, $guards): int {
                 BindingAdmission::acquire($this->connection, $row->tool_call_id, $row->binding_fingerprint);
 
+                $guard = $this->activeGuard($row->tool_call_id, $row->capability, $row->binding_fingerprint);
                 $guards->remember(
-                    ConsumedBindingGuard::digest($row->tool_call_id, $row->capability, $row->binding_fingerprint),
+                    $guard->digest,
                     $this->dateFromDatabase($row->consumed_at),
+                    $guard->algorithm,
+                    $guard->keyVersion,
                 );
 
                 return $this->connection->table($this->table)->where('id', $row->id)->delete();
@@ -445,7 +448,8 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                     }
                 }
 
-                $this->guards->remember($this->activeGuardDigest($receipt->toolCallId, $receipt->capability, $bindingFingerprint), $at);
+                $guard = $this->activeGuard($receipt->toolCallId, $receipt->capability, $bindingFingerprint);
+                $this->guards->remember($guard->digest, $at, $guard->algorithm, $guard->keyVersion);
             }
 
             $this->connection->table($this->table)
