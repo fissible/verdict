@@ -68,10 +68,14 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
     /** @return list<ProvenanceEntry> */
     public function provenanceFor(string $correlationId): array
     {
-        return array_values(array_filter(
+        $entries = array_values(array_filter(
             $this->provenanceRecords,
             fn (ProvenanceEntry $entry): bool => $entry->correlationId === $correlationId,
         ));
+
+        usort($entries, ProvenanceEntry::readOrder(...));
+
+        return $entries;
     }
 
     /** @return list<ProvenanceDerivation> */

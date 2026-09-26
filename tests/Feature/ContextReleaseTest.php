@@ -126,10 +126,22 @@ it('records an observed source-to-release derivation within a Laravel AI invocat
 
     $entries = $recorder->provenanceFor('invocation-release');
     expect($entries)->toHaveCount(2);
+    $fingerprints = array_map(static fn ($entry): string => $entry->contentFingerprint, $entries);
 
-    $derivations = $recorder->derivationsFor('invocation-release', $entries[1]->contentFingerprint);
+    // Identify parent and child by the derivation edge (content fingerprints), not by read position:
+    // provenanceFor's order is data-derived, not insertion order (#480).
+    $childFingerprint = null;
+    foreach ($fingerprints as $fingerprint) {
+        if ($recorder->derivationsFor('invocation-release', $fingerprint) !== []) {
+            $childFingerprint = $fingerprint;
+        }
+    }
+    expect($childFingerprint)->not->toBeNull();
+
+    $derivations = $recorder->derivationsFor('invocation-release', $childFingerprint);
     expect($derivations)->toHaveCount(1)
-        ->and($derivations[0]->parentContentFingerprint)->toBe($entries[0]->contentFingerprint);
+        ->and($fingerprints)->toContain($derivations[0]->parentContentFingerprint)
+        ->and($derivations[0]->parentContentFingerprint)->not->toBe($childFingerprint);
 });
 
 it('redacts only explicitly projected structured fields and records redacted transform evidence', function (): void {
