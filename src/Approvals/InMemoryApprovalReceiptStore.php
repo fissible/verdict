@@ -128,8 +128,10 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
         // stored 'Y-m-d H:i:s' — the two shipped stores order identically.
         usort(
             $receipts,
-            static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => [$a->createdAt->format('Y-m-d H:i:s'), $a->id]
-                <=> [$b->createdAt->format('Y-m-d H:i:s'), $b->id],
+            static fn (ApprovalReceipt $a, ApprovalReceipt $b): int => strcmp(
+                $a->createdAt->format('Y-m-d H:i:s'),
+                $b->createdAt->format('Y-m-d H:i:s'),
+            ) ?: strcmp($a->id, $b->id),
         );
 
         return match (count($receipts)) {
