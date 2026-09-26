@@ -4,18 +4,25 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Reviews;
 
+use Closure;
 use DateTimeImmutable;
+use Fissible\Verdict\Contracts\IssuesAdmittedReviewRequests;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
 
 /**
  * Process-local test store. It is not safe for production, Octane, or queue workers.
  */
-final class InMemoryReviewRequestStore implements ReviewRequestStore
+final class InMemoryReviewRequestStore implements IssuesAdmittedReviewRequests, ReviewRequestStore
 {
     /** @var array<string, ReviewRequest> */
     private array $requests = [];
 
     public function issue(ReviewRequest $request): ReviewTransition
+    {
+        return $this->issueAdmitted($request, static fn () => null);
+    }
+
+    public function issueAdmitted(ReviewRequest $request, Closure $onAdmitted): ReviewTransition
     {
         $existing = $this->findForBinding($request->capability, $request->bindingFingerprint);
 
@@ -34,6 +41,10 @@ final class InMemoryReviewRequestStore implements ReviewRequestStore
         if (isset($this->requests[$request->id])) {
             return ReviewTransition::to(ReviewOutcome::InvalidState, $this->requests[$request->id]);
         }
+
+        // Clear to mint: the binding admits a new request. Run the hook before persisting so a
+        // throw leaves nothing minted and propagates unchanged.
+        $onAdmitted();
 
         $this->requests[$request->id] = $request;
 
