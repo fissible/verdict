@@ -88,6 +88,11 @@ it('honours an integer active_key from config: the container store writes a KEYE
     // The regression: before the fix this config resolved to keyless and wrote the unsalted digest.
     expect(khGuardDigests())->toBe([ConsumedBindingGuard::keyed(KH_TC, KH_CAP, KH_FP, KH_SECRET)])
         ->and(khGuardDigests())->not->toContain(ConsumedBindingGuard::digest(KH_TC, KH_CAP, KH_FP));
+
+    // The full scheme is persisted, and the integer version was coerced to '1' end to end.
+    $row = khConnection()->table(KH_GUARD_TABLE)->first();
+    expect($row->algorithm)->toBe('hmac-sha256')
+        ->and($row->key_version)->toBe('1');
 });
 
 it('fails closed at store resolution when the keyed-guard config is invalid', function (): void {

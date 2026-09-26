@@ -104,6 +104,28 @@ it('fails closed on a secret below the minimum length, naming the version', func
     'one below the floor' => str_repeat('a', 31),
 ]);
 
+it('fails closed on a weak or non-string RETAINED (non-active) secret, naming that version', function (string|bool $weak): void {
+    // Retained keys feed candidates() (the replay-detection probe), so every secret must be strong,
+    // not only the active one. Here v1 is active and valid; the weak secret is the retained v2. An
+    // implementation that validates only the active key's secret would pass the active-key cases but
+    // ship a still-brute-forceable retained probe — this closes that hole.
+    try {
+        ConsumedBindingGuardScheme::fromConfig(['active_key' => 'v1', 'keys' => ['v1' => FC_SECRET, 'v2' => $weak]]);
+        expect(false)->toBeTrue('expected InvalidConsumedBindingGuardConfig');
+    } catch (InvalidConsumedBindingGuardConfig $exception) {
+        expect($exception->getMessage())->toContain('v2');
+    }
+})->with([
+    'short retained' => 'too-short',
+    'non-string retained' => true,
+]);
+
+it('validates retained secrets even under a keyless (no active version) config', function (): void {
+    // Retained-only mode (keyed probing, keyless writes) must still reject a weak retained secret.
+    expect(fn () => ConsumedBindingGuardScheme::fromConfig(['active_key' => null, 'keys' => ['v1' => 'too-short']]))
+        ->toThrow(InvalidConsumedBindingGuardConfig::class);
+});
+
 it('accepts a secret exactly at the minimum length', function (): void {
     $scheme = ConsumedBindingGuardScheme::fromConfig(['active_key' => 'v1', 'keys' => ['v1' => str_repeat('a', 32)]]);
 
