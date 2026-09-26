@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Approvals;
 
+use Fissible\Verdict\Exceptions\InvalidConsumedBindingGuardConfig;
 use Fissible\Verdict\Exceptions\MissingConsumedBindingGuardKey;
 
 /**
@@ -17,12 +18,80 @@ use Fissible\Verdict\Exceptions\MissingConsumedBindingGuardKey;
 final readonly class ConsumedBindingGuardScheme
 {
     /**
+     * The shortest secret accepted as a key: a shorter one is a misconfiguration, not a key, and
+     * would ship a trivially brute-forceable HMAC. Applied to every retained secret, not only the
+     * active one, because retained secrets feed the replay-detection probe.
+     */
+    public const int MINIMUM_SECRET_LENGTH = 32;
+
+    /**
      * @param  array<string,string>  $keys  Retained (append-only) map of key version to secret.
      */
     public function __construct(
         private array $keys = [],
         private ?string $activeKeyVersion = null,
     ) {}
+
+    /**
+     * Build the scheme from the operator-supplied verdict.approvals.consumed_binding_guard config,
+     * failing closed on any malformation rather than degrading to keyless (ADR 0039). Null config is
+     * the keyless default; anything present but malformed throws InvalidConsumedBindingGuardConfig.
+     */
+    public static function fromConfig(mixed $config): ?self
+    {
+        if ($config === null) {
+            return null;
+        }
+
+        if (! is_array($config)) {
+            throw new InvalidConsumedBindingGuardConfig(
+                'verdict.approvals.consumed_binding_guard must be an array or null.'
+            );
+        }
+
+        $configuredKeys = $config['keys'] ?? [];
+
+        if (! is_array($configuredKeys)) {
+            throw new InvalidConsumedBindingGuardConfig(
+                'verdict.approvals.consumed_binding_guard.keys must be an array.'
+            );
+        }
+
+        $keys = [];
+
+        foreach ($configuredKeys as $version => $secret) {
+            if (! is_string($secret) || strlen($secret) < self::MINIMUM_SECRET_LENGTH) {
+                throw new InvalidConsumedBindingGuardConfig(
+                    "verdict.approvals.consumed_binding_guard.keys[{$version}] must be a string of at least "
+                    .self::MINIMUM_SECRET_LENGTH.' characters.'
+                );
+            }
+
+            $keys[(string) $version] = $secret;
+        }
+
+        $activeKey = $config['active_key'] ?? null;
+
+        if ($activeKey === null) {
+            return new self($keys, null);
+        }
+
+        if (! is_scalar($activeKey)) {
+            throw new InvalidConsumedBindingGuardConfig(
+                'verdict.approvals.consumed_binding_guard.active_key must be a scalar key version or null.'
+            );
+        }
+
+        $activeKeyVersion = (string) $activeKey;
+
+        if (! array_key_exists($activeKeyVersion, $keys)) {
+            throw new InvalidConsumedBindingGuardConfig(
+                "verdict.approvals.consumed_binding_guard.active_key [{$activeKeyVersion}] is not among the retained keys."
+            );
+        }
+
+        return new self($keys, $activeKeyVersion);
+    }
 
     /**
      * @return list<string>

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Console\Commands;
 
 use Fissible\Verdict\Approvals\ApproverAudience;
+use Fissible\Verdict\Approvals\ConsumedBindingGuardScheme;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Approvals\StoreBackedApprovalStatusReader;
@@ -31,6 +32,7 @@ use Fissible\Verdict\Evidence\DatabaseEvidenceRecorder;
 use Fissible\Verdict\Evidence\EffectiveEvidenceClass;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
 use Fissible\Verdict\Evidence\NullEvidenceRecorder;
+use Fissible\Verdict\Exceptions\InvalidConsumedBindingGuardConfig;
 use Fissible\Verdict\ExecutionClaims\InMemoryExecutionClaimStore;
 use Fissible\Verdict\Intents\ActionIntentManager;
 use Fissible\Verdict\Intents\InMemoryActionIntentStore;
@@ -67,6 +69,17 @@ final class ValidateVerdictCommand extends Command
         $warnings = [];
         $information = [];
         $unpausable = [];
+
+        // Preflight, unconditional and reading configuration only (never resolving the approval
+        // store): the keyed-guard config fails closed at store resolution (ADR 0039), so surface a
+        // malformation here at deploy time rather than as a first-request throw. Its message already
+        // names verdict.approvals.consumed_binding_guard.
+        try {
+            ConsumedBindingGuardScheme::fromConfig(config('verdict.approvals.consumed_binding_guard'));
+        } catch (InvalidConsumedBindingGuardConfig $exception) {
+            $errors[] = $exception->getMessage();
+        }
+
         $needsApprovals = false;
         $needsRateLimits = false;
         $needsExecutionClaims = false;

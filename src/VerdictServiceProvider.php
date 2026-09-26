@@ -724,36 +724,14 @@ final class VerdictServiceProvider extends ServiceProvider
     }
 
     /**
-     * The keyed-digest scheme for the consumed-binding guard (ADR 0039). Null — keyless — unless
-     * the config block is present: then every retained key becomes a probe candidate and the active
-     * version (a string, else keyless) selects the write digest. Keys are coerced to strings; a
-     * retained key with no secret fails closed at issuance rather than skipping a candidate.
+     * The keyed-digest scheme for the consumed-binding guard (ADR 0039). Null — keyless — unless the
+     * config block is present. Built through ConsumedBindingGuardScheme::fromConfig(), which fails
+     * closed: a misconfiguration throws InvalidConsumedBindingGuardConfig here rather than silently
+     * degrading to keyless (the exposure keyed mode removes, and permanent because it is not retroactive).
      */
     private function consumedBindingGuardScheme(): ?ConsumedBindingGuardScheme
     {
-        $config = config('verdict.approvals.consumed_binding_guard');
-
-        if (! is_array($config)) {
-            return null;
-        }
-
-        $configuredKeys = $config['keys'] ?? [];
-        $keys = [];
-
-        if (is_array($configuredKeys)) {
-            foreach ($configuredKeys as $version => $secret) {
-                $keys[(string) $version] = is_string($secret)
-                    ? $secret
-                    : (is_scalar($secret) ? (string) $secret : '');
-            }
-        }
-
-        $activeKey = $config['active_key'] ?? null;
-
-        return new ConsumedBindingGuardScheme(
-            $keys,
-            is_string($activeKey) ? $activeKey : null,
-        );
+        return ConsumedBindingGuardScheme::fromConfig(config('verdict.approvals.consumed_binding_guard'));
     }
 
     /**
