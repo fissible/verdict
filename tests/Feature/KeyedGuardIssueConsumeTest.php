@@ -98,6 +98,7 @@ beforeEach(function (): void {
         'add_proposal_provenance_to_verdict_approval_receipts_table.php.stub',
         'add_approval_context_to_verdict_approval_receipts_table.php.stub',
         'create_verdict_consumed_binding_guards_table.php.stub',
+        'add_scheme_to_verdict_consumed_binding_guards_table.php.stub',
         'create_verdict_binding_admission_locks_table.php.stub',
     ] as $stub) {
         (require __DIR__.'/../../database/migrations/'.$stub)->up();

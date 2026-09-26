@@ -281,6 +281,7 @@ beforeEach(function (): void {
     (require __DIR__.'/../../database/migrations/add_intent_id_to_verdict_evidence_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_capability_configurations_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_consumed_binding_guards_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_scheme_to_verdict_consumed_binding_guards_table.php.stub')->up();
     (require __DIR__.'/../../database/migrations/create_verdict_binding_admission_locks_table.php.stub')->up();
 
     $this->app->instance(QueuedApprovalState::class, new QueuedApprovalState);

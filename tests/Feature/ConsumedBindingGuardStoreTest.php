@@ -44,6 +44,7 @@ function databaseGuardStore(): DatabaseConsumedBindingGuardStore
 
 beforeEach(function (): void {
     (require __DIR__.'/../../database/migrations/create_verdict_consumed_binding_guards_table.php.stub')->up();
+    (require __DIR__.'/../../database/migrations/add_scheme_to_verdict_consumed_binding_guards_table.php.stub')->up();
 });
 
 afterEach(function (): void {

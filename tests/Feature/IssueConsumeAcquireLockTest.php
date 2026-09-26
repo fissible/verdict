@@ -316,7 +316,7 @@ it('holds the coarse-pair lock throughout issue() row work — an independent se
             return false; // guard absent -> issue proceeds to mint
         }
 
-        public function remember(string $digest, DateTimeInterface $consumedAt): void {}
+        public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void {}
     };
 
     expect((new DatabaseApprovalReceiptStore(connection: $connection, guards: $probe))
@@ -351,7 +351,7 @@ it('holds the coarse-pair lock throughout consume() row work — an independent 
             return false; // no collision
         }
 
-        public function remember(string $digest, DateTimeInterface $consumedAt): void
+        public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
         {
             // Runs INSIDE consume()'s transaction, during row work, while the lock must still be held.
             $manager = app(DatabaseManager::class);
