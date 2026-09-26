@@ -183,6 +183,12 @@ Separate the human **approve → execute** interval from the machine **validate 
 
 Do not raise a TTL merely because expiry errors appear: first identify the latency source. Treating expiry as flakiness turns a fail-closed control into a longer-lived one. Choose TTL and target strategy together: `refresh()` re-establishes the target immediately before execution, whereas `acceptStaleSnapshot()` leaves a longer-lived approval exposed to more stale state. Material binding facts already invalidate a receipt when they change between proposal and execution, so expiry is a backstop rather than the primary freshness control. See [ADR 0003](adr/0003-execution-target-freshness.md).
 
+### Replay refusal outlives the consumed receipt
+
+Consuming an approved receipt is single-use. Verdict permanently records the consumed binding — the `(tool_call_id, capability, binding_fingerprint)` triple — so re-proposing the identical binding is refused (`PreviouslyConsumed`) rather than issued a fresh receipt. That refusal outlives the receipt itself: an approval's payload may be pruned on a retention schedule (`verdict.approvals.consumed_retention_days`, or `php artisan verdict:prune-approvals --consumed-days`), but the permanent guard is kept, so a consumed action cannot be replayed by waiting for its receipt to age out. See [ADR 0039](adr/0039-replay-refusal-outlives-the-consumed-receipt.md).
+
+The guard's digest is **keyless by default** — an unsalted SHA-256 of the binding triple, which is self-contained and outage-free. It is a documented correlation, not anonymization: a reader of the guard table who can also guess the triple can test offline whether that action was consumed (see [limitations](limitations.md#no-pii-inference)). For a threat model that includes a long-lived database-read compromise, `verdict.approvals.consumed_binding_guard` makes the digest a **keyed**, versioned HMAC over the same binding. Keyed mode is a deployment-time decision, not a retroactive one — guards written while keyless stay keyless, so enable it before the consumptions you need protected occur. Rotation is append-only: retain every historical key still needed to check an existing guard, because a missing key **fails closed** at issuance rather than minting a receipt Verdict can no longer check against the guard.
+
 <!-- @verdict-claim security.execution-claims tested -->
 ## Preventing duplicate actions
 
