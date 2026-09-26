@@ -22,6 +22,7 @@ use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
 use Fissible\Verdict\Exceptions\ApprovalAuthorizerMissing;
 use Fissible\Verdict\Exceptions\AttestedIssuanceAppendFailed;
+use Fissible\Verdict\Support\ApproverSummary;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -66,46 +67,6 @@ final readonly class ApprovalManager
             $capability->approverDescription($evaluation->envelope, $evaluation->target, $binding),
         );
         $id = Str::random(64);
-
-        // Cheap pre-conditions that refuse a strict issuance without touching admission and without
-        // attesting: a summary that was not released, and a missing attest backend. The attest
-        // itself is deferred to the store's clear-to-mint point (below) so a refused admission —
-        // Existing, Expired, PreviouslyConsumed — never anchors a summary for an issuance that did
-        // not happen (ADR 0039 §"check → (attest) → persist, in that order").
-        $attestSummary = null;
-        $attester = null;
-        $admittingReceipts = null;
-
-        if ($capability->attestedIssuanceRequirement()) {
-            if ($materialization->release !== ApproverSummaryRelease::Released || $materialization->summary === null) {
-                return ApprovalTransition::to(
-                    ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::SummaryNotReleased,
-                );
-            }
-
-            if ($this->attestedIssuance === null) {
-                return ApprovalTransition::to(
-                    ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::AttestNotConfigured,
-                );
-            }
-
-            // Ordering attest after the admission check requires the opt-in seam. Without it a
-            // custom store cannot honour check → attest → persist, so a strict issuance fails
-            // closed rather than reverting to the buggy attest-before-issue order.
-            if (! $this->receipts instanceof IssuesAdmittedReceipts) {
-                return ApprovalTransition::to(
-                    ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::AttestOrderingUnsupported,
-                );
-            }
-
-            $attestSummary = $materialization->summary;
-            $attester = $this->attestedIssuance;
-            $admittingReceipts = $this->receipts;
-        }
-
         $now = $this->clock->now();
         $ttl = $capability->confirmationTtlSeconds() ?? $this->defaultTtlSeconds;
         $receipt = new ApprovalReceipt(
@@ -129,32 +90,37 @@ final readonly class ApprovalManager
             approverSummaryRelease: $materialization->release,
         );
 
-        if ($admittingReceipts !== null) {
-            // The attest runs only when the store clears to mint, inside its admission-locked
-            // transaction. A transaction retry re-runs this closure, so the attest is idempotent
-            // per sha256($id): the id is fixed on the receipt (never re-randomized on retry), and
-            // the summary is fixed here, so every re-run anchors the identical fingerprint. An
-            // attest failure is wrapped so a genuine store/DB error out of the same transaction is
-            // not misclassified as AttestAppendFailed.
-            try {
-                $transition = $admittingReceipts->issueAdmitted($receipt, function () use ($attester, $id, $attestSummary): void {
-                    try {
-                        $attester->attestIssuedSummary(
-                            ApprovalLane::Confirmation,
-                            hash('sha256', $id),
-                            $attestSummary,
-                        );
-                    } catch (Throwable $e) {
-                        throw AttestedIssuanceAppendFailed::from($e);
-                    }
-                });
-            } catch (AttestedIssuanceAppendFailed) {
-                // The transaction rolled back — nothing was persisted.
+        if ($capability->attestedIssuanceRequirement()) {
+            // Cheap pre-conditions that refuse without touching admission and without attesting: a
+            // summary that was not released, and a missing attest backend. Ordering the attest after
+            // the admission check needs the opt-in seam; without it a custom store cannot honour
+            // check → attest → persist, so a strict issuance fails closed rather than reverting to
+            // the buggy attest-before-issue order.
+            if ($materialization->release !== ApproverSummaryRelease::Released || $materialization->summary === null) {
                 return ApprovalTransition::to(
                     ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::AttestAppendFailed,
+                    refusalReason: IssuanceRefusalReason::SummaryNotReleased,
                 );
             }
+
+            if ($this->attestedIssuance === null) {
+                return ApprovalTransition::to(
+                    ApprovalOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::AttestNotConfigured,
+                );
+            }
+
+            if (! $this->receipts instanceof IssuesAdmittedReceipts) {
+                return ApprovalTransition::to(
+                    ApprovalOutcome::IssuanceRefused,
+                    refusalReason: IssuanceRefusalReason::AttestOrderingUnsupported,
+                );
+            }
+
+            // The three values are narrowed non-null immediately above; the attested-issuance path
+            // takes them by non-nullable type so the in-transaction attest closure never depends on
+            // flow narrowing (ADR 0039 §"check → (attest) → persist, in that order").
+            $transition = $this->issueAttested($this->receipts, $receipt, $this->attestedIssuance, $id, $materialization->summary);
         } else {
             $transition = $this->receipts->issue($receipt);
         }
@@ -167,6 +133,37 @@ final readonly class ApprovalManager
         }
 
         return $this->recordOperation($transition, ApprovalOutcome::Issued, ApprovalOperation::Issued);
+    }
+
+    /**
+     * Run a strict issuance with the attest anchored at the store's clear-to-mint point, inside the
+     * admission-locked transaction. Every value is non-null by type, so the attest closure never
+     * depends on flow narrowing. The receipt id is fixed, so a transaction retry re-runs the closure
+     * with the identical sha256($id); an attest failure is wrapped so a genuine store error out of
+     * the same transaction is not misclassified as AttestAppendFailed.
+     */
+    private function issueAttested(
+        IssuesAdmittedReceipts $receipts,
+        ApprovalReceipt $receipt,
+        AttestsIssuance $attester,
+        string $id,
+        ApproverSummary $summary,
+    ): ApprovalTransition {
+        try {
+            return $receipts->issueAdmitted($receipt, function () use ($attester, $id, $summary): void {
+                try {
+                    $attester->attestIssuedSummary(ApprovalLane::Confirmation, hash('sha256', $id), $summary);
+                } catch (Throwable $e) {
+                    throw AttestedIssuanceAppendFailed::from($e);
+                }
+            });
+        } catch (AttestedIssuanceAppendFailed) {
+            // The transaction rolled back — nothing was persisted.
+            return ApprovalTransition::to(
+                ApprovalOutcome::IssuanceRefused,
+                refusalReason: IssuanceRefusalReason::AttestAppendFailed,
+            );
+        }
     }
 
     /**
