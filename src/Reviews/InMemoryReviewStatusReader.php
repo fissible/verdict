@@ -34,8 +34,10 @@ final readonly class InMemoryReviewStatusReader implements ReviewStatusReader
 
         usort(
             $matching,
-            static fn (ReviewRequest $a, ReviewRequest $b): int => [$a->createdAt->format('Y-m-d H:i:s'), $a->id]
-                <=> [$b->createdAt->format('Y-m-d H:i:s'), $b->id],
+            static fn (ReviewRequest $a, ReviewRequest $b): int => strcmp(
+                $a->createdAt->format('Y-m-d H:i:s'),
+                $b->createdAt->format('Y-m-d H:i:s'),
+            ) ?: strcmp($a->id, $b->id),
         );
 
         return array_map(
