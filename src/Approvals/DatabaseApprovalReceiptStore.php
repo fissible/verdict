@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Approvals;
 
+use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
 use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
@@ -13,6 +14,7 @@ use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
+use Fissible\Verdict\Contracts\IssuesAdmittedReceipts;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
 use Fissible\Verdict\Contracts\PrunesConsumedApprovalPayload;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
@@ -27,7 +29,7 @@ use LogicException;
 use RuntimeException;
 use stdClass;
 
-final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, PrunableApprovalReceiptStore, PrunesConsumedApprovalPayload
+final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStore, DatabaseTableStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, IssuesAdmittedReceipts, PrunableApprovalReceiptStore, PrunesConsumedApprovalPayload
 {
     /**
      * This caps a single hydration statement at 1,000 ids. PostgreSQL permits 65,535 bound
@@ -146,11 +148,16 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
 
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
     {
+        return $this->issueAdmitted($receipt, static fn () => null);
+    }
+
+    public function issueAdmitted(ApprovalReceipt $receipt, Closure $onAdmitted): ApprovalTransition
+    {
         $openReceipt = null;
         $transitionedReceipt = null;
 
         try {
-            $transition = SecurityStateTransaction::run($this->connection, 'issue an approval receipt', function () use ($receipt, &$transitionedReceipt, &$openReceipt): ApprovalTransition {
+            $transition = SecurityStateTransaction::run($this->connection, 'issue an approval receipt', function () use ($receipt, $onAdmitted, &$transitionedReceipt, &$openReceipt): ApprovalTransition {
                 BindingAdmission::acquire($this->connection, $receipt->toolCallId, $receipt->bindingFingerprint);
 
                 // A retried closure must discard a rolled-back attempt's receipt; otherwise it could be announced after the successful attempt.
@@ -174,6 +181,13 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                 }
 
                 $openReceipt = $this->lockedOpenReceiptForChangedProposal($receipt);
+
+                // Clear to mint: the admission check has passed inside the locked transaction. Run
+                // the hook here, before the insert, so a throw rolls the transaction back — nothing
+                // is persisted — and propagates. A transaction retry re-runs this whole closure, so
+                // the hook re-runs too; its side effects must be idempotent (ADR 0039 (a)/(b)).
+                $onAdmitted();
+
                 $this->connection->table($this->table)->insert($this->attributes($receipt));
                 $transitionedReceipt = $receipt;
 

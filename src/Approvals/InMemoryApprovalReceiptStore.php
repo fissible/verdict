@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Approvals;
 
+use Closure;
 use DateTimeImmutable;
 use Fissible\Verdict\Approvals\Events\ApprovalProposalChangedUnderOpenReceipt;
 use Fissible\Verdict\Approvals\Events\ApprovalReceiptTransitioned;
@@ -11,6 +12,7 @@ use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Fissible\Verdict\Contracts\DistinguishesReceiptCollisions;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
+use Fissible\Verdict\Contracts\IssuesAdmittedReceipts;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
 use Fissible\Verdict\Contracts\PrunesConsumedApprovalPayload;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
@@ -20,7 +22,7 @@ use RuntimeException;
 /**
  * Process-local test store. It is not safe for production, Octane, or queue workers.
  */
-final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, PrunableApprovalReceiptStore, PrunesConsumedApprovalPayload
+final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, DistinguishesReceiptCollisions, EnforcesDecisionAdmissibility, IssuesAdmittedReceipts, PrunableApprovalReceiptStore, PrunesConsumedApprovalPayload
 {
     /** @var array<string, ApprovalReceipt> */
     private array $receipts = [];
@@ -55,6 +57,11 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
 
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
     {
+        return $this->issueAdmitted($receipt, static fn () => null);
+    }
+
+    public function issueAdmitted(ApprovalReceipt $receipt, Closure $onAdmitted): ApprovalTransition
+    {
         $existing = $this->findForBinding(
             $receipt->toolCallId,
             $receipt->capability,
@@ -71,6 +78,11 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
             }
 
             $openReceipt = $this->mostRecentOpenReceiptForChangedProposal($receipt);
+
+            // Clear to mint: the binding admits a new receipt. Run the hook before persisting so a
+            // throw leaves nothing minted and propagates unchanged.
+            $onAdmitted();
+
             $this->receipts[$receipt->id] = $receipt;
 
             $transition = ApprovalTransition::to(ApprovalOutcome::Issued, $receipt);
