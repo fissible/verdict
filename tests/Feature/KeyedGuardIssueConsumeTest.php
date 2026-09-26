@@ -246,14 +246,14 @@ function kgGuardDigests(): array
 
 it('builds a KEYED scheme from config so consume records the keyed digest', function (): void {
     config()->set('verdict.approvals.consumed_binding_guard.active_key', 'v1');
-    config()->set('verdict.approvals.consumed_binding_guard.keys', ['v1' => 'container-secret-1']);
+    config()->set('verdict.approvals.consumed_binding_guard.keys', ['v1' => 'container-secret-1-of-at-least-32-characters']);
     app()->forgetInstance(ApprovalReceiptStore::class);
 
     kgConsume(app(ApprovalReceiptStore::class), 'a');
 
     // Decisive: the persisted guard is the KEYED digest, not the keyless one — so the SP honoured
     // the keyed config rather than falling back to keyless.
-    expect(kgGuardDigests())->toBe([ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'container-secret-1')])
+    expect(kgGuardDigests())->toBe([ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'container-secret-1-of-at-least-32-characters')])
         ->and(kgGuardDigests())->not->toContain(ConsumedBindingGuard::digest(KG_TC, KG_CAP, KG_FP));
 });
 
