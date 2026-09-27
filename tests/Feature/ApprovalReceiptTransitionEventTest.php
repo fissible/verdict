@@ -36,6 +36,9 @@ function transitionEventSchema(Builder $schema): void
     $schema->create('verdict_consumed_binding_guards', function (Blueprint $table): void {
         $table->binary('digest', length: 32, fixed: true)->primary();
         $table->timestamp('consumed_at');
+        // Match the shipped schema (add_scheme migration): the guard probe reads these via lookup().
+        $table->string('algorithm')->nullable();
+        $table->string('key_version')->nullable();
     });
     $schema->create(verdictTable('approvals'), function (Blueprint $table): void {
         $table->string('id', 64)->primary();
