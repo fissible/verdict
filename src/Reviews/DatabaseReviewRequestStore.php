@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Fissible\Verdict\Reviews;
 
+use Closure;
 use DateTimeImmutable;
 use DateTimeZone;
 use Fissible\Verdict\Approvals\ProposalProvenance;
 use Fissible\Verdict\Console\DatabaseTableStore;
+use Fissible\Verdict\Contracts\IssuesAdmittedReviewRequests;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
 use Fissible\Verdict\Support\ApproverSummary;
 use Fissible\Verdict\Support\SecurityStateTransaction;
@@ -18,7 +20,7 @@ use LogicException;
 use stdClass;
 use Throwable;
 
-final readonly class DatabaseReviewRequestStore implements DatabaseTableStore, ReviewRequestStore
+final readonly class DatabaseReviewRequestStore implements DatabaseTableStore, IssuesAdmittedReviewRequests, ReviewRequestStore
 {
     private const int FIND_MANY_CHUNK_SIZE = 1000;
 
@@ -63,8 +65,13 @@ final readonly class DatabaseReviewRequestStore implements DatabaseTableStore, R
 
     public function issue(ReviewRequest $request): ReviewTransition
     {
+        return $this->issueAdmitted($request, static fn () => null);
+    }
+
+    public function issueAdmitted(ReviewRequest $request, Closure $onAdmitted): ReviewTransition
+    {
         try {
-            return SecurityStateTransaction::run($this->connection, 'issue a review request', function () use ($request): ReviewTransition {
+            return SecurityStateTransaction::run($this->connection, 'issue a review request', function () use ($request, $onAdmitted): ReviewTransition {
                 $existing = $this->lockedRequestForBinding($request->capability, $request->bindingFingerprint);
 
                 if ($existing !== null) {
@@ -76,6 +83,12 @@ final readonly class DatabaseReviewRequestStore implements DatabaseTableStore, R
                 if ($idCollision !== null) {
                     return ReviewTransition::to(ReviewOutcome::InvalidState, $idCollision);
                 }
+
+                // Clear to mint: the admission check has passed inside the locked transaction. Run
+                // the hook here, before the insert, so a throw rolls the transaction back — nothing
+                // is persisted — and propagates. A transaction retry re-runs this whole closure, so
+                // the hook re-runs too; its side effects must be idempotent (ADR 0039 (a)/(b)).
+                $onAdmitted();
 
                 $this->connection->table($this->table)->insert($this->attributes($request));
 
