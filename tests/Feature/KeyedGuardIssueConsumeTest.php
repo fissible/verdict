@@ -65,10 +65,14 @@ function kgStore(string $driver, ConsumedBindingGuardStore $guards, ?ConsumedBin
         : new InMemoryApprovalReceiptStore(guards: $guards, scheme: $scheme);
 }
 
-/** Seed a guard for a digest with NO receipt row — the post-prune state issue() consults the guard in. */
-function kgSeedGuard(ConsumedBindingGuardStore $guards, string $digest): void
+/**
+ * Seed a guard for a digest with NO receipt row — the post-prune state issue() consults the guard in.
+ * A keyed digest carries the scheme metadata a real consume() persisted for it (algorithm + version),
+ * so #514's after-match validation re-derives it and finds it consistent; a keyless digest carries none.
+ */
+function kgSeedGuard(ConsumedBindingGuardStore $guards, string $digest, ?string $algorithm = null, ?string $keyVersion = null): void
 {
-    $guards->remember($digest, kgTime('2026-09-01 12:01:00'));
+    $guards->remember($digest, kgTime('2026-09-01 12:01:00'), $algorithm, $keyVersion);
 }
 
 /** issue -> approve -> consume a fresh binding through $store, asserting each step. */
@@ -123,7 +127,7 @@ it('refuses a fresh binding whose keyless guard is present, with no scheme (the 
 
 it('refuses a fresh binding whose ACTIVE keyed guard is present', function (string $driver): void {
     $guards = new InMemoryConsumedBindingGuardStore;
-    kgSeedGuard($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1'));
+    kgSeedGuard($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1'), ConsumedBindingGuard::ALGORITHM_KEYED, 'v1');
     $scheme = new ConsumedBindingGuardScheme(['v1' => 'secret-1'], activeKeyVersion: 'v1');
 
     expect(kgStore($driver, $guards, $scheme)->issue(kgReceipt('replay'))->outcome)->toBe(ApprovalOutcome::PreviouslyConsumed);
@@ -139,7 +143,7 @@ it('still refuses a keyless-era guard after migrating to keyed (the keyless cand
 
 it('still refuses a retired-key guard after rotating the active key (the retired version is still probed)', function (string $driver): void {
     $guards = new InMemoryConsumedBindingGuardStore;
-    kgSeedGuard($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1')); // written under v1
+    kgSeedGuard($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1'), ConsumedBindingGuard::ALGORITHM_KEYED, 'v1'); // written under v1
     $rotated = new ConsumedBindingGuardScheme(['v1' => 'secret-1', 'v2' => 'secret-2'], activeKeyVersion: 'v2');
 
     expect(kgStore($driver, $guards, $rotated)->issue(kgReceipt('replay'))->outcome)->toBe(ApprovalOutcome::PreviouslyConsumed);
@@ -156,7 +160,7 @@ it('does not refuse a keyed-only guard when running keyless (only the keyless ca
     // A guard written under a key this (keyless) store does not know must NOT be found — a keyless
     // probe sees only the keyless digest. Proves candidates() is scheme-derived, not "check everything".
     $guards = new InMemoryConsumedBindingGuardStore;
-    kgSeedGuard($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1'));
+    kgSeedGuard($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1'), ConsumedBindingGuard::ALGORITHM_KEYED, 'v1');
 
     expect(kgStore($driver, $guards, null)->issue(kgReceipt('fresh'))->outcome)->toBe(ApprovalOutcome::Issued);
 })->with('approval stores');
@@ -193,7 +197,7 @@ it('rejects consume() when a guard exists under a NON-active candidate (probes e
 
     // Seed the collision AFTER approval (seeding before would make issue() refuse), under the
     // non-active v1 candidate.
-    kgSeedGuard($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1'));
+    kgSeedGuard($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1'), ConsumedBindingGuard::ALGORITHM_KEYED, 'v1');
 
     expect(fn () => $store->consume(KG_TC, KG_FP, kgTime('2026-09-01 12:01:00')))
         ->toThrow(ConsumedBindingGuardCollision::class);

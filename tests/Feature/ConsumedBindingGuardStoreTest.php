@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use Fissible\Verdict\Approvals\DatabaseConsumedBindingGuardStore;
+use Fissible\Verdict\Approvals\DerivedGuard;
 use Fissible\Verdict\Approvals\InMemoryConsumedBindingGuardStore;
 use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Illuminate\Database\DatabaseManager;
@@ -69,6 +70,48 @@ it('reports presence for a remembered digest and absence for others', function (
 
     expect($store->has(dgA()))->toBeTrue()
         ->and($store->has(dgB()))->toBeFalse();
+})->with('guard stores');
+
+// ── lookup(): the metadata-carrying probe used for after-match validation (#514) ───────────────
+
+it('looks up nothing for a digest it has never recorded', function (callable $make): void {
+    expect($make()->lookup(dgA()))->toBeNull();
+})->with('guard stores');
+
+it('looks up a keyless guard as a DerivedGuard carrying null algorithm and key version', function (callable $make): void {
+    $store = $make();
+    $store->remember(dgA(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')));
+
+    $found = $store->lookup(dgA());
+
+    expect($found)->toBeInstanceOf(DerivedGuard::class)
+        ->and($found->digest)->toBe(dgA())
+        ->and($found->algorithm)->toBeNull()
+        ->and($found->keyVersion)->toBeNull();
+})->with('guard stores');
+
+it('looks up a keyed guard returning the algorithm and key version it was remembered with', function (callable $make): void {
+    $store = $make();
+    $store->remember(dgA(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')), 'hmac-sha256', 'v1');
+
+    $found = $store->lookup(dgA());
+
+    expect($found)->toBeInstanceOf(DerivedGuard::class)
+        ->and($found->digest)->toBe(dgA())
+        ->and($found->algorithm)->toBe('hmac-sha256')
+        ->and($found->keyVersion)->toBe('v1');
+})->with('guard stores');
+
+it('looks up a binary digest (NUL and high bytes) faithfully', function (callable $make): void {
+    $store = $make();
+    $store->remember(dgBinary(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')), 'hmac-sha256', 'v2');
+
+    $found = $store->lookup(dgBinary());
+
+    expect($found)->not->toBeNull()
+        ->and($found->digest)->toBe(dgBinary())
+        ->and($found->keyVersion)->toBe('v2')
+        ->and($store->lookup(dgA()))->toBeNull();
 })->with('guard stores');
 
 it('keeps every remembered digest, not only the most recent', function (callable $make): void {

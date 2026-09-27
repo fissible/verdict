@@ -6,6 +6,7 @@ use Fissible\Verdict\Approvals\ApprovalOutcome;
 use Fissible\Verdict\Approvals\ApprovalReceipt;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Approvals\DerivedGuard;
 use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Fissible\Verdict\Support\BindingAdmission;
 use Fissible\Verdict\VerdictServiceProvider;
@@ -300,6 +301,11 @@ it('holds the coarse-pair lock throughout issue() row work — an independent se
 
         public function has(string $digest): bool
         {
+            return false;
+        }
+
+        public function lookup(string $digest): ?DerivedGuard
+        {
             // Runs INSIDE issue()'s transaction, after acquire() and before the insert. From a
             // genuinely independent session, try (non-blocking) to take the same pair advisory lock.
             $manager = app(DatabaseManager::class);
@@ -313,7 +319,7 @@ it('holds the coarse-pair lock throughout issue() row work — an independent se
                 $manager->purge('s5_probe');
             }
 
-            return false; // guard absent -> issue proceeds to mint
+            return null; // guard absent -> issue proceeds to mint
         }
 
         public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void {}
@@ -349,6 +355,11 @@ it('holds the coarse-pair lock throughout consume() row work — an independent 
         public function has(string $digest): bool
         {
             return false; // no collision
+        }
+
+        public function lookup(string $digest): ?DerivedGuard
+        {
+            return null; // no collision -> consume proceeds to its guard write
         }
 
         public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void

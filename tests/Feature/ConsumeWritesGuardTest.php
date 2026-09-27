@@ -8,6 +8,7 @@ use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\ConsumedBindingGuard;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\DatabaseConsumedBindingGuardStore;
+use Fissible\Verdict\Approvals\DerivedGuard;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Approvals\InMemoryConsumedBindingGuardStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
@@ -75,7 +76,7 @@ function recordingGuardStore(): ConsumedBindingGuardStore
 {
     return new class implements ConsumedBindingGuardStore
     {
-        /** @var list<array{digest: string, at: DateTimeInterface}> */
+        /** @var list<array{digest: string, at: DateTimeInterface, algorithm: ?string, keyVersion: ?string}> */
         public array $remembered = [];
 
         public function has(string $digest): bool
@@ -83,9 +84,20 @@ function recordingGuardStore(): ConsumedBindingGuardStore
             return in_array($digest, array_column($this->remembered, 'digest'), true);
         }
 
+        public function lookup(string $digest): ?DerivedGuard
+        {
+            foreach ($this->remembered as $entry) {
+                if ($entry['digest'] === $digest) {
+                    return new DerivedGuard($digest, $entry['algorithm'], $entry['keyVersion']);
+                }
+            }
+
+            return null;
+        }
+
         public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
         {
-            $this->remembered[] = ['digest' => $digest, 'at' => $consumedAt];
+            $this->remembered[] = ['digest' => $digest, 'at' => $consumedAt, 'algorithm' => $algorithm, 'keyVersion' => $keyVersion];
         }
 
         /** @return list<string> */
@@ -104,6 +116,11 @@ function throwingGuardStore(): ConsumedBindingGuardStore
         public function has(string $digest): bool
         {
             return false;
+        }
+
+        public function lookup(string $digest): ?DerivedGuard
+        {
+            return null;
         }
 
         public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
@@ -362,6 +379,11 @@ it('rolls back a guard that WAS written when the consume transaction fails (Data
         public function has(string $digest): bool
         {
             return $this->inner->has($digest);
+        }
+
+        public function lookup(string $digest): ?DerivedGuard
+        {
+            return $this->inner->lookup($digest);
         }
 
         public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void

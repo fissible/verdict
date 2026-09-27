@@ -17,6 +17,7 @@ use Fissible\Verdict\Approvals\ApproverSummaryMaterializer;
 use Fissible\Verdict\Approvals\ConsumedBindingGuard;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Approvals\DatabaseConsumedBindingGuardStore;
+use Fissible\Verdict\Approvals\DerivedGuard;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Approvals\IssuanceRefusalReason;
 use Fissible\Verdict\Capabilities\Capability;
@@ -79,19 +80,34 @@ function issueGuardRecordingStore(): ConsumedBindingGuardStore
         /** @var list<string> */
         public array $remembered = [];
 
-        /** @var list<string> digests queried via has() */
+        /** @var array<string, array{0: ?string, 1: ?string}> digest => [algorithm, keyVersion] */
+        public array $meta = [];
+
+        /** @var list<string> digests queried via lookup() (the probe) */
         public array $reads = [];
 
         public function has(string $digest): bool
         {
+            return in_array($digest, $this->remembered, true);
+        }
+
+        public function lookup(string $digest): ?DerivedGuard
+        {
             $this->reads[] = $digest;
 
-            return in_array($digest, $this->remembered, true);
+            if (! in_array($digest, $this->remembered, true)) {
+                return null;
+            }
+
+            [$algorithm, $keyVersion] = $this->meta[$digest] ?? [null, null];
+
+            return new DerivedGuard($digest, $algorithm, $keyVersion);
         }
 
         public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
         {
             $this->remembered[] = $digest;
+            $this->meta[$digest] = [$algorithm, $keyVersion];
         }
     };
 }

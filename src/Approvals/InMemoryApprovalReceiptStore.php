@@ -16,6 +16,7 @@ use Fissible\Verdict\Contracts\IssuesAdmittedReceipts;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
 use Fissible\Verdict\Contracts\PrunesConsumedApprovalPayload;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
+use Fissible\Verdict\Exceptions\ConsumedBindingGuardSchemeMismatch;
 use Illuminate\Contracts\Events\Dispatcher;
 use RuntimeException;
 
@@ -55,6 +56,23 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
             ?? new DerivedGuard(ConsumedBindingGuard::digest($toolCallId, $capability, $bindingFingerprint), null, null);
     }
 
+    /**
+     * After-match validation (ADR 0039): whether a matched guard's stored scheme self-consistently
+     * describes its digest. A configured scheme delegates to describes(); a keyless deployment (no
+     * scheme) can only verify a keyless row, re-deriving the unkeyed digest itself. A false result
+     * fails the probe closed with ConsumedBindingGuardSchemeMismatch.
+     */
+    private function guardIsConsistent(DerivedGuard $found, string $tc, string $cap, string $bf): bool
+    {
+        if ($this->scheme !== null) {
+            return $this->scheme->describes($found, $tc, $cap, $bf);
+        }
+
+        return $found->algorithm === null
+            && $found->keyVersion === null
+            && $found->digest === ConsumedBindingGuard::digest($tc, $cap, $bf);
+    }
+
     public function issue(ApprovalReceipt $receipt): ApprovalTransition
     {
         return $this->issueAdmitted($receipt, static fn () => null);
@@ -71,7 +89,15 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
         if ($existing === null) {
             if ($this->guards !== null) {
                 foreach ($this->guardCandidates($receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint) as $candidate) {
-                    if ($this->guards->has($candidate)) {
+                    $found = $this->guards->lookup($candidate);
+
+                    if ($found !== null) {
+                        if (! $this->guardIsConsistent($found, $receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint)) {
+                            throw new ConsumedBindingGuardSchemeMismatch(
+                                "A consumed-binding guard's stored scheme does not describe its digest."
+                            );
+                        }
+
                         return ApprovalTransition::to(ApprovalOutcome::PreviouslyConsumed);
                     }
                 }
@@ -281,7 +307,15 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
         /** @var ApprovalReceipt $receipt */
         if ($this->guards !== null) {
             foreach ($this->guardCandidates($receipt->toolCallId, $receipt->capability, $bindingFingerprint) as $candidate) {
-                if ($this->guards->has($candidate)) {
+                $found = $this->guards->lookup($candidate);
+
+                if ($found !== null) {
+                    if (! $this->guardIsConsistent($found, $receipt->toolCallId, $receipt->capability, $bindingFingerprint)) {
+                        throw new ConsumedBindingGuardSchemeMismatch(
+                            "A consumed-binding guard's stored scheme does not describe its digest."
+                        );
+                    }
+
                     throw new ConsumedBindingGuardCollision('The approval binding has already been consumed.');
                 }
             }
