@@ -37,4 +37,15 @@ final class InMemoryConsumedBindingGuardStore implements ConsumedBindingGuardSto
             'keyVersion' => $keyVersion,
         ];
     }
+
+    public function hasSchemedGuard(): bool
+    {
+        foreach ($this->guards as $guard) {
+            if ($guard['algorithm'] !== null) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

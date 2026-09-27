@@ -18,6 +18,7 @@ use Fissible\Verdict\Contracts\IssuesAdmittedReceipts;
 use Fissible\Verdict\Contracts\PrunableApprovalReceiptStore;
 use Fissible\Verdict\Contracts\PrunesConsumedApprovalPayload;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
+use Fissible\Verdict\Exceptions\ConsumedBindingGuardSchemeDowngraded;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardSchemeMismatch;
 use Fissible\Verdict\Support\ApproverSummary;
 use Fissible\Verdict\Support\BindingAdmission;
@@ -93,6 +94,32 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         return $found->algorithm === null
             && $found->keyVersion === null
             && $found->digest === ConsumedBindingGuard::digest($tc, $cap, $bf);
+    }
+
+    /**
+     * Fail closed on a keyed->keyless guard downgrade (ADR 0039, #514 follow-up): under a
+     * keyless-effective scheme (no scheme, or a scheme with no keys) a surviving keyed guard row can
+     * no longer be re-derived, so guardCandidates() would never probe it and a consumed-and-pruned
+     * binding could silently re-issue. Refuse rather than reopen the replay window. Keyed-effective
+     * schemes still probe their keyed candidates, so they are exempt. The guard store is asked at most
+     * once per instance, memoised on the readonly class's mutable schema memo.
+     */
+    private function assertNotDowngraded(): void
+    {
+        if ($this->guards === null) {
+            return;
+        }
+
+        if ($this->scheme !== null && $this->scheme->hasKeys()) {
+            return; // keyed-effective: keyed candidates are still probed
+        }
+
+        // keyless-effective (no scheme, or a scheme with no keys): a surviving keyed guard is orphaned.
+        if ($this->schemaMemo->schemedGuardPresent ??= $this->guards->hasSchemedGuard()) {
+            throw new ConsumedBindingGuardSchemeDowngraded(
+                'A consumed-binding keyed guard exists but the resolved scheme has no keys; refusing to operate rather than silently reopen the replay window.'
+            );
+        }
     }
 
     /**
@@ -204,6 +231,8 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                             return ApprovalTransition::to(ApprovalOutcome::PreviouslyConsumed);
                         }
                     }
+
+                    $this->assertNotDowngraded();
                 }
 
                 $openReceipt = $this->lockedOpenReceiptForChangedProposal($receipt);
@@ -495,6 +524,8 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
                         throw new ConsumedBindingGuardCollision('The approval binding has already been consumed.');
                     }
                 }
+
+                $this->assertNotDowngraded();
 
                 $guard = $this->activeGuard($receipt->toolCallId, $receipt->capability, $bindingFingerprint);
                 $this->guards->remember($guard->digest, $at, $guard->algorithm, $guard->keyVersion);
