@@ -7,6 +7,7 @@ use Fissible\Verdict\Approvals\ApprovalReceipt;
 use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\ApprovalTransition;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Approvals\DerivedGuard;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\Clock;
@@ -91,9 +92,23 @@ function pcaGuardStore(): ConsumedBindingGuardStore
         /** @var list<string> */
         public array $remembered = [];
 
+        /** @var array<string, array{0: ?string, 1: ?string}> digest => [algorithm, keyVersion] */
+        public array $meta = [];
+
         public function has(string $digest): bool
         {
             return in_array($digest, $this->remembered, true);
+        }
+
+        public function lookup(string $digest): ?DerivedGuard
+        {
+            if (! in_array($digest, $this->remembered, true)) {
+                return null;
+            }
+
+            [$algorithm, $keyVersion] = $this->meta[$digest] ?? [null, null];
+
+            return new DerivedGuard($digest, $algorithm, $keyVersion);
         }
 
         public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
@@ -101,6 +116,8 @@ function pcaGuardStore(): ConsumedBindingGuardStore
             if (! in_array($digest, $this->remembered, true)) {
                 $this->remembered[] = $digest;
             }
+
+            $this->meta[$digest] = [$algorithm, $keyVersion];
         }
     };
 }
