@@ -8,6 +8,7 @@ use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\ConsumedBindingGuard;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Exceptions\ConsumedBindingGuardSchemeDowngraded;
 use Fissible\Verdict\Exceptions\InvalidConsumedBindingGuardConfig;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\DatabaseManager;
@@ -132,4 +133,88 @@ it('rolls back the scheme migration idempotently when the columns are already ab
     expect($schema->hasTable(KH_GUARD_TABLE))->toBeTrue()
         ->and($schema->hasColumn(KH_GUARD_TABLE, 'algorithm'))->toBeFalse()
         ->and($schema->hasColumn(KH_GUARD_TABLE, 'key_version'))->toBeFalse();
+});
+
+it('fails closed at issue() after a keyed -> keyless downgrade leaves an orphaned keyed guard', function (): void {
+    // Consume under keyed v1 (writes a keyed guard), then remove the config (keyed -> keyless). A
+    // fresh, unrelated binding — which would otherwise mint — must now be refused, because the store
+    // can no longer re-derive the orphaned keyed guard and cannot guarantee replay defence.
+    config()->set('verdict.approvals.consumed_binding_guard.active_key', 'v1');
+    config()->set('verdict.approvals.consumed_binding_guard.keys', ['v1' => KH_SECRET]);
+    app()->forgetInstance(ApprovalReceiptStore::class);
+    khConsume(app(ApprovalReceiptStore::class));
+    expect(khGuardDigests())->toBe([ConsumedBindingGuard::keyed(KH_TC, KH_CAP, KH_FP, KH_SECRET)]);
+
+    config()->set('verdict.approvals.consumed_binding_guard', null); // the downgrade
+    app()->forgetInstance(ApprovalReceiptStore::class);
+
+    $fresh = new ApprovalReceipt(
+        id: 'receipt-fresh', toolCallId: 'call-fresh', capability: KH_CAP, bindingFingerprint: hash('sha256', 'fresh'),
+        provenance: null, approvalContext: null, status: ApprovalReceiptStatus::Pending, reason: 'Confirm.',
+        expiresAt: new DateTimeImmutable('2027-01-01 00:00:00', new DateTimeZone('UTC')),
+        approvedBy: null, approvedAt: null, rejectedBy: null, rejectedAt: null, consumedAt: null,
+        createdAt: new DateTimeImmutable('2026-09-01 12:00:00', new DateTimeZone('UTC')),
+        updatedAt: new DateTimeImmutable('2026-09-01 12:00:00', new DateTimeZone('UTC')),
+    );
+
+    expect(fn () => app(ApprovalReceiptStore::class)->issue($fresh))
+        ->toThrow(ConsumedBindingGuardSchemeDowngraded::class);
+});
+
+it('verdict:validate reports an orphaned keyed guard under a keyless config as an error at deploy time', function (): void {
+    // A keyed guard row is present, but the resolved scheme is keyless — the downgrade that silently
+    // reopens the replay window. verdict:validate must catch it before it reaches production.
+    config()->set('verdict.approvals.consumed_binding_guard.active_key', 'v1');
+    config()->set('verdict.approvals.consumed_binding_guard.keys', ['v1' => KH_SECRET]);
+    app()->forgetInstance(ApprovalReceiptStore::class);
+    khConsume(app(ApprovalReceiptStore::class));
+
+    config()->set('verdict.approvals.consumed_binding_guard', null); // the downgrade
+    app()->forgetInstance(ApprovalReceiptStore::class);
+
+    $this->artisan('verdict:validate')
+        ->expectsOutputToContain('consumed_binding_guard')
+        ->assertExitCode(1);
+});
+
+it('verdict:validate passes a keyless config when no keyed guard has ever been written', function (): void {
+    // The legitimate keyless deployment: keyless guards may exist, but none carries a scheme, so there
+    // is nothing to orphan and validate must not false-positive.
+    config()->set('verdict.approvals.consumed_binding_guard', null);
+    app()->forgetInstance(ApprovalReceiptStore::class);
+    khConsume(app(ApprovalReceiptStore::class)); // writes a keyless guard
+    expect(khGuardDigests())->toBe([ConsumedBindingGuard::digest(KH_TC, KH_CAP, KH_FP)]);
+
+    $this->artisan('verdict:validate')->assertExitCode(0);
+});
+
+it('fails closed at consume() after a downgrade, for an approved receipt that predates the config change', function (): void {
+    // The consume-path downgrade is cross-instance: under keyed v1, consume binding A (writes a keyed
+    // guard) AND leave binding B approved-but-not-consumed. Both persist in the DB. After the config is
+    // removed, a fresh keyless-scheme store must refuse to consume B — the orphaned keyed guard (A's)
+    // means it can no longer guarantee replay defence.
+    config()->set('verdict.approvals.consumed_binding_guard.active_key', 'v1');
+    config()->set('verdict.approvals.consumed_binding_guard.keys', ['v1' => KH_SECRET]);
+    app()->forgetInstance(ApprovalReceiptStore::class);
+    $keyed = app(ApprovalReceiptStore::class);
+    khConsume($keyed); // binding A (KH_TC / KH_FP) consumed -> keyed guard row for A
+
+    $bFingerprint = hash('sha256', 'binding-b');
+    $b = new ApprovalReceipt(
+        id: 'receipt-b', toolCallId: 'call-b', capability: KH_CAP, bindingFingerprint: $bFingerprint,
+        provenance: null, approvalContext: null, status: ApprovalReceiptStatus::Pending, reason: 'Confirm.',
+        expiresAt: new DateTimeImmutable('2027-01-01 00:00:00', new DateTimeZone('UTC')),
+        approvedBy: null, approvedAt: null, rejectedBy: null, rejectedAt: null, consumedAt: null,
+        createdAt: new DateTimeImmutable('2026-09-01 12:00:00', new DateTimeZone('UTC')),
+        updatedAt: new DateTimeImmutable('2026-09-01 12:00:00', new DateTimeZone('UTC')),
+    );
+    expect($keyed->issue($b)->outcome)->toBe(ApprovalOutcome::Issued);
+    expect($keyed->approve('receipt-b', 'call-b', 'human', new DateTimeImmutable('2026-09-01 12:00:30', new DateTimeZone('UTC')))->outcome)
+        ->toBe(ApprovalOutcome::Approved);
+
+    config()->set('verdict.approvals.consumed_binding_guard', null); // the downgrade
+    app()->forgetInstance(ApprovalReceiptStore::class);
+
+    expect(fn () => app(ApprovalReceiptStore::class)->consume('call-b', $bFingerprint, new DateTimeImmutable('2026-09-01 12:02:00', new DateTimeZone('UTC'))))
+        ->toThrow(ConsumedBindingGuardSchemeDowngraded::class);
 });

@@ -114,6 +114,28 @@ it('looks up a binary digest (NUL and high bytes) faithfully', function (callabl
         ->and($store->lookup(dgA()))->toBeNull();
 })->with('guard stores');
 
+// ── hasSchemedGuard(): detects a keyed guard row without any keys (downgrade signal, #514 follow-up) ──
+
+it('reports no schemed guard for an empty store', function (callable $make): void {
+    expect($make()->hasSchemedGuard())->toBeFalse();
+})->with('guard stores');
+
+it('reports no schemed guard when only keyless guards are recorded', function (callable $make): void {
+    $store = $make();
+    $store->remember(dgA(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')));
+    $store->remember(dgB(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')));
+
+    expect($store->hasSchemedGuard())->toBeFalse();
+})->with('guard stores');
+
+it('reports a schemed guard once any row carries an algorithm', function (callable $make): void {
+    $store = $make();
+    $store->remember(dgA(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC'))); // keyless
+    $store->remember(dgB(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')), 'hmac-sha256', 'v1');
+
+    expect($store->hasSchemedGuard())->toBeTrue();
+})->with('guard stores');
+
 it('keeps every remembered digest, not only the most recent', function (callable $make): void {
     $store = $make();
     $at = new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC'));
