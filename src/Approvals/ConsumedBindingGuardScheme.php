@@ -70,6 +70,15 @@ final readonly class ConsumedBindingGuardScheme
             $keys[(string) $version] = $secret;
         }
 
+        // Two versions sharing a secret produce identical digests, so a probe match could not
+        // attribute a version and the after-match validation would be ambiguous. Enforced across
+        // every retained key (active or not), catching non-adjacent and active-vs-retained pairs.
+        if (count(array_unique($keys)) !== count($keys)) {
+            throw new InvalidConsumedBindingGuardConfig(
+                'verdict.approvals.consumed_binding_guard.keys must not share a secret across versions.'
+            );
+        }
+
         $activeKey = $config['active_key'] ?? null;
 
         if ($activeKey === null) {
@@ -132,5 +141,34 @@ final readonly class ConsumedBindingGuardScheme
             ConsumedBindingGuard::ALGORITHM_KEYED,
             $this->activeKeyVersion,
         );
+    }
+
+    /**
+     * Whether the stored guard's own metadata self-consistently describes its digest (ADR 0039's
+     * after-match validation): re-derive the digest from the stored scheme and compare. Fails closed
+     * — returning false, never throwing — for any claim this scheme cannot re-derive (an unknown
+     * algorithm, a partial-null metadata pair, or a keyed version no longer retained), so the probe
+     * can convert the inconsistency into a ConsumedBindingGuardSchemeMismatch.
+     */
+    public function describes(DerivedGuard $stored, string $toolCallId, string $capability, string $bindingFingerprint): bool
+    {
+        if ($stored->algorithm === null && $stored->keyVersion === null) {
+            return $stored->digest === ConsumedBindingGuard::digest($toolCallId, $capability, $bindingFingerprint);
+        }
+
+        if ($stored->algorithm === ConsumedBindingGuard::ALGORITHM_KEYED && $stored->keyVersion !== null) {
+            if (! array_key_exists($stored->keyVersion, $this->keys)) {
+                return false;
+            }
+
+            return $stored->digest === ConsumedBindingGuard::keyed(
+                $toolCallId,
+                $capability,
+                $bindingFingerprint,
+                $this->keys[$stored->keyVersion],
+            );
+        }
+
+        return false;
     }
 }
