@@ -94,7 +94,8 @@ final class ValidateVerdictCommand extends Command
 
                     if ($guardStore->hasSchemedGuard()) {
                         $errors[] = 'verdict.approvals.consumed_binding_guard has no keys, but a keyed consumed-binding guard already exists; '
-                            .'a keyed->keyless downgrade would silently reopen the replay window.';
+                            .'a keyed->keyless downgrade would silently reopen the replay window. '
+                            .'Restore the retained keys (verdict.approvals.consumed_binding_guard.keys) to recover.';
                     }
                 } catch (Throwable) {
                     // Deploy-time validate must not crash on an unreachable or unmigrated database.

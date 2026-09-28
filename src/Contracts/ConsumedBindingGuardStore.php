@@ -9,8 +9,6 @@ use Fissible\Verdict\Approvals\DerivedGuard;
 
 interface ConsumedBindingGuardStore
 {
-    public function has(string $digest): bool;
-
     /**
      * The stored guard for this digest — its raw digest plus the algorithm and key version it was
      * remembered under — or null when no such guard is recorded. The scheme metadata lets a probe

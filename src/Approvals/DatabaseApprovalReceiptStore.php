@@ -117,7 +117,7 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         // keyless-effective (no scheme, or a scheme with no keys): a surviving keyed guard is orphaned.
         if ($this->schemaMemo->schemedGuardPresent ??= $this->guards->hasSchemedGuard()) {
             throw new ConsumedBindingGuardSchemeDowngraded(
-                'A consumed-binding keyed guard exists but the resolved scheme has no keys; refusing to operate rather than silently reopen the replay window.'
+                'A consumed-binding keyed guard exists but the resolved scheme has no keys; refusing to operate rather than silently reopen the replay window. Restore the retained keys (verdict.approvals.consumed_binding_guard.keys) to recover.'
             );
         }
     }
@@ -376,6 +376,8 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
 
     public function pruneConsumedPayload(DateTimeImmutable $consumedBefore): int
     {
+        $this->assertNotDowngraded();
+
         $guards = $this->guards;
 
         if ($guards === null) {

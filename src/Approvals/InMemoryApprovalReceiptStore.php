@@ -101,7 +101,7 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
         // keyless-effective (no scheme, or a scheme with no keys): a surviving keyed guard is orphaned.
         if ($this->schemedGuardPresent ??= $this->guards->hasSchemedGuard()) {
             throw new ConsumedBindingGuardSchemeDowngraded(
-                'A consumed-binding keyed guard exists but the resolved scheme has no keys; refusing to operate rather than silently reopen the replay window.'
+                'A consumed-binding keyed guard exists but the resolved scheme has no keys; refusing to operate rather than silently reopen the replay window. Restore the retained keys (verdict.approvals.consumed_binding_guard.keys) to recover.'
             );
         }
     }
@@ -243,6 +243,8 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
 
     public function pruneConsumedPayload(DateTimeImmutable $consumedBefore): int
     {
+        $this->assertNotDowngraded();
+
         if ($this->guards === null) {
             throw new RuntimeException('Pruning consumed approval payloads requires a consumed-binding guard store.');
         }
