@@ -304,6 +304,11 @@ it('holds the coarse-pair lock throughout issue() row work — an independent se
             return false;
         }
 
+        public function hasSchemedGuard(): bool
+        {
+            return false;
+        }
+
         public function lookup(string $digest): ?DerivedGuard
         {
             // Runs INSIDE issue()'s transaction, after acquire() and before the insert. From a
@@ -355,6 +360,11 @@ it('holds the coarse-pair lock throughout consume() row work — an independent 
         public function has(string $digest): bool
         {
             return false; // no collision
+        }
+
+        public function hasSchemedGuard(): bool
+        {
+            return false;
         }
 
         public function lookup(string $digest): ?DerivedGuard

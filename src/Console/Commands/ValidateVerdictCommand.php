@@ -7,6 +7,7 @@ namespace Fissible\Verdict\Console\Commands;
 use Fissible\Verdict\Approvals\ApproverAudience;
 use Fissible\Verdict\Approvals\ConsumedBindingGuardScheme;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
+use Fissible\Verdict\Approvals\DatabaseConsumedBindingGuardStore;
 use Fissible\Verdict\Approvals\InMemoryApprovalReceiptStore;
 use Fissible\Verdict\Approvals\StoreBackedApprovalStatusReader;
 use Fissible\Verdict\Capabilities\CapabilityConfigurationStoreSelection;
@@ -75,7 +76,30 @@ final class ValidateVerdictCommand extends Command
         // malformation here at deploy time rather than as a first-request throw. Its message already
         // names verdict.approvals.consumed_binding_guard.
         try {
-            ConsumedBindingGuardScheme::fromConfig(config('verdict.approvals.consumed_binding_guard'));
+            $guardScheme = ConsumedBindingGuardScheme::fromConfig(config('verdict.approvals.consumed_binding_guard'));
+
+            // A keyless-effective scheme (removed config, or a scheme with no retained keys) can no
+            // longer re-derive a surviving keyed guard row, so a keyed->keyless downgrade would
+            // silently reopen the replay window (ADR 0039). The store fails closed at runtime; surface
+            // the orphaned guard here at deploy time. Skip silently when the DB is unreachable or the
+            // guard table has not been migrated — a wiring audit must not crash on that.
+            if ($guardScheme === null || ! $guardScheme->hasKeys()) {
+                try {
+                    $connection = config('verdict.approvals.connection');
+                    $table = config('verdict.approvals.consumed_binding_guards_table', 'verdict_consumed_binding_guards');
+                    $guardStore = new DatabaseConsumedBindingGuardStore(
+                        $container->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
+                        is_string($table) ? $table : 'verdict_consumed_binding_guards',
+                    );
+
+                    if ($guardStore->hasSchemedGuard()) {
+                        $errors[] = 'verdict.approvals.consumed_binding_guard has no keys, but a keyed consumed-binding guard already exists; '
+                            .'a keyed->keyless downgrade would silently reopen the replay window.';
+                    }
+                } catch (Throwable) {
+                    // Deploy-time validate must not crash on an unreachable or unmigrated database.
+                }
+            }
         } catch (InvalidConsumedBindingGuardConfig $exception) {
             $errors[] = $exception->getMessage();
         }

@@ -84,6 +84,17 @@ function recordingGuardStore(): ConsumedBindingGuardStore
             return in_array($digest, array_column($this->remembered, 'digest'), true);
         }
 
+        public function hasSchemedGuard(): bool
+        {
+            foreach ($this->remembered as $entry) {
+                if ($entry['algorithm'] !== null) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public function lookup(string $digest): ?DerivedGuard
         {
             foreach ($this->remembered as $entry) {
@@ -114,6 +125,11 @@ function throwingGuardStore(): ConsumedBindingGuardStore
     return new class implements ConsumedBindingGuardStore
     {
         public function has(string $digest): bool
+        {
+            return false;
+        }
+
+        public function hasSchemedGuard(): bool
         {
             return false;
         }
@@ -379,6 +395,11 @@ it('rolls back a guard that WAS written when the consume transaction fails (Data
         public function has(string $digest): bool
         {
             return $this->inner->has($digest);
+        }
+
+        public function hasSchemedGuard(): bool
+        {
+            return $this->inner->hasSchemedGuard();
         }
 
         public function lookup(string $digest): ?DerivedGuard

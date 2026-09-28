@@ -13,6 +13,7 @@ use Fissible\Verdict\Approvals\InMemoryConsumedBindingGuardStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardCollision;
+use Fissible\Verdict\Exceptions\ConsumedBindingGuardSchemeDowngraded;
 use Fissible\Verdict\Exceptions\MissingConsumedBindingGuardKey;
 use Illuminate\Database\DatabaseManager;
 
@@ -156,13 +157,16 @@ it('issues a binding with no guard under a keyed scheme (does not spuriously ref
     expect(kgStore($driver, $guards, $scheme)->issue(kgReceipt('fresh'))->outcome)->toBe(ApprovalOutcome::Issued);
 })->with('approval stores');
 
-it('does not refuse a keyed-only guard when running keyless (only the keyless candidate is probed)', function (string $driver): void {
-    // A guard written under a key this (keyless) store does not know must NOT be found — a keyless
-    // probe sees only the keyless digest. Proves candidates() is scheme-derived, not "check everything".
+it('fails closed when a keyed guard survives under a keyless store (a keyed->keyless downgrade)', function (string $driver): void {
+    // candidates() is still scheme-derived — a keyless probe queries only the keyless digest, so it
+    // never matches this keyed guard. But a surviving keyed guard under a keyless scheme is a downgrade
+    // that would silently reopen the replay window, so the store refuses rather than mint (#522). Before
+    // #522 this issued, which was the fail-open.
     $guards = new InMemoryConsumedBindingGuardStore;
     kgSeedGuard($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1'), ConsumedBindingGuard::ALGORITHM_KEYED, 'v1');
 
-    expect(kgStore($driver, $guards, null)->issue(kgReceipt('fresh'))->outcome)->toBe(ApprovalOutcome::Issued);
+    expect(fn () => kgStore($driver, $guards, null)->issue(kgReceipt('fresh')))
+        ->toThrow(ConsumedBindingGuardSchemeDowngraded::class);
 })->with('approval stores');
 
 // ── consume() records the guard under the active scheme ────────────────────────────────────────────

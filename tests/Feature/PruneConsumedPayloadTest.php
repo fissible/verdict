@@ -98,6 +98,17 @@ function pcpGuards(): ConsumedBindingGuardStore
             return new DerivedGuard($digest, $algorithm, $keyVersion);
         }
 
+        public function hasSchemedGuard(): bool
+        {
+            foreach ($this->meta as [$algorithm]) {
+                if ($algorithm !== null) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void
         {
             if ($this->onRemember !== null) {

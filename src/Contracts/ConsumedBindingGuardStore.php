@@ -19,4 +19,12 @@ interface ConsumedBindingGuardStore
     public function lookup(string $digest): ?DerivedGuard;
 
     public function remember(string $digest, DateTimeInterface $consumedAt, ?string $algorithm = null, ?string $keyVersion = null): void;
+
+    /**
+     * True when any recorded guard carries a non-null algorithm — i.e. a keyed guard exists. This is
+     * the keyed->keyless downgrade signal: a schemed row a keyless-effective scheme can no longer
+     * re-derive, so a probe would never see it and the store must fail closed rather than reopen the
+     * replay window (ADR 0039, #514 follow-up).
+     */
+    public function hasSchemedGuard(): bool;
 }

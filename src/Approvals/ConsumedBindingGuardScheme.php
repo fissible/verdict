@@ -103,6 +103,15 @@ final readonly class ConsumedBindingGuardScheme
     }
 
     /**
+     * Whether any keyed version is retained. A scheme with no keys is keyless-effective: it derives
+     * only the unkeyed digest, so it can neither re-probe nor re-derive a surviving keyed guard.
+     */
+    public function hasKeys(): bool
+    {
+        return $this->keys !== [];
+    }
+
+    /**
      * @return list<string>
      */
     public function candidates(string $toolCallId, string $capability, string $bindingFingerprint): array

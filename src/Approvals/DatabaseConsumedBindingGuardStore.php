@@ -86,4 +86,9 @@ final readonly class DatabaseConsumedBindingGuardStore implements ConsumedBindin
             fclose($binary);
         }
     }
+
+    public function hasSchemedGuard(): bool
+    {
+        return $this->connection->table($this->table)->whereNotNull('algorithm')->exists();
+    }
 }
