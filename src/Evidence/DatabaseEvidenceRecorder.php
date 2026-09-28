@@ -11,13 +11,15 @@ use Fissible\Verdict\Context\Source;
 use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Contracts\DurableEvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\RecordsApprovalRefusals;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use LogicException;
 use stdClass;
+use Throwable;
 
-final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder, EvidenceRecorder
+final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder, EvidenceRecorder, RecordsApprovalRefusals
 {
     /**
      * Mutable memo inside a readonly class. Evidence-table columns are inspected once per
@@ -31,6 +33,7 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
         private string $table = 'verdict_evidence',
         private string $derivationsTable = 'verdict_provenance_derivations',
         private string $operationsTable = 'verdict_approval_operations',
+        private string $refusalsTable = 'verdict_approval_refusals',
     ) {
         $this->schemaMemo = new stdClass;
     }
@@ -236,6 +239,52 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
             'invocation_id' => $evidence->invocationId,
             'occurred_at' => $evidence->occurredAt,
         ], $columns);
+    }
+
+    /**
+     * Deduplicated per binding digest with a persisted attempt count (ADR 0039, #15): an increment
+     * on the existing row, or an insert of the first. A concurrent insert winning the race surfaces
+     * as a unique-key violation on the digest primary key, so that is caught and retried as an
+     * increment — the row is guaranteed to exist by then. The raw increment expression is portable
+     * across sqlite/mysql/pgsql. Timestamps are minted in UTC to match the timezone-naive columns.
+     */
+    public function recordApprovalRefusal(ApprovalRefusalEvidence $evidence): void
+    {
+        $seenAt = $evidence->occurredAt->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+
+        if ($this->incrementRefusal($evidence, $seenAt) === 0) {
+            try {
+                $this->connection->table($this->refusalsTable)->insert([
+                    'binding_digest' => $evidence->bindingDigest,
+                    'lane' => $evidence->lane->value,
+                    'refusal_reason' => $evidence->reason->value,
+                    'capability' => $evidence->capability,
+                    'attempt_count' => 1,
+                    'invocation_id' => $evidence->invocationId,
+                    'first_seen_at' => $seenAt,
+                    'last_seen_at' => $seenAt,
+                ]);
+            } catch (Throwable) {
+                // A concurrent insert won the race for this digest; the row now exists, so record
+                // this attempt against it.
+                $this->incrementRefusal($evidence, $seenAt);
+            }
+        }
+    }
+
+    /** Increment the attempt count for an existing refusal row; returns the number of rows updated. */
+    private function incrementRefusal(ApprovalRefusalEvidence $evidence, string $seenAt): int
+    {
+        return $this->connection->table($this->refusalsTable)
+            ->where('binding_digest', $evidence->bindingDigest)
+            ->update([
+                'attempt_count' => $this->connection->raw('attempt_count + 1'),
+                'last_seen_at' => $seenAt,
+                'refusal_reason' => $evidence->reason->value,
+                'lane' => $evidence->lane->value,
+                'capability' => $evidence->capability,
+                'invocation_id' => $evidence->invocationId,
+            ]);
     }
 
     /** @return list<ProvenanceEntry> */

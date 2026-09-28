@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Evidence;
 
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\RecordsApprovalRefusals;
 
 /**
  * Test and local-development recorder with unbounded process-local storage.
@@ -12,7 +13,7 @@ use Fissible\Verdict\Contracts\EvidenceRecorder;
  * Do not use this recorder in production, Octane, queue workers, or any other
  * long-running process where records could accumulate or cross request boundaries.
  */
-final class InMemoryEvidenceRecorder implements EvidenceRecorder
+final class InMemoryEvidenceRecorder implements EvidenceRecorder, RecordsApprovalRefusals
 {
     /**
      * @var list<DecisionEvidence>
@@ -30,6 +31,15 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
 
     /** @var list<ApprovalOperationEvidence> */
     private array $operations = [];
+
+    /**
+     * Refusal-operation evidence, deduplicated per binding digest (the guard digest a refusal is
+     * anchored on): the latest ApprovalRefusalEvidence for each digest, and how many times a refusal
+     * for that binding was recorded. A replay flood grows the attempt count, not the row count.
+     *
+     * @var array<string, array{evidence: ApprovalRefusalEvidence, attempts: int}>
+     */
+    private array $refusals = [];
 
     public function record(DecisionEvidence $evidence): void
     {
@@ -63,6 +73,13 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
     public function recordApprovalOperation(ApprovalOperationEvidence $evidence): void
     {
         $this->operations[] = $evidence;
+    }
+
+    public function recordApprovalRefusal(ApprovalRefusalEvidence $evidence): void
+    {
+        $attempts = ($this->refusals[$evidence->bindingDigest]['attempts'] ?? 0) + 1;
+
+        $this->refusals[$evidence->bindingDigest] = ['evidence' => $evidence, 'attempts' => $attempts];
     }
 
     /** @return list<ProvenanceEntry> */
@@ -124,5 +141,24 @@ final class InMemoryEvidenceRecorder implements EvidenceRecorder
     public function operations(): array
     {
         return $this->operations;
+    }
+
+    /**
+     * The deduplicated latest refusal-operation evidence, one per binding digest (order-insensitive).
+     *
+     * @return list<ApprovalRefusalEvidence>
+     */
+    public function recordedRefusals(): array
+    {
+        return array_values(array_map(
+            static fn (array $refusal): ApprovalRefusalEvidence => $refusal['evidence'],
+            $this->refusals,
+        ));
+    }
+
+    /** How many refusals have been recorded for the given binding digest (0 if none). */
+    public function refusalAttempts(string $bindingDigest): int
+    {
+        return $this->refusals[$bindingDigest]['attempts'] ?? 0;
     }
 }

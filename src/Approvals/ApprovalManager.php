@@ -14,10 +14,12 @@ use Fissible\Verdict\Contracts\Clock;
 use Fissible\Verdict\Contracts\EnforcesDecisionAdmissibility;
 use Fissible\Verdict\Contracts\EvidenceWriter;
 use Fissible\Verdict\Contracts\IssuesAdmittedReceipts;
+use Fissible\Verdict\Contracts\RecordsApprovalRefusals;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Evidence\ApprovalLane;
 use Fissible\Verdict\Evidence\ApprovalOperation;
 use Fissible\Verdict\Evidence\ApprovalOperationEvidence;
+use Fissible\Verdict\Evidence\ApprovalRefusalEvidence;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\Events\EvidenceWriteFailed;
 use Fissible\Verdict\Exceptions\ApprovalAuthorizerMissing;
@@ -97,24 +99,15 @@ final readonly class ApprovalManager
             // check → attest → persist, so a strict issuance fails closed rather than reverting to
             // the buggy attest-before-issue order.
             if ($materialization->release !== ApproverSummaryRelease::Released || $materialization->summary === null) {
-                return ApprovalTransition::to(
-                    ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::SummaryNotReleased,
-                );
+                return $this->refuse($receipt, IssuanceRefusalReason::SummaryNotReleased);
             }
 
             if ($this->attestedIssuance === null) {
-                return ApprovalTransition::to(
-                    ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::AttestNotConfigured,
-                );
+                return $this->refuse($receipt, IssuanceRefusalReason::AttestNotConfigured);
             }
 
             if (! $this->receipts instanceof IssuesAdmittedReceipts) {
-                return ApprovalTransition::to(
-                    ApprovalOutcome::IssuanceRefused,
-                    refusalReason: IssuanceRefusalReason::AttestOrderingUnsupported,
-                );
+                return $this->refuse($receipt, IssuanceRefusalReason::AttestOrderingUnsupported);
             }
 
             // The three values are narrowed non-null immediately above; the attested-issuance path
@@ -126,10 +119,7 @@ final readonly class ApprovalManager
         }
 
         if ($transition->outcome === ApprovalOutcome::PreviouslyConsumed) {
-            return ApprovalTransition::to(
-                ApprovalOutcome::IssuanceRefused,
-                refusalReason: IssuanceRefusalReason::PreviouslyConsumed,
-            );
+            return $this->refuse($receipt, IssuanceRefusalReason::PreviouslyConsumed);
         }
 
         return $this->recordOperation($transition, ApprovalOutcome::Issued, ApprovalOperation::Issued);
@@ -159,10 +149,7 @@ final readonly class ApprovalManager
             });
         } catch (AttestedIssuanceAppendFailed) {
             // The transaction rolled back — nothing was persisted.
-            return ApprovalTransition::to(
-                ApprovalOutcome::IssuanceRefused,
-                refusalReason: IssuanceRefusalReason::AttestAppendFailed,
-            );
+            return $this->refuse($receipt, IssuanceRefusalReason::AttestAppendFailed);
         }
     }
 
@@ -427,5 +414,43 @@ final readonly class ApprovalManager
         }
 
         return $transition;
+    }
+
+    /**
+     * Refuse an issuance, recording refusal-operation evidence anchored on the binding's keyless
+     * consumed-guard digest (never a receipt id — a refusal mints none). Only a writer that opts
+     * into RecordsApprovalRefusals is asked to record; a failing write is swallowed and surfaced as
+     * EvidenceWriteFailed, exactly as recordOperation does, so a refusal always returns to the
+     * caller. Confirmation lane only (review lane is a follow-up). ADR 0039, #10/#15.
+     */
+    private function refuse(ApprovalReceipt $receipt, IssuanceRefusalReason $reason): ApprovalTransition
+    {
+        if ($this->evidence instanceof RecordsApprovalRefusals) {
+            $digest = bin2hex(ConsumedBindingGuard::digest($receipt->toolCallId, $receipt->capability, $receipt->bindingFingerprint));
+
+            try {
+                $this->evidence->recordApprovalRefusal(new ApprovalRefusalEvidence(
+                    lane: ApprovalLane::Confirmation,
+                    reason: $reason,
+                    capability: $receipt->capability,
+                    bindingDigest: $digest,
+                    occurredAt: $this->clock->now(),
+                    invocationId: $this->invocations->current(),
+                ));
+            } catch (Throwable $e) {
+                try {
+                    $this->events?->dispatch(new EvidenceWriteFailed(
+                        $receipt->capability,
+                        $reason->value,
+                        $this->invocations->current(),
+                        $e->getMessage(),
+                    ));
+                } catch (Throwable) {
+                    // An alert listener failing must not block the caller either.
+                }
+            }
+        }
+
+        return ApprovalTransition::to(ApprovalOutcome::IssuanceRefused, refusalReason: $reason);
     }
 }

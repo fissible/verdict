@@ -11,6 +11,7 @@ use Fissible\AttestLaravel\Support\AttestRegistry;
 use Fissible\Verdict\Contracts\AttestsIssuance;
 use Fissible\Verdict\Contracts\DurableEvidenceRecorder;
 use Fissible\Verdict\Contracts\EvidenceRecorder;
+use Fissible\Verdict\Contracts\RecordsApprovalRefusals;
 use Fissible\Verdict\Evidence\Events\ChainWriteFailed;
 use Fissible\Verdict\Exceptions\EvidenceChainWriteFailed;
 use Fissible\Verdict\Support\ApproverSummary;
@@ -20,7 +21,7 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Throwable;
 
-final class AttestEvidenceRecorder implements AttestsIssuance, DurableEvidenceRecorder, EvidenceRecorder
+final class AttestEvidenceRecorder implements AttestsIssuance, DurableEvidenceRecorder, EvidenceRecorder, RecordsApprovalRefusals
 {
     public function __construct(
         private readonly AttestRegistry $attest,
@@ -33,6 +34,7 @@ final class AttestEvidenceRecorder implements AttestsIssuance, DurableEvidenceRe
         private readonly string $onFailure = 'alert',
         private readonly int $maxAttempts = 3,
         private readonly int $baseDelayMs = 50,
+        private readonly string $refusalsTable = 'verdict_approval_refusals',
     ) {
         if (! in_array($this->onFailure, ['alert', 'throw'], true)) {
             throw new InvalidArgumentException("Unknown on_failure mode [{$this->onFailure}]. Expected 'alert' or 'throw'.");
@@ -181,6 +183,50 @@ final class AttestEvidenceRecorder implements AttestsIssuance, DurableEvidenceRe
             type: 'verdict.approval_operation',
             payload: $evidence->toArray(),
         );
+    }
+
+    /**
+     * Refusal-operation evidence is a plain prunable table, NOT an attest chain: a chain records an
+     * append-only history and cannot increment an existing entry, but flood-bounding a refusal means
+     * one row per binding with a growing attempt count (ADR 0039, #15). So it upserts the same way
+     * the database recorder does — increment or insert, catching a concurrent-insert race.
+     */
+    public function recordApprovalRefusal(ApprovalRefusalEvidence $evidence): void
+    {
+        $seenAt = $evidence->occurredAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+
+        if ($this->incrementRefusal($evidence, $seenAt) === 0) {
+            try {
+                $this->connection->table($this->refusalsTable)->insert([
+                    'binding_digest' => $evidence->bindingDigest,
+                    'lane' => $evidence->lane->value,
+                    'refusal_reason' => $evidence->reason->value,
+                    'capability' => $evidence->capability,
+                    'attempt_count' => 1,
+                    'invocation_id' => $evidence->invocationId,
+                    'first_seen_at' => $seenAt,
+                    'last_seen_at' => $seenAt,
+                ]);
+            } catch (Throwable) {
+                // A concurrent insert won the race for this digest; record this attempt against it.
+                $this->incrementRefusal($evidence, $seenAt);
+            }
+        }
+    }
+
+    /** Increment the attempt count for an existing refusal row; returns the number of rows updated. */
+    private function incrementRefusal(ApprovalRefusalEvidence $evidence, string $seenAt): int
+    {
+        return $this->connection->table($this->refusalsTable)
+            ->where('binding_digest', $evidence->bindingDigest)
+            ->update([
+                'attempt_count' => $this->connection->raw('attempt_count + 1'),
+                'last_seen_at' => $seenAt,
+                'refusal_reason' => $evidence->reason->value,
+                'lane' => $evidence->lane->value,
+                'capability' => $evidence->capability,
+                'invocation_id' => $evidence->invocationId,
+            ]);
     }
 
     public function attestIssuedSummary(ApprovalLane $lane, string $identityFingerprint, ApproverSummary $summary): void
