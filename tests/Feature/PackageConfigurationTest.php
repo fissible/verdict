@@ -30,7 +30,7 @@ it('publishes the durable approval receipt migration', function (): void {
         'verdict-migrations',
     );
 
-    expect($migrations)->toHaveCount(27)
+    expect($migrations)->toHaveCount(28)
         ->and(array_keys($migrations))->each->toEndWith('.php.stub')
         ->and(array_values($migrations))->each->toEndWith('.php');
 });
@@ -41,7 +41,7 @@ it('publishes the durable evidence migration independently', function (): void {
         'verdict-evidence-migrations',
     );
 
-    expect($migrations)->toHaveCount(14)
+    expect($migrations)->toHaveCount(15)
         ->and(collect(array_keys($migrations))->contains(fn (string $k): bool => str_ends_with($k, 'add_review_outcome_to_verdict_evidence_table.php.stub')))->toBeTrue()
         ->and(collect(array_values($migrations))->contains(fn (string $v): bool => str_ends_with($v, 'add_review_outcome_to_verdict_evidence_table.php')))->toBeTrue()
         // #466: published alongside the create migration it was wrongly folded into, so an install
@@ -53,6 +53,10 @@ it('publishes the durable evidence migration independently', function (): void {
         // list cannot pass on the count alone.
         ->and(collect(array_keys($migrations))->contains(fn (string $k): bool => str_ends_with($k, 'create_verdict_approval_operations_table.php.stub')))->toBeTrue()
         ->and(collect(array_values($migrations))->contains(fn (string $v): bool => str_ends_with($v, 'create_verdict_approval_operations_table.php')))->toBeTrue()
+        // ADR 0039 #10/#15: the refusal-operation evidence table stub is published — asserted by name
+        // so a wrong-length list cannot pass on the count alone.
+        ->and(collect(array_keys($migrations))->contains(fn (string $k): bool => str_ends_with($k, 'create_verdict_approval_refusals_table.php.stub')))->toBeTrue()
+        ->and(collect(array_values($migrations))->contains(fn (string $v): bool => str_ends_with($v, 'create_verdict_approval_refusals_table.php')))->toBeTrue()
         ->and(array_keys($migrations)[0])->toEndWith('create_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[1])->toEndWith('add_provenance_to_verdict_evidence_table.php.stub')
         ->and(array_keys($migrations)[2])->toEndWith('add_invocation_id_to_verdict_evidence_table.php.stub')

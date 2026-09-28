@@ -408,6 +408,7 @@ final class VerdictServiceProvider extends ServiceProvider
                         table: is_string($fallbackTable) ? $fallbackTable : 'verdict_evidence',
                         derivationsTable: is_string($fallbackDerivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations')) ? $fallbackDerivations : 'verdict_provenance_derivations',
                         operationsTable: is_string($fallbackOperations = config('verdict.evidence.operations_table', 'verdict_approval_operations')) ? $fallbackOperations : 'verdict_approval_operations',
+                        refusalsTable: is_string($fallbackRefusals = config('verdict.evidence.refusals_table', 'verdict_approval_refusals')) ? $fallbackRefusals : 'verdict_approval_refusals',
                     ),
                     connection: $connection,
                     events: $app->make(Dispatcher::class),
@@ -417,6 +418,7 @@ final class VerdictServiceProvider extends ServiceProvider
                     onFailure: is_string($onFailure) ? $onFailure : 'alert',
                     maxAttempts: is_int($maxAttempts) ? $maxAttempts : 3,
                     baseDelayMs: is_int($baseDelayMs) ? $baseDelayMs : 50,
+                    refusalsTable: is_string($fallbackRefusals) ? $fallbackRefusals : 'verdict_approval_refusals',
                 );
             }
 
@@ -663,12 +665,14 @@ final class VerdictServiceProvider extends ServiceProvider
         $table = config('verdict.evidence.table', 'verdict_evidence');
         $derivations = config('verdict.evidence.derivations_table', 'verdict_provenance_derivations');
         $operations = config('verdict.evidence.operations_table', 'verdict_approval_operations');
+        $refusals = config('verdict.evidence.refusals_table', 'verdict_approval_refusals');
 
         return new DatabaseEvidenceRecorder(
             connection: $app->make(DatabaseManager::class)->connection(is_string($connection) ? $connection : null),
             table: is_string($table) ? $table : 'verdict_evidence',
             derivationsTable: is_string($derivations) ? $derivations : 'verdict_provenance_derivations',
             operationsTable: is_string($operations) ? $operations : 'verdict_approval_operations',
+            refusalsTable: is_string($refusals) ? $refusals : 'verdict_approval_refusals',
         );
     }
 
@@ -856,6 +860,7 @@ final class VerdictServiceProvider extends ServiceProvider
             __DIR__.'/../database/migrations/add_review_outcome_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_08_31_000018_add_review_outcome_to_verdict_evidence_table.php'),
             __DIR__.'/../database/migrations/create_verdict_approval_operations_table.php.stub' => database_path('migrations/2026_08_31_000020_create_verdict_approval_operations_table.php'),
             __DIR__.'/../database/migrations/add_review_request_fingerprint_to_verdict_evidence_table.php.stub' => database_path('migrations/2026_09_02_000021_add_review_request_fingerprint_to_verdict_evidence_table.php'),
+            __DIR__.'/../database/migrations/create_verdict_approval_refusals_table.php.stub' => database_path('migrations/2026_09_27_000022_create_verdict_approval_refusals_table.php'),
         ];
         $rateLimitMigration = [
             __DIR__.'/../database/migrations/create_verdict_rate_limit_buckets_table.php.stub' => database_path('migrations/2026_08_01_000002_create_verdict_rate_limit_buckets_table.php'),

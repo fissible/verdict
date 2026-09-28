@@ -122,6 +122,10 @@ return [
         // here — is a config change only (#290).
         'derivations_table' => 'verdict_provenance_derivations',
         'operations_table' => 'verdict_approval_operations',
+        // The refusal-operation table the recorders upsert into: one row per binding digest with an
+        // attempt count, so a replay flood stays flood-bounded (ADR 0039, #10/#15). Like every table
+        // here, renaming it is a config change only.
+        'refusals_table' => 'verdict_approval_refusals',
 
         // Only consulted when 'recorder' is AttestEvidenceRecorder::class. Requires
         // fissible/attest-laravel (composer require fissible/attest-laravel) — see
