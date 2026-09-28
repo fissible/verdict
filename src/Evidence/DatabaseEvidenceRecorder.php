@@ -17,7 +17,6 @@ use Illuminate\Database\ConnectionInterface;
 use Illuminate\Support\Str;
 use LogicException;
 use stdClass;
-use Throwable;
 
 final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder, EvidenceRecorder, RecordsApprovalRefusals
 {
@@ -243,30 +242,32 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
 
     /**
      * Deduplicated per binding digest with a persisted attempt count (ADR 0039, #15): an increment
-     * on the existing row, or an insert of the first. A concurrent insert winning the race surfaces
-     * as a unique-key violation on the digest primary key, so that is caught and retried as an
-     * increment — the row is guaranteed to exist by then. The raw increment expression is portable
-     * across sqlite/mysql/pgsql. Timestamps are minted in UTC to match the timezone-naive columns.
+     * on the existing row, or an insert of the first. A concurrent insert winning the race is
+     * absorbed by insertOrIgnore (ON CONFLICT DO NOTHING), which returns 0 for the conflict and
+     * — unlike a caught unique-key violation — never leaves a failed statement to poison the
+     * caller's transaction on PostgreSQL (SQLSTATE 25P02, #527). The re-increment then records this
+     * attempt against the now-existing row. The raw increment expression is portable across
+     * sqlite/mysql/pgsql. Timestamps are minted in UTC to match the timezone-naive columns.
      */
     public function recordApprovalRefusal(ApprovalRefusalEvidence $evidence): void
     {
         $seenAt = $evidence->occurredAt->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
 
         if ($this->incrementRefusal($evidence, $seenAt) === 0) {
-            try {
-                $this->connection->table($this->refusalsTable)->insert([
-                    'binding_digest' => $evidence->bindingDigest,
-                    'lane' => $evidence->lane->value,
-                    'refusal_reason' => $evidence->reason->value,
-                    'capability' => $evidence->capability,
-                    'attempt_count' => 1,
-                    'invocation_id' => $evidence->invocationId,
-                    'first_seen_at' => $seenAt,
-                    'last_seen_at' => $seenAt,
-                ]);
-            } catch (Throwable) {
-                // A concurrent insert won the race for this digest; the row now exists, so record
-                // this attempt against it.
+            $inserted = $this->connection->table($this->refusalsTable)->insertOrIgnore([
+                'binding_digest' => $evidence->bindingDigest,
+                'lane' => $evidence->lane->value,
+                'refusal_reason' => $evidence->reason->value,
+                'capability' => $evidence->capability,
+                'attempt_count' => 1,
+                'invocation_id' => $evidence->invocationId,
+                'first_seen_at' => $seenAt,
+                'last_seen_at' => $seenAt,
+            ]);
+
+            if ($inserted === 0) {
+                // A concurrent insert won the race for this digest; record this attempt against
+                // the now-existing row.
                 $this->incrementRefusal($evidence, $seenAt);
             }
         }
