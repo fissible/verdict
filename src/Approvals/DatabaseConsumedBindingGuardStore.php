@@ -18,22 +18,6 @@ final readonly class DatabaseConsumedBindingGuardStore implements ConsumedBindin
         private string $table,
     ) {}
 
-    public function has(string $digest): bool
-    {
-        // Illuminate binds streams as PDO::PARAM_LOB; the stream contains the raw bytes.
-        $binary = fopen('data://text/plain;base64,'.base64_encode($digest), 'rb');
-
-        if ($binary === false) {
-            throw new RuntimeException('Unable to open the consumed-binding digest stream.');
-        }
-
-        try {
-            return $this->connection->table($this->table)->where('digest', $binary)->exists();
-        } finally {
-            fclose($binary);
-        }
-    }
-
     public function lookup(string $digest): ?DerivedGuard
     {
         // Illuminate binds streams as PDO::PARAM_LOB; the stream contains the raw bytes.
@@ -89,6 +73,9 @@ final readonly class DatabaseConsumedBindingGuardStore implements ConsumedBindin
 
     public function hasSchemedGuard(): bool
     {
-        return $this->connection->table($this->table)->whereNotNull('algorithm')->exists();
+        return $this->connection->table($this->table)
+            ->whereNotNull('algorithm')
+            ->orWhereNotNull('key_version')
+            ->exists();
     }
 }

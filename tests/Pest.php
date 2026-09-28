@@ -8,6 +8,7 @@ use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Capabilities\Capability;
 use Fissible\Verdict\Capabilities\CapabilityDiscovery;
 use Fissible\Verdict\Capabilities\CapabilityRegistrar;
+use Fissible\Verdict\Contracts\ConsumedBindingGuardStore;
 use Fissible\Verdict\Decisions\Decision;
 use Fissible\Verdict\Decisions\Evaluation;
 use Fissible\Verdict\Decisions\EvaluationStage;
@@ -44,6 +45,15 @@ function verdictInstallBindingAdmissionLockTable(?Builder $schema = null): void
  * Resolve a Verdict table name through the config key the stubs and stores read (#290), so a test
  * that creates a table by requiring a stub asserts against the same name the stub used.
  */
+/**
+ * A consumed-binding guard is present iff lookup() returns a record. The store exposes a single read
+ * surface (lookup); this keeps the many presence assertions terse without a redundant has() method.
+ */
+function guardHas(ConsumedBindingGuardStore $guards, string $digest): bool
+{
+    return $guards->lookup($digest) !== null;
+}
+
 function verdictTable(string $area): string
 {
     $map = [

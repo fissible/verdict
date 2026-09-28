@@ -61,15 +61,15 @@ dataset('guard stores', [
 // ── shared contract, both implementations ─────────────────────────────────────────────────────
 
 it('reports absence for a digest it has never recorded', function (callable $make): void {
-    expect($make()->has(dgA()))->toBeFalse();
+    expect(guardHas($make(), dgA()))->toBeFalse();
 })->with('guard stores');
 
 it('reports presence for a remembered digest and absence for others', function (callable $make): void {
     $store = $make();
     $store->remember(dgA(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')));
 
-    expect($store->has(dgA()))->toBeTrue()
-        ->and($store->has(dgB()))->toBeFalse();
+    expect(guardHas($store, dgA()))->toBeTrue()
+        ->and(guardHas($store, dgB()))->toBeFalse();
 })->with('guard stores');
 
 // ── lookup(): the metadata-carrying probe used for after-match validation (#514) ───────────────
@@ -136,18 +136,35 @@ it('reports a schemed guard once any row carries an algorithm', function (callab
     expect($store->hasSchemedGuard())->toBeTrue();
 })->with('guard stores');
 
+it('reports a schemed guard for a half-set row carrying only a key version', function (callable $make): void {
+    // A row with key_version but a null algorithm is malformed scheme metadata — the same anomaly
+    // describes() rejects. hasSchemedGuard() must catch it too, or the downgrade guard would miss it.
+    $store = $make();
+    $store->remember(dgA(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')), null, 'v1');
+
+    expect($store->hasSchemedGuard())->toBeTrue();
+})->with('guard stores');
+
+it('reports a schemed guard for a half-set row carrying only an algorithm', function (callable $make): void {
+    // The other arm of the OR, pinned explicitly so an impl that checks only key_version is caught too.
+    $store = $make();
+    $store->remember(dgA(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')), 'hmac-sha256', null);
+
+    expect($store->hasSchemedGuard())->toBeTrue();
+})->with('guard stores');
+
 it('keeps every remembered digest, not only the most recent', function (callable $make): void {
     $store = $make();
     $at = new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC'));
     $store->remember(dgA(), $at);
     $store->remember(dgB(), $at);
 
-    expect($store->has(dgA()))->toBeTrue()
-        ->and($store->has(dgB()))->toBeTrue()
-        ->and($store->has(dgC()))->toBeFalse();
+    expect(guardHas($store, dgA()))->toBeTrue()
+        ->and(guardHas($store, dgB()))->toBeTrue()
+        ->and(guardHas($store, dgC()))->toBeFalse();
 
     $store->remember(dgA(), $at); // re-remembering A must not evict B
-    expect($store->has(dgB()))->toBeTrue();
+    expect(guardHas($store, dgB()))->toBeTrue();
 })->with('guard stores');
 
 it('is idempotent: remembering the same digest twice neither throws nor loses it', function (callable $make): void {
@@ -156,15 +173,15 @@ it('is idempotent: remembering the same digest twice neither throws nor loses it
     $store->remember(dgA(), $at);
     $store->remember(dgA(), $at);
 
-    expect($store->has(dgA()))->toBeTrue();
+    expect(guardHas($store, dgA()))->toBeTrue();
 })->with('guard stores');
 
 it('keeps a binary digest (NUL and high bytes) faithfully', function (callable $make): void {
     $store = $make();
     $store->remember(dgBinary(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')));
 
-    expect($store->has(dgBinary()))->toBeTrue()
-        ->and($store->has(dgA()))->toBeFalse();
+    expect(guardHas($store, dgBinary()))->toBeTrue()
+        ->and(guardHas($store, dgA()))->toBeFalse();
 })->with('guard stores');
 
 // ── database persistence specifics ────────────────────────────────────────────────────────────
@@ -185,7 +202,7 @@ it('persists durably: a fresh store instance sees a digest an earlier one record
     databaseGuardStore()->remember(dgA(), new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')));
 
     // A brand-new instance, so an implementation backed by an instance-local array cannot pass.
-    expect(databaseGuardStore()->has(dgA()))->toBeTrue();
+    expect(guardHas(databaseGuardStore(), dgA()))->toBeTrue();
 });
 
 it('keeps exactly one row per digest on a duplicate remember', function (): void {

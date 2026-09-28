@@ -13,11 +13,6 @@ final class InMemoryConsumedBindingGuardStore implements ConsumedBindingGuardSto
     /** @var array<string, array{consumedAt: DateTimeImmutable, algorithm: ?string, keyVersion: ?string}> */
     private array $guards = [];
 
-    public function has(string $digest): bool
-    {
-        return isset($this->guards[$digest]);
-    }
-
     public function lookup(string $digest): ?DerivedGuard
     {
         if (! isset($this->guards[$digest])) {
@@ -41,7 +36,7 @@ final class InMemoryConsumedBindingGuardStore implements ConsumedBindingGuardSto
     public function hasSchemedGuard(): bool
     {
         foreach ($this->guards as $guard) {
-            if ($guard['algorithm'] !== null) {
+            if ($guard['algorithm'] !== null || $guard['keyVersion'] !== null) {
                 return true;
             }
         }

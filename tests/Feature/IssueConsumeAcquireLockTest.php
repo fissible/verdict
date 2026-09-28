@@ -299,11 +299,6 @@ it('holds the coarse-pair lock throughout issue() row work — an independent se
 
         public function __construct(private int $lockKey) {}
 
-        public function has(string $digest): bool
-        {
-            return false;
-        }
-
         public function hasSchemedGuard(): bool
         {
             return false;
@@ -356,11 +351,6 @@ it('holds the coarse-pair lock throughout consume() row work — an independent 
         public ?bool $independentSessionAcquired = null;
 
         public function __construct(private int $lockKey) {}
-
-        public function has(string $digest): bool
-        {
-            return false; // no collision
-        }
 
         public function hasSchemedGuard(): bool
         {
