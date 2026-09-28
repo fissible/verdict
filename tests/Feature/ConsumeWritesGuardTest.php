@@ -196,8 +196,8 @@ it('persists the guard for the consumed binding (real stores, capability in the 
     expect($store->consume($toolCallId, $fingerprint, guardTestTime('2026-08-01 12:05:00'))->outcome)
         ->toBe(ApprovalOutcome::Consumed);
 
-    expect($guards->has(ConsumedBindingGuard::digest($toolCallId, $capability, $fingerprint)))->toBeTrue()
-        ->and($guards->has(ConsumedBindingGuard::digest($toolCallId, 'orders.refund', $fingerprint)))->toBeFalse();
+    expect(guardHas($guards, ConsumedBindingGuard::digest($toolCallId, $capability, $fingerprint)))->toBeTrue()
+        ->and(guardHas($guards, ConsumedBindingGuard::digest($toolCallId, 'orders.refund', $fingerprint)))->toBeFalse();
 })->with('store drivers');
 
 it('remembers exactly the full-triple digest once, using the receipt\'s real capability', function (string $driver): void {
@@ -352,7 +352,7 @@ it('the container-resolved default Database store writes a guard on consume', fu
 
     // Read back through a binary-faithful guard store, not a string-bound where() on the BINARY digest.
     $guards = new DatabaseConsumedBindingGuardStore(app(DatabaseManager::class)->connection(), GUARD_TABLE);
-    expect($guards->has(ConsumedBindingGuard::digest($toolCallId, $capability, $fingerprint)))->toBeTrue();
+    expect(guardHas($guards, ConsumedBindingGuard::digest($toolCallId, $capability, $fingerprint)))->toBeTrue();
 });
 
 it('registers the consumed-binding-guard migration for real, fresh publication', function (): void {
@@ -394,7 +394,7 @@ it('rolls back a guard that WAS written when the consume transaction fails (Data
 
         public function has(string $digest): bool
         {
-            return $this->inner->has($digest);
+            return $this->inner->lookup($digest) !== null;
         }
 
         public function hasSchemedGuard(): bool
@@ -411,7 +411,7 @@ it('rolls back a guard that WAS written when the consume transaction fails (Data
         {
             $this->inner->remember($digest, $consumedAt); // really inserts...
 
-            if (! $this->inner->has($digest)) {
+            if ($this->inner->lookup($digest) === null) {
                 throw new RuntimeException('decorator precondition: the guard was not actually written');
             }
 
@@ -433,7 +433,7 @@ it('rolls back a guard that WAS written when the consume transaction fails (Data
     expect($reloaded?->status)->toBe(ApprovalReceiptStatus::Approved)
         ->and($reloaded?->consumedAt)->toBeNull()
         // the guard the decorator inserted must NOT survive — it shared the rolled-back transaction.
-        ->and($real->has(ConsumedBindingGuard::digest($toolCallId, $capability, $fingerprint)))->toBeFalse()
+        ->and(guardHas($real, ConsumedBindingGuard::digest($toolCallId, $capability, $fingerprint)))->toBeFalse()
         ->and($connection->table(GUARD_TABLE)->count())->toBe(0);
 });
 
@@ -501,7 +501,7 @@ it('leaves no guard behind when the receipt UPDATE itself fails (shared-transact
             ->toThrow(QueryException::class, 'blocked');
 
         expect($store->find($receipt->id)?->status)->toBe(ApprovalReceiptStatus::Approved)
-            ->and($guards->has(ConsumedBindingGuard::digest($toolCallId, $capability, $fingerprint)))->toBeFalse()
+            ->and(guardHas($guards, ConsumedBindingGuard::digest($toolCallId, $capability, $fingerprint)))->toBeFalse()
             ->and($connection->table(GUARD_TABLE)->count())->toBe(0);
     } finally {
         $connection->statement('DROP TRIGGER IF EXISTS block_consume');

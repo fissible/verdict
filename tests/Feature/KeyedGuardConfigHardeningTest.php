@@ -8,6 +8,7 @@ use Fissible\Verdict\Approvals\ApprovalReceiptStatus;
 use Fissible\Verdict\Approvals\ConsumedBindingGuard;
 use Fissible\Verdict\Approvals\DatabaseApprovalReceiptStore;
 use Fissible\Verdict\Contracts\ApprovalReceiptStore;
+use Fissible\Verdict\Contracts\PrunesConsumedApprovalPayload;
 use Fissible\Verdict\Exceptions\ConsumedBindingGuardSchemeDowngraded;
 use Fissible\Verdict\Exceptions\InvalidConsumedBindingGuardConfig;
 use Illuminate\Database\ConnectionInterface;
@@ -217,4 +218,62 @@ it('fails closed at consume() after a downgrade, for an approved receipt that pr
 
     expect(fn () => app(ApprovalReceiptStore::class)->consume('call-b', $bFingerprint, new DateTimeImmutable('2026-09-01 12:02:00', new DateTimeZone('UTC'))))
         ->toThrow(ConsumedBindingGuardSchemeDowngraded::class);
+});
+
+it('fails closed at pruneConsumedPayload() after a downgrade, writing no keyless guard and pruning nothing', function (): void {
+    // The fourth guard-write site: pruneConsumedPayload() re-guards a consumed binding as it deletes the
+    // receipt payload. Under a downgrade its activeGuard() would be keyless, so it would silently mint a
+    // keyless guard for a keyed-consumed binding (an unrequested confidentiality downgrade, contra #510).
+    // It must fail closed like issue()/consume(): stop the sweep, delete nothing, write nothing.
+    // NOTE for the implementer: guard BOTH prune bodies — DatabaseApprovalReceiptStore AND
+    // InMemoryApprovalReceiptStore::pruneConsumedPayload(). The in-memory path can't be reached in a
+    // test (issue/consume trip the guard first, and the scheme is fixed at construction + memoised), so
+    // apply assertNotDowngraded() to both for symmetry; this DB test covers the production path.
+    config()->set('verdict.approvals.consumed_binding_guard.active_key', 'v1');
+    config()->set('verdict.approvals.consumed_binding_guard.keys', ['v1' => KH_SECRET]);
+    app()->forgetInstance(ApprovalReceiptStore::class);
+    khConsume(app(ApprovalReceiptStore::class)); // keyed guard for the KH binding; its receipt is now Consumed
+    expect(khGuardDigests())->toBe([ConsumedBindingGuard::keyed(KH_TC, KH_CAP, KH_FP, KH_SECRET)]);
+    $receiptsBefore = khConnection()->table(verdictTable('approvals'))->count();
+
+    config()->set('verdict.approvals.consumed_binding_guard', null); // the downgrade
+    app()->forgetInstance(ApprovalReceiptStore::class);
+
+    /** @var PrunesConsumedApprovalPayload $store */
+    $store = app(ApprovalReceiptStore::class);
+
+    expect(fn () => $store->pruneConsumedPayload(new DateTimeImmutable('2027-01-01 00:00:00', new DateTimeZone('UTC'))))
+        ->toThrow(ConsumedBindingGuardSchemeDowngraded::class);
+
+    // No keyless guard minted (still only the original keyed row), and the consumed receipt was not deleted.
+    expect(khGuardDigests())->toBe([ConsumedBindingGuard::keyed(KH_TC, KH_CAP, KH_FP, KH_SECRET)])
+        ->and(khConnection()->table(verdictTable('approvals'))->count())->toBe($receiptsBefore);
+});
+
+it('names restoring the keys in the database store downgrade refusal message', function (): void {
+    // B1 on the PRODUCTION store: the operator-facing outage message must state the remedy. The
+    // Database store carries its own message literal, distinct from the in-memory one.
+    config()->set('verdict.approvals.consumed_binding_guard.active_key', 'v1');
+    config()->set('verdict.approvals.consumed_binding_guard.keys', ['v1' => KH_SECRET]);
+    app()->forgetInstance(ApprovalReceiptStore::class);
+    khConsume(app(ApprovalReceiptStore::class));
+
+    config()->set('verdict.approvals.consumed_binding_guard', null); // the downgrade
+    app()->forgetInstance(ApprovalReceiptStore::class);
+
+    $fresh = new ApprovalReceipt(
+        id: 'receipt-msg', toolCallId: 'call-msg', capability: KH_CAP, bindingFingerprint: hash('sha256', 'msg'),
+        provenance: null, approvalContext: null, status: ApprovalReceiptStatus::Pending, reason: 'Confirm.',
+        expiresAt: new DateTimeImmutable('2027-01-01 00:00:00', new DateTimeZone('UTC')),
+        approvedBy: null, approvedAt: null, rejectedBy: null, rejectedAt: null, consumedAt: null,
+        createdAt: new DateTimeImmutable('2026-09-01 12:00:00', new DateTimeZone('UTC')),
+        updatedAt: new DateTimeImmutable('2026-09-01 12:00:00', new DateTimeZone('UTC')),
+    );
+
+    try {
+        app(ApprovalReceiptStore::class)->issue($fresh);
+        throw new RuntimeException('expected a downgrade refusal');
+    } catch (ConsumedBindingGuardSchemeDowngraded $e) {
+        expect(strtolower($e->getMessage()))->toContain('restore');
+    }
 });

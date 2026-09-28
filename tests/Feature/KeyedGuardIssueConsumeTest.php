@@ -175,7 +175,7 @@ it('records the keyless guard on consume with no scheme', function (string $driv
     $guards = new InMemoryConsumedBindingGuardStore;
     kgConsume(kgStore($driver, $guards, null), 'a');
 
-    expect($guards->has(ConsumedBindingGuard::digest(KG_TC, KG_CAP, KG_FP)))->toBeTrue();
+    expect(guardHas($guards, ConsumedBindingGuard::digest(KG_TC, KG_CAP, KG_FP)))->toBeTrue();
 })->with('approval stores');
 
 it('records the ACTIVE keyed guard on consume, not the keyless one', function (string $driver): void {
@@ -183,8 +183,8 @@ it('records the ACTIVE keyed guard on consume, not the keyless one', function (s
     $scheme = new ConsumedBindingGuardScheme(['v1' => 'secret-1'], activeKeyVersion: 'v1');
     kgConsume(kgStore($driver, $guards, $scheme), 'a');
 
-    expect($guards->has(ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1')))->toBeTrue()
-        ->and($guards->has(ConsumedBindingGuard::digest(KG_TC, KG_CAP, KG_FP)))->toBeFalse();
+    expect(guardHas($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1')))->toBeTrue()
+        ->and(guardHas($guards, ConsumedBindingGuard::digest(KG_TC, KG_CAP, KG_FP)))->toBeFalse();
 })->with('approval stores');
 
 it('rejects consume() when a guard exists under a NON-active candidate (probes every candidate, not just the active one)', function (string $driver): void {
@@ -237,8 +237,8 @@ it('fails closed at consume() when the active key is unavailable, recording noth
     expect(fn () => $store->consume(KG_TC, KG_FP, kgTime('2026-09-01 12:01:00')))->toThrow(MissingConsumedBindingGuardKey::class);
 
     // Nothing recorded under any scheme, and the receipt is untouched (no partial consume).
-    expect($guards->has(ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1')))->toBeFalse()
-        ->and($guards->has(ConsumedBindingGuard::digest(KG_TC, KG_CAP, KG_FP)))->toBeFalse()
+    expect(guardHas($guards, ConsumedBindingGuard::keyed(KG_TC, KG_CAP, KG_FP, 'secret-1')))->toBeFalse()
+        ->and(guardHas($guards, ConsumedBindingGuard::digest(KG_TC, KG_CAP, KG_FP)))->toBeFalse()
         ->and($store->find($receipt->id)->status)->toBe(ApprovalReceiptStatus::Approved);
 })->with('approval stores');
 

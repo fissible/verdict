@@ -82,6 +82,19 @@ it('fails closed on issue() when a keyed guard exists but the scheme was removed
     expect(fn () => $store->issue(gdReceipt('fresh')))->toThrow(ConsumedBindingGuardSchemeDowngraded::class);
 });
 
+it('names restoring the keys as the remedy in the downgrade refusal', function (): void {
+    // The refusal is a total approval outage; the message must state how to recover, not only what it
+    // refused — so an operator reading it knows to restore the retained keys.
+    $store = new InMemoryApprovalReceiptStore(guards: gdKeyedGuardStore(), scheme: null);
+
+    try {
+        $store->issue(gdReceipt('fresh'));
+        throw new RuntimeException('expected a downgrade refusal');
+    } catch (ConsumedBindingGuardSchemeDowngraded $e) {
+        expect(strtolower($e->getMessage()))->toContain('restore');
+    }
+});
+
 it('fails closed on issue() when the scheme was reverted to the empty-keys default', function (): void {
     // SHAPE B: config reverted to the shipped default [active_key => null, keys => []] — a non-null
     // scheme with no keys is still keyless-effective, so it must trip exactly like a removed config.

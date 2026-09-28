@@ -209,8 +209,8 @@ it('prunes only the consumed rows past retention, guarantees their guards, and r
         ->and($store->find($pending->id))->not->toBeNull()  // never admitted an execution: kept
         ->and($store->find($approved->id))->not->toBeNull()
         // guards for the two pruned bindings survive; nothing for the kept ones was disturbed.
-        ->and($guards->has(pcpDigest('call-a', 'orders.cancel', hash('sha256', 'a'))))->toBeTrue()
-        ->and($guards->has(pcpDigest('call-b', 'orders.refund', hash('sha256', 'b'))))->toBeTrue();
+        ->and(guardHas($guards, pcpDigest('call-a', 'orders.cancel', hash('sha256', 'a'))))->toBeTrue()
+        ->and(guardHas($guards, pcpDigest('call-b', 'orders.refund', hash('sha256', 'b'))))->toBeTrue();
 
     // A second sweep finds nothing more.
     expect($store->pruneConsumedPayload(pcpTime('2026-08-05 00:00:00')))->toBe(0);
@@ -240,7 +240,7 @@ it('is self-guarding: guarantees a MISSING guard before pruning a row a backfill
 
     /** @var PrunesConsumedApprovalPayload $store */
     expect($store->pruneConsumedPayload(pcpTime('2026-08-08 00:00:00')))->toBe(1)
-        ->and($guards->has(pcpDigest('call-x', 'orders.cancel', hash('sha256', 'x'))))->toBeTrue();
+        ->and(guardHas($guards, pcpDigest('call-x', 'orders.cancel', hash('sha256', 'x'))))->toBeTrue();
 })->with('prune drivers');
 
 it('guarantees the guard BEFORE deleting the row — a failed guard write leaves the payload intact', function (string $driver): void {
@@ -252,7 +252,7 @@ it('guarantees the guard BEFORE deleting the row — a failed guard write leaves
     // Clear the guard so prune must (re-)write it — exercising the guarantee's failure atomicity on the
     // branch that actually inserts, and not rejecting an `if (! has()) remember()` implementation.
     $guards->remembered = [];
-    expect($guards->has(pcpDigest('call-atomic', 'orders.cancel', hash('sha256', 'atomic'))))->toBeFalse();
+    expect(guardHas($guards, pcpDigest('call-atomic', 'orders.cancel', hash('sha256', 'atomic'))))->toBeFalse();
 
     // From now on the guard guarantee fails; the prune must NOT delete the row (guard-write and delete
     // are one indivisible step, guard first).
@@ -331,8 +331,8 @@ it('runs one admission-locked transaction per pruned row — each under its OWN 
     // mixed: an implementation locking only when the guard is missing skips the existing-guard row.
     $guards->remembered = $scenario === 'mixed' ? [$digest2] : [];
     $r2Missing = $scenario !== 'mixed';
-    expect($guards->has($digest1))->toBeFalse()
-        ->and($guards->has($digest2))->toBe(! $r2Missing);
+    expect(guardHas($guards, $digest1))->toBeFalse()
+        ->and(guardHas($guards, $digest2))->toBe(! $r2Missing);
 
     // Ordered stream of queries, guard TOUCHES (has/remember, with digest+level) and tx boundaries.
     $timeline = [];
@@ -367,8 +367,8 @@ it('runs one admission-locked transaction per pruned row — each under its OWN 
     /** @var PrunesConsumedApprovalPayload $store */
     expect($store->pruneConsumedPayload(pcpTime('2026-08-08 00:00:00')))->toBe(2)
         ->and($connection->transactionLevel())->toBe(0)
-        ->and($guards->has($digest1))->toBeTrue()   // each binding's own guard is present afterward
-        ->and($guards->has($digest2))->toBeTrue();
+        ->and(guardHas($guards, $digest1))->toBeTrue()   // each binding's own guard is present afterward
+        ->and(guardHas($guards, $digest2))->toBeTrue();
 
     expect(array_filter($timeline, fn (array $e): bool => $e['type'] === 'rollback'))->toBe([]);
     expect(array_values(array_filter($timeline, fn (array $e): bool => $e['type'] === 'commit' && $e['level'] === 0)))->toHaveCount(2);
@@ -438,14 +438,16 @@ it('durably persists the guarantee guard and the deletion together (real Databas
     // Remove the guard consume() wrote, so THIS test proves prune INSERTS the guarantee guard durably,
     // not merely that a pre-existing one survives.
     $connection->table(PCP_GUARD_TABLE)->delete();
-    expect($guards->has(pcpDigest('call-real', 'orders.cancel', hash('sha256', 'real'))))->toBeFalse();
+    expect(guardHas($guards, pcpDigest('call-real', 'orders.cancel', hash('sha256', 'real'))))->toBeFalse();
 
     /** @var PrunesConsumedApprovalPayload $store */
     expect($store->pruneConsumedPayload(pcpTime('2026-08-08 00:00:00')))->toBe(1)
         ->and($store->find($receipt->id))->toBeNull() // payload deleted...
         // ...and the guard prune inserted is durably present (read through a fresh store instance).
-        ->and((new DatabaseConsumedBindingGuardStore($connection, PCP_GUARD_TABLE))
-            ->has(pcpDigest('call-real', 'orders.cancel', hash('sha256', 'real'))))->toBeTrue();
+        ->and(guardHas(
+            new DatabaseConsumedBindingGuardStore($connection, PCP_GUARD_TABLE),
+            pcpDigest('call-real', 'orders.cancel', hash('sha256', 'real')),
+        ))->toBeTrue();
 });
 
 it('guarantees the guard while the receipt still exists — remember() runs before the delete (Database)', function (): void {
@@ -461,7 +463,7 @@ it('guarantees the guard while the receipt still exists — remember() runs befo
     // Clear the guard THIS store reads (the recording double), so prune must (re)insert it and remember()
     // runs even for an `if (! has()) remember()` implementation.
     $guards->remembered = [];
-    expect($guards->has(pcpDigest('call-order', 'orders.cancel', hash('sha256', 'order'))))->toBeFalse();
+    expect(guardHas($guards, pcpDigest('call-order', 'orders.cancel', hash('sha256', 'order'))))->toBeFalse();
 
     $rowPresentAtGuarantee = null;
     $guards->onRemember = function () use ($connection, $receipt, &$rowPresentAtGuarantee): void {
