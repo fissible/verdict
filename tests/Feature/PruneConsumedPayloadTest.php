@@ -78,15 +78,6 @@ function pcpGuards(): ConsumedBindingGuardStore
         /** @var null|Closure(string): void */
         public ?Closure $onHas = null;
 
-        public function has(string $digest): bool
-        {
-            if ($this->onHas !== null) {
-                ($this->onHas)($digest);
-            }
-
-            return in_array($digest, $this->remembered, true);
-        }
-
         public function lookup(string $digest): ?DerivedGuard
         {
             if (! in_array($digest, $this->remembered, true)) {

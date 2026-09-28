@@ -112,11 +112,6 @@ it('queries the guard store for a schemed guard at most once per store instance 
     {
         public int $schemedGuardQueries = 0;
 
-        public function has(string $digest): bool
-        {
-            return false;
-        }
-
         public function lookup(string $digest): ?DerivedGuard
         {
             return null;

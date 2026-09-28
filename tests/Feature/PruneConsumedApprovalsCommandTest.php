@@ -95,11 +95,6 @@ function pcaGuardStore(): ConsumedBindingGuardStore
         /** @var array<string, array{0: ?string, 1: ?string}> digest => [algorithm, keyVersion] */
         public array $meta = [];
 
-        public function has(string $digest): bool
-        {
-            return in_array($digest, $this->remembered, true);
-        }
-
         public function lookup(string $digest): ?DerivedGuard
         {
             if (! in_array($digest, $this->remembered, true)) {

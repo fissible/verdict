@@ -79,11 +79,6 @@ function recordingGuardStore(): ConsumedBindingGuardStore
         /** @var list<array{digest: string, at: DateTimeInterface, algorithm: ?string, keyVersion: ?string}> */
         public array $remembered = [];
 
-        public function has(string $digest): bool
-        {
-            return in_array($digest, array_column($this->remembered, 'digest'), true);
-        }
-
         public function hasSchemedGuard(): bool
         {
             foreach ($this->remembered as $entry) {
@@ -124,11 +119,6 @@ function throwingGuardStore(): ConsumedBindingGuardStore
 {
     return new class implements ConsumedBindingGuardStore
     {
-        public function has(string $digest): bool
-        {
-            return false;
-        }
-
         public function hasSchemedGuard(): bool
         {
             return false;
@@ -391,11 +381,6 @@ it('rolls back a guard that WAS written when the consume transaction fails (Data
     $decorator = new class($real) implements ConsumedBindingGuardStore
     {
         public function __construct(private ConsumedBindingGuardStore $inner) {}
-
-        public function has(string $digest): bool
-        {
-            return $this->inner->lookup($digest) !== null;
-        }
 
         public function hasSchemedGuard(): bool
         {

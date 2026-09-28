@@ -86,11 +86,6 @@ function issueGuardRecordingStore(): ConsumedBindingGuardStore
         /** @var list<string> digests queried via lookup() (the probe) */
         public array $reads = [];
 
-        public function has(string $digest): bool
-        {
-            return in_array($digest, $this->remembered, true);
-        }
-
         public function lookup(string $digest): ?DerivedGuard
         {
             $this->reads[] = $digest;
