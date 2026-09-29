@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-09-28
+
 > **The v0.17.0 line is where the ADR 0039 "replay refusal outlives the consumed receipt" arc
 > becomes public API.** A large surface that was unreleased churn across the 0.16 cycle ships here
 > for the first time — the `ConsumedBindingGuardStore` and `ConsumedBindingGuardScheme` contracts,
@@ -115,7 +117,6 @@ All notable changes to Verdict will be documented in this file.
   the keyless digest regardless of keyed mode, so it carries the same offline-guessing correlation
   for refused bindings — bounded by evidence retention, unlike the permanent guard (see
   `docs/limitations.md`). Anchoring on the active keyed digest is tracked for a later release (#528).
-
 
 ## [0.16.0] - 2026-09-12
 
@@ -2210,7 +2211,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/fissible/verdict/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/fissible/verdict/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/fissible/verdict/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/fissible/verdict/compare/v0.13.1...v0.14.0
