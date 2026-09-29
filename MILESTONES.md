@@ -818,9 +818,11 @@ together is one pass over that boundary rather than two.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | S–M (impl) | ✅ ADR 0039 | open — the build against [ADR 0039](docs/adr/0039-replay-refusal-outlives-the-consumed-receipt.md)'s 15-item parity spec, which is the implementation contract |
-| [#468](https://github.com/fissible/verdict/issues/468) `DatabaseReviewRequestStore` has no paired enumerating `ReviewStatusReader` | S | none | open — Verdict ships the store without a reader that can enumerate it, so every consumer writes one; verdict-console carries a copy it deletes when this lands |
-| [#469](https://github.com/fissible/verdict/issues/469) `ReviewStatusView` exposes no provenance, so a reviewer surface cannot render ADR 0026's states | S (decision) + S (impl) | ADR 0026, ADR 0035 §4 | open — either the view grows the display-safe projection or the omission becomes citable; a surface cannot query around the reader without breaking ADR 0031's discipline |
+| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | S–M (impl) | ✅ ADR 0039 | ✅ **shipped in v0.17.0** — ADR 0039's 15-item parity spec built end to end (#499–#511) plus hardening (#514/#521, #522/#523, #524/#525, #526/#527, #530) |
+| [#468](https://github.com/fissible/verdict/issues/468) `DatabaseReviewRequestStore` has no paired enumerating `ReviewStatusReader` | S | none | ✅ **shipped in v0.17.0** (#490) — the paired enumerating `ReviewStatusReader` |
+| [#469](https://github.com/fissible/verdict/issues/469) `ReviewStatusView` exposes no provenance, so a reviewer surface cannot render ADR 0026's states | S (decision) + S (impl) | ADR 0026, ADR 0035 §4 | ➡️ **deferred to v0.18.0** — a scoped decision (grow the display-safe projection, or record the omission as citable), not a correctness defect; v0.17.0 shipped without it |
+
+**Shipped 2026-09-28 as v0.17.0.** #460 and #468 delivered (closed); #469 deferred to v0.18.0 — it was in scope but not addressed this cycle, and is a scoped decision rather than a correctness defect, so v0.17.0 shipped without it. Beyond the review-reads, v0.17.0 also carried the ADR 0039 hardening arc that landed during the cycle — #513/#519 (strict-issuance attest ordering), #514 (after-match scheme validation), #522 (keyed→keyless downgrade fail-closed), #524 (round-3 hardening), #526 (refusal-operation evidence) — plus the `laravel/ai ^1.0` bump (#493/#494). Those six were re-milestoned from v0.18.0 → v0.17.0 to match where they shipped.
 
 **#468 and #469 are the review lane's read surface, not new scope.** ADR 0035 §4 defines the read DTO and
 the reader contract; what shipped satisfies neither completely. #468 is a store Verdict ships without the
@@ -849,6 +851,16 @@ why they are a milestone rather than an addition to the 1.0 bar.
 |---|---|---|---|
 | [#475](https://github.com/fissible/verdict/issues/475) Semantic / rate-abuse attack case | S–M | none | open — **first in this milestone**; the one 🔴 cell in #213's coverage matrix |
 | [#474](https://github.com/fissible/verdict/issues/474) Realistic retrieved-content injection + exfiltration pack | M–L | none | open — broadens the narrow `search-argument-exfiltration` case onto published corpora with an argument-level oracle |
+
+**Also on the v0.18.0 milestone (beyond the attack-coverage theme).** One carry-over plus the post-v0.17.0 follow-ups — not the milestone's theme, but its tracked scope:
+
+| Issue | Effort | Deps | Status |
+|---|---|---|---|
+| [#469](https://github.com/fissible/verdict/issues/469) `ReviewStatusView` provenance projection | S (decision) + S | ADR 0026, ADR 0035 §4 | open — carried over from v0.17.0 |
+| [#489](https://github.com/fissible/verdict/issues/489) Review table has no index for the pending-enumeration query | XS | none | open — the scale twin of #468/#490 |
+| [#497](https://github.com/fissible/verdict/issues/497) Two-phase release so the compatibility matrix gates the tagged commit | ~M | #492 | open — release-tooling |
+| [#528](https://github.com/fissible/verdict/issues/528) Refusal evidence anchors on a keyless digest even under keyed mode | ~M | #527 | open — DeepSeek re-review follow-up; the tradeoff is documented in the meantime |
+| [#529](https://github.com/fissible/verdict/issues/529) Decide: candidate-probe short-circuits on first match (timing side channel) | ~XS | none | open — an explicit accept-or-fix decision |
 
 **Why not v1.0.0.** The 1.0 section exists on the argument that inventing 1.0 work "would produce a
 backlog that measures imagination rather than adoption," and it holds only work that produced itself.
@@ -1035,6 +1047,16 @@ Documentation-not-enforcement is a defensible posture, consistent with `GuardedT
 low — but "the docs forbid it, the code accepts it silently" is the asymmetry a 1.0 bar exists to close.
 The fix is an advisory (warn, never reject).
 
+**Also on the v1.0.0 milestone, not covered by the narrative above:**
+
+| Issue | Effort | Scope | Note |
+|---|---|---|---|
+| [#249](https://github.com/fissible/verdict/issues/249) Decide whether report timestamps accept RFC 3339 Z-suffixed UTC | S | design | a documented-contract decision, the same shape as #432/#426 |
+| [#253](https://github.com/fissible/verdict/issues/253) Map evidence artifacts to audit control language (SOC 2 / ISO 27001) | M | design | positions the evidence surface for adopters |
+| [#386](https://github.com/fissible/verdict/issues/386) Enforce check-to-use resource binding — turn a detected digest swap into a deny/hold | ~M | design | the enforcement follow-up to #295's detection |
+| [#415](https://github.com/fissible/verdict/issues/415) Decide whether Verdict stores instants in a reinterpretation-proof representation | ~M | — | schema decision, adjacent to #432 |
+| [#245](https://github.com/fissible/verdict/issues/245) Remove the pack-test wrapper shims left by the reference-runner extraction | S | `good first issue` | contributor-ready; belongs with the pinning pool above |
+
 ---
 
 ## Upstream dependency watch
@@ -1043,8 +1065,11 @@ See [`docs/laravel-ai-compatibility.md`](docs/laravel-ai-compatibility.md) for t
 Verdict's `src/` actually depends on in Laravel AI's surface, classified by how likely each dependency is
 to change without warning, and which tests would catch it (#18).
 
-Verdict pins `laravel/ai: ^0.11.0`, which in Composer's pre-1.0 caret semantics is `>=0.11.0 <0.12.0`.
-`0.10.x` is no longer supported — see v0.9.0 above for why that floor move was forced rather than chosen.
+Verdict pins `laravel/ai: ^1.0` as of **v0.17.0 (#493/#494)** — `0.x` is dropped. In Composer's caret
+semantics that is `>=1.0.0 <2.0.0`. (Earlier lines in this doc that reference `^0.11` / `0.10.x` are the
+historical record of the 0.9.0–0.16.0 window, not the current constraint.) The `0.x-dev` canary and
+dependency-watch bullets below still describe the 0.x era; they need a 1.x refresh (update
+`.github/workflows/laravel-ai-canary.yml` to track `1.x-dev`) — flagged, not yet done.
 
 - **The run-context stack shipped in `0.11.0` and was absorbed in one reviewed pass (#130 → #244).**
   laravel/ai#848, the draft this watch originally tracked, was **closed as superseded**; the work split
