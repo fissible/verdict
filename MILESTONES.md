@@ -818,9 +818,11 @@ together is one pass over that boundary rather than two.
 
 | Issue | Effort | Deps | Status |
 |---|---|---|---|
-| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | S–M (impl) | ✅ ADR 0039 | open — the build against [ADR 0039](docs/adr/0039-replay-refusal-outlives-the-consumed-receipt.md)'s 15-item parity spec, which is the implementation contract |
-| [#468](https://github.com/fissible/verdict/issues/468) `DatabaseReviewRequestStore` has no paired enumerating `ReviewStatusReader` | S | none | open — Verdict ships the store without a reader that can enumerate it, so every consumer writes one; verdict-console carries a copy it deletes when this lands |
-| [#469](https://github.com/fissible/verdict/issues/469) `ReviewStatusView` exposes no provenance, so a reviewer surface cannot render ADR 0026's states | S (decision) + S (impl) | ADR 0026, ADR 0035 §4 | open — either the view grows the display-safe projection or the omission becomes citable; a surface cannot query around the reader without breaking ADR 0031's discipline |
+| [#460](https://github.com/fissible/verdict/issues/460) Consumed receipts accumulate without bound — retention has a security tradeoff | S–M (impl) | ✅ ADR 0039 | ✅ **shipped in v0.17.0** — ADR 0039's 15-item parity spec built end to end (#499–#511) plus hardening (#514/#521, #522/#523, #524/#525, #526/#527, #530) |
+| [#468](https://github.com/fissible/verdict/issues/468) `DatabaseReviewRequestStore` has no paired enumerating `ReviewStatusReader` | S | none | ✅ **shipped in v0.17.0** (#490) — the paired enumerating `ReviewStatusReader` |
+| [#469](https://github.com/fissible/verdict/issues/469) `ReviewStatusView` exposes no provenance, so a reviewer surface cannot render ADR 0026's states | S (decision) + S (impl) | ADR 0026, ADR 0035 §4 | ➡️ **deferred to v0.18.0** — a scoped decision (grow the display-safe projection, or record the omission as citable), not a correctness defect; v0.17.0 shipped without it |
+
+**Shipped 2026-09-28 as v0.17.0.** #460 and #468 delivered (closed); #469 deferred to v0.18.0 — it was in scope but not addressed this cycle, and is a scoped decision rather than a correctness defect, so v0.17.0 shipped without it.
 
 **#468 and #469 are the review lane's read surface, not new scope.** ADR 0035 §4 defines the read DTO and
 the reader contract; what shipped satisfies neither completely. #468 is a store Verdict ships without the
@@ -849,6 +851,8 @@ why they are a milestone rather than an addition to the 1.0 bar.
 |---|---|---|---|
 | [#475](https://github.com/fissible/verdict/issues/475) Semantic / rate-abuse attack case | S–M | none | open — **first in this milestone**; the one 🔴 cell in #213's coverage matrix |
 | [#474](https://github.com/fissible/verdict/issues/474) Realistic retrieved-content injection + exfiltration pack | M–L | none | open — broadens the narrow `search-argument-exfiltration` case onto published corpora with an argument-level oracle |
+
+**Carried in beyond the attack-coverage theme.** #469 (`ReviewStatusView` provenance projection) carries over from v0.17.0. The GitHub v0.18.0 milestone also holds post-release follow-ups not themed here — #489 (review pending-enumeration index) and the #527 re-review items #497 / #528 / #529 — so the milestone's tracked scope is broader than this section; reconcile at the next portfolio pass.
 
 **Why not v1.0.0.** The 1.0 section exists on the argument that inventing 1.0 work "would produce a
 backlog that measures imagination rather than adoption," and it holds only work that produced itself.
