@@ -4,6 +4,119 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+> **The v0.17.0 line is where the ADR 0039 "replay refusal outlives the consumed receipt" arc
+> becomes public API.** A large surface that was unreleased churn across the 0.16 cycle ships here
+> for the first time — the `ConsumedBindingGuardStore` and `ConsumedBindingGuardScheme` contracts,
+> `DerivedGuard`, `RecordsApprovalRefusals`, the `IssuesAdmittedReceipts` issuance seam, the
+> `verdict_consumed_binding_guards` and `verdict_approval_refusals` tables, and the new
+> `ConsumedBindingGuard*` exceptions. Treat these as the stability baseline to build on.
+>
+> **Upgrading: publish and run migrations** (`php artisan vendor:publish --tag=verdict-migrations`,
+> then `migrate`). All new migrations are additive and safe in both directions.
+
+### Added
+
+- **The permanent consumed-binding replay guard (ADR 0039, #460).** Consuming an approved receipt is
+  single-use; Verdict now permanently records the consumed `(tool_call_id, capability,
+  binding_fingerprint)` binding as a fixed-width digest, so re-proposing the identical binding is
+  refused (`PreviouslyConsumed`) rather than issued a fresh receipt — and that refusal **outlives the
+  receipt itself**. An approval's payload may be pruned on a retention schedule while the guard is
+  kept, so a consumed action cannot be replayed by waiting for its receipt to age out. Built over a
+  persistence primitive (#499), a coarse-pair binding-admission lock that serializes concurrent
+  security-state work — including on SQLite (#500, #503, #506) — an indivisible guard write on
+  `consume()` (#501), and the `issue()`/`consume()` guard probe that refuses a previously-consumed
+  binding (#502).
+
+- **Consumed-payload pruning that preserves the guard (#504, #505).** `verdict:prune-approvals
+  --consumed-days` (and `verdict.approvals.consumed_retention_days`) prunes consumed approval
+  payloads while the permanent binding guard survives, so retention hygiene never reopens a replay
+  window.
+
+- **Keyed (versioned-HMAC) digest opt-in for the guard (#507, #508, #509, #510).** For a threat model
+  that includes a long-lived database-read compromise, `verdict.approvals.consumed_binding_guard`
+  makes the guard digest a keyed, versioned HMAC over the binding instead of the keyless default.
+  The scheme resolver, the `issue()`/`consume()` probe of every retained key version, and
+  persistence of the `algorithm`/`key_version` scheme metadata on each write all ship together.
+  Rotation is append-only; a missing historical key **fails closed**. See "the keyless/keyed privacy
+  tradeoff" in the docs (#511) — and note the limitation below on refusal evidence.
+
+- **Refusal-operation evidence (ADR 0039 #10/#15, #526, #527).** A refused issuance now records a
+  receiptless evidence record anchored on the binding's guard digest, carrying the refusal reason —
+  `PreviouslyConsumed` and the attest-refusals record through it. Recorded via the opt-in
+  `RecordsApprovalRefusals` seam (the durable recorders implement it; the `EvidenceWriter` contract
+  is unchanged), deduplicated per digest with an attempt count so a replay flood stays one row per
+  binding, and prunable on the ordinary evidence lifecycle. A failing writer never blocks the caller.
+
+- **A paired enumerating review status reader for the database store (#468, #490).**
+
+- **laravel/ai `^1.0` support (#493, #494).** Verdict now requires `laravel/ai ^1.0` and **drops
+  0.x**. Verdict's run gates were re-homed onto the 1.0 provider middleware seam with the gate logic
+  unchanged. **This is breaking for a consumer still pinned to `laravel/ai` 0.x** — upgrade the
+  dependency alongside Verdict.
+
+### Changed
+
+- **Strict issuance attests at the admission critical section, not before it (#513/#518,
+  #519/#520).** A strict (attested) issuance now runs its attest inside the admission-locked
+  transaction at the store's clear-to-mint point — check → attest → persist — via the
+  `IssuesAdmittedReceipts` seam, for both the confirmation and review lanes. Previously the attest
+  ran before `store->issue()`, so a refused issuance could leave a false attestation behind; a
+  refused replay now attests nothing. A store that cannot honour the ordering fails closed
+  (`AttestOrderingUnsupported`) rather than reverting to the buggy order.
+
+- **`ConsumedBindingGuardStore` ships a single read surface (#525).** `has()` was removed in favour of
+  `lookup()` (presence is `lookup() !== null`) before the interface became public, so it ships as
+  `{ lookup, remember, hasSchemedGuard }`.
+
+### Fixed
+
+- **After-match validation of the guard scheme metadata (#514, #521).** On a guard-probe hit the
+  store re-derives the digest from the matched row's stored scheme and refuses fail-closed
+  (`ConsumedBindingGuardSchemeMismatch`) when the metadata cannot describe the digest — catching a
+  tampered or corrupted row rather than trusting it.
+
+- **A keyed→keyless downgrade fails closed instead of silently reopening the replay window (#522,
+  #523).** Removing the keyed config (or reverting to no retained keys) while keyed guards still
+  exist would leave those guards unre-derivable, so a probe would never see them. The store now
+  refuses `issue()`/`consume()` (`ConsumedBindingGuardSchemeDowngraded`) once it observes a keyed
+  guard under a keyless-effective scheme, and `verdict:validate` reports the orphaned guards at
+  deploy time. The refusal message names the remedy: restore the retained keys.
+
+- **The keyed-guard config resolves fail-closed instead of silently degrading to keyless (#460
+  follow-up, #515).** A malformed keyed config (a non-string or too-short secret, a scalar
+  `active_key`, an `active_key` absent from `keys`, or two versions sharing a secret) now refuses at
+  store resolution and is reported by `verdict:validate`, rather than quietly falling back to a
+  keyless guard.
+
+- **Round-3 hardening of the guard (#524, #525).** `pruneConsumedPayload()` fails closed under a
+  downgrade (rather than silently minting a keyless guard for a keyed-consumed binding);
+  `hasSchemedGuard()` catches half-set scheme metadata; the downgrade refusal names its remedy.
+
+- **The refusal-evidence upsert no longer poisons the caller's transaction (#527 follow-up, #530).**
+  On PostgreSQL a failed `INSERT` aborts the enclosing transaction; the recorder now uses
+  insert-or-ignore (no failed statement) so a concurrent insert on the same digest cannot abort a
+  caller-owned transaction or lose an attempt-count increment.
+
+- **Deterministic, data-derived evidence ordering (#480, #517)** and **id tiebreakers ordered with
+  `strcmp`, not PHP's numeric-aware `<=>` (#482, #516)** — so `'0e…'`-style hex digests are never
+  treated as equal numbers, across both recorders and the in-memory store.
+
+- **`verdict:validate` audits the review-request store's table and `approval_context` column (#488,
+  #496)**, **`DatabaseApprovalStatusReader` orders in PHP rather than under SQL collation (#487,
+  #495)**, and **a published `add_*` migration compares its column default against its sibling, not
+  against null (#466, #491)**.
+
+- **The compatibility matrix gates PRs and main with pre-merge evidence (#492, #498).**
+
+### Known limitations
+
+- **Refusal evidence anchors on the keyless binding digest even under keyed mode.** The keyed HMAC
+  covers the permanent guard table only; the prunable `verdict_approval_refusals` audit table records
+  the keyless digest regardless of keyed mode, so it carries the same offline-guessing correlation
+  for refused bindings — bounded by evidence retention, unlike the permanent guard (see
+  `docs/limitations.md`). Anchoring on the active keyed digest is tracked for a later release (#528).
+
+
 ## [0.16.0] - 2026-09-12
 
 ### Added
