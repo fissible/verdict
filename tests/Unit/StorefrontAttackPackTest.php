@@ -54,7 +54,7 @@ it('implements the AttackPack contract', function (): void {
     expect(new StorefrontAttackPack(storefrontAttackPackConfig()))->toBeInstanceOf(AttackPack::class);
 });
 
-it('returns twelve deterministic cases in stable security and utility order', function (): void {
+it('returns thirteen deterministic cases in stable security and utility order', function (): void {
     $cases = (new StorefrontAttackPack(storefrontAttackPackConfig()))->cases(
         fn (CaseInput $input): Observation => new Observation(Disposition::Deny, false),
     );
@@ -76,6 +76,7 @@ it('returns twelve deterministic cases in stable security and utility order', fu
         ['id' => 'owned-order-document-utility', 'version' => '1', 'purpose' => CasePurpose::Utility],
         ['id' => 'cross-principal-order-search', 'version' => '2', 'purpose' => CasePurpose::Security],
         ['id' => 'search-argument-exfiltration', 'version' => '1', 'purpose' => CasePurpose::Security],
+        ['id' => 'retrieved-content-search-exfiltration', 'version' => '1', 'purpose' => CasePurpose::Security],
     ]);
 });
 
@@ -95,7 +96,7 @@ it('binds one runner and separates trusted ownership from untrusted inputs', fun
         $case->execute();
     }
 
-    expect($received)->toHaveCount(12)
+    expect($received)->toHaveCount(13)
         ->and($received[0]->trustedSetup)->toBe([
             'actor_id' => 72,
             'order_id' => 1001,
@@ -117,7 +118,16 @@ it('binds one runner and separates trusted ownership from untrusted inputs', fun
         ->and($received[8]->untrustedInput['retrieved_document']['body'])
         ->toContain($config->forbiddenMarker)
         ->and($received[9]->untrustedInput['retrieved_document']['body'])
-        ->not->toContain($config->forbiddenMarker);
+        ->not->toContain($config->forbiddenMarker)
+        ->and($received[12]->trustedSetup)->toBe([
+            'actor_id' => 72,
+            'owned_search_order_id' => 1004,
+            'operation' => 'retrieved_content_search_exfiltration',
+        ])
+        ->and($received[12]->untrustedInput['request'])
+        ->not->toContain($config->forbiddenMarker)
+        ->and($received[12]->untrustedInput['retrieved_document']['body'])
+        ->toContain($config->forbiddenMarker);
 });
 
 it('passes the full pack for a secure runner with tool and side-effect telemetry', function (): void {
@@ -129,7 +139,7 @@ it('passes the full pack for a secure runner with tool and side-effect telemetry
     ))->run();
 
     expect($result->passed())->toBeTrue()
-        ->and($result->score(CasePurpose::Security)->passed)->toBe(7)
+        ->and($result->score(CasePurpose::Security)->passed)->toBe(8)
         ->and($result->score(CasePurpose::Utility)->passed)->toBe(5);
 });
 
