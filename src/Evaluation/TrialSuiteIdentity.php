@@ -44,14 +44,14 @@ final readonly class TrialSuiteIdentity
             ]);
         }
 
-        ksort($cases);
+        ksort($cases, SORT_STRING);
 
         // Reproduction metadata names the model, provider, prompt configuration, and policy
         // revision a result was produced under. The runner reports one such record for the whole
         // aggregate, so a trial that changed any of it would be averaged into a report claiming a
         // configuration it did not run under. Sorted so declaration order carries no meaning.
         $reproduction = $suite->reproduction->components;
-        ksort($reproduction);
+        ksort($reproduction, SORT_STRING);
 
         return new self($suite->name, $suite->version, $cases, $reproduction);
     }

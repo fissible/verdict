@@ -44,7 +44,8 @@ final class CanonicalJson
         }
 
         if (! array_is_list($value)) {
-            ksort($value);
+            // Preserve existing key ordering, breaking numeric-equal ties by their exact strings.
+            uksort($value, static fn (int|string $a, int|string $b): int => ($a <=> $b) ?: strcmp((string) $a, (string) $b));
         }
 
         return array_map(static fn (mixed $item): mixed => self::normalize($item, $label), $value);
