@@ -25,7 +25,8 @@ use Illuminate\Database\DatabaseManager;
 // replica (false); INSIDE a transaction the read is the authoritative primary (the real truth). This
 // both reproduces the bug (only the outside read runs today) and admits any correct fix, including one
 // that removes the outer check entirely and performs its first authoritative check under each row's
-// lock. Engine is irrelevant to the logic, so SQLite is used.
+// lock. Runs on every engine in the CI matrix; the lock-held probe (pdtLockHeld) is engine-aware, and
+// fixtures use full-width binding fingerprints because the column is CHAR(64) (PostgreSQL space-pads).
 
 const PDT_GUARD_TABLE = 'verdict_consumed_binding_guards';
 const PDT_OLD_SECRET = 'old-keyed-secret-oooooooooooooooo'; // >= 32 chars: the retired keyed key
@@ -33,6 +34,26 @@ const PDT_OLD_SECRET = 'old-keyed-secret-oooooooooooooooo'; // >= 32 chars: the 
 function pdtTime(string $at): DateTimeImmutable
 {
     return new DateTimeImmutable($at, new DateTimeZone('UTC'));
+}
+
+/** A full-width (64-char) binding fingerprint: the column is CHAR(64), which PostgreSQL space-pads
+ * a shorter value, so a short fixture would derive a different digest on pgsql than on sqlite/mysql. */
+function pdtBinding(string $seed): string
+{
+    return hash('sha256', $seed);
+}
+
+/** Whether this row's binding admission lock is held, in an engine-appropriate way: BindingAdmission
+ * writes a lock-table row on sqlite/mysql/mariadb but takes a pg_advisory_xact_lock (no row) on pgsql. */
+function pdtLockHeld(ConnectionInterface $connection): bool
+{
+    if ($connection->getDriverName() === 'pgsql') {
+        $row = $connection->selectOne('select count(*) as c from pg_locks where locktype = ? and pid = pg_backend_pid()', ['advisory']);
+
+        return (int) ($row->c ?? 0) > 0;
+    }
+
+    return $connection->table('verdict_binding_admission_locks')->count() > 0;
 }
 
 /**
@@ -69,7 +90,7 @@ function pdtGuards(ConnectionInterface $connection, bool $keyedOrphan, bool $vis
 
             if ($keyedOrphan) {
                 // A real keyed guard the retired keyed scheme wrote for the seeded binding.
-                $digest = ConsumedBindingGuard::keyed('call-1', 'orders.cancel', 'binding-1', PDT_OLD_SECRET);
+                $digest = ConsumedBindingGuard::keyed('call-1', 'orders.cancel', pdtBinding('binding-1'), PDT_OLD_SECRET);
                 $this->remembered[] = $digest;
                 $this->meta[$digest] = [ConsumedBindingGuard::ALGORITHM_KEYED, 'v1'];
             }
@@ -91,12 +112,12 @@ function pdtGuards(ConnectionInterface $connection, bool $keyedOrphan, bool $vis
             $level = $this->connection->transactionLevel();
             $this->hasCallTxLevels[] = $level;
 
-            // Record whether this row's binding admission lock is already held. BindingAdmission::acquire()
-            // writes a lock row (SQLite INSERT OR REPLACE) as the first statement of the row transaction;
-            // its presence at check time proves the authoritative check runs AFTER the lock, closing the
-            // "check before lock then wait for a concurrent keyed prune to commit" race.
-            $this->hasCallLockHeld[] = $level > 0
-                && $this->connection->table('verdict_binding_admission_locks')->count() > 0;
+            // Record whether this row's binding admission lock is already held (engine-aware: a lock-table
+            // row on sqlite/mysql, a pg_advisory_xact_lock on pgsql). BindingAdmission::acquire() takes it as
+            // the first statement of the row transaction; its presence at check time proves the authoritative
+            // check runs AFTER the lock, closing the "check before lock then wait for a concurrent keyed
+            // prune to commit" race.
+            $this->hasCallLockHeld[] = $level > 0 && pdtLockHeld($this->connection);
 
             // Outside a transaction the read is served by the lagging replica: stale, no guard seen.
             if ($level === 0) {
@@ -225,7 +246,7 @@ afterEach(function (): void {
 it('fails closed when the authoritative (in-transaction) read reveals a keyed guard the stale outer read missed', function (?ConsumedBindingGuardScheme $scheme): void {
     $connection = app(DatabaseManager::class)->connection();
     $guards = pdtGuards($connection, keyedOrphan: true);
-    pdtSeedConsumed('call-1', 'orders.cancel', 'binding-1', '2026-08-10 00:00:00');
+    pdtSeedConsumed('call-1', 'orders.cancel', pdtBinding('binding-1'), '2026-08-10 00:00:00');
 
     $before = [$guards->remembered, $guards->meta];
     $store = pdtStore($guards, $scheme);
@@ -250,11 +271,11 @@ it('fails closed when the authoritative (in-transaction) read reveals a keyed gu
 it('still prunes a genuine keyless deployment with no schemed guard (does not over-fail-closed)', function (): void {
     $connection = app(DatabaseManager::class)->connection();
     $guards = pdtGuards($connection, keyedOrphan: false);
-    pdtSeedConsumed('call-2', 'orders.cancel', 'binding-2', '2026-08-10 00:00:00');
+    pdtSeedConsumed('call-2', 'orders.cancel', pdtBinding('binding-2'), '2026-08-10 00:00:00');
 
     $pruned = pdtStore($guards, null)->pruneConsumedPayload(pdtTime('2026-08-20 00:00:00'));
 
-    $keyless = ConsumedBindingGuard::digest('call-2', 'orders.cancel', 'binding-2');
+    $keyless = ConsumedBindingGuard::digest('call-2', 'orders.cancel', pdtBinding('binding-2'));
     expect($pruned)->toBe(1)
         ->and(pdtConsumedCount())->toBe(0)
         ->and($guards->remembered)->toContain($keyless)
@@ -264,12 +285,12 @@ it('still prunes a genuine keyless deployment with no schemed guard (does not ov
 it('still prunes under a keyed-effective scheme even with a keyed guard present (exempt from the downgrade refusal)', function (): void {
     $connection = app(DatabaseManager::class)->connection();
     $guards = pdtGuards($connection, keyedOrphan: true);
-    pdtSeedConsumed('call-1', 'orders.cancel', 'binding-1', '2026-08-10 00:00:00');
+    pdtSeedConsumed('call-1', 'orders.cancel', pdtBinding('binding-1'), '2026-08-10 00:00:00');
 
     $pruned = pdtStore($guards, pdtKeyedScheme())->pruneConsumedPayload(pdtTime('2026-08-20 00:00:00'));
 
     // Keyed-effective: the active keyed guard is (re)written, the payload is pruned, no keyless mint.
-    $keyed = ConsumedBindingGuard::keyed('call-1', 'orders.cancel', 'binding-1', PDT_OLD_SECRET);
+    $keyed = ConsumedBindingGuard::keyed('call-1', 'orders.cancel', pdtBinding('binding-1'), PDT_OLD_SECRET);
     expect($pruned)->toBe(1)
         ->and(pdtConsumedCount())->toBe(0)
         ->and($guards->meta[$keyed])->toBe([ConsumedBindingGuard::ALGORITHM_KEYED, 'v1'])
@@ -282,8 +303,8 @@ it('re-checks every row: a keyed guard surfacing mid-sweep stops the later rows 
     // per-row re-check prunes exactly one and fails closed on the other.
     $connection = app(DatabaseManager::class)->connection();
     $guards = pdtGuards($connection, keyedOrphan: false, visibleAfterFirstRemember: true);
-    pdtSeedConsumed('call-1', 'orders.cancel', 'binding-1', '2026-08-10 00:00:00');
-    pdtSeedConsumed('call-9', 'reports.export', 'binding-9', '2026-08-11 00:00:00');
+    pdtSeedConsumed('call-1', 'orders.cancel', pdtBinding('binding-1'), '2026-08-10 00:00:00');
+    pdtSeedConsumed('call-9', 'reports.export', pdtBinding('binding-9'), '2026-08-11 00:00:00');
 
     expect(fn () => $store = pdtStore($guards, null)->pruneConsumedPayload(pdtTime('2026-08-20 00:00:00')))
         ->toThrow(ConsumedBindingGuardSchemeDowngraded::class);
