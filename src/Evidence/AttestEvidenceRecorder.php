@@ -246,6 +246,13 @@ final class AttestEvidenceRecorder implements AttestsIssuance, DurableEvidenceRe
             $attempt++;
 
             try {
+                foreach ($this->attest->store()->readRange($chainId, 1) as $signedEnvelope) {
+                    if ($signedEnvelope->envelope->type === 'verdict.attested_issuance'
+                        && $signedEnvelope->envelope->correlation === $identityFingerprint) {
+                        return;
+                    }
+                }
+
                 $this->attest->chain($chainId)->record(
                     type: 'verdict.attested_issuance',
                     payload: [
