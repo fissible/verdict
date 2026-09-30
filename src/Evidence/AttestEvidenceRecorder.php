@@ -186,49 +186,15 @@ final class AttestEvidenceRecorder implements AttestsIssuance, DurableEvidenceRe
     }
 
     /**
-     * Refusal-operation evidence is a plain prunable table, NOT an attest chain: a chain records an
-     * append-only history and cannot increment an existing entry, but flood-bounding a refusal means
-     * one row per binding with a growing attempt count (ADR 0039, #15). So it upserts the same way
-     * the database recorder does — increment or insert-or-ignore. insertOrIgnore absorbs a
-     * concurrent-insert race (ON CONFLICT DO NOTHING) and, unlike a caught unique-key violation,
-     * never leaves a failed statement to poison the caller's transaction on PostgreSQL (#527).
+     * Refusals use the same atomic, savepoint-isolated upsert as database evidence. They remain
+     * in a plain prunable table: an append-only attest chain cannot increment a binding's count.
      */
     public function recordApprovalRefusal(ApprovalRefusalEvidence $evidence): void
     {
-        $seenAt = $evidence->occurredAt->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d H:i:s');
-
-        if ($this->incrementRefusal($evidence, $seenAt) === 0) {
-            $inserted = $this->connection->table($this->refusalsTable)->insertOrIgnore([
-                'binding_digest' => $evidence->bindingDigest,
-                'lane' => $evidence->lane->value,
-                'refusal_reason' => $evidence->reason->value,
-                'capability' => $evidence->capability,
-                'attempt_count' => 1,
-                'invocation_id' => $evidence->invocationId,
-                'first_seen_at' => $seenAt,
-                'last_seen_at' => $seenAt,
-            ]);
-
-            if ($inserted === 0) {
-                // A concurrent insert won the race for this digest; record this attempt against it.
-                $this->incrementRefusal($evidence, $seenAt);
-            }
-        }
-    }
-
-    /** Increment the attempt count for an existing refusal row; returns the number of rows updated. */
-    private function incrementRefusal(ApprovalRefusalEvidence $evidence, string $seenAt): int
-    {
-        return $this->connection->table($this->refusalsTable)
-            ->where('binding_digest', $evidence->bindingDigest)
-            ->update([
-                'attempt_count' => $this->connection->raw('attempt_count + 1'),
-                'last_seen_at' => $seenAt,
-                'refusal_reason' => $evidence->reason->value,
-                'lane' => $evidence->lane->value,
-                'capability' => $evidence->capability,
-                'invocation_id' => $evidence->invocationId,
-            ]);
+        (new DatabaseEvidenceRecorder(
+            connection: $this->connection,
+            refusalsTable: $this->refusalsTable,
+        ))->recordApprovalRefusal($evidence);
     }
 
     public function attestIssuedSummary(ApprovalLane $lane, string $identityFingerprint, ApproverSummary $summary): void

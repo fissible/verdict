@@ -241,51 +241,74 @@ final readonly class DatabaseEvidenceRecorder implements DurableEvidenceRecorder
     }
 
     /**
-     * Deduplicated per binding digest with a persisted attempt count (ADR 0039, #15): an increment
-     * on the existing row, or an insert of the first. A concurrent insert winning the race is
-     * absorbed by insertOrIgnore (ON CONFLICT DO NOTHING), which returns 0 for the conflict and
-     * — unlike a caught unique-key violation — never leaves a failed statement to poison the
-     * caller's transaction on PostgreSQL (SQLSTATE 25P02, #527). The re-increment then records this
-     * attempt against the now-existing row. The raw increment expression is portable across
-     * sqlite/mysql/pgsql. Timestamps are minted in UTC to match the timezone-naive columns.
+     * One atomic upsert counts every attempt, retaining the earliest/latest UTC timestamps and
+     * advancing metadata only for a strictly newer event. A nested transaction isolates SQL
+     * failures behind a savepoint while rethrowing them to the manager's evidence-failure handler.
      */
     public function recordApprovalRefusal(ApprovalRefusalEvidence $evidence): void
     {
-        $seenAt = $evidence->occurredAt->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
-
-        if ($this->incrementRefusal($evidence, $seenAt) === 0) {
-            $inserted = $this->connection->table($this->refusalsTable)->insertOrIgnore([
-                'binding_digest' => $evidence->bindingDigest,
-                'lane' => $evidence->lane->value,
-                'refusal_reason' => $evidence->reason->value,
-                'capability' => $evidence->capability,
-                'attempt_count' => 1,
-                'invocation_id' => $evidence->invocationId,
-                'first_seen_at' => $seenAt,
-                'last_seen_at' => $seenAt,
-            ]);
-
-            if ($inserted === 0) {
-                // A concurrent insert won the race for this digest; record this attempt against
-                // the now-existing row.
-                $this->incrementRefusal($evidence, $seenAt);
-            }
+        if (! $this->connection instanceof Connection) {
+            throw new LogicException('The evidence connection does not support refusal upserts.');
         }
-    }
 
-    /** Increment the attempt count for an existing refusal row; returns the number of rows updated. */
-    private function incrementRefusal(ApprovalRefusalEvidence $evidence, string $seenAt): int
-    {
-        return $this->connection->table($this->refusalsTable)
-            ->where('binding_digest', $evidence->bindingDigest)
-            ->update([
-                'attempt_count' => $this->connection->raw('attempt_count + 1'),
-                'last_seen_at' => $seenAt,
-                'refusal_reason' => $evidence->reason->value,
-                'lane' => $evidence->lane->value,
-                'capability' => $evidence->capability,
-                'invocation_id' => $evidence->invocationId,
-            ]);
+        $driver = $this->connection->getDriverName();
+        $mysql = in_array($driver, ['mysql', 'mariadb'], true);
+
+        if (! $mysql && ! in_array($driver, ['pgsql', 'sqlite'], true)) {
+            throw new LogicException("Unsupported refusal upsert driver [{$driver}].");
+        }
+
+        $grammar = $this->connection->getQueryGrammar();
+        $table = $grammar->wrapTable($this->refusalsTable);
+        $incoming = fn (string $column): string => $mysql
+            ? 'VALUES('.$grammar->wrap($column).')'
+            : $grammar->wrap('excluded').'.'.$grammar->wrap($column);
+        $stored = fn (string $column): string => $table.'.'.$grammar->wrap($column);
+        $newer = $incoming('last_seen_at').' > '.$stored('last_seen_at');
+        $updates = [
+            'attempt_count' => $stored('attempt_count').' + 1',
+        ];
+
+        foreach (['refusal_reason', 'lane', 'capability', 'invocation_id'] as $column) {
+            $updates[$column] = 'CASE WHEN '.$newer.' THEN '.$incoming($column).' ELSE '.$stored($column).' END';
+        }
+
+        $least = $driver === 'sqlite' ? 'MIN' : 'LEAST';
+        $greatest = $driver === 'sqlite' ? 'MAX' : 'GREATEST';
+        $updates['first_seen_at'] = $least.'('.$stored('first_seen_at').', '.$incoming('first_seen_at').')';
+        // MySQL evaluates assignments in order: metadata must compare against the OLD last_seen_at.
+        $updates['last_seen_at'] = $greatest.'('.$stored('last_seen_at').', '.$incoming('last_seen_at').')';
+
+        $seenAt = $evidence->occurredAt->setTimezone(new \DateTimeZone('UTC'))->format('Y-m-d H:i:s');
+        $values = [
+            'binding_digest' => $evidence->bindingDigest,
+            'lane' => $evidence->lane->value,
+            'refusal_reason' => $evidence->reason->value,
+            'capability' => $evidence->capability,
+            'attempt_count' => 1,
+            'invocation_id' => $evidence->invocationId,
+            'first_seen_at' => $seenAt,
+            'last_seen_at' => $seenAt,
+        ];
+        $assignments = [];
+
+        foreach ($updates as $column => $expression) {
+            $assignments[] = $grammar->wrap($column).' = '.$expression;
+        }
+
+        // The grammar quotes configured table names and binds all incoming evidence values.
+        $sql = $grammar->compileInsert($this->connection->table($this->refusalsTable), [$values])
+            .($mysql ? ' ON DUPLICATE KEY UPDATE ' : ' ON CONFLICT ('.$grammar->wrap('binding_digest').') DO UPDATE SET ')
+            .implode(', ', $assignments);
+        $write = function () use ($sql, $values): void {
+            $this->connection->affectingStatement($sql, array_values($values));
+        };
+
+        if ($this->connection->transactionLevel() > 0) {
+            $this->connection->transaction($write);
+        } else {
+            $write();
+        }
     }
 
     /** @return list<ProvenanceEntry> */
