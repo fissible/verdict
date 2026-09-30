@@ -45,6 +45,7 @@ final class UnguardedCapturingTool implements Tool
         private readonly string $capability,
         private readonly LiveToolCapture $capture,
         private readonly ?ConnectionPredicateCapture $predicates = null,
+        private readonly RegisteredSecretScanner $registeredSecrets = new RegisteredSecretScanner,
     ) {}
 
     /**
@@ -99,6 +100,8 @@ final class UnguardedCapturingTool implements Tool
             argumentFingerprint: ArgumentFingerprint::make($request->all()),
             disposition: null,
             executed: true,
+            matchedRegisteredSecrets: $this->registeredSecrets->scan($request->all()),
+            registeredSecretLabels: $this->registeredSecrets->labels(),
         );
 
         return $result;

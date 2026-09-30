@@ -9,6 +9,7 @@ use Fissible\Verdict\Actions\ActionEnvelope;
 use Fissible\Verdict\Actions\ActionProposal;
 use Fissible\Verdict\Approvals\ApprovalExecutionContext;
 use Fissible\Verdict\Approvals\ApprovalManager;
+use Fissible\Verdict\Context\ContextChannel;
 use Fissible\Verdict\Context\DataClass;
 use Fissible\Verdict\Context\Destination;
 use Fissible\Verdict\Context\Source;
@@ -28,6 +29,7 @@ use Fissible\Verdict\Evidence\ArgumentFingerprint;
 use Fissible\Verdict\Evidence\ContextReleaseEvidence;
 use Fissible\Verdict\Evidence\DecisionEvidence;
 use Fissible\Verdict\Evidence\InMemoryEvidenceRecorder;
+use Fissible\Verdict\Evidence\ProvenanceLedger;
 use Fissible\Verdict\LaravelAi\BoundTool;
 use Fissible\Verdict\LaravelAi\LaravelApprovalDecisions;
 use Fissible\Verdict\VerdictManager;
@@ -617,6 +619,21 @@ final readonly class StorefrontScenarioRunner
             throw new LogicException('The order-search case must carry filter arguments.');
         }
 
+        // The captured-proposal runner delivers the indirect case's actual document before
+        // executing its clean search proposal; the direct cases have no document delivery.
+        $provenanceEntries = [];
+
+        if (($input->trustedSetup['operation'] ?? null) === 'retrieved_content_search_exfiltration') {
+            $provenanceEntries[] = app(ProvenanceLedger::class)->record(
+                correlationId: StorefrontAttackPack::RETRIEVED_SEARCH_CORRELATION,
+                source: Source::external(StorefrontAttackPack::RETRIEVED_SEARCH_SOURCE),
+                trust: Trust::Untrusted,
+                dataClass: DataClass::Internal,
+                channel: ContextChannel::RetrievedDocument,
+                content: $input->untrustedInput['retrieved_document']['body'],
+            );
+        }
+
         $result = $this->verdict->runBound(ActionEnvelope::wrap(
             new ActionProposal('orders.search', $arguments),
             new ActionContext(new Customer(72, 'Avery Customer'), ['tenant_id' => 'storefront-demo']),
@@ -642,6 +659,7 @@ final readonly class StorefrontScenarioRunner
                 $registeredSecrets?->labels() ?? [],
             )],
             predicates: $observed,
+            provenanceEntries: $provenanceEntries,
         );
     }
 

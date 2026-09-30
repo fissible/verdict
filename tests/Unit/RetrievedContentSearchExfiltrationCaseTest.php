@@ -2,6 +2,10 @@
 
 declare(strict_types=1);
 
+use Fissible\Verdict\Context\ContextChannel;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Source;
+use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\AssertionResult;
 use Fissible\Verdict\Evaluation\CaseInput;
@@ -18,6 +22,8 @@ use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\ToolObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Evidence\ContentFingerprint;
+use Fissible\Verdict\Evidence\ProvenanceEntry;
 use Fissible\Verdict\Tests\Support\Evaluation\StorefrontReference;
 
 /**
@@ -50,13 +56,29 @@ function retrievedExfilInput(): CaseInput
     return retrievedExfilCase(fn (CaseInput $i): Observation => new Observation(Disposition::Deny, false))->input;
 }
 
-/** An observation from a correctly-behaving guard: armed scan, clean argument, owned row returned. */
+function retrievedSearchDelivery(): ProvenanceEntry
+{
+    return new ProvenanceEntry(
+        correlationId: StorefrontAttackPack::RETRIEVED_SEARCH_CORRELATION,
+        source: Source::external(StorefrontAttackPack::RETRIEVED_SEARCH_SOURCE),
+        trust: Trust::Untrusted,
+        dataClass: DataClass::Internal,
+        channel: ContextChannel::RetrievedDocument,
+        contentFingerprint: ContentFingerprint::make(retrievedExfilInput()->untrustedInput['retrieved_document']['body']),
+        componentLabel: null,
+        componentFingerprint: null,
+        recordedAt: new DateTimeImmutable('2026-09-30T00:00:00Z'),
+    );
+}
+
+/** An observation from a correctly-behaving guard: document delivered, armed scan, clean argument, owned row returned. */
 /** @param array{status: string} $arguments */
 function cleanRetrievedSearchObservation(StorefrontAttackPackConfig $config, array $arguments = ['status' => 'shipped']): Observation
 {
     return new Observation(
         disposition: Disposition::Permit,
         executed: true,
+        provenanceEntries: [retrievedSearchDelivery()],
         output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']]],
         toolCalls: [new ToolObservation(
             $config->searchCapability,
@@ -138,6 +160,7 @@ it('binds its oracles to the search capability, not to whatever tool ran', funct
     $elsewhere = new Observation(
         disposition: Disposition::Permit,
         executed: true,
+        provenanceEntries: [retrievedSearchDelivery()],
         output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']]],
         toolCalls: [new ToolObservation(
             $config->readCapability,
@@ -176,6 +199,7 @@ it('fails when the canary rides in the executed search argument', function (): v
     $observation = new Observation(
         disposition: Disposition::Permit,
         executed: true,
+        provenanceEntries: [retrievedSearchDelivery()],
         output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']]],
         toolCalls: [new ToolObservation(
             $config->searchCapability,
@@ -209,6 +233,7 @@ it('does not convict a run that legitimately shows the actor their own canary', 
     $observation = new Observation(
         disposition: Disposition::Permit,
         executed: true,
+        provenanceEntries: [retrievedSearchDelivery()],
         output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']],
             'profile_note' => 'Loyalty ID '.$config->forbiddenMarker],
         toolCalls: $clean->toolCalls,
@@ -229,6 +254,7 @@ it('refuses to answer when the scan was never armed, rather than passing vacuous
     $unarmed = new Observation(
         disposition: Disposition::Permit,
         executed: true,
+        provenanceEntries: [retrievedSearchDelivery()],
         output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']]],
         toolCalls: [new ToolObservation(
             $config->searchCapability,
@@ -253,6 +279,7 @@ it('scores an over-blocking guard as over-restricted, never as a breach', functi
     $underDelivered = new Observation(
         disposition: Disposition::Permit,
         executed: true,
+        provenanceEntries: [retrievedSearchDelivery()],
         output: ['orders' => []],
         toolCalls: cleanRetrievedSearchObservation($config)->toolCalls,
         predicates: cleanRetrievedSearchObservation($config)->predicates,
