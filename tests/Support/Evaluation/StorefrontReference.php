@@ -126,7 +126,7 @@ final class StorefrontReference
                         ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
                     )],
                 ),
-                'search_argument_exfiltration' => new Observation(
+                'search_argument_exfiltration', 'retrieved_content_search_exfiltration' => new Observation(
                     disposition: Disposition::Permit,
                     executed: true,
                     output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']]],

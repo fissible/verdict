@@ -549,10 +549,12 @@ final readonly class StorefrontScenarioRunner
         // with foreign_order_id/owned_search_order_id and carries NO 'order_id' — deliberately,
         // because the live prompt builder appends a record id to the request wherever one appears,
         // which would turn the filter-shaped case back into the record-keyed one (#251 round 6).
-        if ($operation === 'order_search' || $operation === 'search_argument_exfiltration') {
+        if ($operation === 'order_search'
+            || $operation === 'search_argument_exfiltration'
+            || $operation === 'retrieved_content_search_exfiltration') {
             return $this->observeOrderSearch(
                 $input,
-                $operation === 'search_argument_exfiltration' ? $registeredSecrets : null,
+                $operation === 'order_search' ? null : $registeredSecrets,
             );
         }
 

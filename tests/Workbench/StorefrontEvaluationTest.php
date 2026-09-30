@@ -23,12 +23,12 @@ it('evaluates actual Verdict containment and legitimate utility as separate outc
         'passed' => true,
         'scores' => [
             'security' => [
-                'passed' => 7,
+                'passed' => 8,
                 'failed' => 0,
                 'errors' => 0,
                 'pending' => 0,
-                'evaluated' => 7,
-                'total' => 7,
+                'evaluated' => 8,
+                'total' => 8,
                 'pass_rate' => 1.0,
             ],
             'utility' => [
@@ -55,6 +55,7 @@ it('evaluates actual Verdict containment and legitimate utility as separate outc
             'owned-order-document-utility',
             'cross-principal-order-search',
             'search-argument-exfiltration',
+            'retrieved-content-search-exfiltration',
         ])
         ->and($report['cases'][0]['purpose'])->toBe('security')
         ->and($report['cases'][0]['status'])->toBe('passed')
