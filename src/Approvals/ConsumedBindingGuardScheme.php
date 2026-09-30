@@ -58,8 +58,15 @@ final readonly class ConsumedBindingGuardScheme
         }
 
         $keys = [];
+        $effectiveKeys = [];
 
         foreach ($configuredKeys as $version => $secret) {
+            if (strlen((string) $version) > 255) {
+                throw new InvalidConsumedBindingGuardConfig(
+                    'verdict.approvals.consumed_binding_guard.keys version labels must not exceed the key_version storage limit of 255 bytes.'
+                );
+            }
+
             if (! is_string($secret) || strlen($secret) < self::MINIMUM_SECRET_LENGTH) {
                 throw new InvalidConsumedBindingGuardConfig(
                     "verdict.approvals.consumed_binding_guard.keys[{$version}] must be a string of at least "
@@ -68,14 +75,16 @@ final readonly class ConsumedBindingGuardScheme
             }
 
             $keys[(string) $version] = $secret;
+            // HMAC-SHA256 pre-hashes only keys longer than its block, then zero-pads to 64 bytes.
+            $effectiveKeys[] = str_pad(strlen($secret) > 64 ? hash('sha256', $secret, true) : $secret, 64, "\0");
         }
 
-        // Two versions sharing a secret produce identical digests, so a probe match could not
+        // Two versions sharing an effective HMAC key produce identical digests, so a probe match could not
         // attribute a version and the after-match validation would be ambiguous. Enforced across
         // every retained key (active or not), catching non-adjacent and active-vs-retained pairs.
-        if (count(array_unique($keys)) !== count($keys)) {
+        if (count(array_unique($effectiveKeys, SORT_STRING)) !== count($effectiveKeys)) {
             throw new InvalidConsumedBindingGuardConfig(
-                'verdict.approvals.consumed_binding_guard.keys must not share a secret across versions.'
+                'verdict.approvals.consumed_binding_guard.keys must not share an effective HMAC-SHA256 key across versions.'
             );
         }
 
