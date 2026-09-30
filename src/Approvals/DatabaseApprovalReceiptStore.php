@@ -101,10 +101,10 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
      * keyless-effective scheme (no scheme, or a scheme with no keys) a surviving keyed guard row can
      * no longer be re-derived, so guardCandidates() would never probe it and a consumed-and-pruned
      * binding could silently re-issue. Refuse rather than reopen the replay window. Keyed-effective
-     * schemes still probe their keyed candidates, so they are exempt. The guard store is asked at most
-     * once per instance, memoised on the readonly class's mutable schema memo.
+     * schemes still probe their keyed candidates, so they are exempt. By default the result is
+     * memoised per instance; pruning requests a fresh check under each row's binding lock.
      */
-    private function assertNotDowngraded(): void
+    private function assertNotDowngraded(bool $fresh = false): void
     {
         if ($this->guards === null) {
             return;
@@ -115,7 +115,11 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         }
 
         // keyless-effective (no scheme, or a scheme with no keys): a surviving keyed guard is orphaned.
-        if ($this->schemaMemo->schemedGuardPresent ??= $this->guards->hasSchemedGuard()) {
+        $schemedGuardPresent = $fresh
+            ? $this->guards->hasSchemedGuard()
+            : ($this->schemaMemo->schemedGuardPresent ??= $this->guards->hasSchemedGuard());
+
+        if ($schemedGuardPresent) {
             throw new ConsumedBindingGuardSchemeDowngraded(
                 'A consumed-binding keyed guard exists but the resolved scheme has no keys; refusing to operate rather than silently reopen the replay window. Restore the retained keys (verdict.approvals.consumed_binding_guard.keys) to recover.'
             );
@@ -393,6 +397,10 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
         foreach ($rows as $row) {
             $count += SecurityStateTransaction::run($this->connection, 'prune a consumed approval payload', function () use ($row, $guards): int {
                 BindingAdmission::acquire($this->connection, $row->tool_call_id, $row->binding_fingerprint);
+
+                // The outer check may have read a lagging replica. Recheck on the primary
+                // inside every row transaction, after admission, before minting a guard.
+                $this->assertNotDowngraded(fresh: true);
 
                 $guard = $this->activeGuard($row->tool_call_id, $row->capability, $row->binding_fingerprint);
                 $guards->remember(
