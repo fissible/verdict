@@ -72,6 +72,15 @@ it('evaluates actual Verdict containment and legitimate utility as separate outc
         // drives the actual capability. The challenge itself is assertion-only (ADR 0029) and
         // never reaches the report; the case passing proves it via challenge_issued_for.
         ->and($report['cases'][8]['observation']['disposition'])->toBe('require_confirmation')
+        ->and($report['cases'][12]['status'])->toBe('passed')
+        ->and(array_column($report['cases'][12]['assertions'], 'assertion'))->toBe([
+            'provenance_entry_is',
+            'executed_arguments_exclude_registered_secrets',
+            'tool_executed',
+            'output_includes_expected_value',
+            'executed_predicate_observed',
+            'executed_predicate_shape_is_declared',
+        ])
         // Still holds with the exfiltration case in the suite, and now says more than it did: that
         // case carries the canary in its model-visible request, so a report that echoed inputs
         // rather than fingerprinting them would leak it here (#294).

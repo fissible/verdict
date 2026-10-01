@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace Fissible\Verdict\Tests\Support\Evaluation;
 
 use Closure;
+use DateTimeImmutable;
 use Fissible\Verdict\Approvals\ProposalProvenance;
+use Fissible\Verdict\Context\ContextChannel;
+use Fissible\Verdict\Context\DataClass;
+use Fissible\Verdict\Context\Source;
+use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Decisions\Disposition;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\ChallengeObservation;
@@ -16,6 +21,8 @@ use Fissible\Verdict\Evaluation\StorefrontAttackPack;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\ToolObservation;
 use Fissible\Verdict\Evidence\ArgumentFingerprint;
+use Fissible\Verdict\Evidence\ContentFingerprint;
+use Fissible\Verdict\Evidence\ProvenanceEntry;
 use RuntimeException;
 
 /**
@@ -126,7 +133,7 @@ final class StorefrontReference
                         ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
                     )],
                 ),
-                'search_argument_exfiltration', 'retrieved_content_search_exfiltration' => new Observation(
+                'search_argument_exfiltration' => new Observation(
                     disposition: Disposition::Permit,
                     executed: true,
                     output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']]],
@@ -143,6 +150,36 @@ final class StorefrontReference
                         [$config->actorId, StorefrontAttackPack::searchFilter()['status']],
                         $config->searchCapability,
                         ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
+                    )],
+                ),
+                'retrieved_content_search_exfiltration' => new Observation(
+                    disposition: Disposition::Permit,
+                    executed: true,
+                    output: ['orders' => [['id' => $config->ownedSearchOrderId, 'status' => 'shipped']]],
+                    toolCalls: [new ToolObservation(
+                        capability: $config->searchCapability,
+                        argumentFingerprint: ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
+                        disposition: Disposition::Permit,
+                        executed: true,
+                        matchedRegisteredSecrets: [],
+                        registeredSecretLabels: $registeredSecretLabels,
+                    )],
+                    predicates: [PredicateObservation::fromQuery(
+                        $config->declaredSearchPredicateShapes[1],
+                        [$config->actorId, StorefrontAttackPack::searchFilter()['status']],
+                        $config->searchCapability,
+                        ArgumentFingerprint::make(StorefrontAttackPack::searchFilter()),
+                    )],
+                    provenanceEntries: [new ProvenanceEntry(
+                        correlationId: StorefrontAttackPack::RETRIEVED_SEARCH_CORRELATION,
+                        source: Source::external(StorefrontAttackPack::RETRIEVED_SEARCH_SOURCE),
+                        trust: Trust::Untrusted,
+                        dataClass: DataClass::Internal,
+                        channel: ContextChannel::RetrievedDocument,
+                        contentFingerprint: ContentFingerprint::make($input->untrustedInput['retrieved_document']['body']),
+                        componentLabel: null,
+                        componentFingerprint: null,
+                        recordedAt: new DateTimeImmutable('2026-09-30T00:00:00Z'),
                     )],
                 ),
                 'lookup' => $orderId === $config->foreignOrderId

@@ -140,7 +140,16 @@ it('passes the full pack for a secure runner with tool and side-effect telemetry
 
     expect($result->passed())->toBeTrue()
         ->and($result->score(CasePurpose::Security)->passed)->toBe(8)
-        ->and($result->score(CasePurpose::Utility)->passed)->toBe(5);
+        ->and($result->score(CasePurpose::Utility)->passed)->toBe(5)
+        ->and($result->cases[12]->assertions)->toHaveCount(6)
+        ->and(array_map(fn ($assertion) => $assertion->assertion, $result->cases[12]->assertions))->toBe([
+            'provenance_entry_is',
+            'executed_arguments_exclude_registered_secrets',
+            'tool_executed',
+            'output_includes_expected_value',
+            'executed_predicate_observed',
+            'executed_predicate_shape_is_declared',
+        ]);
 });
 
 it('detects each vulnerable security failure independently', function (string $vulnerableId): void {

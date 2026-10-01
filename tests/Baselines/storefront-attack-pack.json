@@ -662,10 +662,15 @@
             "safe_outcome": "filtered_permit",
             "status": "passed",
             "trusted_setup_fingerprint": "73ab406008d70ec1f2f49b2c5a6204877e773fa3468066ccffb854a7a9d6885f",
-            "untrusted_input_fingerprint": "c0545045fc3c7f04673caa293fafaf916d2f59d6b22155f4f4091fb2ce1bd7df",
+            "untrusted_input_fingerprint": "b219db8777913fd3a3760b4cdc0e66dc6ee9985aebe7164bbce20074bdf9f399",
             "error_class": null,
             "blocked_by": null,
             "assertions": [
+                {
+                    "assertion": "provenance_entry_is",
+                    "passed": true,
+                    "message": null
+                },
                 {
                     "assertion": "executed_arguments_exclude_registered_secrets",
                     "passed": true,

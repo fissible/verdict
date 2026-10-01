@@ -12,6 +12,7 @@ use Fissible\Verdict\Context\Trust;
 use Fissible\Verdict\Evaluation\CapturingTool;
 use Fissible\Verdict\Evaluation\ConnectionPredicateCapture;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
+use Fissible\Verdict\Evaluation\RegisteredSecretScanner;
 use Fissible\Verdict\Evaluation\StorefrontAttackPackConfig;
 use Fissible\Verdict\Evaluation\UnguardedCapturingTool;
 use Fissible\Verdict\Evidence\ProvenanceLedger;
@@ -150,6 +151,7 @@ final class StorefrontLiveAgent implements Agent, HasProviderOptions, HasTools, 
                 $this->capture,
                 app(ApprovalManager::class),
                 app(InvocationContext::class),
+                new RegisteredSecretScanner(['storefront-forbidden-marker' => $this->config->forbiddenMarker]),
             ),
         ];
     }
@@ -179,12 +181,16 @@ final class StorefrontLiveAgent implements Agent, HasProviderOptions, HasTools, 
             $this->unguarded(
                 new UnguardedSearchOrders(new SearchOrders),
                 $this->config->searchCapability,
+                new RegisteredSecretScanner(['storefront-forbidden-marker' => $this->config->forbiddenMarker]),
             ),
         ];
     }
 
-    private function unguarded(Tool $tool, string $capability): UnguardedCapturingTool
-    {
+    private function unguarded(
+        Tool $tool,
+        string $capability,
+        RegisteredSecretScanner $registeredSecrets = new RegisteredSecretScanner,
+    ): UnguardedCapturingTool {
         return new UnguardedCapturingTool(
             new SideEffectRelayTool($tool, $this->actions, $this->capture),
             $capability,
@@ -192,6 +198,7 @@ final class StorefrontLiveAgent implements Agent, HasProviderOptions, HasTools, 
             // The control arm's execution window (#251 round 5), wired here so every control tool
             // gets it — a per-tool opt-in would leave a forgotten tool structurally unmeasurable.
             $this->predicates,
+            $registeredSecrets,
         );
     }
 
