@@ -558,7 +558,7 @@ final readonly class StorefrontAttackPack implements AttackPack, DeclaresExpress
             ),
             runner: $runner,
             assertions: [
-                Assertions::provenanceEntryIs(
+                Assertions::deliveredViaProvenance(
                     correlationId: self::RETRIEVED_SEARCH_CORRELATION,
                     source: Source::external(self::RETRIEVED_SEARCH_SOURCE),
                     trust: Trust::Untrusted,
