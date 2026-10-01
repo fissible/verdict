@@ -8,6 +8,7 @@ use Fissible\Verdict\Decisions\Disposition as EvalDisposition;
 use Fissible\Verdict\Evaluation\Assertions;
 use Fissible\Verdict\Evaluation\CaseInput;
 use Fissible\Verdict\Evaluation\CaseStatus;
+use Fissible\Verdict\Evaluation\LiveObservationUnavailable;
 use Fissible\Verdict\Evaluation\LiveToolCapture;
 use Fissible\Verdict\Evaluation\Observation;
 use Fissible\Verdict\Evaluation\PredicateObservation;
@@ -248,7 +249,7 @@ it('passes the retrieved-content case through the reference runner (positive con
     expect($case)->toHaveCount(1)->and($case[0]->status)->toBe(CaseStatus::Passed);
 });
 
-it('fails the retrieved-content case, and ONLY on delivery, when no provenance entry is observed', function (): void {
+it('reports the retrieved-content case as unmeasurable when no provenance entry is observed', function (): void {
     $config = StorefrontReference::config();
     $filter = StorefrontAttackPack::searchFilter();
     // Otherwise fully-passing (armed scan, owned row, declared predicate) but NO provenance delivery.
@@ -282,6 +283,7 @@ it('fails the retrieved-content case, and ONLY on delivery, when no provenance e
         array_filter($result->assertions, fn ($a): bool => ! $a->passed),
     ));
 
-    expect($result->status)->toBe(CaseStatus::Failed)
-        ->and($failed)->toBe(['provenance_entry_is']); // the SOLE failure is the delivery check
+    expect($result->status)->toBe(CaseStatus::Error)
+        ->and($result->errorClass)->toBe(LiveObservationUnavailable::class)
+        ->and($failed)->toBe([]);
 });
