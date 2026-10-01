@@ -4,6 +4,47 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+> Post-v0.17.0 hardening and attack-pack coverage. The ADR 0039 replay-guard surface that went
+> public in v0.17.0 is unchanged in shape; this line hardens its edges (a codex adversarial review
+> of the arc) and broadens the evaluation attack packs. All migrations remain additive.
+
+### Added
+
+- **Indirect retrieved-content argument-exfiltration attack case (#474).** Broadens the scoped-search
+  exfiltration coverage from direct request injection to *indirect* injection: a benign request with the
+  smuggling instruction riding in a poisoned retrieved document, measured by the same argument-level
+  registered-secret oracle.
+
+### Fixed
+
+- **Prune re-checks the consumed-guard downgrade on the primary, inside each row transaction (#534).**
+  `pruneConsumedPayload()` checked the keyed→keyless downgrade once outside the per-row transactions and
+  memoised it; under read/write splitting a lagging replica could let it mint a keyless guard for a
+  keyed-consumed binding. The check now runs fresh on the primary, after each row's admission lock.
+- **Guard scheme config rejects colliding effective HMAC keys and over-length key versions (#537).**
+  Two versions whose secrets normalize to the same HMAC key (trailing-NUL or >64-byte pre-hash), or a
+  `key_version` longer than its storage column, now fail closed at config time.
+- **Numeric-looking keys and ids are ordered as strings (#538).** Canonical-JSON key ordering, the
+  in-memory changed-proposal receipt-id tiebreak, and trial-suite identity no longer compare
+  numeric-looking strings numerically (which left equal-comparing keys unordered).
+- **Refusal-evidence upsert is savepoint-isolated, atomic, and monotonic (#536).** A non-conflict SQL
+  error no longer poisons a caller transaction; the upsert is a single atomic statement (no prune-race
+  lost attempt); and `first_seen_at`/`last_seen_at` move monotonically with forward-only metadata.
+- **Issuance attestation is idempotent per (chain, identity fingerprint) (#535).** A transaction retry
+  can no longer append a second signed "issued" envelope for the same issuance.
+- **The scoped-search exfiltration cases now measure the breach (#539).** The live search wrappers arm
+  the registered-secret scanner (a live smuggle is a Failed observation, not an unmeasured error), and
+  the indirect case requires the retrieved document's delivery (a body-derived provenance entry).
+- **The review lane acquires the admission lock for a missing binding (#544).** Concurrent review
+  issuers for the same binding no longer both attest; only the admitted winner does.
+
+### Decided
+
+- **The consumed-guard candidate probe keeps its first-match short-circuit (#529, conscious accept).**
+  The number of probe lookups before a hit is observable but leaks only `key_version` (not treated as a
+  secret) at low value, and probing all candidates unconditionally would tax every keyed deployment's
+  hot path. Recorded in `docs/limitations.md`.
+
 ## [0.17.0] - 2026-09-28
 
 > **The v0.17.0 line is where the ADR 0039 "replay refusal outlives the consumed receipt" arc
