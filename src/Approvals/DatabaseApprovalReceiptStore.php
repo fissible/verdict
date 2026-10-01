@@ -659,18 +659,29 @@ final readonly class DatabaseApprovalReceiptStore implements ApprovalReceiptStor
 
     private function lockedOpenReceiptForChangedProposal(ApprovalReceipt $receipt): ?ApprovalReceipt
     {
-        $row = $this->connection->table($this->table)
+        $rows = $this->connection->table($this->table)
             ->where('tool_call_id', $receipt->toolCallId)
             ->where('capability', $receipt->capability)
             ->where('binding_fingerprint', '!=', $receipt->bindingFingerprint)
             ->whereIn('status', [ApprovalReceiptStatus::Pending->value, ApprovalReceiptStatus::Approved->value])
             ->where('expires_at', '>', $receipt->createdAt)
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
             ->lockForUpdate()
-            ->first();
+            ->get();
 
-        return $row instanceof stdClass ? $this->receiptFromRow($row) : null;
+        $selected = null;
+
+        // Compare hydrated, second-precision timestamps and byte-order ids independently of SQL collation.
+        foreach ($rows as $row) {
+            $candidate = $this->receiptFromRow($row);
+
+            if ($selected === null
+                || $candidate->createdAt > $selected->createdAt
+                || ($candidate->createdAt == $selected->createdAt && strcmp($candidate->id, $selected->id) > 0)) {
+                $selected = $candidate;
+            }
+        }
+
+        return $selected;
     }
 
     private function lockedReceiptForBindingFingerprint(
