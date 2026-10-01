@@ -7,6 +7,11 @@ All notable changes to Verdict will be documented in this file.
 > Post-v0.17.0 hardening and attack-pack coverage. The ADR 0039 replay-guard surface that went
 > public in v0.17.0 is unchanged in shape; this line hardens its edges (a codex adversarial review
 > of the arc) and broadens the evaluation attack packs. All migrations remain additive.
+>
+> **Upgrading:** #544 makes the review lane acquire the binding-admission lock, which on
+> SQLite/MySQL/MariaDB writes `verdict_binding_admission_locks` (PostgreSQL uses an advisory lock, no
+> table). Publish and run migrations with the full `verdict-migrations` tag — an install that published
+> only the granular `verdict-review-migrations` tag will hit a missing-table error on review issuance.
 
 ### Added
 
@@ -37,6 +42,16 @@ All notable changes to Verdict will be documented in this file.
   the indirect case requires the retrieved document's delivery (a body-derived provenance entry).
 - **The review lane acquires the admission lock for a missing binding (#544).** Concurrent review
   issuers for the same binding no longer both attest; only the admitted winner does.
+
+- **Indirect exfiltration delivery is unmeasurable, not a breach, on the live lane (#549).** Fixes a #546
+  regression: the retrieved-document delivery check now refuses to answer (throws, classified Unmeasured)
+  on the live lane that has no provenance seam, instead of failing as a false breach — while still
+  passing deterministically and failing a genuinely wrong delivery.
+- **The database changed-proposal receipt-id tiebreak uses byte order (#550).** Fixes a #538 gap: the
+  selector imposed `ORDER BY id` (connection collation) while the in-memory store used byte order, so
+  the two could name different prior receipts for mixed-case same-second ids. The database selector now
+  hydrates candidates and imposes the byte-order id tiebreak in PHP, matching the in-memory store and the
+  status readers' documented convention.
 
 ### Decided
 
