@@ -841,33 +841,51 @@ the safe state to sit in while it waits. ADR 0039's parity spec — the digest g
 payload prunable, the check→attest→persist ordering, the self-guarding prune, and the
 keyless-default/keyed-opt-in decision — is the contract the build satisfies, not a starting sketch.
 
-## v0.18.0 — Attack coverage: realism and abuse
+## v0.18.0 — Attack coverage + the ADR 0039 hardening re-review
 
-**Theme.** #213's two P0 evaluation gaps, as their own unit. Both are coverage against mechanisms that
-already ship — neither adds a detection mechanism — and both have their own acceptance criteria, which is
-why they are a milestone rather than an addition to the 1.0 bar.
+**Theme.** Two strands. (1) #213's attack-pack coverage against already-shipped mechanisms. (2) A codex
+adversarial re-review of the entire ADR 0039 replay-guard arc that went public in v0.17.0 — the parts of
+that arc that had only been reviewed by a fresh-Claude duet while the codex quota was exhausted — which
+surfaced a set of edge-case correctness defects, each fixed under a fresh codex duet.
 
-| Issue | Effort | Deps | Status |
-|---|---|---|---|
-| [#475](https://github.com/fissible/verdict/issues/475) Semantic / rate-abuse attack case | S–M | none | open — **first in this milestone**; the one 🔴 cell in #213's coverage matrix |
-| [#474](https://github.com/fissible/verdict/issues/474) Realistic retrieved-content injection + exfiltration pack | M–L | none | open — broadens the narrow `search-argument-exfiltration` case onto published corpora with an argument-level oracle |
+**Shipped.**
 
-**Also on the v0.18.0 milestone (beyond the attack-coverage theme).** One carry-over plus the post-v0.17.0 follow-ups — not the milestone's theme, but its tracked scope:
+| Issue | What | PR |
+|---|---|---|
+| [#474](https://github.com/fissible/verdict/issues/474) | Indirect retrieved-content argument-exfiltration case | #533 |
+| [#539](https://github.com/fissible/verdict/issues/539) | The exfiltration cases now *measure* the breach (armed live scanner + required retrieved-doc delivery) | #546 |
+| [#534](https://github.com/fissible/verdict/issues/534) | Prune re-checks the consumed-guard downgrade on the primary, inside each row tx (replica-lag TOCTOU) | #540 |
+| [#535](https://github.com/fissible/verdict/issues/535) | Issuance attestation idempotent per (chain, identity fingerprint) | #545 |
+| [#536](https://github.com/fissible/verdict/issues/536) | Refusal-evidence upsert: savepoint-isolated, atomic, monotonic | #543 |
+| [#537](https://github.com/fissible/verdict/issues/537) | Guard scheme config rejects colliding effective HMAC keys + over-length versions | #541 |
+| [#538](https://github.com/fissible/verdict/issues/538) | Numeric-looking keys/ids ordered as strings (canonical JSON, receipt tiebreak, suite identity) | #542 |
 
-| Issue | Effort | Deps | Status |
-|---|---|---|---|
-| [#469](https://github.com/fissible/verdict/issues/469) `ReviewStatusView` provenance projection | S (decision) + S | ADR 0026, ADR 0035 §4 | open — carried over from v0.17.0 |
-| [#489](https://github.com/fissible/verdict/issues/489) Review table has no index for the pending-enumeration query | XS | none | open — the scale twin of #468/#490 |
-| [#497](https://github.com/fissible/verdict/issues/497) Two-phase release so the compatibility matrix gates the tagged commit | ~M | #492 | open — release-tooling |
-| [#528](https://github.com/fissible/verdict/issues/528) Refusal evidence anchors on a keyless digest even under keyed mode | ~M | #527 | open — DeepSeek re-review follow-up; the tradeoff is documented in the meantime |
-| [#529](https://github.com/fissible/verdict/issues/529) Decide: candidate-probe short-circuits on first match (timing side channel) | ~XS | none | open — an explicit accept-or-fix decision |
+**Resolved without code.**
 
-**Why not v1.0.0.** The 1.0 section exists on the argument that inventing 1.0 work "would produce a
-backlog that measures imagination rather than adoption," and it holds only work that produced itself.
-These two produced themselves — the coverage matrix named them — but their completion criterion is
-*honest measurement*, including failures and unmeasured outcomes, which is open-ended in a way the 1.0
-bar's other items are not. Loading them onto 1.0 would make the release depend on an evaluation corpus
-whose end state is a judgement call. They get a tag instead.
+| Issue | Decision |
+|---|---|
+| [#489](https://github.com/fissible/verdict/issues/489) | Measured the pending-enumeration plan on PostgreSQL (index scan on the existing `(status, expires_at)` index, ~0.1 ms over the pending set; the `approval_context` `TEXT`/`!=` predicates aren't indexable). A new index does not earn its write cost — **closed**, measurement recorded on the issue. |
+| [#529](https://github.com/fissible/verdict/issues/529) | The candidate-probe first-match short-circuit is a **conscious accept** (low-value `key_version` timing leak vs. a hot-path cost for every keyed deployment); documented in `docs/limitations.md`. |
+
+**Last before the tag.**
+
+| Issue | What | PR |
+|---|---|---|
+| [#544](https://github.com/fissible/verdict/issues/544) | Review lane acquires the admission lock for a missing binding (the B2 twin of #535's B1) | in review |
+
+Once #544 merges the milestone is clean and v0.18.0 is ready to tag.
+
+## v0.19.0 — Deferred from v0.18.0
+
+Four items re-milestoned from v0.18.0 — consciously deferred (none a correctness defect in shipped code),
+so v0.18.0 could tag with the hardening arc complete:
+
+| Issue | Effort | Why deferred |
+|---|---|---|
+| [#475](https://github.com/fissible/verdict/issues/475) Semantic / rate-abuse attack case | S–M | **Blocked on a framework primitive** — the pack needs a sequence/throttle assertion that does not yet exist; design-first, not a copy of the #474 pattern. |
+| [#469](https://github.com/fissible/verdict/issues/469) `ReviewStatusView` provenance projection | S + S | A reviewer-surface feature (ADR 0026 states), not a correctness defect; carried from v0.17.0. |
+| [#497](https://github.com/fissible/verdict/issues/497) Two-phase release so the compat matrix gates the tagged commit | ~M | Release tooling; does not block a correctness release. |
+| [#528](https://github.com/fissible/verdict/issues/528) Refusal evidence anchors on a keyless digest even under keyed mode | ~M | The tradeoff is opt-in, prunable, and documented in `docs/limitations.md`; a refinement (re-anchor on the active keyed HMAC), not a regression. |
 
 **#475's scope was corrected in triage, and the correction is load-bearing.** The issue's example —
 "repeated small refunds under a cap" — implies summing amounts. The shipped limiter does not: a

@@ -108,6 +108,14 @@ The permanent consumed-binding guard has the same boundary. When an approval is 
 
 That HMAC covers the permanent guard alone. When an evidence recorder is configured, a refused issuance is also recorded in the separate `verdict_approval_refusals` audit table (ADR 0039), and that record anchors on the **keyless** binding digest regardless of keyed mode — so a reader of that table retains the same offline-guessing correlation for refused bindings (including consumed-and-replayed ones). Unlike the permanent guard, the refusal table is prunable and follows the ordinary evidence retention lifecycle, so the exposure is bounded by retention rather than permanent; a deployment that has enabled keyed mode for the threat of a leaked snapshot should prune refusal evidence accordingly (or leave the recorder unset, its default).
 
+Relatedly, the guard probe short-circuits on the first matching candidate. Under a keyed scheme with
+several retained key versions, the number of lookups before a hit is observable (query count / timing),
+which could in principle reveal *which* key version guarded a binding. This is a conscious accept
+([#529](https://github.com/fissible/verdict/issues/529)): `key_version` is not treated as a secret, so
+the leak is of low value, and probing every candidate unconditionally would add a lookup per retained
+version to the issue/consume hot path of every keyed deployment. Deployments for which key-version
+attribution is sensitive should not treat the probe as constant-time.
+
 <!-- @verdict-claim limitation.registered-secret-scan tested -->
 ### A registered-secret scan detects one declared shape of exfiltration, not exfiltration
 
