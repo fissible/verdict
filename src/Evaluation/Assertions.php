@@ -702,6 +702,34 @@ final class Assertions
         return true;
     }
 
+    /**
+     * Delivery is unmeasurable when no provenance was observed.
+     * Once entries exist, use provenanceEntryIs() to distinguish matching from wrong delivery.
+     */
+    public static function deliveredViaProvenance(
+        string $correlationId,
+        Source $source,
+        Trust $trust,
+        ContextChannel $channel,
+        string $contentFingerprint,
+    ): ObservationAssertion {
+        $matchingEntry = self::provenanceEntryIs($correlationId, $source, $trust, $channel, $contentFingerprint);
+
+        return new CallbackAssertion(
+            name: 'provenance_entry_is',
+            test: function (Observation $observation) use ($matchingEntry): bool {
+                if ($observation->provenanceEntries === []) {
+                    throw LiveObservationUnavailable::because(
+                        'no retrieved-document provenance was observed, so a delivery check would be vacuous'
+                    );
+                }
+
+                return $matchingEntry->evaluate($observation)->passed;
+            },
+            failureMessage: 'No provenance entry matched the expected correlation, source, trust, channel, and content fingerprint.',
+        );
+    }
+
     public static function provenanceEntryIs(
         string $correlationId,
         Source $source,
