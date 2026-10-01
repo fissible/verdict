@@ -12,6 +12,7 @@ use Fissible\Verdict\Console\DatabaseTableStore;
 use Fissible\Verdict\Contracts\IssuesAdmittedReviewRequests;
 use Fissible\Verdict\Contracts\ReviewRequestStore;
 use Fissible\Verdict\Support\ApproverSummary;
+use Fissible\Verdict\Support\BindingAdmission;
 use Fissible\Verdict\Support\SecurityStateTransaction;
 use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
@@ -72,6 +73,8 @@ final readonly class DatabaseReviewRequestStore implements DatabaseTableStore, I
     {
         try {
             return SecurityStateTransaction::run($this->connection, 'issue a review request', function () use ($request, $onAdmitted): ReviewTransition {
+                BindingAdmission::acquire($this->connection, $request->capability, $request->bindingFingerprint);
+
                 $existing = $this->lockedRequestForBinding($request->capability, $request->bindingFingerprint);
 
                 if ($existing !== null) {

@@ -28,6 +28,8 @@ function reviewTable(): string
 }
 
 beforeEach(function (): void {
+    (require __DIR__.'/../../database/migrations/create_verdict_binding_admission_locks_table.php.stub')->up();
+
     $schema = app(DatabaseManager::class)->connection()->getSchemaBuilder();
     $schema->dropIfExists(reviewTable());
     $schema->create(reviewTable(), function (Blueprint $table): void {
@@ -50,6 +52,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_binding_admission_locks');
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(reviewTable());
 });
 

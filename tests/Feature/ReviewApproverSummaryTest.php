@@ -33,6 +33,14 @@ use Fissible\Verdict\Tests\Support\FrozenClock;
 use Fissible\Verdict\VerdictManager;
 use Illuminate\Database\DatabaseManager;
 
+beforeEach(function (): void {
+    (require __DIR__.'/../../database/migrations/create_verdict_binding_admission_locks_table.php.stub')->up();
+});
+
+afterEach(function (): void {
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_binding_admission_locks');
+});
+
 // ADR 0038 §1/§6 — the review lane produces the approver summary at ISSUANCE through the SAME materialisation
 // service the confirmation lane uses (ApproverSummaryMaterializer): the app-authored, binding-informed candidate
 // is routed through the approver-audience release policy, and a Released summary is persisted on the ReviewRequest.

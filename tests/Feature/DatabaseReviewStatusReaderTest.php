@@ -72,10 +72,13 @@ function createReviewReaderTable(bool $withApprovalContext = true): void
 }
 
 beforeEach(function (): void {
+    (require __DIR__.'/../../database/migrations/create_verdict_binding_admission_locks_table.php.stub')->up();
+
     createReviewReaderTable();
 });
 
 afterEach(function (): void {
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_binding_admission_locks');
     app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists(reviewReaderTable());
 });
 
