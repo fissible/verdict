@@ -34,6 +34,7 @@ use Fissible\Verdict\VerdictManager;
 use Illuminate\Database\DatabaseManager;
 
 beforeEach(function (): void {
+    app(DatabaseManager::class)->connection()->getSchemaBuilder()->dropIfExists('verdict_binding_admission_locks');
     (require __DIR__.'/../../database/migrations/create_verdict_binding_admission_locks_table.php.stub')->up();
 });
 
