@@ -4,6 +4,8 @@ All notable changes to Verdict will be documented in this file.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-01
+
 > Post-v0.17.0 hardening and attack-pack coverage. The ADR 0039 replay-guard surface that went
 > public in v0.17.0 is unchanged in shape; this line hardens its edges (a codex adversarial review
 > of the arc) and broadens the evaluation attack packs. All migrations remain additive.
@@ -2269,7 +2271,8 @@ All notable changes to Verdict will be documented in this file.
   command registration in a clean Laravel consumer CI job.
 - Add Fissible-standard version, changelog, tag, and GitHub release tooling.
 
-[Unreleased]: https://github.com/fissible/verdict/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/fissible/verdict/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/fissible/verdict/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/fissible/verdict/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/fissible/verdict/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/fissible/verdict/compare/v0.14.0...v0.15.0
