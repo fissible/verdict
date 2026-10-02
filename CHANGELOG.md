@@ -39,7 +39,9 @@ All notable changes to Verdict will be documented in this file.
   can no longer append a second signed "issued" envelope for the same issuance.
 - **The scoped-search exfiltration cases now measure the breach (#539).** The live search wrappers arm
   the registered-secret scanner (a live smuggle is a Failed observation, not an unmeasured error), and
-  the indirect case requires the retrieved document's delivery (a body-derived provenance entry).
+  the indirect case's DETERMINISTIC arm requires the retrieved document's delivery (a body-derived
+  provenance entry); the live lane, which has no provenance seam, treats a missing delivery as
+  unmeasurable rather than a pass or a breach (see #549).
 - **The review lane acquires the admission lock for a missing binding (#544).** Concurrent review
   issuers for the same binding no longer both attest; only the admitted winner does.
 
