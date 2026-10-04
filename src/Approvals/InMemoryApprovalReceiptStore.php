@@ -512,8 +512,8 @@ final class InMemoryApprovalReceiptStore implements ApprovalReceiptStore, Distin
             }
 
             if ($selected === null
-                || $receipt->createdAt > $selected->createdAt
-                || ($receipt->createdAt == $selected->createdAt && strcmp($receipt->id, $selected->id) > 0)) {
+                || $receipt->createdAt->format('Y-m-d H:i:s') > $selected->createdAt->format('Y-m-d H:i:s')
+                || ($receipt->createdAt->format('Y-m-d H:i:s') === $selected->createdAt->format('Y-m-d H:i:s') && strcmp($receipt->id, $selected->id) > 0)) {
                 $selected = $receipt;
             }
         }
